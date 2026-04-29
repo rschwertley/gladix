@@ -79,7 +79,7 @@ class UiViewModel(
         }
     }
 
-    var currentAppColor: String? = null
+    var lastPlayerAccentColor: Int? = null
     val navigation = MutableStateFlow(context.getFromCache("main_nav") ?: 0).also { flow ->
         viewModelScope.launch { flow.collect { context.saveToCache("main_nav", it) } }
     }
@@ -173,18 +173,25 @@ class UiViewModel(
             get() = moreBackPressCallback ?: playerBackPressCallback
 
         override fun handleOnBackStarted(backEvent: BackEventCompat) {
+            if (playerBgVisible.value) return
             backPress?.handleOnBackStarted(backEvent)
         }
 
         override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+            if (playerBgVisible.value) return
             backPress?.handleOnBackProgressed(backEvent)
         }
 
         override fun handleOnBackPressed() {
+            if (playerBgVisible.value) {
+                changeBgVisible(false)
+                return
+            }
             backPress?.handleOnBackPressed()
         }
 
         override fun handleOnBackCancelled() {
+            if (playerBgVisible.value) return
             backPress?.handleOnBackCancelled()
         }
     }

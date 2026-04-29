@@ -32,7 +32,7 @@ class ShufflePlayer(
     }
 
     override fun hasNextMediaItem(): Boolean {
-        return currentMediaItemIndex < mediaItemCount - 1
+        return player.currentMediaItemIndex < mediaItemCount - 1
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -49,10 +49,13 @@ class ShufflePlayer(
         val index = list.indexOf(currentMediaItem)
         val before = list.take(index) - currentMediaItem
         val after = list.takeLast(list.size - index) - currentMediaItem
-        if (currentMediaItemIndex > 0) player.removeMediaItems(0, currentMediaItemIndex)
+        // Use player.currentMediaItemIndex directly — this is the raw ExoPlayer index and must
+        // not go through getCurrentMediaItemIndex(), which returns a windowed offset.
+        if (player.currentMediaItemIndex > 0)
+            player.removeMediaItems(0, player.currentMediaItemIndex)
         player.addMediaItems(0, before)
-        player.removeMediaItems(currentMediaItemIndex + 1, mediaItemCount)
-        player.addMediaItems(currentMediaItemIndex + 1, after)
+        player.removeMediaItems(player.currentMediaItemIndex + 1, mediaItemCount)
+        player.addMediaItems(player.currentMediaItemIndex + 1, after)
     }
 
     fun onMediaItemChanged(old: MediaItem, new: MediaItem) {
@@ -178,6 +181,14 @@ class ShufflePlayer(
         log("Clear media items")
     }
 
+    // Returns the start index into the full ExoPlayer timeline for a QUEUE_WINDOW_SIZE window
+    // centred on fullIndex. Both getCurrentTimeline() and getCurrentMediaItemIndex() must use
+    // this same calculation so that the windowed index is always < windowedTimeline.windowCount.
+    private fun windowStart(fullCount: Int, fullIndex: Int): Int {
+        val half = QUEUE_WINDOW_SIZE / 2
+        return (fullIndex - half).coerceIn(0, fullCount - QUEUE_WINDOW_SIZE)
+    }
+
     // Limit the timeline exposed to the media session (and thus Bluetooth/AVRCP) to a sliding
     // window around the current item. ExoPlayer's internal timeline is unchanged; only the view
     // the session serializes over Binder is trimmed, preventing BadParcelableException when the
@@ -186,10 +197,23 @@ class ShufflePlayer(
         val full = super.getCurrentTimeline()
         val count = full.windowCount
         if (count <= QUEUE_WINDOW_SIZE) return full
-        val current = currentMediaItemIndex.coerceAtLeast(0)
-        val half = QUEUE_WINDOW_SIZE / 2
-        val start = (current - half).coerceIn(0, count - QUEUE_WINDOW_SIZE)
-        return WindowedTimeline(full, start, QUEUE_WINDOW_SIZE)
+        // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
+        // a circularity: getCurrentMediaItemIndex() calls windowStart(), which needs the full
+        // index that getCurrentTimeline() is computing here.
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        return WindowedTimeline(full, windowStart(count, fullIndex), QUEUE_WINDOW_SIZE)
+    }
+
+    // Returns the current item index relative to the windowed timeline so that Media3's
+    // PlayerInfo.Builder.build() assertion (mediaItemIndex < timeline.windowCount) holds.
+    // All internal logic that operates on the real ExoPlayer queue (changeQueue, hasNextMediaItem,
+    // getCurrentTimeline's window-start calculation) reads player.currentMediaItemIndex directly.
+    override fun getCurrentMediaItemIndex(): Int {
+        val full = super.getCurrentTimeline()
+        val count = full.windowCount
+        if (count <= QUEUE_WINDOW_SIZE) return player.currentMediaItemIndex
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        return fullIndex - windowStart(count, fullIndex)
     }
 
     private class WindowedTimeline(

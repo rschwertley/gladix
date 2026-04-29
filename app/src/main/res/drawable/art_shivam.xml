@@ -1,14 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "GLADIX" wordmark — replaces the original developer avatar.
+    Tinted to @color/amoled_fg so it renders black on light and white on dark (night) theme.
+    Alpha 0.33 keeps it as a subtle watermark at the bottom of the splash screen.
+
+    Viewport 200×48. Each letter uses open stroked sub-paths (no Z), strokeLineCap="round".
+    Letter layout (x positions, viewport units, stroke-centre coords):
+        G  46–62  |  L  67–81  |  A  86–102  |  D  107–120  |  I  129  |  X  136–152
+    Total span 106 px, centred in 200 px viewport.
+
+    G: top bar, left bar, bottom bar, right-lower bar (open upper-right), crossbar pointing right
+    L: left bar, bottom bar
+    A: left + right slants joined at apex, crossbar
+    D: left bar, right semicircle arc (A 13 14 creates the D bulge to x≈120)
+    I: single vertical bar
+    X: two crossing diagonals
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
+    android:width="200dp"
     android:height="48dp"
     android:alpha="0.33"
     android:tint="@color/amoled_fg"
-    android:viewportWidth="720"
-    android:viewportHeight="720">
+    android:viewportWidth="200"
+    android:viewportHeight="48">
     <path
-        android:fillColor="#FF000000"
-        android:pathData="M326.1,399.4c-44.1,0 -88.3,-0.1 -132.4,-0.1c93.4,-119.9 186.9,-239.7 280.3,-359.6C424.7,159.6 375.4,279.5 326.1,399.4z" />
-    <path
-        android:fillColor="#FF000000"
-        android:pathData="M396.8,321c44.1,0 88.3,0.1 132.4,0.1c-93.4,119.9 -186.9,239.7 -280.3,359.6C298.2,560.7 347.5,440.9 396.8,321z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="
+            M 46 11 L 62 11
+            M 47.75 10 L 47.75 38
+            M 46 37 L 62 37
+            M 60.25 24 L 60.25 37
+            M 52 24 L 62 24
+            M 68.75 10 L 68.75 38
+            M 67 37 L 81 37
+            M 86 38 L 94 10 L 102 38
+            M 88.5 26 L 99.5 26
+            M 107.75 10 L 107.75 38
+            M 108 10 A 13 14 0 0 1 108 38
+            M 129 10 L 129 38
+            M 136 10 L 152 38
+            M 152 10 L 136 38" />
 </vector>

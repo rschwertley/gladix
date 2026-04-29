@@ -26,7 +26,7 @@ class BlurTransformation(
 
     companion object {
         private const val DEFAULT_RADIUS = 20f
-        private const val MAX_WIDTH = 256
+        private const val MAX_WIDTH = 512
         fun Bitmap.blurred(
             context: Context,
             radius: Float = DEFAULT_RADIUS

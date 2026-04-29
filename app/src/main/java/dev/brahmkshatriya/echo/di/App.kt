@@ -5,6 +5,7 @@ import android.content.Context.CONNECTIVITY_SERVICE
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.mayakapps.kache.FileKache
 import com.mayakapps.kache.KacheStrategy
 import dev.brahmkshatriya.echo.common.models.Message
@@ -50,6 +51,7 @@ data class App(
         scope.launch {
             throwFlow.collectLatest {
                 it.printStackTrace()
+                FirebaseCrashlytics.getInstance().recordException(it)
             }
         }
         val connectivityManager =

@@ -33,6 +33,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.subtitleIndex
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.select
 import dev.brahmkshatriya.echo.playback.PlayerState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -58,11 +59,14 @@ class StreamableMediaSource(
 
     fun getFactory(source: Streamable.Source) = if (source.isLive) factories else cacheFactories
 
+    @Volatile private var released = false
+    private var loadJob: Job? = null
     private lateinit var actualSource: MediaSource
+
     override fun prepareSourceInternal(mediaTransferListener: TransferListener?) {
         super.prepareSourceInternal(mediaTransferListener)
         val handler = Util.createHandlerForCurrentLooper()
-        scope.launch {
+        loadJob = scope.launch {
             var (new, serv) = runCatching { loader.load(mediaItem) }.getOrElse {
                 error = it
                 return@launch
@@ -98,6 +102,7 @@ class StreamableMediaSource(
             mediaItem = new
 
             handler.post {
+                if (released) return@post
                 runCatching {
                     prepareChildSource(null, actualSource)
                 }.getOrElse {
@@ -105,6 +110,13 @@ class StreamableMediaSource(
                 }
             }
         }
+    }
+
+    override fun releaseSourceInternal() {
+        released = true
+        loadJob?.cancel()
+        loadJob = null
+        super.releaseSourceInternal()
     }
 
     override fun onChildSourceInfoRefreshed(
@@ -115,10 +127,14 @@ class StreamableMediaSource(
 
     override fun createPeriod(
         id: MediaSource.MediaPeriodId, allocator: Allocator, startPositionUs: Long,
-    ) = actualSource.createPeriod(id, allocator, startPositionUs)
+    ): MediaPeriod {
+        check(::actualSource.isInitialized) { "createPeriod called before source was prepared" }
+        return actualSource.createPeriod(id, allocator, startPositionUs)
+    }
 
-    override fun releasePeriod(mediaPeriod: MediaPeriod) =
-        actualSource.releasePeriod(mediaPeriod)
+    override fun releasePeriod(mediaPeriod: MediaPeriod) {
+        if (::actualSource.isInitialized) actualSource.releasePeriod(mediaPeriod)
+    }
 
     override fun canUpdateMediaItem(mediaItem: MediaItem) = run {
         this.mediaItem.apply {

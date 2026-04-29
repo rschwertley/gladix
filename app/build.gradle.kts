@@ -9,8 +9,9 @@ plugins {
 }
 
 val hasGoogleServices = file("google-services.json").exists()
-val gitHash = execute("git", "rev-parse", "HEAD").take(7)
-val gitCount = execute("git", "rev-list", "--count", "HEAD").toInt()
+val gitHash = runCatching { execute("git", "rev-parse", "HEAD").take(7) }.getOrDefault("dev")
+val gitCount = runCatching { execute("git", "rev-list", "--count", "HEAD").toInt() }.getOrDefault(1)
+val isDirty = runCatching { execute("git", "status", "--porcelain").isNotEmpty() }.getOrDefault(false)
 val version = "3.0.$gitCount"
 
 android {
@@ -21,8 +22,10 @@ android {
         applicationId = "dev.rschwertley.gladix"
         minSdk = 24
         targetSdk = 36
+        // Note: versionCode only increments on git commits. 
+        // For local development, consider committing frequently to update the version.
         versionCode = gitCount
-        versionName = "v${version}_$gitHash($gitCount)"
+        versionName = "v${version}_$gitHash${if (isDirty) "-dirty" else ""}($gitCount)"
     }
 
     buildTypes {

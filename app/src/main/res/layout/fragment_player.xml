@@ -15,6 +15,8 @@
             android:id="@+id/bg_image"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:clickable="false"
+            android:focusable="false"
             app:layout_constraintBottom_toTopOf="@+id/bg_gradient"
             app:layout_constraintHorizontal_bias="0.5"
             app:layout_constraintTop_toTopOf="parent" />

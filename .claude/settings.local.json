@@ -10,7 +10,8 @@
       "Bash(jar xf *)",
       "Bash(javap -c -p \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
       "Bash(javap -p -c \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
-      "Bash(javap -verbose \"androidx/media3/session/DefaultMediaNotificationProvider.class\")"
+      "Bash(javap -verbose \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
+      "Bash(find *)"
     ]
   }
 }

@@ -97,7 +97,15 @@ object ResumptionUtils {
         withClear: Boolean = false
     ): Triple<List<MediaItem>, Int, Long> {
         val items = recoverQueue(app, downloads, withClear) ?: emptyList()
-        val index = recoverIndex() ?: C.INDEX_UNSET
+        // INDEX and TRACKS are saved independently; a crash or system kill between the two
+        // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
+        // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
+        val rawIndex = recoverIndex() ?: C.INDEX_UNSET
+        val index = when {
+            items.isEmpty() || rawIndex == C.INDEX_UNSET -> C.INDEX_UNSET
+            rawIndex < items.size -> rawIndex
+            else -> items.size - 1
+        }
         val position = recoverPosition() ?: -1L
         return Triple(items, index, position)
     }

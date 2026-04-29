@@ -16,7 +16,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.ProgressBar
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.withResumed
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
@@ -276,10 +279,22 @@ class PlayerFragment : Fragment() {
             uiViewModel.playerControlsHeight.value = it.height
             adapter.playerControlsHeightUpdated()
         }
-        observe(uiViewModel.playerBgVisible) {
-            binding.fgContainer.animateVisibility(!it)
-            binding.playerMoreContainer.animateVisibility(!it)
-            requireActivity().hideSystemUi(it)
+        var bgBackCallback: OnBackPressedCallback? = null
+        observe(uiViewModel.playerBgVisible) { visible ->
+            binding.viewPager.isUserInputEnabled = !visible
+            binding.fgContainer.animateVisibility(!visible)
+            binding.playerMoreContainer.animateVisibility(!visible)
+            bgBackCallback?.remove()
+            bgBackCallback = null
+            if (visible) {
+                bgBackCallback = object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        uiViewModel.changeBgVisible(false)
+                    }
+                }.also {
+                    requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it)
+                }
+            }
         }
         binding.bgPanel.configureClicking(adapterListener, uiViewModel)
         binding.playerCollapsedContainer.playerClose.setOnClickListener {
@@ -505,7 +520,7 @@ class PlayerFragment : Fragment() {
                 val colors =
                     if (context.isDynamic()) context.getColorsFrom(drawable?.toBitmap()) else null
                 uiViewModel.playerColors.value = colors
-                if (context.showBackground()) binding?.bgImage?.loadBlurred(drawable, 12f)
+                if (context.showBackground()) binding?.bgImage?.loadBlurred(drawable, 8f)
                 else binding?.bgImage?.setImageDrawable(null)
             }
         }
@@ -514,10 +529,16 @@ class PlayerFragment : Fragment() {
         observe(uiViewModel.playerColors) {
             val context = requireContext()
             if (context.isPlayerColor() && context.isDynamic()) {
-                if (uiViewModel.currentAppColor != viewModel.playerState.current.value?.track?.id) {
-                    uiViewModel.currentAppColor =
-                        viewModel.playerState.current.value?.track?.id
-                    requireActivity().recreate()
+                val newAccent = it?.accent
+                if (uiViewModel.lastPlayerAccentColor != newAccent) {
+                    uiViewModel.lastPlayerAccentColor = newAccent
+                    if (requireActivity().lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        requireActivity().recreate()
+                    } else {
+                        lifecycleScope.launch {
+                            lifecycle.withResumed { requireActivity().recreate() }
+                        }
+                    }
                     return@observe
                 }
             }

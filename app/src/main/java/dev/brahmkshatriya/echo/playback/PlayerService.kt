@@ -39,7 +39,6 @@ import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
-import dev.brahmkshatriya.echo.playback.listener.AudioFocusListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
@@ -127,7 +126,6 @@ class PlayerService : MediaLibraryService() {
             .setSessionActivity(getPendingIntent(this))
             .build()
 
-        player.addListener(AudioFocusListener(this, player))
         player.addListener(
             PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow)
         )
@@ -177,14 +175,43 @@ class PlayerService : MediaLibraryService() {
             .setContentTitle(getString(R.string.app_name))
             .setSilent(true)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            // ForegroundServiceStartNotAllowedException (API 31+): service was started via
+            // bindService() from a background caller (e.g. widget MediaController connection)
+            // rather than startForegroundService(), so mAllowStartForeground=false and
+            // startForeground() is rejected. No 5-second obligation exists for bind-started
+            // services; the service runs as bound until startForegroundService() elevates it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+            ) return
+            throw e
+        }
+    }
+
+    // Media3's MediaNotificationManager.startForeground() (called when album art loads
+    // asynchronously and the notification is rebuilt) throws ForegroundServiceStartNotAllowedException
+    // on API 31+ when the service was started via bindService() rather than startForegroundService().
+    // We can't patch Media3's internal code, but onUpdateNotification() is the last public override
+    // point before execution enters MediaNotificationManager, so we catch the exception here.
+    @OptIn(UnstableApi::class)
+    override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
+        try {
+            super.onUpdateNotification(session, startInForeground)
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+            ) return
+            throw e
         }
     }
 
