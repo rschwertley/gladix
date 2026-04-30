@@ -315,6 +315,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override suspend fun saveToLibrary(item: EchoMediaItem, shouldSave: Boolean) {
+        handleArlExpiration()
         when (item) {
             is Album -> {
                 if (item.type == Album.Type.Show) {

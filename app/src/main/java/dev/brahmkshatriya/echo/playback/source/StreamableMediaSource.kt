@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.playback.source
 
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
@@ -32,6 +33,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.subtitleIndex
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.select
 import dev.brahmkshatriya.echo.playback.PlayerState
+import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -65,6 +67,7 @@ class StreamableMediaSource(
 
     override fun prepareSourceInternal(mediaTransferListener: TransferListener?) {
         super.prepareSourceInternal(mediaTransferListener)
+        Log.d("GladixPlayback", "prepareSourceInternal: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
         val handler = Util.createHandlerForCurrentLooper()
         loadJob = scope.launch {
             var (new, serv) = runCatching { loader.load(mediaItem) }.getOrElse {
@@ -75,8 +78,13 @@ class StreamableMediaSource(
             state.servers[new.mediaId] = serv
             state.serverChanged.emit(Unit)
             val sources = server?.sources
+            Log.d("GladixPlayback", "stream loaded: ${new.mediaId} server=${server != null} sources=${sources?.size ?: "null"}")
             actualSource = when (sources?.size) {
-                0, null -> factories.create(new, -1, null)
+                0, null -> {
+                    Log.d("GladixPlayback", "null/empty sources for ${new.mediaId}")
+                    error = TrackUnavailableException("No sources available for ${new.mediaId}")
+                    return@launch
+                }
                 1 -> {
                     val source = sources.first()
                     getFactory(source).create(new, 0, source)
@@ -128,6 +136,7 @@ class StreamableMediaSource(
     override fun createPeriod(
         id: MediaSource.MediaPeriodId, allocator: Allocator, startPositionUs: Long,
     ): MediaPeriod {
+        Log.d("GladixPlayback", "createPeriod: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
         check(::actualSource.isInitialized) { "createPeriod called before source was prepared" }
         return actualSource.createPeriod(id, allocator, startPositionUs)
     }

@@ -8,6 +8,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.ViewModel
 import androidx.paging.LoadState
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
 import dev.brahmkshatriya.echo.common.clients.FollowClient
@@ -299,12 +300,24 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             else -> null
         },
         when {
-            state?.isSaved != null -> button(
+            state?.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable) -> button(
                 "save_to_library",
                 if (state.isSaved) R.string.remove_from_library else R.string.save_to_library,
                 if (state.isSaved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark_outline
-            ) { vm.saveToLibrary(!state.isSaved) }
-            state == null && client is SaveClient && item.isSaveable -> placeholderButton(
+            ) {
+                if (state.isSaved && state.item is Playlist) {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(getString(R.string.remove_from_library_confirm, (state.item as Playlist).title))
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.remove) { _, _ -> vm.saveToLibrary(false) }
+                        .show()
+                } else {
+                    vm.saveToLibrary(!state.isSaved)
+                }
+            }
+            state == null && client is SaveClient && run {
+                val i = item; i.isSaveable && !(i is Playlist && i.isEditable)
+            } -> placeholderButton(
                 "save_to_library", R.string.save_to_library, R.drawable.ic_bookmark_outline
             )
             else -> null

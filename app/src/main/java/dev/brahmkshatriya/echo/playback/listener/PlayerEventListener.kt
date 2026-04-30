@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback.listener
 
 import android.content.Context
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -105,6 +106,8 @@ class PlayerEventListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         updateCurrentFlow()
+        if (playbackState == Player.STATE_BUFFERING)
+            Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
         if (playbackState == Player.STATE_READY) consecutiveUnavailableSkips = 0
     }
 
@@ -136,11 +139,15 @@ class PlayerEventListener(
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
+                player.pause()
                 scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 return
             }
             val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
-            if (!hasMore) return
+            if (!hasMore) {
+                player.pause()
+                return
+            }
             player.seekToNextMediaItem()
             player.prepare()
             player.play()
@@ -158,10 +165,16 @@ class PlayerEventListener(
         val index = player.currentMediaItemIndex
         val retries = mediaItem.retries
 
-        if (currentRetries >= maxRetries) return
+        if (currentRetries >= maxRetries) {
+            player.pause()
+            return
+        }
         if (retries >= maxSingleItemRetries) {
             val hasMore = index < player.mediaItemCount - 1
-            if (!hasMore) return
+            if (!hasMore) {
+                player.pause()
+                return
+            }
             player.seekToNextMediaItem()
         } else {
             val newItem = MediaItemUtils.withRetry(mediaItem)
