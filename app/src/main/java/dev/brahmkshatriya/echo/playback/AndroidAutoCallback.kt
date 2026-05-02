@@ -84,6 +84,12 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
+        if (params?.isRecent == true)
+            return Futures.immediateFuture(LibraryResult.ofError<MediaItem>(SessionError.ERROR_NOT_SUPPORTED))
+        if (browser.packageName != "com.google.android.projection.gearhead")
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(browsableItem(ROOT, "", browsable = false), null)
+            )
         Log.d("GladixAuto", "onGetLibraryRoot: extensionList.value.size=${extensionList.value.size}, clearing caches, starting watcher")
         extensionWatcherJob?.cancel()
         extensionWatcherJob = scope.launch {
