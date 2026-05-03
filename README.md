@@ -16,33 +16,49 @@ A personal fork of [Echo](https://github.com/brahmkshatriya/echo) — an extensi
 - Shuffle and Repeat buttons in Now Playing controls
 - Auto-pause when disconnecting from car
 - Playback resumption when reconnecting
-- Auto-skip unavailable tracks with circuit breaker
+- Auto-skip unavailable/region-locked tracks with circuit breaker
 - Proper error messages instead of silent failures
+- Fixed browse breaking when playback initiated from phone
 
 ### Bundled Deezer Extension
 - Deezer is included out of the box — no separate extension install required
 - Additional extensions (Spotify, Tidal, etc.) can still be installed on top
+- Paginated artist albums, top tracks, and related artists (full catalog, not just first page)
 
 ### Audio
 - Track Fade — configurable volume fade between tracks (1–12 seconds)
 - Accessible directly from Audio Effects sheet while listening
+- Fixed audio focus — other players pause when Gladix starts playing
 
 ### UI/UX
 - Compact Spotify-style context menus (icon left, text right)
 - Shuffle Play option in playlist/album context menus
 - Voice search microphone in all search bars
 - Listening history — clock icon on home screen shows recently played tracks
+- Confirmation dialog before removing a playlist from library
+- Bookmark icon hidden for playlists you own (can't be unsaved)
+- Fullscreen album art with Ken Burns pan/zoom animation
 - Fixed Lyrics/Queue tab overlap in player
+- Fixed fullscreen album art requiring two back gestures to dismiss
 - Smooth player animation on first load
 
 ### Stability & Performance
+- Fixed audio focus conflicts causing no audio output on Bluetooth
+- Fixed StreamableMediaSource race conditions causing play button spinning
+- Fixed Bluetooth queue size crash on large playlists
+- Fixed foreground service startup timing crashes
+- Fixed PlayerInfo$Builder crash triggered by Bluetooth volume buttons
+- Fixed second track hang after Bluetooth reconnect
+- Fixed recreate() infinite loop with dynamic player colors
 - Fixed WeakHashMap GC bug causing intermittent empty playlists in Android Auto
 - Replaced unsafe concurrent map access with thread-safe alternatives
 - Fixed coroutine scope cancellation issues across multiple services
 - Fixed Room database schema versioning for listening history
-- Fixed Bluetooth queue size crash on large playlists
-- Fixed foreground service startup timing issue
-- Fixed double setMediaItems call causing second track hang on Bluetooth reconnect
+- Auto-skip tracks with null/empty sources (region-locked content)
+- Faster app startup (deferred ExtensionLoader initialization)
+
+### Crash Reporting
+- Firebase Crashlytics integrated for automatic crash reporting
 
 ---
 
