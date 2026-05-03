@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension.clients
 
+import dev.brahmkshatriya.echo.common.helpers.Page
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -24,9 +25,98 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
 
         orderedKeys.mapNotNull { key ->
             val payload = resultsObject[key] ?: return@mapNotNull null
-            shelfFactories[key]?.invoke(parser, payload.jsonObject)
+            when (key) {
+                "ALBUMS" -> buildAlbumsShelf(artist, payload.jsonObject)
+                "TOP" -> buildTopTracksShelf(artist, payload.jsonObject)
+                "RELATED_ARTISTS" -> buildRelatedArtistsShelf(artist, payload.jsonObject)
+                else -> shelfFactories[key]?.invoke(parser, payload.jsonObject)
+            }
         }
     }.toFeed()
+
+    private fun buildTopTracksShelf(artist: Artist, jObject: JsonObject): Shelf? {
+        val shelf = parser.run {
+            jObject["data"]?.jsonArray?.toShelfItemsList("Top") as? Shelf.Lists.Items
+        }
+        val list = (shelf?.list as? List<Track>).orEmpty()
+        if (list.isEmpty()) return null
+        return Shelf.Lists.Tracks(
+            id = shelf!!.id,
+            title = shelf.title,
+            subtitle = shelf.subtitle,
+            type = Shelf.Lists.Type.Linear,
+            more = PagedData.Continuous<Shelf> { continuation ->
+                deezerExtension.handleArlExpiration()
+                val index = continuation?.toIntOrNull() ?: 0
+                val response = api.artistTop(artist.id, index)
+                val total = response["total"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                val tracks = response["data"]?.jsonArray?.mapNotNull { element ->
+                    runCatching {
+                        parser.run { element.jsonObject.toTrackFromRestApi() }.toShelf()
+                    }.getOrNull()
+                } ?: emptyList()
+                val nextIndex = index + PAGE_SIZE
+                Page(tracks, if (nextIndex < total) nextIndex.toString() else null)
+            }.toFeed(),
+            list = list.take(5)
+        )
+    }
+
+    private fun buildRelatedArtistsShelf(artist: Artist, jObject: JsonObject): Shelf? {
+        val shelf = parser.run {
+            jObject["data"]?.jsonArray?.toShelfItemsList("Related Artists") as? Shelf.Lists.Items
+        }
+        val list = shelf?.list.orEmpty()
+        if (list.isEmpty()) return null
+        return Shelf.Lists.Items(
+            id = shelf!!.id,
+            title = shelf.title,
+            subtitle = shelf.subtitle,
+            type = Shelf.Lists.Type.Linear,
+            more = PagedData.Continuous<Shelf> { continuation ->
+                deezerExtension.handleArlExpiration()
+                val index = continuation?.toIntOrNull() ?: 0
+                val response = api.artistRelated(artist.id, index)
+                val total = response["total"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                val artists = response["data"]?.jsonArray?.mapNotNull { element ->
+                    runCatching {
+                        parser.run { element.jsonObject.toArtistFromRestApi() }.toShelf()
+                    }.getOrNull()
+                } ?: emptyList()
+                val nextIndex = index + PAGE_SIZE
+                Page(artists, if (nextIndex < total) nextIndex.toString() else null)
+            }.toFeed(),
+            list = list
+        )
+    }
+
+    private fun buildAlbumsShelf(artist: Artist, jObject: JsonObject): Shelf? {
+        val shelf = parser.run {
+            jObject["data"]?.jsonArray?.toShelfItemsList("Albums") as? Shelf.Lists.Items
+        }
+        val list = shelf?.list.orEmpty()
+        if (list.isEmpty()) return null
+        return Shelf.Lists.Items(
+            id = shelf!!.id,
+            title = shelf.title,
+            subtitle = shelf.subtitle,
+            type = Shelf.Lists.Type.Linear,
+            more = PagedData.Continuous<Shelf> { continuation ->
+                deezerExtension.handleArlExpiration()
+                val index = continuation?.toIntOrNull() ?: 0
+                val response = api.artistAlbums(artist.id, index)
+                val total = response["total"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                val albums = response["data"]?.jsonArray?.mapNotNull { element ->
+                    runCatching {
+                        parser.run { element.jsonObject.toAlbumFromRestApi(artist) }.toShelf()
+                    }.getOrNull()
+                } ?: emptyList()
+                val nextIndex = index + PAGE_SIZE
+                Page(albums, if (nextIndex < total) nextIndex.toString() else null)
+            }.toFeed(),
+            list = list
+        )
+    }
 
     suspend fun loadArtist(artist: Artist): Artist {
         deezerExtension.handleArlExpiration()
@@ -58,20 +148,6 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         private fun Shelf?.nullIfEmpty(): Shelf? = this?.takeIf { !it.isEffectivelyEmpty() }
 
         private val shelfFactories: Map<String, DeezerParser.(JsonObject) -> Shelf?> = mapOf(
-            "TOP" to filterEmpty { jObject ->
-                val shelf =
-                    jObject["data"]?.jsonArray?.toShelfItemsList("Top") as? Shelf.Lists.Items
-                val list = (shelf?.list as? List<Track>).orEmpty()
-                if (list.isEmpty()) null
-                else Shelf.Lists.Tracks(
-                    id = shelf?.id.orEmpty(),
-                    title = shelf?.title.orEmpty(),
-                    subtitle = shelf?.subtitle,
-                    type = Shelf.Lists.Type.Linear,
-                    more = list.map { it.toShelf() }.toFeed(),
-                    list = list.take(5)
-                )
-            },
             "HIGHLIGHT" to filterEmpty { jObject ->
                 jObject["ITEM"]?.jsonObject?.toShelfItemsList("Highlight").nullIfEmpty()
             },
@@ -81,35 +157,9 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
             "RELATED_PLAYLIST" to filterEmpty { jObject ->
                 jObject["data"]?.jsonArray?.toShelfItemsList("Related Playlists").nullIfEmpty()
             },
-            "RELATED_ARTISTS" to filterEmpty { jObject ->
-                val shelf =
-                    jObject["data"]?.jsonArray?.toShelfItemsList("Related Artists") as? Shelf.Lists.Items
-                val list = shelf?.list.orEmpty()
-                if (list.isEmpty()) null
-                else Shelf.Lists.Items(
-                    id = shelf?.id.orEmpty(),
-                    title = shelf?.title.orEmpty(),
-                    subtitle = shelf?.subtitle,
-                    type = Shelf.Lists.Type.Linear,
-                    more = list.map { it.toShelf() }.toFeed(),
-                    list = list
-                )
-            },
-            "ALBUMS" to filterEmpty { jObject ->
-                val shelf =
-                    jObject["data"]?.jsonArray?.toShelfItemsList("Albums") as? Shelf.Lists.Items
-                val list = shelf?.list.orEmpty()
-                if (list.isEmpty()) null
-                else Shelf.Lists.Items(
-                    id = shelf?.id.orEmpty(),
-                    title = shelf?.title.orEmpty(),
-                    subtitle = shelf?.subtitle,
-                    type = Shelf.Lists.Type.Linear,
-                    more = list.map { it.toShelf() }.toFeed(),
-                    list = list
-                )
-            }
         )
+
+        private const val PAGE_SIZE = 50
 
         private fun filterEmpty(
             block: DeezerParser.(JsonObject) -> Shelf?

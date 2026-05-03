@@ -165,10 +165,7 @@ class PlayerEventListener(
         val index = player.currentMediaItemIndex
         val retries = mediaItem.retries
 
-        if (currentRetries >= maxRetries) {
-            player.pause()
-            return
-        }
+        if (currentRetries >= maxRetries) return
         if (retries >= maxSingleItemRetries) {
             val hasMore = index < player.mediaItemCount - 1
             if (!hasMore) {

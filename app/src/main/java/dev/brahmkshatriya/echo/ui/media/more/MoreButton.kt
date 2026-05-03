@@ -16,14 +16,14 @@ data class MoreButton(
 
     companion object {
         fun DialogFragment.button(
-            id: String, title: String, icon: Int, onClick: () -> Unit
+            id: String, title: String, icon: Int, dismissOnClick: Boolean = true, onClick: () -> Unit
         ) = MoreButton(id, title, icon) {
             onClick()
-            dismiss()
+            if (dismissOnClick) dismiss()
         }
 
         fun DialogFragment.button(
-            id: String, title: Int, icon: Int, onClick: () -> Unit
-        ) = button(id, getString(title), icon, onClick)
+            id: String, title: Int, icon: Int, dismissOnClick: Boolean = true, onClick: () -> Unit
+        ) = button(id, getString(title), icon, dismissOnClick, onClick)
     }
 }

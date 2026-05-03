@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name" translatable="false">Gladix</string>
-    <string name="app_github_repo" translatable="false">brahmkshatriya/echo</string>
+    <string name="app_github_repo" translatable="false">rschwertley/echo</string>
     <string name="okay">Okay</string>
     <string name="cancel">Cancel</string>
     <string name="back">Back</string>
@@ -152,7 +152,7 @@
     <string name="app">App</string>
     <string name="file">File</string>
     <string name="installation_type">Installation Type</string>
-    <string name="installation_type_summary">App installation will allow the following links to open in Echo:</string>
+    <string name="installation_type_summary">App installation will allow the following links to open in Gladix:</string>
     <string name="installation_type_warning">Not available if you install the extension as a File.</string>
     <string name="could_not_find_the_file">Could not find the file.</string>
     <string name="extension_installer">Extension Installer</string>
@@ -395,7 +395,7 @@
     <string name="moving_x">Moving %1$s</string>
     <string name="removing_x">Removing %1$s</string>
 
-    <string name="no_download_extension">No download extension found, use code \"echodown\" to get it.</string>
+    <string name="no_download_extension">No download extension found, use code \"gladixdown\" to get it.</string>
     <string name="nothing_to_download_in_x">Nothing to download in %1$s</string>
     <string name="download_started">Download Started</string>
     <string name="merging_x">Merging %1$s</string>
@@ -407,7 +407,7 @@
     <string name="removed_x_from_downloads">Removed %1$s from Downloads</string>
     <string name="download_complete">Download Complete</string>
 
-    <string name="app_widget_description">Echo on your home screen!</string>
+    <string name="app_widget_description">Gladix on your home screen!</string>
     <string name="opening_webview_x">Opening Webview: %1$s</string>
     <string name="no_update_available_for_x">No update available for %1$s</string>
     <string name="other">Other</string>
@@ -417,7 +417,9 @@
     <string name="guide">Guide</string>
     <string name="donate">Donate</string>
     <string name="contributors">Contributors</string>
-    <string name="app_desc">Just a music player.</string>
+    <string name="credit_echo" translatable="false">Based on Echo by brahmkshatriya</string>
+    <string name="credit_deezer" translatable="false">Deezer extension by LuftVerbot</string>
+    <string name="app_desc">Your music, your way.</string>
     <string name="manage">Manage</string>
     <string name="no_account">No Account</string>
     <string name="other_settings">Other Settings</string>

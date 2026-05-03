@@ -68,7 +68,7 @@
     <option name="SEARCH_ACTIVITY_IN_GLOBAL_SCOPE" value="false" />
     <option name="SKIP_ACTIVITY_VALIDATION" value="true" />
     <method v="2">
-      <option name="Gradle.BeforeRunTask" enabled="true" tasks="uninstallDebug" externalProjectPath="$PROJECT_DIR$/app" vmOptions="" scriptParameters="" />
+      <option name="Gradle.BeforeRunTask" enabled="true" tasks="uninstall" externalProjectPath="$PROJECT_DIR$/app" vmOptions="" scriptParameters="" />
       <option name="Android.Gradle.BeforeRunTask" enabled="true" />
     </method>
   </configuration>
@@ -141,7 +141,7 @@
     <option name="SEARCH_ACTIVITY_IN_GLOBAL_SCOPE" value="false" />
     <option name="SKIP_ACTIVITY_VALIDATION" value="true" />
     <method v="2">
-      <option name="Gradle.BeforeRunTask" enabled="true" tasks="uninstallDebug" externalProjectPath="$PROJECT_DIR$/app" vmOptions="" scriptParameters="" />
+      <option name="Gradle.BeforeRunTask" enabled="true" tasks="uninstall" externalProjectPath="$PROJECT_DIR$/app" vmOptions="" scriptParameters="" />
       <option name="Android.Gradle.BeforeRunTask" enabled="true" />
     </method>
   </configuration>
@@ -214,6 +214,7 @@
     <option name="SEARCH_ACTIVITY_IN_GLOBAL_SCOPE" value="false" />
     <option name="SKIP_ACTIVITY_VALIDATION" value="true" />
     <method v="2">
+      <option name="Gradle.BeforeRunTask" enabled="true" tasks="uninstall" externalProjectPath="$PROJECT_DIR$/app" vmOptions="" scriptParameters="" />
       <option name="Android.Gradle.BeforeRunTask" enabled="true" />
     </method>
   </configuration>

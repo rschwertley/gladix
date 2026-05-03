@@ -238,6 +238,16 @@ class DeezerApi(private val session: DeezerSession) {
         }
     }
 
+    suspend fun getRestApi(url: String): JsonObject = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+        clientNP.newCall(request).await().use { response ->
+            response.body.source().let { decodeJsonStream(it.inputStream()) }
+        }
+    }
+
     suspend fun callAppApi(
         method: String,
         paramsBuilder: JsonObjectBuilder.() -> Unit = {}
@@ -418,6 +428,12 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun followArtist(id: String) = deezerArtist.followArtist(id)
 
     suspend fun unfollowArtist(id: String) = deezerArtist.unfollowArtist(id)
+
+    suspend fun artistAlbums(id: String, index: Int): JsonObject = deezerArtist.artistAlbums(id, index)
+
+    suspend fun artistTop(id: String, index: Int): JsonObject = deezerArtist.artistTop(id, index)
+
+    suspend fun artistRelated(id: String, index: Int): JsonObject = deezerArtist.artistRelated(id, index)
 
     //<============= Albums =============>
 

@@ -175,6 +175,63 @@ class DeezerParser(private val session: DeezerSession) {
         )
     }
 
+    fun JsonObject.toTrackFromRestApi(): Track {
+        val titleVersion = str("title_version")
+        val albumObj = this["album"]?.jsonObject
+        val artistObj = this["artist"]?.jsonObject
+        val cover = albumObj?.let {
+            (it.str("cover_medium") ?: it.str("cover"))?.takeIf { url -> url.isNotEmpty() }?.toImageHolder()
+        }
+        return Track(
+            id = str("id").orEmpty(),
+            title = buildString {
+                append(str("title").orEmpty())
+                if (!titleVersion.isNullOrEmpty()) append(" ").append(titleVersion)
+            },
+            cover = cover,
+            duration = str("duration")?.toLongOrNull()?.times(1000),
+            isExplicit = str("explicit_lyrics") == "true",
+            artists = artistObj?.let {
+                listOf(Artist(
+                    id = it.str("id").orEmpty(),
+                    name = it.str("name").orEmpty(),
+                    cover = (it.str("picture_medium") ?: it.str("picture"))
+                        ?.takeIf { url -> url.isNotEmpty() }?.toImageHolder()
+                ))
+            } ?: emptyList(),
+            album = albumObj?.let {
+                Album(
+                    id = it.str("id").orEmpty(),
+                    title = it.str("title").orEmpty(),
+                    cover = cover
+                )
+            },
+            extras = mapOf("TYPE" to "cover")
+        )
+    }
+
+    fun JsonObject.toArtistFromRestApi(): Artist {
+        return Artist(
+            id = str("id").orEmpty(),
+            name = str("name").orEmpty(),
+            cover = (str("picture_medium") ?: str("picture"))
+                ?.takeIf { it.isNotEmpty() }?.toImageHolder(),
+            extras = mapOf("followers" to (str("nb_fan") ?: "0"))
+        )
+    }
+
+    fun JsonObject.toAlbumFromRestApi(artist: Artist): Album {
+        val releaseDate = str("release_date")?.toDate()
+        return Album(
+            id = str("id").orEmpty(),
+            title = str("title").orEmpty(),
+            cover = (str("cover_medium") ?: str("cover"))?.takeIf { it.isNotEmpty() }?.toImageHolder(),
+            artists = listOf(artist),
+            releaseDate = releaseDate,
+            subtitle = releaseDate?.toString()
+        )
+    }
+
     fun JsonObject.toArtist(isShelfItem: Boolean = false): Artist {
         val artistData = when {
             isShelfItem && this["data"] == null -> this

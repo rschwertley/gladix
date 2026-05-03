@@ -191,7 +191,7 @@ class MediaHeaderAdapter(
                 if (state.isFollowed == true) R.string.unfollow else R.string.follow
             )
 
-            savedButton.isVisible = state.isSaved != null
+            savedButton.isVisible = state.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable)
             savedButton.isChecked = state.isSaved ?: false
             savedButton.contentDescription = root.context.getString(
                 if (state.isSaved == true) R.string.unsave else R.string.save
@@ -435,6 +435,17 @@ class MediaHeaderAdapter(
             }
 
             override fun onSavedClicked(view: View, saved: Boolean) {
+                if (!saved) {
+                    val item = viewModel.itemResultFlow.value?.getOrNull()?.item
+                    if (item is Playlist && !item.isEditable) {
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setMessage(getString(R.string.remove_from_library_confirm, item.title))
+                            .setNegativeButton(R.string.cancel, null)
+                            .setPositiveButton(R.string.remove) { _, _ -> viewModel.saveToLibrary(false) }
+                            .show()
+                        return
+                    }
+                }
                 viewModel.saveToLibrary(saved)
             }
 

@@ -213,6 +213,18 @@
                     app:icon="@drawable/ic_person" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/credit_echo"
+                    style="@style/SideBarButton"
+                    android:text="@string/credit_echo"
+                    app:icon="@drawable/ic_github" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/credit_deezer"
+                    style="@style/SideBarButton"
+                    android:text="@string/credit_deezer"
+                    app:icon="@drawable/ic_github" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/donate"
                     style="@style/SideBarButton"
                     android:backgroundTint="?colorSecondary"
@@ -266,13 +278,6 @@
                 android:text="@string/version"
                 android:textAlignment="center" />
 
-            <ImageView
-                android:id="@+id/shivam"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
-                android:src="@drawable/art_shivam"
-                tools:ignore="ContentDescription" />
         </LinearLayout>
 
     </androidx.core.widget.NestedScrollView>

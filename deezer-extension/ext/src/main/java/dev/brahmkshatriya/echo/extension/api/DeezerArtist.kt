@@ -28,6 +28,21 @@ class DeezerArtist(private val deezerApi: DeezerApi) {
         )
     }
 
+    suspend fun artistAlbums(id: String, index: Int): JsonObject {
+        val url = "https://api.deezer.com/artist/$id/albums?limit=50&index=$index"
+        return deezerApi.getRestApi(url)
+    }
+
+    suspend fun artistTop(id: String, index: Int): JsonObject {
+        val url = "https://api.deezer.com/artist/$id/top?limit=50&index=$index"
+        return deezerApi.getRestApi(url)
+    }
+
+    suspend fun artistRelated(id: String, index: Int): JsonObject {
+        val url = "https://api.deezer.com/artist/$id/related?limit=50&index=$index"
+        return deezerApi.getRestApi(url)
+    }
+
     suspend fun followArtist(id: String) {
         deezerApi.callApi(
             method = "artist.addFavorite",
