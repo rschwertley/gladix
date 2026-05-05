@@ -55,6 +55,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -159,10 +160,15 @@ abstract class AndroidAutoCallback(
         pageSize: Int,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.futureCatching {
-        val extensions = extensionList.value
+        val extensions = if (parentId == ROOT) {
+            withTimeoutOrNull(10_000L) { extensionList.first { it.isNotEmpty() } }
+                ?: return@futureCatching LibraryResult.ofError(
+                    SessionError(SessionError.ERROR_IO, context.getString(R.string.auto_timed_out))
+                )
+        } else extensionList.value
         if (parentId == ROOT) {
             val enabled = extensions.filter { it.isEnabled }
-            Log.d("GladixAuto", "onGetChildren ROOT: extensionList.value.size=${extensions.size} enabled=${enabled.size}, ids=${enabled.map { it.id }}")
+            Log.d("GladixAuto", "onGetChildren ROOT: extensionList.first size=${extensions.size} enabled=${enabled.size}, ids=${enabled.map { it.id }}")
             return@futureCatching LibraryResult.ofItemList(
                 enabled.map { it.toMediaItem(context) },
                 null

@@ -131,7 +131,7 @@ class SettingsBottomSheet : BottomSheetDialogFragment(R.layout.dialog_settings) 
 
         binding.wiki.setOnClickListener {
             dismiss()
-            requireActivity().openLink("https://wotaku.wiki/guides/music/echo")
+            requireActivity().openLink("https://github.com/rschwertley/echo#readme")
         }
 
         val repo = getString(R.string.app_github_repo)

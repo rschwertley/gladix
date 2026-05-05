@@ -370,13 +370,15 @@ class UiViewModel(
                 uiViewModel.navigation.value = uiViewModel.navIds.indexOf(it.itemId)
                 true
             }
+            var hasUserInteracted = false
             navView.menu.forEach {
+                val itemIndex = uiViewModel.navIds.indexOf(it.itemId)
+                val itemId = it.itemId
                 findViewById<View>(it.itemId).setOnClickListener { _ ->
-                    uiViewModel.run {
-                        if (navigation.value == navIds.indexOf(it.itemId))
-                            emit(navigationReselected, navIds.indexOf(it.itemId))
-                    }
-                    navView.selectedItemId = it.itemId
+                    if (hasUserInteracted && navView.selectedItemId == itemId)
+                        uiViewModel.run { emit(navigationReselected, itemIndex) }
+                    hasUserInteracted = true
+                    navView.selectedItemId = itemId
                 }
             }
 

@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Gladix splash screen icon animation.  Total runtime ~1300 ms.
+    Gladix splash screen icon animation. Total runtime 500ms (matches windowSplashScreenAnimationDuration).
 
-    Phase 1 (0–300 ms)  : purple ring fades in + scales from 0.7 → 1.0
-    Phase 2 (300–800 ms): magenta bolt fades in (alpha 0 → 1)
-    Phase 3 (900–1300 ms): brief pulse — bolt scales 1.0 → 1.08 → 1.0
-
-    The vector has no background fill; the splash-screen background
-    (windowSplashScreenBackground / windowSplashScreenIconBackgroundColor)
-    shows through everywhere the ring and bolt are not drawn.
+    Phase 1 (0–160ms)  : purple ring fades in + spins 0→360°
+    Phase 2 (130–330ms): magenta bolt draws itself top→bottom via trimPathEnd 0→1
+    Phase 3 (360–500ms): bolt scale pulse + colour brightens to simulate glow
 -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
@@ -20,17 +16,12 @@
             android:viewportWidth="24"
             android:viewportHeight="24">
 
-            <!--
-                Purple ring — stroke-only circle, no fill.
-                Starts transparent and scaled down so Phase 1 animates it in.
-            -->
             <group
                 android:name="ringGroup"
                 android:alpha="0"
                 android:pivotX="12"
                 android:pivotY="12"
-                android:scaleX="0.7"
-                android:scaleY="0.7">
+                android:rotation="0">
                 <path
                     android:fillColor="#00000000"
                     android:pathData="M 12 2 A 10 10 0 0 1 22 12 A 10 10 0 0 1 12 22 A 10 10 0 0 1 2 12 A 10 10 0 0 1 12 2"
@@ -38,99 +29,107 @@
                     android:strokeWidth="1.5" />
             </group>
 
-            <!--
-                Magenta lightning bolt — pointed top (14,4), Z-shape, pointed bottom (10,20).
-                Starts invisible (alpha=0); Phase 2 fades it in.
-                Pivot at centre (12,12) for the Phase 3 scale pulse.
-            -->
             <group
                 android:name="boltGroup"
-                android:alpha="0"
                 android:pivotX="12"
                 android:pivotY="12">
                 <path
+                    android:name="boltPath"
                     android:fillColor="#e6007a"
-                    android:pathData="M 14 4 L 9 13 L 13 13 L 10 20 L 15 11 L 11 11 Z" />
+                    android:pathData="M 14 4 L 9 13 L 13 13 L 10 20 L 15 11 L 11 11 Z"
+                    android:trimPathEnd="0" />
             </group>
         </vector>
     </aapt:attr>
 
-    <!-- Phase 1 (0–300 ms): ring fades in and scales up from 0.7 → 1.0 -->
+    <!-- Phase 1 (0–160ms): ring fades in and spins 0→360° -->
     <target android:name="ringGroup">
         <aapt:attr name="android:animation">
             <set android:ordering="together">
                 <objectAnimator
-                    android:duration="300"
+                    android:duration="160"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="alpha"
                     android:valueFrom="0"
                     android:valueTo="1"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="300"
+                    android:duration="160"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
-                    android:propertyName="scaleX"
-                    android:valueFrom="0.7"
-                    android:valueTo="1.0"
-                    android:valueType="floatType" />
-                <objectAnimator
-                    android:duration="300"
-                    android:interpolator="@android:interpolator/fast_out_slow_in"
-                    android:propertyName="scaleY"
-                    android:valueFrom="0.7"
-                    android:valueTo="1.0"
+                    android:propertyName="rotation"
+                    android:valueFrom="0"
+                    android:valueTo="360"
                     android:valueType="floatType" />
             </set>
         </aapt:attr>
     </target>
 
-    <!--
-        Phase 2 + Phase 3 (300–1300 ms):
-          300–800 ms  bolt fades in (alpha 0 → 1)
-          900–1050 ms bolt scales up (pulse out)
-          1050–1300 ms bolt scales back to rest (settle)
-    -->
-    <target android:name="boltGroup">
+    <!-- Phase 2 (130–330ms): bolt draws top→bottom; Phase 3 colour glow at 360ms -->
+    <target android:name="boltPath">
         <aapt:attr name="android:animation">
             <set android:ordering="together">
                 <objectAnimator
-                    android:duration="500"
+                    android:duration="200"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
-                    android:propertyName="alpha"
-                    android:startOffset="300"
+                    android:propertyName="trimPathEnd"
+                    android:startOffset="130"
                     android:valueFrom="0"
                     android:valueTo="1"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="150"
+                    android:duration="65"
+                    android:interpolator="@android:interpolator/fast_out_slow_in"
+                    android:propertyName="fillColor"
+                    android:startOffset="360"
+                    android:valueFrom="#e6007a"
+                    android:valueTo="#ff66cc"
+                    android:valueType="colorType" />
+                <objectAnimator
+                    android:duration="75"
+                    android:interpolator="@android:interpolator/fast_out_slow_in"
+                    android:propertyName="fillColor"
+                    android:startOffset="425"
+                    android:valueFrom="#ff66cc"
+                    android:valueTo="#e6007a"
+                    android:valueType="colorType" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <!-- Phase 3 (360–500ms): bolt scale pulse synced with colour glow -->
+    <target android:name="boltGroup">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator
+                    android:duration="65"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleX"
-                    android:startOffset="900"
+                    android:startOffset="360"
                     android:valueFrom="1.0"
-                    android:valueTo="1.08"
+                    android:valueTo="1.1"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="150"
+                    android:duration="65"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleY"
-                    android:startOffset="900"
+                    android:startOffset="360"
                     android:valueFrom="1.0"
-                    android:valueTo="1.08"
+                    android:valueTo="1.1"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="250"
+                    android:duration="75"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleX"
-                    android:startOffset="1050"
-                    android:valueFrom="1.08"
+                    android:startOffset="425"
+                    android:valueFrom="1.1"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="250"
+                    android:duration="75"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleY"
-                    android:startOffset="1050"
-                    android:valueFrom="1.08"
+                    android:startOffset="425"
+                    android:valueFrom="1.1"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
             </set>

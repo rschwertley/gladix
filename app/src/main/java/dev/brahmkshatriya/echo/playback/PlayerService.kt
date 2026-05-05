@@ -106,6 +106,8 @@ class PlayerService : MediaLibraryService() {
     private val downloader by inject<Downloader>()
     private val downloadFlow by lazy { downloader.flow }
 
+    @Volatile private var foregroundStartSuppressed = false
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
@@ -191,9 +193,14 @@ class PlayerService : MediaLibraryService() {
             // rather than startForegroundService(), so mAllowStartForeground=false and
             // startForeground() is rejected. No 5-second obligation exists for bind-started
             // services; the service runs as bound until startForegroundService() elevates it.
+            // foregroundStartSuppressed is set so onUpdateNotification() can retry once Media3
+            // posts a real notification and the AA binding chain has had time to allow it.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 e.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
-            ) return
+            ) {
+                foregroundStartSuppressed = true
+                return
+            }
             throw e
         }
     }
@@ -203,8 +210,40 @@ class PlayerService : MediaLibraryService() {
     // on API 31+ when the service was started via bindService() rather than startForegroundService().
     // We can't patch Media3's internal code, but onUpdateNotification() is the last public override
     // point before execution enters MediaNotificationManager, so we catch the exception here.
+    //
+    // If the initial startForegroundCompat() was suppressed (foregroundStartSuppressed == true),
+    // we attempt to promote to foreground here before delegating to Media3, closing the vulnerable
+    // window between the AA bind and the first real media notification.
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
+        if (foregroundStartSuppressed) {
+            try {
+                val placeholder = NotificationCompat.Builder(
+                    this, DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
+                )
+                    .setSmallIcon(R.drawable.ic_mono)
+                    .setSilent(true)
+                    .build()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
+                        placeholder,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(
+                        DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
+                        placeholder
+                    )
+                }
+                foregroundStartSuppressed = false
+            } catch (e: Exception) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    e.javaClass.name != "android.app.ForegroundServiceStartNotAllowedException"
+                ) throw e
+                // Still not allowed — remain suppressed, try again on the next update
+            }
+        }
         try {
             super.onUpdateNotification(session, startInForeground)
         } catch (e: Exception) {

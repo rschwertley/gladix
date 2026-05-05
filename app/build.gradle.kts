@@ -104,3 +104,17 @@ if (hasGoogleServices) {
 fun execute(vararg command: String): String = providers.exec {
     commandLine(*command)
 }.standardOutput.asText.get().trim()
+
+// After a debug install, spoof the installer package so Android Auto treats the app
+// as Play Store-installed and allows it through its signature/installer check.
+// Scoped to installDebug only — release/nightly/stable installs from the store
+// already carry the correct installer record and must not be overwritten.
+afterEvaluate {
+    tasks.findByName("installDebug")?.doLast {
+        val adb = android.sdkDirectory.resolve("platform-tools/adb").absolutePath
+        ProcessBuilder(
+            adb, "shell", "cmd", "package", "set-installer",
+            android.defaultConfig.applicationId!!, "com.android.vending"
+        ).inheritIO().start().waitFor()
+    }
+}
