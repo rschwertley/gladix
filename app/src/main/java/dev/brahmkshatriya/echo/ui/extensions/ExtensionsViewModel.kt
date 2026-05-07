@@ -139,7 +139,13 @@ class ExtensionsViewModel(
 
     private suspend fun updateExt(ext: Extension<*>, show: Boolean = false) {
         val file = getExtensionUpdate(ext, show) ?: return
-        install(ext.id, ext.metadata.importType, file).onFailure {
+        val type = ext.metadata.importType
+        if (type == ImportType.File) {
+            installPromptFlow.emit(file)
+            val result = promptResultFlow.first { it.file == file }
+            if (!result.accepted) return
+        }
+        install(ext.id, type, file).onFailure {
             app.throwFlow.emit(it)
             return
         }

@@ -360,6 +360,31 @@ abstract class AndroidAutoCallback(
             ).await(context)
         }
 
+        // Single-track tap from a playlist/album: expand to full queue at correct position
+        if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith("auto/")) {
+            val autoId = mediaItems[0].mediaId.substringAfter("auto/")
+            val cached = context.getFromCache<Triple<Track, String, EchoMediaItem?>>(autoId, "auto")
+            if (cached != null) {
+                val (track, extId, con) = cached
+                if (con is EchoMediaItem.Lists) {
+                    val tracksEntry = tracksMap.values.find { (item, _) ->
+                        item is EchoMediaItem.Lists && item.id == con.id
+                    }
+                    if (tracksEntry != null) {
+                        val (item, pagedData) = tracksEntry
+                        val allTracks = pagedData.loadAll()
+                        val tappedIndex = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                        val allItems = allTracks.map {
+                            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
+                        }
+                        return@future super.onSetMediaItems(
+                            mediaSession, controller, allItems.toMutableList(), tappedIndex, startPositionMs
+                        ).await(context)
+                    }
+                }
+            }
+        }
+
         val new = mediaItems.mapNotNull {
             if (it.mediaId.startsWith("auto/")) {
                 val id = it.mediaId.substringAfter("auto/")
