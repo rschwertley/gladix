@@ -11,7 +11,21 @@
       "Bash(javap -c -p \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
       "Bash(javap -p -c \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
       "Bash(javap -verbose \"androidx/media3/session/DefaultMediaNotificationProvider.class\")",
-      "Bash(find *)"
+      "Bash(find *)",
+      "Bash(sort -k2)",
+      "Bash(git log *)",
+      "Bash(git ls-tree *)",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(git restore *)",
+      "Bash(git cherry-pick *)",
+      "Bash(grep -n \"link.deezer.com\\\\|dzr.page.link\" deezer-extension/app/src/main/AndroidManifest.xml)",
+      "Bash(grep -n \"link.deezer.com\\\\|dzr.page.link\" app/src/main/AndroidManifest.xml)",
+      "Bash(findstr *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }

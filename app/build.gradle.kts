@@ -11,7 +11,7 @@ plugins {
 val hasGoogleServices = file("google-services.json").exists()
 val gitHash = runCatching { execute("git", "rev-parse", "HEAD").take(7) }.getOrDefault("dev")
 val gitCount = runCatching { execute("git", "rev-list", "--count", "HEAD").toInt() }.getOrDefault(1)
-val isDirty = runCatching { execute("git", "status", "--porcelain").isNotEmpty() }.getOrDefault(false)
+val isDirty = runCatching { execute("git", "status", "--porcelain", "-uno").isNotEmpty() }.getOrDefault(false)
 val version = "3.0.$gitCount"
 
 android {
@@ -35,6 +35,7 @@ android {
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
             )
+            ndk.debugSymbolLevel = "FULL"
         }
         create("nightly") {
             initWith(getByName("release"))
