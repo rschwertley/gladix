@@ -35,7 +35,6 @@ android {
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
             )
-            ndk.debugSymbolLevel = "FULL"
         }
         create("nightly") {
             initWith(getByName("release"))

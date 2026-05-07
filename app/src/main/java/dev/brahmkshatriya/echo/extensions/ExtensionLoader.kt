@@ -80,8 +80,6 @@ class ExtensionLoader(
     val fileIgnoreFlow = MutableSharedFlow<File?>()
     private val repository = CombinedRepository(
         scope, app.context, fileIgnoreFlow, parser,
-        UnifiedExtension.metadata to unified,
-        OfflineExtension.metadata to lazy { OfflineExtension(app.context) },
         Metadata(
             className = "dev.brahmkshatriya.echo.extension.DeezerExtension",
             path = "",
@@ -99,6 +97,8 @@ class ExtensionLoader(
             preservedPackages = emptyList(),
             isEnabled = true,
         ) to lazy { DeezerExtension() },
+        UnifiedExtension.metadata to unified,
+        OfflineExtension.metadata to lazy { OfflineExtension(app.context) },
 //        TestExtension.metadata to lazy { TestExtension() },
 //        DownloadExtension.metadata to lazy { DownloadExtension(app.context) }
 //        TrackerTestExtension.metadata to Injectable { TrackerTestExtension() },

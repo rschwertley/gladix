@@ -370,14 +370,15 @@ class UiViewModel(
                 uiViewModel.navigation.value = uiViewModel.navIds.indexOf(it.itemId)
                 true
             }
-            var hasUserInteracted = false
+            var lastTappedItemId: Int? = null
             navView.menu.forEach {
                 val itemIndex = uiViewModel.navIds.indexOf(it.itemId)
                 val itemId = it.itemId
                 findViewById<View>(it.itemId).setOnClickListener { _ ->
-                    if (hasUserInteracted && navView.selectedItemId == itemId)
+                    val isCurrentTab = navView.selectedItemId == itemId
+                    if (isCurrentTab && lastTappedItemId == itemId)
                         uiViewModel.run { emit(navigationReselected, itemIndex) }
-                    hasUserInteracted = true
+                    lastTappedItemId = if (isCurrentTab) itemId else null
                     navView.selectedItemId = itemId
                 }
             }

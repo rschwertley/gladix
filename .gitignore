@@ -9,6 +9,7 @@
 .cxx
 local.properties
 .kotlin
+.claude/settings.local.json
 
 # Secrets and API Keys
 secrets.xml
