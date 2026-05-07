@@ -29,6 +29,11 @@ data class App(
     val messageFlow = MutableSharedFlow<Message>()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Updated by PlayerService whenever player state changes; read at crash-record time.
+    @Volatile var crashExtensionId: String = "none"
+    @Volatile var crashPlayerState: Int = 1  // Player.STATE_IDLE
+    @Volatile var crashIsPlaying: Boolean = false
+
     private suspend fun getCache() = FileKache(
         context.cacheDir.resolve("kache").toString(),
         50 * 1024 * 1024
@@ -51,7 +56,12 @@ data class App(
         scope.launch {
             throwFlow.collectLatest {
                 it.printStackTrace()
-                FirebaseCrashlytics.getInstance().recordException(it)
+                FirebaseCrashlytics.getInstance().apply {
+                    setCustomKey("extension_id", crashExtensionId)
+                    setCustomKey("player_state", crashPlayerState)
+                    setCustomKey("is_playing", crashIsPlaying)
+                    recordException(it)
+                }
             }
         }
         val connectivityManager =

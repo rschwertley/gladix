@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
@@ -38,6 +39,7 @@ import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
@@ -140,6 +142,17 @@ class PlayerService : MediaLibraryService() {
             TrackingListener(player, scope, extensions, state.current, app.throwFlow, historyRepository)
         )
         player.addListener(effects)
+        player.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                app.crashPlayerState = playbackState
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                app.crashIsPlaying = isPlaying
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                app.crashExtensionId = mediaItem?.extensionId ?: "none"
+            }
+        })
         app.settings.registerOnSharedPreferenceChangeListener(listener)
 
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
