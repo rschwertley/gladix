@@ -34,7 +34,6 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
-import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
@@ -134,17 +133,8 @@ object Cached {
 
     suspend fun loadStreamableMedia(
         app: App, extension: Extension<*>, track: Track, streamable: Streamable,
-    ) = runCatching {
-        val fileCache = app.fileCache.await()
-        val extId = track.extras[EXTENSION_ID] ?: extension.id
-        val id = "media-${extId}-${track.id}-${streamable.id}"
-        val media = extension.getAs<TrackClient, Streamable.Media> {
-            loadStreamableMedia(streamable, false)
-        }.getOrElse { throwable ->
-            fileCache.getData<Streamable.Media>(id).getOrNull() ?: throw throwable
-        }
-        fileCache.putData(id, media)
-        media
+    ) = extension.getAs<TrackClient, Streamable.Media> {
+        loadStreamableMedia(streamable, false)
     }
 
     suspend fun getTracks(

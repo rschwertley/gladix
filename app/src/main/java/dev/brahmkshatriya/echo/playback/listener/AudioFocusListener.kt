@@ -7,73 +7,103 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import androidx.media3.common.Player
-import androidx.media3.common.Player.PlaybackSuppressionReason
 
 @Suppress("DEPRECATION")
 class AudioFocusListener(
     val context: Context,
     val player: Player
 ) : Player.Listener {
+
     private val handler = Handler(context.mainLooper)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private lateinit var focusRequest: AudioFocusRequest
 
-    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener {
-        if (it == AudioManager.AUDIOFOCUS_GAIN) {
-            player.apply {
-                setAudioAttributes(audioAttributes, true)
-                seekTo(currentPosition)
+    private var pausedForFocus = false
+    private var loweringVolume = false
+
+    // Fires after the grace window expires — commits the pause caused by AUDIOFOCUS_LOSS
+    private val commitPauseRunnable = Runnable {
+        pausedForFocus = true
+        player.pause()
+    }
+
+    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                handler.removeCallbacks(commitPauseRunnable)
+                if (loweringVolume) {
+                    player.volume = 1f
+                    loweringVolume = false
+                }
+                if (pausedForFocus) {
+                    pausedForFocus = false
+                    player.play()
+                }
             }
-            abandonRequest()
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // Grace window: if AUDIOFOCUS_GAIN arrives within 1.5s treat as transient
+                if (player.playWhenReady) {
+                    handler.removeCallbacks(commitPauseRunnable)
+                    handler.postDelayed(commitPauseRunnable, GRACE_WINDOW_MS)
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                handler.removeCallbacks(commitPauseRunnable)
+                if (player.playWhenReady) {
+                    pausedForFocus = true
+                    player.pause()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                player.volume = DUCK_VOLUME
+                loweringVolume = true
+            }
         }
     }
 
+    private val focusRequest: AudioFocusRequest? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener(focusChangeListener, handler)
+            .build()
+    } else null
+
+    init {
+        requestFocus()
+    }
 
     private fun requestFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            audioManager.requestAudioFocus(focusRequest)
+            audioManager.requestAudioFocus(focusRequest!!)
         else audioManager.requestAudioFocus(
-            audioFocusChangeListener,
+            focusChangeListener,
             AudioManager.STREAM_MUSIC,
             AudioManager.AUDIOFOCUS_GAIN
         )
     }
 
-    private fun abandonRequest() {
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+            // User explicitly paused — cancel any pending grace-window commit and stop tracking
+            pausedForFocus = false
+            handler.removeCallbacks(commitPauseRunnable)
+        }
+    }
+
+    fun release() {
+        handler.removeCallbacks(commitPauseRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            audioManager.abandonAudioFocusRequest(focusRequest)
-        else audioManager.abandonAudioFocus(audioFocusChangeListener)
+            audioManager.abandonAudioFocusRequest(focusRequest!!)
+        else audioManager.abandonAudioFocus(focusChangeListener)
     }
 
-    init {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).run {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                setAcceptsDelayedFocusGain(true)
-                setOnAudioFocusChangeListener(audioFocusChangeListener, handler)
-                build()
-            }
-        }
-
-        //TODO fix this to support player to play in calls
-        // if the audio suppression was not there from the start
-        // https://github.com/androidx/media/issues/1716
-        onPlaybackSuppressionReasonChanged(player.playbackSuppressionReason)
-    }
-
-    override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: @PlaybackSuppressionReason Int) {
-        if (playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS) {
-            player.apply {
-                setAudioAttributes(audioAttributes, false)
-                player.playWhenReady = false
-                seekTo(currentPosition)
-            }
-            requestFocus()
-        }
+    companion object {
+        private const val GRACE_WINDOW_MS = 1500L
+        private const val DUCK_VOLUME = 0.2f
     }
 }

@@ -41,6 +41,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
+import dev.brahmkshatriya.echo.playback.listener.AudioFocusListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
@@ -71,6 +72,8 @@ class PlayerService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
+
+    private lateinit var audioFocusListener: AudioFocusListener
 
     private val app by inject<App>()
     private val state by inject<PlayerState>()
@@ -142,6 +145,8 @@ class PlayerService : MediaLibraryService() {
             TrackingListener(player, scope, extensions, state.current, app.throwFlow, historyRepository)
         )
         player.addListener(effects)
+        audioFocusListener = AudioFocusListener(this, player)
+        player.addListener(audioFocusListener)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 app.crashPlayerState = playbackState
@@ -269,6 +274,7 @@ class PlayerService : MediaLibraryService() {
 
     override fun onDestroy() {
         mediaSession?.run {
+            audioFocusListener.release()
             player.release()
             release()
             mediaSession = null
@@ -308,7 +314,7 @@ class PlayerService : MediaLibraryService() {
             .setRenderersFactory(RenderersFactory(this, crossfadeProcessor))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setAudioAttributes(audioAttributes, true)
+            .setAudioAttributes(audioAttributes, false)
             .build()
             .also {
                 it.trackSelectionParameters = it.trackSelectionParameters

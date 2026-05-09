@@ -30,7 +30,6 @@ class DeezerLibraryClient(
         Tab(TabId.ALBUMS.id, "Albums"),
         Tab(TabId.TRACKS.id, "Tracks"),
         Tab(TabId.ARTISTS.id, "Artists"),
-        Tab(TabId.SHOWS.id, "Podcasts")
     )
 
     private data class TabConfig(
@@ -45,8 +44,7 @@ class DeezerLibraryClient(
         PLAYLISTS("playlists"),
         ALBUMS("albums"),
         TRACKS("tracks"),
-        ARTISTS("artists"),
-        SHOWS("shows")
+        ARTISTS("artists")
     }
 
     private val configs: Map<String, TabConfig> = listOf(
@@ -54,7 +52,6 @@ class DeezerLibraryClient(
         TabConfig(TabId.ALBUMS, "Albums", { getAlbums() }) { it.tabDataArray("albums") },
         TabConfig(TabId.TRACKS, "Tracks", { getTracks() }) { it.resultsDataArray() },
         TabConfig(TabId.ARTISTS, "Artists", { getArtists() }) { it.tabDataArray("artists") },
-        TabConfig(TabId.SHOWS, "Podcasts", { getShows() }) { it.tabDataArray("shows") },
     ).associateBy { it.id.id }
 
 

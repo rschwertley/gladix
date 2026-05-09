@@ -26,7 +26,7 @@ class DeezerShow(private val deezerApi: DeezerApi) {
             method = "deezer.pageProfile",
             paramsBuilder = {
                 put("user_id", userId)
-                put("tab", "podcasts")
+                put("tab", "shows")
                 put("nb", 2000)
             }
         )
