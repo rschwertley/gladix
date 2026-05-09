@@ -12,12 +12,12 @@ import kotlin.math.pow
 @OptIn(UnstableApi::class)
 class GainNormalizationProcessor : BaseAudioProcessor() {
 
-    @Volatile var enabled = true
+    @Volatile var enabled = false
     private val gainMultiplier = AtomicReference(1f)
     private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
 
     fun setTrackGain(gainDb: Float) {
-        gainMultiplier.set(10f.pow(gainDb / 20f).coerceIn(0.1f, 10f))
+        gainMultiplier.set(10f.pow(gainDb / 20f).coerceIn(1f, 10f))
     }
 
     fun resetGain() {

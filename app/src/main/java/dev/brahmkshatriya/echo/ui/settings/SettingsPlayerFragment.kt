@@ -133,7 +133,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     summary = getString(R.string.loudness_normalization_summary)
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
-                    setDefaultValue(true)
+                    setDefaultValue(false)
                     addPreference(this)
                 }
 

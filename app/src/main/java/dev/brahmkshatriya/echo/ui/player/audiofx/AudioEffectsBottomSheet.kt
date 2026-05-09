@@ -120,7 +120,7 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             }
             equalizer.setOnClickListener { onEqualizerClicked() }
 
-            loudnessNormalizationSwitch.isChecked = appSettings.getBoolean(LOUDNESS_NORMALIZATION, true)
+            loudnessNormalizationSwitch.isChecked = appSettings.getBoolean(LOUDNESS_NORMALIZATION, false)
             loudnessNormalization.setOnClickListener {
                 loudnessNormalizationSwitch.isChecked = !loudnessNormalizationSwitch.isChecked
             }

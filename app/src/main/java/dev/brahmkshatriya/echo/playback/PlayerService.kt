@@ -91,7 +91,7 @@ class PlayerService : MediaLibraryService() {
 
     private val gainNormalizationProcessor by lazy {
         GainNormalizationProcessor().apply {
-            enabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, true)
+            enabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
         }
     }
 
@@ -105,7 +105,7 @@ class PlayerService : MediaLibraryService() {
                     .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
                     .build()
             LOUDNESS_NORMALIZATION -> {
-                gainNormalizationProcessor.enabled = prefs.getBoolean(key, true)
+                gainNormalizationProcessor.enabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
             }
             CROSSFADE_ENABLED -> {
@@ -361,8 +361,11 @@ class PlayerService : MediaLibraryService() {
 
     // Keep the service foreground as long as there is anything in the queue so that
     // paused playback survives overnight without being killed by the system.
+    // Default to true when mediaSession is null: isPlaybackOngoing() is called by Media3
+    // during super.onCreate() before our session is created, and returning false there
+    // causes an immediate stopSelf() → restart loop.
     override fun isPlaybackOngoing(): Boolean {
-        return mediaSession?.player?.let { it.mediaItemCount > 0 } ?: false
+        return mediaSession?.player?.let { it.mediaItemCount > 0 } ?: true
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
