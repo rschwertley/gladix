@@ -5,9 +5,11 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -48,6 +50,7 @@ import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
 import dev.brahmkshatriya.echo.playback.renderer.CrossfadeAudioProcessor
+import dev.brahmkshatriya.echo.playback.renderer.GainNormalizationProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
@@ -86,6 +89,12 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
+    private val gainNormalizationProcessor by lazy {
+        GainNormalizationProcessor().apply {
+            enabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, true)
+        }
+    }
+
     @OptIn(UnstableApi::class)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (key) {
@@ -95,6 +104,10 @@ class PlayerService : MediaLibraryService() {
                     .buildUpon()
                     .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
                     .build()
+            LOUDNESS_NORMALIZATION -> {
+                gainNormalizationProcessor.enabled = prefs.getBoolean(key, true)
+                effects.updateNormalizationSettings()
+            }
             CROSSFADE_ENABLED -> {
                 crossfadeProcessor.enabled = prefs.getBoolean(key, true)
                 effects.updateCrossfadeSettings()
@@ -105,7 +118,7 @@ class PlayerService : MediaLibraryService() {
             }
         }
     }
-    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, crossfadeProcessor) }
+    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, crossfadeProcessor, gainNormalizationProcessor) }
 
     private val historyRepository by inject<HistoryRepository>()
     private val downloader by inject<Downloader>()
@@ -159,6 +172,13 @@ class PlayerService : MediaLibraryService() {
             }
         })
         app.settings.registerOnSharedPreferenceChangeListener(listener)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(clearQueueReceiver, IntentFilter(ACTION_CLEAR_QUEUE),
+                RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(clearQueueReceiver, IntentFilter(ACTION_CLEAR_QUEUE))
+        }
 
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
             .setChannelName(R.string.app_name)
@@ -234,6 +254,8 @@ class PlayerService : MediaLibraryService() {
     // window between the AA bind and the first real media notification.
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
+        // Playback resumed — swap back to the media controls notification
+        if (pausedNotificationShowing && session.player.isPlaying) cancelPausedNotification()
         if (foregroundStartSuppressed) {
             try {
                 val placeholder = NotificationCompat.Builder(
@@ -273,6 +295,8 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        cancelPausedNotification()
+        unregisterReceiver(clearQueueReceiver)
         mediaSession?.run {
             audioFocusListener.release()
             player.release()
@@ -311,7 +335,7 @@ class PlayerService : MediaLibraryService() {
         )
 
         ExoPlayer.Builder(this, factory)
-            .setRenderersFactory(RenderersFactory(this, crossfadeProcessor))
+            .setRenderersFactory(RenderersFactory(this, crossfadeProcessor, gainNormalizationProcessor))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(audioAttributes, false)
@@ -327,6 +351,76 @@ class PlayerService : MediaLibraryService() {
     }
 
 
+    private var pausedNotificationShowing = false
+
+    private val clearQueueReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != ACTION_CLEAR_QUEUE) return
+            mediaSession?.player?.run {
+                clearMediaItems()
+                stop()
+            }
+            cancelPausedNotification()
+            stopSelf()
+        }
+    }
+
+    override fun onNotificationCancelled(notificationId: Int, dismissedByUser: Boolean) {
+        if (!dismissedByUser) {
+            super.onNotificationCancelled(notificationId, dismissedByUser)
+            return
+        }
+        val player = mediaSession?.player
+        if (player == null || player.mediaItemCount == 0) {
+            stopSelf()
+            return
+        }
+        showPausedNotification()
+    }
+
+    private fun showPausedNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            if (nm.getNotificationChannel(PAUSED_CHANNEL_ID) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        PAUSED_CHANNEL_ID,
+                        getString(R.string.playback_paused),
+                        NotificationManager.IMPORTANCE_LOW
+                    )
+                )
+            }
+        }
+        val clearIntent = PendingIntent.getBroadcast(
+            this, 0,
+            Intent(ACTION_CLEAR_QUEUE).setPackage(packageName),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, PAUSED_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_mono)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.playback_paused))
+            .setContentIntent(getPendingIntent(this))
+            .addAction(R.drawable.ic_close, getString(R.string.clear), clearIntent)
+            .setSilent(true)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(PAUSED_NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(PAUSED_NOTIFICATION_ID, notification)
+        }
+        pausedNotificationShowing = true
+    }
+
+    private fun cancelPausedNotification() {
+        if (!pausedNotificationShowing) return
+        getSystemService(NotificationManager::class.java).cancel(PAUSED_NOTIFICATION_ID)
+        pausedNotificationShowing = false
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         val stopPlayer = app.settings.getBoolean(CLOSE_PLAYER, false)
         val player = mediaSession?.player ?: return stopSelf()
@@ -336,7 +430,11 @@ class PlayerService : MediaLibraryService() {
     companion object {
         const val MORE_BRAIN_CAPACITY = "offload"
         const val CLOSE_PLAYER = "close_player"
+        private const val PAUSED_NOTIFICATION_ID = 2
+        private const val PAUSED_CHANNEL_ID = "gladix_paused_channel"
+        private const val ACTION_CLEAR_QUEUE = "dev.rschwertley.gladix.auto.CLEAR_QUEUE"
         const val SKIP_SILENCE = "skip_silence"
+        const val LOUDNESS_NORMALIZATION = "loudness_normalization"
         const val CROSSFADE_ENABLED = "crossfade_enabled"
         const val CROSSFADE_DURATION = "crossfade_duration"
 

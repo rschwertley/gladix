@@ -284,6 +284,7 @@ class DeezerParser(private val session: DeezerSession) {
                 put("TRACK_TOKEN", data.str("TRACK_TOKEN").orEmpty())
                 put("FILESIZE_MP3_MISC", data.str("FILESIZE_MP3_MISC") ?: "0")
                 put("TYPE", "cover")
+                put("GAIN", data.str("GAIN") ?: "0")
             }
         )
     }

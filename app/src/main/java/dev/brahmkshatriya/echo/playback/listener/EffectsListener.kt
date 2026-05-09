@@ -18,7 +18,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.PlayerMessage
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.copyTo
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.CrossfadeAudioProcessor
+import dev.brahmkshatriya.echo.playback.renderer.GainNormalizationProcessor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -29,6 +31,7 @@ class EffectsListener(
     private val context: Context,
     private val audioSessionFlow: MutableStateFlow<Int>,
     private val crossfadeProcessor: CrossfadeAudioProcessor,
+    private val gainNormalizationProcessor: GainNormalizationProcessor,
 ) : Player.Listener {
 
     init {
@@ -65,6 +68,7 @@ class EffectsListener(
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         applyCustomEffects()
+        applyGain(mediaItem)
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
         ) {
@@ -73,6 +77,13 @@ class EffectsListener(
             crossfadeProcessor.cancelFades()
         }
         scheduleFadeOut()
+    }
+
+    private fun applyGain(mediaItem: MediaItem?) {
+        val gainDb = runCatching {
+            mediaItem?.track?.extras?.get("GAIN")?.toFloatOrNull()
+        }.getOrNull() ?: 0f
+        gainNormalizationProcessor.setTrackGain(gainDb)
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -94,6 +105,14 @@ class EffectsListener(
         if (playbackState == Player.STATE_IDLE) {
             pendingFadeOutMessage?.cancel()
             pendingFadeOutMessage = null
+        }
+    }
+
+    fun updateNormalizationSettings() {
+        if (!gainNormalizationProcessor.enabled) {
+            gainNormalizationProcessor.resetGain()
+        } else {
+            applyGain(exoPlayer.currentMediaItem)
         }
     }
 

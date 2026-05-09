@@ -126,6 +126,9 @@
     <string name="skip_silence">Skip Silence</string>
     <string name="skip_silence_summary">Skip silent part in the song, to provide gapless playback.</string>
 
+    <string name="loudness_normalization">Loudness Normalization</string>
+    <string name="loudness_normalization_summary">Normalize volume levels between tracks</string>
+
     <string name="crossfade">Track Fade</string>
     <string name="crossfade_summary">Fade audio out at the end of each track and in at the start of the next</string>
     <string name="crossfade_duration">Fade Duration</string>
@@ -322,6 +325,8 @@
     <string name="add_to_next">Add to next</string>
     <string name="queue">Queue</string>
     <string name="add_to_queue">Add to queue</string>
+    <string name="playback_paused">Paused</string>
+    <string name="clear">Clear</string>
     <string name="loading_radio_for_x">Loading radio for %1$s</string>
     <string name="playing_x">Playing %1$s</string>
     <string name="adding_x_to_queue">Adding %1$s to queue</string>

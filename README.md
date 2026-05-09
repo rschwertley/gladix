@@ -72,6 +72,10 @@ Gladix is a personal build and is not distributed on the Play Store. To build fr
 
 To install extensions (Spotify, Tidal, etc.), download the respective `.eapk` files from the Echo community and open them on your device — Gladix will offer to install them.
 
+### Recommended Extensions
+
+**[Last.fm Scrobbler](https://github.com/rebelonion/echo-lastfm)** — Scrobbles your listening history to Last.fm in real time. Install the `.eapk` from that repo, open it on your device, and sign in with your Last.fm account. Once connected, every track you play in Gladix is logged to your Last.fm profile automatically.
+
 ---
 
 ## Credits
