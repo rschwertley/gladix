@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback
 
 import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
@@ -179,6 +180,13 @@ class ShufflePlayer(
         original = emptyList()
         player.clearMediaItems()
         log("Clear media items")
+    }
+
+    // Prevent Media3 session initialization from re-enabling AudioFocusManager.
+    // ForwardingPlayer.setAudioAttributes() would forward handleAudioFocus=true to ExoPlayer,
+    // causing Media3's internal AudioFocusManager to run in parallel with AudioFocusListener.
+    override fun setAudioAttributes(audioAttributes: AudioAttributes, handleAudioFocus: Boolean) {
+        super.setAudioAttributes(audioAttributes, false)
     }
 
     // Returns the start index into the full ExoPlayer timeline for a QUEUE_WINDOW_SIZE window

@@ -73,10 +73,6 @@ class AudioFocusListener(
             .build()
     } else null
 
-    init {
-        requestFocus()
-    }
-
     private fun requestFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             audioManager.requestAudioFocus(focusRequest!!)
@@ -87,19 +83,29 @@ class AudioFocusListener(
         )
     }
 
-    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-        if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
-            // User explicitly paused — cancel any pending grace-window commit and stop tracking
-            pausedForFocus = false
-            handler.removeCallbacks(commitPauseRunnable)
-        }
-    }
-
-    fun release() {
+    private fun abandonFocus() {
         handler.removeCallbacks(commitPauseRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             audioManager.abandonAudioFocusRequest(focusRequest!!)
         else audioManager.abandonAudioFocus(focusChangeListener)
+    }
+
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (playWhenReady) {
+            requestFocus()
+        } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && !pausedForFocus) {
+            // User explicitly paused (not focus-driven) — release focus so other apps can play
+            handler.removeCallbacks(commitPauseRunnable)
+            abandonFocus()
+        }
+    }
+
+    override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState == Player.STATE_IDLE) abandonFocus()
+    }
+
+    fun release() {
+        abandonFocus()
     }
 
     companion object {
