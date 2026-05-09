@@ -255,7 +255,6 @@ class PlayerService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
         // Playback resumed — swap back to the media controls notification
-        if (pausedNotificationShowing && session.player.isPlaying) cancelPausedNotification()
         if (foregroundStartSuppressed) {
             try {
                 val placeholder = NotificationCompat.Builder(
@@ -295,7 +294,6 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
-        cancelPausedNotification()
         unregisterReceiver(clearQueueReceiver)
         mediaSession?.run {
             audioFocusListener.release()
@@ -351,8 +349,6 @@ class PlayerService : MediaLibraryService() {
     }
 
 
-    private var pausedNotificationShowing = false
-
     private val clearQueueReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != ACTION_CLEAR_QUEUE) return
@@ -360,78 +356,25 @@ class PlayerService : MediaLibraryService() {
                 clearMediaItems()
                 stop()
             }
-            cancelPausedNotification()
-            stopSelf()
         }
     }
 
-    override fun onNotificationCancelled(notificationId: Int, dismissedByUser: Boolean) {
-        if (!dismissedByUser) {
-            super.onNotificationCancelled(notificationId, dismissedByUser)
-            return
-        }
-        val player = mediaSession?.player
-        if (player == null || player.mediaItemCount == 0) {
-            stopSelf()
-            return
-        }
-        showPausedNotification()
-    }
-
-    private fun showPausedNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
-            if (nm.getNotificationChannel(PAUSED_CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(
-                        PAUSED_CHANNEL_ID,
-                        getString(R.string.playback_paused),
-                        NotificationManager.IMPORTANCE_LOW
-                    )
-                )
-            }
-        }
-        val clearIntent = PendingIntent.getBroadcast(
-            this, 0,
-            Intent(ACTION_CLEAR_QUEUE).setPackage(packageName),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, PAUSED_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_mono)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.playback_paused))
-            .setContentIntent(getPendingIntent(this))
-            .addAction(R.drawable.ic_close, getString(R.string.clear), clearIntent)
-            .setSilent(true)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(PAUSED_NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            startForeground(PAUSED_NOTIFICATION_ID, notification)
-        }
-        pausedNotificationShowing = true
-    }
-
-    private fun cancelPausedNotification() {
-        if (!pausedNotificationShowing) return
-        getSystemService(NotificationManager::class.java).cancel(PAUSED_NOTIFICATION_ID)
-        pausedNotificationShowing = false
+    // Keep the service foreground as long as there is anything in the queue so that
+    // paused playback survives overnight without being killed by the system.
+    override fun isPlaybackOngoing(): Boolean {
+        return mediaSession?.player?.let { it.mediaItemCount > 0 } ?: false
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val stopPlayer = app.settings.getBoolean(CLOSE_PLAYER, false)
-        val player = mediaSession?.player ?: return stopSelf()
-        if (stopPlayer || !player.isPlaying) stopSelf()
+        if (app.settings.getBoolean(CLOSE_PLAYER, false)) {
+            mediaSession?.player?.run { stop(); clearMediaItems() }
+            stopSelf()
+        }
     }
 
     companion object {
         const val MORE_BRAIN_CAPACITY = "offload"
         const val CLOSE_PLAYER = "close_player"
-        private const val PAUSED_NOTIFICATION_ID = 2
-        private const val PAUSED_CHANNEL_ID = "gladix_paused_channel"
         private const val ACTION_CLEAR_QUEUE = "dev.rschwertley.gladix.auto.CLEAR_QUEUE"
         const val SKIP_SILENCE = "skip_silence"
         const val LOUDNESS_NORMALIZATION = "loudness_normalization"
