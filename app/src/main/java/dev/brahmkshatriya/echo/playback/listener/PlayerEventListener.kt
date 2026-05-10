@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaSession
 import dev.brahmkshatriya.echo.common.clients.LikeClient
+import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -134,6 +135,11 @@ class PlayerEventListener(
         val cause = error.cause ?: error
         val rootCause = cause.rootCause
         val mediaItem = player.currentMediaItem
+
+        if (rootCause is ClientException.LoginRequired) {
+            scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+            return
+        }
 
         if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
             consecutiveUnavailableSkips++

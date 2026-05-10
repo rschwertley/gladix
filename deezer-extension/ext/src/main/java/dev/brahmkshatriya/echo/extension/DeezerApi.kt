@@ -39,6 +39,7 @@ import java.io.InputStream
 import java.math.BigInteger
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
 import java.util.Locale
 import javax.net.ssl.SSLContext
@@ -101,6 +102,14 @@ class DeezerApi(private val session: DeezerSession) {
             ?.getString("proxy")
             .takeIf { !it.isNullOrEmpty() }
         return OkHttpClient.Builder().apply {
+            connectTimeout(15, TimeUnit.SECONDS)
+            readTimeout(30, TimeUnit.SECONDS)
+            writeTimeout(15, TimeUnit.SECONDS)
+            // API-only clients (proxy or login path) get a hard per-call ceiling so a stalled
+            // Deezer endpoint cannot block stream preparation indefinitely. The no-proxy client
+            // (clientNP) is also used for audio streaming where the body read takes minutes, so
+            // callTimeout is intentionally omitted there.
+            if (useProxy || login) callTimeout(25, TimeUnit.SECONDS)
             if (useProxy && configuredProxy != null) {
                 val proxy = if (login) "uk1.proxy.murglar.app" else configuredProxy
                 sslSocketFactory(createTrustAllSslSocketFactory(), createTrustAllTrustManager())

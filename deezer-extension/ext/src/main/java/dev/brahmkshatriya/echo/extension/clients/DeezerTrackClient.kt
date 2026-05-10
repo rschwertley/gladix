@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.extension.clients
 
-import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
 import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
@@ -10,6 +9,8 @@ import dev.brahmkshatriya.echo.extension.DeezerApi
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import dev.brahmkshatriya.echo.extension.Utils
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -36,7 +37,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
                 else api.getMP3MediaUrl(track, quality == "128")
             val mjString = mediaJson.toString()
-            if (mjString.contains("License token has no sufficient rights on requested media")) createStreamableForQuality(track, "128")
+            if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
+                "flac" -> createStreamableForQuality(track, "320", retry)
+                "320" -> createStreamableForQuality(track, "128", retry)
+                else -> throw Exception("Track not available on server")
+            }
             val trackJsonData = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
             val mediaIsEmpty = trackJsonData?.get("media")?.jsonArray?.isEmpty() == true
 
@@ -108,7 +113,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             when (quality) {
                 "flac" -> createStreamableForQuality(track, "320", retry)
                 "320" -> createStreamableForQuality(track, "128", retry)
-                else -> throw ClientException.LoginRequired()
+                else -> throw Exception("Track not available on server")
             }
         }
     }
@@ -127,7 +132,19 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     "FALLBACK_ID" to streamable.extras["FALLBACK_ID"].orEmpty()
                 )
             )
-            createStreamableForQuality(newTrack, quality)
+            var resolved: Streamable? = null
+            for (attempt in 0..1) {
+                if (attempt > 0) delay(2000L)
+                try {
+                    resolved = createStreamableForQuality(newTrack, quality)
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // retry on next attempt
+                }
+            }
+            resolved ?: throw Exception("Track not available after retries: $trackId")
         } else {
             streamable
         }

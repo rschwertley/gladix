@@ -82,7 +82,8 @@ class StreamableMediaSource(
             actualSource = when (sources?.size) {
                 0, null -> {
                     Log.d("GladixPlayback", "null/empty sources for ${new.mediaId}")
-                    error = TrackUnavailableException("No sources available for ${new.mediaId}")
+                    error = serv.exceptionOrNull()
+                        ?: TrackUnavailableException("No sources available for ${new.mediaId}")
                     return@launch
                 }
                 1 -> {

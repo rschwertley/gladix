@@ -29,6 +29,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 class StreamableLoader(
@@ -37,20 +38,22 @@ class StreamableLoader(
     private val downloadFlow: StateFlow<List<Downloader.Info>>
 ) {
     suspend fun load(mediaItem: MediaItem) = withContext(Dispatchers.IO) {
-        extensionListFlow.first { it.isNotEmpty() }
-        val new = if (mediaItem.isLoaded) mediaItem
-        else MediaItemUtils.buildLoaded(
-            app, downloadFlow.value, mediaItem, loadTrack(mediaItem)
-        )
+        withTimeout(30_000) {
+            extensionListFlow.first { it.isNotEmpty() }
+            val new = if (mediaItem.isLoaded) mediaItem
+            else MediaItemUtils.buildLoaded(
+                app, downloadFlow.value, mediaItem, loadTrack(mediaItem)
+            )
 
-        val server = async { loadServer(new) }
-        val background =
-            async { if (new.backgroundIndex < 0) null else loadBackground(new).getOrNull() }
-        val subtitle = async { if (new.subtitleIndex < 0) null else loadSubtitle(new).getOrNull() }
+            val server = async { loadServer(new) }
+            val background =
+                async { if (new.backgroundIndex < 0) null else loadBackground(new).getOrNull() }
+            val subtitle = async { if (new.subtitleIndex < 0) null else loadSubtitle(new).getOrNull() }
 
-        MediaItemUtils.buildWithBackgroundAndSubtitle(
-            new, background.await(), subtitle.await()
-        ) to server.await()
+            MediaItemUtils.buildWithBackgroundAndSubtitle(
+                new, background.await(), subtitle.await()
+            ) to server.await()
+        }
     }
 
     private suspend fun <T> withClient(

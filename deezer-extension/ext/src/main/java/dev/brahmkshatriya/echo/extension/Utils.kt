@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.MessageDigest
@@ -53,9 +54,11 @@ object Utils {
     }
 
     suspend fun getContentLength(url: String, client: OkHttpClient): Long {
-        val request = Request.Builder().url(url).head().build()
-        return client.newCall(request).await().use { response ->
-            response.header("Content-Length")?.toLong() ?: 0L
+        return withTimeout(10_000) {
+            val request = Request.Builder().url(url).head().build()
+            client.newCall(request).await().use { response ->
+                response.header("Content-Length")?.toLong() ?: 0L
+            }
         }
     }
 }
