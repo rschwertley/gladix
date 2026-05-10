@@ -14,7 +14,9 @@ import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.annotation.OptIn
+import androidx.car.app.connection.CarConnection
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.Observer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -77,6 +79,16 @@ class PlayerService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
 
     private lateinit var audioFocusListener: AudioFocusListener
+    private lateinit var carConnection: CarConnection
+    private val carConnectionObserver = Observer<Int> { connectionType ->
+        val isConnected = connectionType == CarConnection.CONNECTION_TYPE_PROJECTION
+            || connectionType == CarConnection.CONNECTION_TYPE_NATIVE
+        val wasConnected = audioFocusListener.isAndroidAutoConnected
+        audioFocusListener.isAndroidAutoConnected = isConnected
+        if (wasConnected && !isConnected) {
+            mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
+        }
+    }
 
     private val app by inject<App>()
     private val state by inject<PlayerState>()
@@ -159,6 +171,8 @@ class PlayerService : MediaLibraryService() {
         )
         player.addListener(effects)
         audioFocusListener = AudioFocusListener(this, player)
+        carConnection = CarConnection(this)
+        carConnection.type.observeForever(carConnectionObserver)
         player.addListener(audioFocusListener)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -294,6 +308,7 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         unregisterReceiver(clearQueueReceiver)
         mediaSession?.run {
             audioFocusListener.release()

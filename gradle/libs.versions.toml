@@ -2,6 +2,7 @@
 agp = "8.12.2"
 kotlin = "2.2.10"
 
+car-app = "1.4.0"
 androidx-paging = "3.3.6"
 room = "2.7.2"
 firebase-bom = "33.14.0"
@@ -15,6 +16,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.10.2" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 
+androidx-car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
 androidx-core-google-shortcuts = { module = "androidx.core:core-google-shortcuts", version = "1.1.0" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.17.0" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.7.1" }

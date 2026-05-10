@@ -17,6 +17,8 @@ class AudioFocusListener(
     private val handler = Handler(context.mainLooper)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
+    var isAndroidAutoConnected: Boolean = false
+
     private var pausedForFocus = false
     private var loweringVolume = false
 
@@ -40,8 +42,9 @@ class AudioFocusListener(
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // Grace window: if AUDIOFOCUS_GAIN arrives within 1.5s treat as transient
-                if (player.playWhenReady) {
+                // In Android Auto, navigation/AA audio frequently steals permanent focus;
+                // ignore it and let AUDIOFOCUS_LOSS_TRANSIENT handle true interruptions.
+                if (!isAndroidAutoConnected && player.playWhenReady) {
                     handler.removeCallbacks(commitPauseRunnable)
                     handler.postDelayed(commitPauseRunnable, GRACE_WINDOW_MS)
                 }

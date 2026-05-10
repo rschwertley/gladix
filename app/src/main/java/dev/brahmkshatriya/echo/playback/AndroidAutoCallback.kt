@@ -114,16 +114,6 @@ abstract class AndroidAutoCallback(
         )
     }
 
-    override fun onDisconnected(
-        session: MediaSession,
-        controller: MediaSession.ControllerInfo
-    ) {
-        if (controller.packageName == "com.google.android.projection.gearhead") {
-            Log.d("GladixAuto", "onDisconnected: Android Auto disconnected, pausing playback")
-            session.player.pause()
-        }
-    }
-
     @OptIn(UnstableApi::class)
     override fun onSearch(
         session: MediaLibrarySession,
