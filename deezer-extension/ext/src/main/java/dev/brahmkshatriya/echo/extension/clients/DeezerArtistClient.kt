@@ -38,7 +38,7 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         val shelf = parser.run {
             jObject["data"]?.jsonArray?.toShelfItemsList("Top") as? Shelf.Lists.Items
         }
-        val list = (shelf?.list as? List<Track>).orEmpty()
+        val list = shelf?.list?.filterIsInstance<Track>().orEmpty()
         if (list.isEmpty()) return null
         return Shelf.Lists.Tracks(
             id = shelf!!.id,
