@@ -26,6 +26,7 @@ import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
+import java.net.SocketException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -141,12 +142,15 @@ class PlayerEventListener(
             return
         }
 
-        if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
+        val isTransientServerError = rootCause is SocketException
+        if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true || isTransientServerError) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
                 player.pause()
-                scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+                val isRetryExhausted = isTransientServerError
+                    || rootCause.message?.contains("not available after retries", ignoreCase = true) == true
+                if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 return
             }
             val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1

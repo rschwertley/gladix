@@ -1,7 +1,5 @@
 package dev.brahmkshatriya.echo.ui.common
 
-import android.app.Activity
-import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -66,14 +64,10 @@ class ExceptionFragment : Fragment() {
             copyException()
         }
 
-        requireActivity().run {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return@run
-            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback)
-        }
+        requireActivity().window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
     }
 
     private fun copyException() {
@@ -84,18 +78,8 @@ class ExceptionFragment : Fragment() {
         }
     }
 
-    private val screenCaptureCallback by lazy {
-        Activity.ScreenCaptureCallback {
-            copyException()
-        }
-    }
-
     override fun onDestroyView() {
         super.onDestroyView()
-        requireActivity().run {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return@run
-            unregisterScreenCaptureCallback(screenCaptureCallback)
-        }
+        requireActivity().window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 }
