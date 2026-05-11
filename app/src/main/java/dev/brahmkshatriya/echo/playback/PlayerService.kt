@@ -64,7 +64,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
 import org.koin.android.ext.android.inject
 import java.io.File
 
@@ -80,11 +79,12 @@ class PlayerService : MediaLibraryService() {
 
     private lateinit var audioFocusListener: AudioFocusListener
     private lateinit var carConnection: CarConnection
+    private var isAndroidAutoConnected = false
     private val carConnectionObserver = Observer<Int> { connectionType ->
         val isConnected = connectionType == CarConnection.CONNECTION_TYPE_PROJECTION
             || connectionType == CarConnection.CONNECTION_TYPE_NATIVE
-        val wasConnected = audioFocusListener.isAndroidAutoConnected
-        audioFocusListener.isAndroidAutoConnected = isConnected
+        val wasConnected = isAndroidAutoConnected
+        isAndroidAutoConnected = isConnected
         if (wasConnected && !isConnected) {
             mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
         }
