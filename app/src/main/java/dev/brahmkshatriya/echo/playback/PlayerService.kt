@@ -197,7 +197,7 @@ class PlayerService : MediaLibraryService() {
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
             .setChannelName(R.string.app_name)
             .build()
-        notificationProvider.setSmallIcon(R.drawable.ic_mono)
+        notificationProvider.setSmallIcon(R.drawable.ic_gladix_mono)
         setMediaNotificationProvider(notificationProvider)
 
         mediaSession = session
@@ -225,7 +225,7 @@ class PlayerService : MediaLibraryService() {
         val notification = NotificationCompat.Builder(
             this, DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
         )
-            .setSmallIcon(R.drawable.ic_mono)
+            .setSmallIcon(R.drawable.ic_gladix_mono)
             .setContentTitle(getString(R.string.app_name))
             .setSilent(true)
             .build()
@@ -274,7 +274,7 @@ class PlayerService : MediaLibraryService() {
                 val placeholder = NotificationCompat.Builder(
                     this, DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
                 )
-                    .setSmallIcon(R.drawable.ic_mono)
+                    .setSmallIcon(R.drawable.ic_gladix_mono)
                     .setSilent(true)
                     .build()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

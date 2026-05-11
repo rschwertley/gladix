@@ -29,7 +29,7 @@ class MediaSessionServiceListener(
         val notificationManagerCompat = NotificationManagerCompat.from(context)
         context.ensureNotificationChannel(notificationManagerCompat)
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_mono)
+            .setSmallIcon(R.drawable.ic_gladix_mono)
             .setContentTitle(context.getString(R.string.app_name))
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(context.getString(R.string.app_name))
