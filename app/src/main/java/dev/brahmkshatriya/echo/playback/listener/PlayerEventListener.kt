@@ -29,6 +29,8 @@ import dev.brahmkshatriya.echo.R
 import java.net.SocketException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -108,8 +110,34 @@ class PlayerEventListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         updateCurrentFlow()
-        if (playbackState == Player.STATE_BUFFERING)
+        if (playbackState == Player.STATE_BUFFERING) {
             Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
+            bufferingWatchdog?.cancel()
+            bufferingWatchdog = scope.launch {
+                delay(BUFFERING_WATCHDOG_MS)
+                withContext(Dispatchers.Main) {
+                    if (player.playbackState != Player.STATE_BUFFERING) return@withContext
+                    Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
+                    consecutiveUnavailableSkips++
+                    if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                        consecutiveUnavailableSkips = 0
+                        player.pause()
+                        return@withContext
+                    }
+                    val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                    if (!hasMore) {
+                        player.pause()
+                        return@withContext
+                    }
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                    player.play()
+                }
+            }
+        } else {
+            bufferingWatchdog?.cancel()
+            bufferingWatchdog = null
+        }
         if (playbackState == Player.STATE_READY) consecutiveUnavailableSkips = 0
     }
 
@@ -124,6 +152,10 @@ class PlayerEventListener(
         ResumptionUtils.saveCurrentPos(context, player.currentPosition)
     }
 
+    companion object {
+        private const val BUFFERING_WATCHDOG_MS = 20_000L
+    }
+
     private val maxRetries = 3
     private val maxSingleItemRetries = 1
     private var currentRetries = 0
@@ -131,6 +163,8 @@ class PlayerEventListener(
 
     private val maxConsecutiveUnavailableSkips = 3
     private var consecutiveUnavailableSkips = 0
+
+    private var bufferingWatchdog: Job? = null
 
     override fun onPlayerError(error: PlaybackException) {
         val cause = error.cause ?: error

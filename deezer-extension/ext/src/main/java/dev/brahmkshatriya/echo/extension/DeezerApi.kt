@@ -103,7 +103,7 @@ class DeezerApi(private val session: DeezerSession) {
             .takeIf { !it.isNullOrEmpty() }
         return OkHttpClient.Builder().apply {
             connectTimeout(15, TimeUnit.SECONDS)
-            readTimeout(30, TimeUnit.SECONDS)
+            readTimeout(10, TimeUnit.SECONDS)
             writeTimeout(15, TimeUnit.SECONDS)
             // API-only clients (proxy or login path) get a hard per-call ceiling so a stalled
             // Deezer endpoint cannot block stream preparation indefinitely. The no-proxy client
