@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.extension
 
-import android.util.Log
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Streamable
 import kotlinx.coroutines.Dispatchers
@@ -54,13 +53,15 @@ object AudioStreamProvider {
             .header("cache", "no-store")
             .build()
 
-        Log.d("GladixPlayback", "AudioStreamProvider.openStream: firing GET url=$url range=$rangeHeader")
+        println("GladixPlayback: AudioStreamProvider.openStream: firing GET url=$url range=$rangeHeader")
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
             response.closeQuietly()
             throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
         }
-        Log.d("GladixPlayback", "AudioStreamProvider.openStream: response ${response.code} content-length=${response.header("Content-Length")} content-range=${response.header("Content-Range")}")
+        val contentLength = response.header("Content-Length")
+        val contentRange = response.header("Content-Range")
+        println("GladixPlayback: AudioStreamProvider.openStream: response ${response.code} content-length=$contentLength content-range=$contentRange")
 
         val rawStream = response.body.byteStream()
 
