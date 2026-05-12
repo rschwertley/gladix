@@ -48,6 +48,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDE
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerBinding
@@ -588,6 +589,13 @@ class PlayerFragment : Fragment() {
             val itemContext = item.context
             title = if (itemContext != null) context.getString(R.string.playing_from) else null
             subtitle = itemContext?.title
+            val navigableContext = when (itemContext) {
+                is EchoMediaItem.Lists, is Artist -> itemContext
+                else -> null
+            }
+            setOnClickListener(if (navigableContext != null) View.OnClickListener {
+                openItem(extId, navigableContext)
+            } else null)
             setOnMenuItemClickListener {
                 if (it.itemId != R.id.menu_more) return@setOnMenuItemClickListener false
                 onMoreClicked(item)

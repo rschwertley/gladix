@@ -43,7 +43,8 @@ class PlayerEventListener(
     private val session: MediaSession,
     private val currentFlow: MutableStateFlow<PlayerState.Current?>,
     private val extensions: ExtensionLoader,
-    private val throwableFlow: MutableSharedFlow<Throwable>
+    private val throwableFlow: MutableSharedFlow<Throwable>,
+    private val isAndroidAutoConnected: () -> Boolean = { false }
 ) : Player.Listener {
 
     private val player get() = session.player
@@ -129,6 +130,10 @@ class PlayerEventListener(
                         player.pause()
                         return@withContext
                     }
+                    if (isAndroidAutoConnected()) {
+                        player.pause()
+                        delay(50)
+                    }
                     player.seekToNextMediaItem()
                     player.prepare()
                     player.play()
@@ -192,9 +197,21 @@ class PlayerEventListener(
                 player.pause()
                 return
             }
-            player.seekToNextMediaItem()
-            player.prepare()
-            player.play()
+            if (isAndroidAutoConnected()) {
+                scope.launch {
+                    withContext(Dispatchers.Main) {
+                        player.pause()
+                        delay(50)
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
+                }
+            } else {
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
+            }
             return
         }
 

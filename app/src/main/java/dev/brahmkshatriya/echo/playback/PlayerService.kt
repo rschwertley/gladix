@@ -159,7 +159,7 @@ class PlayerService : MediaLibraryService() {
             .build()
 
         player.addListener(
-            PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow)
+            PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow) { isAndroidAutoConnected }
         )
         player.addListener(
             PlayerRadio(
