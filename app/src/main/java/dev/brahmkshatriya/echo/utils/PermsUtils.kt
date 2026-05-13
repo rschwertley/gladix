@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
