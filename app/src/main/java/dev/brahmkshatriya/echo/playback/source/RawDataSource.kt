@@ -34,7 +34,6 @@ class RawDataSource : BaseDataSource(true) {
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        Log.d("GladixPlayback", "RawDataSource.read: req=$length")
         return stream!!.read(buffer, offset, length)
     }
 
