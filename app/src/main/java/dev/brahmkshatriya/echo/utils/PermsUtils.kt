@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -103,6 +104,23 @@ object PermsUtils {
             null
         }
         launcher?.launch(perms.map { it.first }.toTypedArray())
+    }
+
+    private const val BATTERY_OPTIMIZATION_ASKED = "battery_optimization_asked"
+
+    fun ComponentActivity.checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        val settings = getSettings()
+        if (settings.getBoolean(BATTERY_OPTIMIZATION_ASKED, false)) return
+        settings.edit().putBoolean(BATTERY_OPTIMIZATION_ASKED, true).apply()
+        startActivity(
+            Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName")
+            )
+        )
     }
 
     fun <I, O> ComponentActivity.registerActivityResultLauncher(

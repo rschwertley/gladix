@@ -27,6 +27,7 @@ import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
+import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -58,6 +59,7 @@ open class MainActivity : AppCompatActivity() {
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
+        checkBatteryOptimization()
         configureExtensionsUpdater()
         supportFragmentManager.commit {
             if (savedInstanceState != null) return@commit
