@@ -58,29 +58,29 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
         )
 
         is Album -> {
-            val last = api.album(item).lastTrackFromSongs(parser)
+            val seed = api.album(item).randomTrackFromSongs(parser)
                 ?: error("No Radio")
             Radio(
-                id = last.id,
-                title = last.title,
-                cover = last.cover,
+                id = seed.id,
+                title = seed.title,
+                cover = seed.cover,
                 extras = mapOf(
                     "radio" to "album",
-                    "artist" to last.artists.firstOrNull()?.id.orEmpty()
+                    "artist" to seed.artists.firstOrNull()?.id.orEmpty()
                 )
             )
         }
 
         is Playlist -> {
-            val last = api.playlist(item).lastTrackFromSongs(parser)
+            val seed = api.playlist(item).randomTrackFromSongs(parser)
                 ?: error("No Radio")
             Radio(
-                id = last.id,
-                title = last.title,
-                cover = last.cover,
+                id = seed.id,
+                title = item.title + " Radio",
+                cover = item.cover ?: seed.cover,
                 extras = mapOf(
                     "radio" to "playlist",
-                    "artist" to last.artists.firstOrNull()?.id.orEmpty()
+                    "artist" to seed.artists.firstOrNull()?.id.orEmpty()
                 )
             )
         }
@@ -156,5 +156,15 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                 ?: return null
             val lastObj = songs.lastOrNull()?.safeObj() ?: return null
             lastObj.toTrack(parser)
+        }.getOrNull()
+
+    private fun JsonObject.randomTrackFromSongs(parser: DeezerParser): Track? =
+        runCatching {
+            val songs = this["results"]?.jsonObject
+                ?.get("SONGS")?.jsonObject
+                ?.get("data")?.jsonArray
+                ?: return null
+            val randomObj = songs.randomOrNull()?.safeObj() ?: return null
+            randomObj.toTrack(parser)
         }.getOrNull()
 }
