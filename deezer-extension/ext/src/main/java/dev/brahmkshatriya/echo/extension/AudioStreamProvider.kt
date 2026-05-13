@@ -63,7 +63,7 @@ object AudioStreamProvider {
         val contentRange = response.header("Content-Range")
         println("GladixPlayback: AudioStreamProvider.openStream: response ${response.code} content-length=$contentLength content-range=$contentRange")
 
-        val rawStream = response.body.byteStream()
+        val rawStream = response.body!!.byteStream()
 
         BufferedInputStream(object : FilterInputStream(rawStream) {
             private var blockCounter = alignedStart / blockSize

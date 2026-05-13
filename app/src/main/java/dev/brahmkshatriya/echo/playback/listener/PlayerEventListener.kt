@@ -154,7 +154,6 @@ class PlayerEventListener(
         }
         if (playbackState == Player.STATE_READY) {
             consecutiveUnavailableSkips = 0
-            retriedMediaId = null
         }
     }
 
