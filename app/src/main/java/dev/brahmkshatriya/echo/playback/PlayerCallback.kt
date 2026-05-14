@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.graphics.drawable.toBitmap
@@ -421,6 +422,22 @@ class PlayerCallback(
         }
         val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
         MediaItemsWithStartPosition(items, index, pos)
+    }
+
+    override fun onPlay(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): ListenableFuture<SessionResult> {
+        Log.d("GladixAuto", "onPlay called from MediaSession")
+        return super.onPlay(session, controller)
+    }
+
+    override fun onPause(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): ListenableFuture<SessionResult> {
+        Log.d("GladixAuto", "onPause called from MediaSession")
+        return super.onPause(session, controller)
     }
 
     class ButtonReceiver : MediaButtonReceiver() {

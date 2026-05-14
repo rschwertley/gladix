@@ -51,6 +51,8 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.await
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.futureCatching
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -86,7 +88,9 @@ abstract class AndroidAutoCallback(
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
         if (params?.isRecent == true)
-            return Futures.immediateFuture(LibraryResult.ofError<MediaItem>(SessionError.ERROR_NOT_SUPPORTED))
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(browsableItem("recent", "", browsable = false), null)
+            )
         if (browser.packageName != "com.google.android.projection.gearhead")
             return Futures.immediateFuture(
                 LibraryResult.ofItem(browsableItem(ROOT, "", browsable = false), null)
@@ -161,6 +165,16 @@ abstract class AndroidAutoCallback(
             Log.d("GladixAuto", "onGetChildren ROOT: extensionList.first size=${extensions.size} enabled=${enabled.size}, ids=${enabled.map { it.id }}")
             return@futureCatching LibraryResult.ofItemList(
                 enabled.map { it.toMediaItem(context) },
+                null
+            )
+        }
+        if (parentId == "recent") {
+            val tracks = context.recoverTracks()
+            val index = context.recoverIndex() ?: 0
+            val (state, _) = tracks?.getOrNull(index) ?: tracks?.firstOrNull()
+                ?: return@futureCatching LibraryResult.ofItemList(ImmutableList.of(), null)
+            return@futureCatching LibraryResult.ofItemList(
+                ImmutableList.of(state.item.toItem(context, state.extensionId)),
                 null
             )
         }
