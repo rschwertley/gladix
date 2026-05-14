@@ -424,20 +424,15 @@ class PlayerCallback(
         MediaItemsWithStartPosition(items, index, pos)
     }
 
-    override fun onPlay(
+    @OptIn(UnstableApi::class)
+    override fun onPlayerCommandRequest(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
-    ): ListenableFuture<SessionResult> {
-        Log.d("GladixAuto", "onPlay called from MediaSession")
-        return super.onPlay(session, controller)
-    }
-
-    override fun onPause(
-        session: MediaSession,
-        controller: MediaSession.ControllerInfo,
-    ): ListenableFuture<SessionResult> {
-        Log.d("GladixAuto", "onPause called from MediaSession")
-        return super.onPause(session, controller)
+        @Player.Command playerCommand: Int,
+    ): Int {
+        if (playerCommand == Player.COMMAND_PLAY_PAUSE)
+            Log.d("GladixAuto", "onPlayerCommandRequest: PLAY_PAUSE from ${controller.packageName}")
+        return super.onPlayerCommandRequest(session, controller, playerCommand)
     }
 
     class ButtonReceiver : MediaButtonReceiver() {
