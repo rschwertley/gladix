@@ -53,15 +53,11 @@ object AudioStreamProvider {
             .header("cache", "no-store")
             .build()
 
-        println("GladixPlayback: AudioStreamProvider.openStream: firing GET url=$url range=$rangeHeader")
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
             response.closeQuietly()
             throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
         }
-        val contentLength = response.header("Content-Length")
-        val contentRange = response.header("Content-Range")
-        println("GladixPlayback: AudioStreamProvider.openStream: response ${response.code} content-length=$contentLength content-range=$contentRange")
 
         val rawStream = response.body!!.byteStream()
 

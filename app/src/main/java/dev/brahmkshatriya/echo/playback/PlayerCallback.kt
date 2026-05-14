@@ -137,6 +137,10 @@ class PlayerCallback(
     }
 
     private fun resume(player: Player, withClear: Boolean) = scope.future {
+        if (userQueueSet) {
+            Log.d("GladixAuto", "resume: skipping, userQueueSet=true")
+            return@future SessionResult(RESULT_SUCCESS)
+        }
         withContext(Dispatchers.Main) {
             player.shuffleModeEnabled = context.recoverShuffle() == true
             player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
@@ -178,6 +182,7 @@ class PlayerCallback(
 
     @OptIn(UnstableApi::class)
     private fun radio(player: Player, args: Bundle) = scope.future {
+        userQueueSet = true
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future error
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
@@ -237,6 +242,7 @@ class PlayerCallback(
 
 
     private fun playItem(player: Player, args: Bundle) = scope.future {
+        userQueueSet = true
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future error
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error

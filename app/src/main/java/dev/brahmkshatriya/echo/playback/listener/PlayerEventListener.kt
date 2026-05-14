@@ -122,6 +122,10 @@ class PlayerEventListener(
                     if (retriedMediaId == null || retriedMediaId != currentMediaId) {
                         retriedMediaId = currentMediaId
                         Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId")
+                        val savedIndex = player.currentMediaItemIndex
+                        val savedPosition = player.currentPosition
+                        player.stop()
+                        player.seekTo(savedIndex, savedPosition)
                         player.prepare()
                         player.play()
                     } else {

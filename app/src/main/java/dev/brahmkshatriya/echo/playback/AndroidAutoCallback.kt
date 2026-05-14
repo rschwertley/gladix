@@ -76,10 +76,16 @@ abstract class AndroidAutoCallback(
 
     val context get() = app.context
 
+    @Volatile protected var userQueueSet = false
     @Volatile private var lastSearchQuery = ""
     private val searchResults = boundedMap<String, List<MediaItem>>()
     private val searchMutex = Mutex()
     private var extensionWatcherJob: Job? = null
+
+    override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+        userQueueSet = false
+        super.onDisconnected(session, controller)
+    }
 
     @CallSuper
     override fun onGetLibraryRoot(
@@ -346,6 +352,7 @@ abstract class AndroidAutoCallback(
         startIndex: Int,
         startPositionMs: Long
     ) = scope.future {
+        userQueueSet = true
         val shuffleItem = mediaItems.singleOrNull()
             ?.takeIf { it.mediaId.startsWith("$SHUFFLE_PREFIX/") }
         if (shuffleItem != null) {
