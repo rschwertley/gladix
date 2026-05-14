@@ -425,14 +425,14 @@ class PlayerCallback(
     }
 
     @OptIn(UnstableApi::class)
-    override fun onPlayerCommandRequest(
+    override fun onPlayerInteractionFinished(
         session: MediaSession,
-        controller: MediaSession.ControllerInfo,
-        @Player.Command playerCommand: Int,
-    ): Int {
-        if (playerCommand == Player.COMMAND_PLAY_PAUSE)
-            Log.d("GladixAuto", "onPlayerCommandRequest: PLAY_PAUSE from ${controller.packageName}")
-        return super.onPlayerCommandRequest(session, controller, playerCommand)
+        controllerInfo: MediaSession.ControllerInfo,
+        playerCommands: Player.Commands,
+    ) {
+        if (playerCommands.contains(Player.COMMAND_PLAY_PAUSE))
+            Log.d("GladixAuto", "onPlayerInteractionFinished: PLAY_PAUSE from ${controllerInfo.packageName}")
+        super.onPlayerInteractionFinished(session, controllerInfo, playerCommands)
     }
 
     class ButtonReceiver : MediaButtonReceiver() {

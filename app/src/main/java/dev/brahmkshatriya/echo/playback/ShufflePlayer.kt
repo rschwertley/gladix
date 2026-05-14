@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.playback
 
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -180,6 +181,16 @@ class ShufflePlayer(
         original = emptyList()
         player.clearMediaItems()
         log("Clear media items")
+    }
+
+    override fun play() {
+        Log.d("GladixAuto", "ShufflePlayer.play() called")
+        super.play()
+    }
+
+    override fun pause() {
+        Log.d("GladixAuto", "ShufflePlayer.pause() called")
+        super.pause()
     }
 
     // Prevent Media3 session initialization from re-enabling AudioFocusManager.
