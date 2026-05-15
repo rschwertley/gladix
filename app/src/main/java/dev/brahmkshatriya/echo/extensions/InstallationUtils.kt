@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extensions
 
 import android.app.Activity
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -45,9 +46,8 @@ object InstallationUtils {
         val newFile = File(dir, "$id.apk")
         dir.setWritable(true)
         newFile.setWritable(true)
-        if (newFile.exists())
-            if (!newFile.delete())
-                throw IllegalStateException("Failed to delete existing file: $newFile")
+        if (newFile.exists() && !newFile.delete())
+            Log.d("InstallUtils", "Failed to delete existing file: $newFile")
         tempFile.renameTo(newFile)
         newFile.setWritable(false)
         dir.setReadOnly()
@@ -99,7 +99,7 @@ object InstallationUtils {
         file.parentFile!!.setWritable(true)
         file.setWritable(true)
         if (file.exists() && !file.delete())
-            throw IllegalStateException("Failed to delete file: $file")
+            Log.d("InstallUtils", "Failed to delete file: $file")
         fileIgnoreFlow.emit(null)
     }
 

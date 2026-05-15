@@ -26,7 +26,9 @@ import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
+import androidx.media3.datasource.HttpDataSource
 import java.net.SocketException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -158,6 +160,7 @@ class PlayerEventListener(
         }
         if (playbackState == Player.STATE_READY) {
             consecutiveUnavailableSkips = 0
+            retried404MediaId = null
         }
     }
 
@@ -186,14 +189,52 @@ class PlayerEventListener(
 
     private var bufferingWatchdog: Job? = null
     private var retriedMediaId: String? = null
+    private var retried404MediaId: String? = null
 
     override fun onPlayerError(error: PlaybackException) {
         val cause = error.cause ?: error
         val rootCause = cause.rootCause
         val mediaItem = player.currentMediaItem
 
+        if (rootCause is CancellationException) {
+            Log.d("GladixPlayback", "onPlayerError: ignoring CancellationException for ${mediaItem?.mediaId}")
+            return
+        }
+
         if (rootCause is ClientException.LoginRequired) {
             scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+            return
+        }
+
+        if (rootCause is HttpDataSource.InvalidResponseCodeException && rootCause.responseCode == 404) {
+            val currentMediaId = mediaItem?.mediaId
+            if (retried404MediaId != currentMediaId) {
+                retried404MediaId = currentMediaId
+                Log.d("GladixPlayback", "onPlayerError: 404 for $currentMediaId, retrying with stop/prepare")
+                val savedIndex = player.currentMediaItemIndex
+                val savedPosition = player.currentPosition
+                player.stop()
+                player.seekTo(savedIndex, savedPosition)
+                player.prepare()
+                player.play()
+            } else {
+                retried404MediaId = null
+                Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
+                consecutiveUnavailableSkips++
+                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                    consecutiveUnavailableSkips = 0
+                    player.pause()
+                    return
+                }
+                val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                if (!hasMore) {
+                    player.pause()
+                    return
+                }
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
+            }
             return
         }
 

@@ -64,7 +64,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,9 +75,11 @@ class PlayerCallback(
     override val scope: CoroutineScope,
     private val throwableFlow: MutableSharedFlow<Throwable>,
     private val extensions: ExtensionLoader,
-    private val radioFlow: MutableStateFlow<PlayerState.Radio>,
+    private val state: PlayerState,
     override val downloadFlow: StateFlow<List<Downloader.Info>>,
 ) : AndroidAutoCallback(app, scope, extensions.music, downloadFlow) {
+
+    private val radioFlow get() = state.radio
 
     override fun onConnect(
         session: MediaSession, controller: MediaSession.ControllerInfo,
@@ -139,6 +140,10 @@ class PlayerCallback(
     private fun resume(player: Player, withClear: Boolean) = scope.future {
         if (userQueueSet) {
             Log.d("GladixAuto", "resume: skipping, userQueueSet=true")
+            return@future SessionResult(RESULT_SUCCESS)
+        }
+        if (state.activeLoadCount.get() > 0) {
+            Log.d("GladixAuto", "resume: skipping, activeLoadCount=${state.activeLoadCount.get()}")
             return@future SessionResult(RESULT_SUCCESS)
         }
         withContext(Dispatchers.Main) {

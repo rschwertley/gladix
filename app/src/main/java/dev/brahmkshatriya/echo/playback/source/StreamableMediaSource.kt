@@ -70,53 +70,58 @@ class StreamableMediaSource(
         Log.d("GladixPlayback", "prepareSourceInternal: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
         val handler = Util.createHandlerForCurrentLooper()
         loadJob = scope.launch {
-            var (new, serv) = runCatching { loader.load(mediaItem) }.getOrElse {
-                error = it
-                return@launch
-            }
-            val server = serv.getOrNull()
-            state.servers[new.mediaId] = serv
-            state.serverChanged.emit(Unit)
-            val sources = server?.sources
-            Log.d("GladixPlayback", "stream loaded: ${new.mediaId} server=${server != null} sources=${sources?.size ?: "null"}")
-            actualSource = when (sources?.size) {
-                0, null -> {
-                    Log.d("GladixPlayback", "null/empty sources for ${new.mediaId}")
-                    error = serv.exceptionOrNull()
-                        ?: TrackUnavailableException("No sources available for ${new.mediaId}")
+            state.activeLoadCount.incrementAndGet()
+            try {
+                var (new, serv) = runCatching { loader.load(mediaItem) }.getOrElse {
+                    error = it
                     return@launch
                 }
-                1 -> {
-                    val source = sources.first()
-                    getFactory(source).create(new, 0, source)
-                }
+                val server = serv.getOrNull()
+                state.servers[new.mediaId] = serv
+                state.serverChanged.emit(Unit)
+                val sources = server?.sources
+                Log.d("GladixPlayback", "stream loaded: ${new.mediaId} server=${server != null} sources=${sources?.size ?: "null"}")
+                actualSource = when (sources?.size) {
+                    0, null -> {
+                        Log.d("GladixPlayback", "null/empty sources for ${new.mediaId}")
+                        error = serv.exceptionOrNull()
+                            ?: TrackUnavailableException("No sources available for ${new.mediaId}")
+                        return@launch
+                    }
+                    1 -> {
+                        val source = sources.first()
+                        getFactory(source).create(new, 0, source)
+                    }
 
-                else -> {
-                    if (server.merged) MergingMediaSource(
-                        *sources.mapIndexed { index, source ->
-                            getFactory(source).create(new, index, source)
-                        }.toTypedArray()
-                    ) else {
-                        val index = mediaItem.sourceIndex
-                        val source = sources.getOrNull(index)
-                            ?: sources.select(app, new.extensionId) { it.quality }
-                        val newIndex = sources.indexOf(source)
-                        new = MediaItemUtils.buildSource(new, newIndex)
-                        getFactory(source).create(new, newIndex, source)
+                    else -> {
+                        if (server.merged) MergingMediaSource(
+                            *sources.mapIndexed { index, source ->
+                                getFactory(source).create(new, index, source)
+                            }.toTypedArray()
+                        ) else {
+                            val index = mediaItem.sourceIndex
+                            val source = sources.getOrNull(index)
+                                ?: sources.select(app, new.extensionId) { it.quality }
+                            val newIndex = sources.indexOf(source)
+                            new = MediaItemUtils.buildSource(new, newIndex)
+                            getFactory(source).create(new, newIndex, source)
+                        }
                     }
                 }
-            }
 
-            changeFlow.emit(mediaItem to new)
-            mediaItem = new
+                changeFlow.emit(mediaItem to new)
+                mediaItem = new
 
-            handler.post {
-                if (released) return@post
-                runCatching {
-                    prepareChildSource(null, actualSource)
-                }.getOrElse {
-                    it.printStackTrace()
+                handler.post {
+                    if (released) return@post
+                    runCatching {
+                        prepareChildSource(null, actualSource)
+                    }.getOrElse {
+                        it.printStackTrace()
+                    }
                 }
+            } finally {
+                state.activeLoadCount.decrementAndGet()
             }
         }
     }

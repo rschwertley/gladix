@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.Collections
 import java.util.LinkedHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 data class PlayerState(
     val current: MutableStateFlow<Current?> = MutableStateFlow(null),
@@ -21,6 +22,7 @@ data class PlayerState(
     val servers: MutableMap<String, Result<Streamable.Media.Server>> =
         Collections.synchronizedMap(LinkedHashMap())
     val serverChanged = MutableSharedFlow<Unit>()
+    val activeLoadCount = AtomicInteger(0)
 
     data class Current(
         val index: Int,
