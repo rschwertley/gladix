@@ -67,32 +67,31 @@ object AudioStreamProvider {
             private val tempBuffer = getBuffer(blockSize.toInt())
 
             override fun read(buf: ByteArray, off: Int, len: Int): Int {
-                val chunkSize = blockSize.toInt().coerceAtMost(len)
-                var totalRead = 0
+                while (true) {
+                    val chunkSize = blockSize.toInt().coerceAtMost(len)
+                    var totalRead = 0
 
-                while (totalRead < chunkSize) {
-                    val r = `in`.read(tempBuffer, totalRead, chunkSize - totalRead)
-                    if (r == -1) break
-                    totalRead += r
+                    while (totalRead < chunkSize) {
+                        val r = `in`.read(tempBuffer, totalRead, chunkSize - totalRead)
+                        if (r == -1) break
+                        totalRead += r
+                    }
+                    if (totalRead == 0) return -1
+
+                    val processed = if (totalRead == chunkSize && blockCounter % 3 == 0L) {
+                        Utils.decryptBlowfish(tempBuffer, key)
+                    } else {
+                        tempBuffer
+                    }
+                    blockCounter++
+
+                    val drop = minOf(toDrop, totalRead)
+                    toDrop -= drop
+                    val toCopy = totalRead - drop
+                    if (toCopy == 0) continue
+                    System.arraycopy(processed, drop, buf, off, toCopy)
+                    return toCopy
                 }
-                if (totalRead == 0) return -1
-
-                val processed = if (totalRead == chunkSize && blockCounter % 3 == 0L) {
-                    Utils.decryptBlowfish(tempBuffer, key)
-                } else {
-                    tempBuffer
-                }
-                blockCounter++
-
-                val startIdx = if (toDrop > 0) {
-                    val d = toDrop
-                    toDrop = 0
-                    d
-                } else 0
-
-                val toCopy = (totalRead - startIdx).coerceAtLeast(0)
-                System.arraycopy(processed, startIdx, buf, off, toCopy)
-                return toCopy
             }
 
             override fun close() {

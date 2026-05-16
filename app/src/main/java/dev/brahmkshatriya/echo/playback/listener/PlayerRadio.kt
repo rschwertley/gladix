@@ -43,6 +43,7 @@ class PlayerRadio(
 
     companion object {
         const val AUTO_START_RADIO = "auto_start_radio"
+        private const val RADIO_PREFETCH_THRESHOLD = 3
         suspend fun start(
             throwableFlow: MutableSharedFlow<Throwable>,
             extension: Extension<*>,
@@ -83,10 +84,12 @@ class PlayerRadio(
 
             withContext(Dispatchers.Main) {
                 player.addMediaItems(item)
-                player.prepare()
+                if (player.playbackState == Player.STATE_IDLE) player.prepare()
             }
         }
     }
+
+    private var radioQueueActive = false
 
     private suspend fun loadPlaylist() {
         val mediaItem = withContext(Dispatchers.Main) { player.currentMediaItem } ?: return
@@ -97,7 +100,20 @@ class PlayerRadio(
         val extension = extensionList.getExtension(extensionId) ?: return
         val loaded = start(throwFlow, extension, item, itemContext)
         stateFlow.value = loaded ?: PlayerState.Radio.Empty
-        if (loaded != null) play(player, downloadFlow, app, stateFlow, loaded)
+        if (loaded != null) {
+            radioQueueActive = true
+            play(player, downloadFlow, app, stateFlow, loaded)
+        }
+    }
+
+    private suspend fun topUpQueue() {
+        if (!radioQueueActive) return
+        if (stateFlow.value is PlayerState.Radio.Loading) return
+        val remaining = withContext(Dispatchers.Main) {
+            player.mediaItemCount - player.currentMediaItemIndex - 1
+        }
+        if (remaining > RADIO_PREFETCH_THRESHOLD) return
+        loadPlaylist()
     }
 
     private var autoStartRadio = app.settings.getBoolean(AUTO_START_RADIO, true)
@@ -134,8 +150,12 @@ class PlayerRadio(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        if (player.mediaItemCount == 0) stateFlow.value = PlayerState.Radio.Empty
+        if (player.mediaItemCount == 0) {
+            stateFlow.value = PlayerState.Radio.Empty
+            radioQueueActive = false
+        }
         scope.launch { startRadio() }
+        scope.launch { topUpQueue() }
     }
 }
 
