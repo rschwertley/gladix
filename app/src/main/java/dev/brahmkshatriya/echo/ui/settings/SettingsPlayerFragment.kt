@@ -81,7 +81,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     title = getString(R.string.unmetered_stream_quality)
                     summary = getString(R.string.unmetered_stream_quality_summary)
                     entries =
-                        context.resources.getStringArray(R.array.stream_qualities) + getString(R.string.off)
+                        context.resources.getStringArray(R.array.stream_qualities) + getString(R.string.unmetered_stream_quality_auto)
                     entryValues = streamQualities + "off"
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false

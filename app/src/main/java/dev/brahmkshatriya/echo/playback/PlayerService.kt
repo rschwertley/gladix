@@ -435,14 +435,12 @@ class PlayerService : MediaLibraryService() {
             quality: (E) -> Int,
             default: String = streamQualities[1],
         ): E? {
-            val unmetered = if (app.isUnmetered) selectQuality(
-                settings.getString(UNMETERED_STREAM_QUALITY, "off"),
-                quality
-            ) else null
-            return unmetered ?: selectQuality(
-                settings.getString(STREAM_QUALITY, default),
-                quality
-            )
+            if (app.isUnmetered) {
+                val unmeteredQuality = settings.getString(UNMETERED_STREAM_QUALITY, "off")
+                if (unmeteredQuality == "off") return null
+                return selectQuality(unmeteredQuality, quality)
+            }
+            return selectQuality(settings.getString(STREAM_QUALITY, default), quality)
         }
 
         private fun <E> List<E>.selectQuality(final: String?, quality: (E) -> Int): E? {
