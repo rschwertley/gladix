@@ -78,5 +78,10 @@ data class App(
             }
         }
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        _networkFlow.value = when {
+            connectivityManager.activeNetwork == null -> NetworkConnection.NotConnected
+            connectivityManager.isActiveNetworkMetered -> NetworkConnection.Metered
+            else -> NetworkConnection.Unmetered
+        }
     }
 }

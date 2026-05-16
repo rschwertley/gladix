@@ -11,6 +11,9 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
 import dev.brahmkshatriya.echo.extension.DeezerParser
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -21,32 +24,50 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
     fun loadTracks(radio: Radio): Feed<Track> = PagedData.Single {
         val kind = radio.kind()
-        val dataArray: JsonArray = when (kind) {
-            RadioKind.TRACK -> api.mix(radio.id).resultsArray("data")
-            RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data")
-            RadioKind.PLAYLIST,
-            RadioKind.ALBUM -> api.radio(radio.id, radio.extras["artist"].orEmpty())
-                .resultsArray("data")
-            RadioKind.FLOW -> api.flow(radio.id).resultsArray("data")
-        } ?: JsonArray(emptyList())
 
-        dataArray.mapIndexed { index, song ->
-            val track = song.safeObj()?.toTrack(parser) ?: return@mapIndexed null
-            val next = dataArray.getOrNull(index + 1)?.safeObj()?.toTrack(parser)
-            val nextId = next?.id.orEmpty()
+        if (kind == RadioKind.PLAYLIST || kind == RadioKind.ALBUM) {
+            val seedIds = radio.extras["seed_ids"]?.split(",") ?: listOf(radio.id)
+            val seedArtists = radio.extras["seed_artists"]?.split(",")
+                ?: listOf(radio.extras["artist"].orEmpty())
+            val artistId = radio.extras["artist"].orEmpty()
 
-            val addlExtras = when (kind) {
-                RadioKind.TRACK -> mapOf("artist_id" to track.artists.firstOrNull()?.id.orEmpty())
-                RadioKind.ARTIST -> mapOf("artist_id" to radio.id)
-                RadioKind.PLAYLIST,
-                RadioKind.ALBUM -> mapOf("artist_id" to radio.extras["artist"].orEmpty())
-                RadioKind.FLOW -> mapOf("user_id" to "0")
+            val merged = coroutineScope {
+                seedIds.zip(seedArtists).map { (tId, aId) ->
+                    async {
+                        api.radio(tId, aId).resultsArray("data")
+                            ?.mapNotNull { it.safeObj()?.toTrack(parser) }
+                            ?: emptyList()
+                    }
+                }.awaitAll()
+            }.flatten().distinctBy { it.id }.shuffled()
+
+            merged.mapIndexed { index, track ->
+                val nextId = merged.getOrNull(index + 1)?.id.orEmpty()
+                track.copy(extras = track.extras + mapOf("NEXT" to nextId, "artist_id" to artistId))
             }
+        } else {
+            val dataArray: JsonArray = when (kind) {
+                RadioKind.TRACK -> api.mix(radio.id).resultsArray("data")
+                RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data")
+                RadioKind.FLOW -> api.flow(radio.id).resultsArray("data")
+                else -> null
+            } ?: JsonArray(emptyList())
 
-            track.copy(
-                extras = track.extras + mapOf("NEXT" to nextId) + addlExtras
-            )
-        }.filterNotNull()
+            dataArray.mapIndexed { index, song ->
+                val track = song.safeObj()?.toTrack(parser) ?: return@mapIndexed null
+                val next = dataArray.getOrNull(index + 1)?.safeObj()?.toTrack(parser)
+                val nextId = next?.id.orEmpty()
+
+                val addlExtras = when (kind) {
+                    RadioKind.TRACK -> mapOf("artist_id" to track.artists.firstOrNull()?.id.orEmpty())
+                    RadioKind.ARTIST -> mapOf("artist_id" to radio.id)
+                    RadioKind.FLOW -> mapOf("user_id" to "0")
+                    else -> emptyMap()
+                }
+
+                track.copy(extras = track.extras + mapOf("NEXT" to nextId) + addlExtras)
+            }.filterNotNull()
+        }
     }.toFeed()
 
     suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?): Radio = when (item) {
@@ -58,29 +79,33 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
         )
 
         is Album -> {
-            val seed = api.album(item).randomTrackFromSongs(parser)
-                ?: error("No Radio")
+            val seeds = api.album(item).randomTracksFromSongs(parser, 5)
+            val seed = seeds.firstOrNull() ?: error("No Radio")
             Radio(
                 id = seed.id,
                 title = seed.title,
                 cover = seed.cover,
                 extras = mapOf(
                     "radio" to "album",
-                    "artist" to seed.artists.firstOrNull()?.id.orEmpty()
+                    "artist" to seed.artists.firstOrNull()?.id.orEmpty(),
+                    "seed_ids" to seeds.joinToString(",") { it.id },
+                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() }
                 )
             )
         }
 
         is Playlist -> {
-            val seed = api.playlist(item).randomTrackFromSongs(parser)
-                ?: error("No Radio")
+            val seeds = api.playlist(item).randomTracksFromSongs(parser, 5)
+            val seed = seeds.firstOrNull() ?: error("No Radio")
             Radio(
                 id = seed.id,
                 title = item.title + " Radio",
                 cover = item.cover ?: seed.cover,
                 extras = mapOf(
                     "radio" to "playlist",
-                    "artist" to seed.artists.firstOrNull()?.id.orEmpty()
+                    "artist" to seed.artists.firstOrNull()?.id.orEmpty(),
+                    "seed_ids" to seeds.joinToString(",") { it.id },
+                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() }
                 )
             )
         }
@@ -167,4 +192,13 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             val randomObj = songs.randomOrNull()?.safeObj() ?: return null
             randomObj.toTrack(parser)
         }.getOrNull()
+
+    private fun JsonObject.randomTracksFromSongs(parser: DeezerParser, count: Int): List<Track> =
+        runCatching {
+            val songs = this["results"]?.jsonObject
+                ?.get("SONGS")?.jsonObject
+                ?.get("data")?.jsonArray
+                ?: return emptyList()
+            songs.shuffled().take(count).mapNotNull { it.safeObj()?.toTrack(parser) }
+        }.getOrDefault(emptyList())
 }
