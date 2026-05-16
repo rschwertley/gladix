@@ -79,7 +79,7 @@ class TrackingListener(
         current = mediaItem
         if (mediaItem != null) scope.launch {
             runCatching {
-                historyRepository.recordTrack(mediaItem.extensionId, mediaItem.track)
+                historyRepository.recordTrack(mediaItem.extensionId, mediaItem.track, mediaItem.context)
             }
         }
         scope.launch {

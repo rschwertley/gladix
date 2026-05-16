@@ -21,7 +21,7 @@ data class PlayerState(
 
     val servers: MutableMap<String, Result<Streamable.Media.Server>> =
         Collections.synchronizedMap(LinkedHashMap())
-    val serverChanged = MutableSharedFlow<Unit>()
+    val serverChanged = MutableSharedFlow<Unit>(replay = 1)
     val activeLoadCount = AtomicInteger(0)
 
     data class Current(

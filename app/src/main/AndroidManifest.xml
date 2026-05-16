@@ -195,8 +195,6 @@
             </intent-filter>
         </receiver>
 
-        <activity android:name=".playback.PlayerService$MainActivityOpener" />
-
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

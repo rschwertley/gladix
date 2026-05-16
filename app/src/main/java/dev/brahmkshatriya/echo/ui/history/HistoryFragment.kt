@@ -18,7 +18,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
     private val playerViewModel by activityViewModels<PlayerViewModel>()
     private val adapter = HistoryAdapter { item ->
         val track = item.track ?: return@HistoryAdapter
-        playerViewModel.setQueue(item.extensionId, listOf(track), 0, null)
+        playerViewModel.setQueue(item.extensionId, listOf(track), 0, item.context)
         playerViewModel.setPlaying(true)
     }
 

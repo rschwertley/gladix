@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.playback
 
-import android.app.Activity
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -485,19 +484,11 @@ class PlayerService : MediaLibraryService() {
         fun getPendingIntent(context: Context): PendingIntent = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, MainActivityOpener::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
-
-    class MainActivityOpener : Activity() {
-        override fun onStart() {
-            super.onStart()
-            finish()
-            startActivity(Intent(this, getMainActivity()).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(context, context.getMainActivity()).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra("fromNotification", true)
-            })
-        }
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
     }
 }
