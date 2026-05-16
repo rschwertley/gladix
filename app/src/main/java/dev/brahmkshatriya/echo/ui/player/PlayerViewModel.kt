@@ -269,7 +269,7 @@ class PlayerViewModel(
         }
     }
 
-    fun play(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
+    fun play(id: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String? = null) = viewModelScope.launch {
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.playing_x, item.title))
         )
@@ -279,6 +279,7 @@ class PlayerViewModel(
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
                 putBoolean("shuffle", false)
+                if (startTrackId != null) putString("startTrackId", startTrackId)
             })
         }
     }

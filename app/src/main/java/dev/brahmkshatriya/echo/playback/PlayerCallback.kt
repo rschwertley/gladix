@@ -253,6 +253,7 @@ class PlayerCallback(
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
         val loaded = args.getBoolean("loaded", false)
         val shuffle = args.getBoolean("shuffle", false)
+        val startTrackId = args.getString("startTrackId")
         val extension = extensions.music.getExtension(extId) ?: return@future error
         when (item) {
             is Track -> {
@@ -293,14 +294,18 @@ class PlayerCallback(
                     throwableFlow.emit(it)
                     return@future error
                 }
+                val mediaItems = list.map {
+                    MediaItemUtils.build(
+                        app, downloadFlow.value, MediaState.Unloaded(extId, it), item
+                    )
+                }
+                val startIndex = if (startTrackId != null)
+                    list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
+                else 0
                 player.with {
-                    setMediaItems(list.map {
-                        MediaItemUtils.build(
-                            app, downloadFlow.value, MediaState.Unloaded(extId, it), item
-                        )
-                    })
+                    setMediaItems(mediaItems)
                     shuffleModeEnabled = shuffle
-                    seekTo(0, list.firstOrNull()?.playedDuration ?: 0)
+                    seekTo(startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
                     play()
                 }
             }

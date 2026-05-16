@@ -155,7 +155,7 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                     this@ExtensionPreference, extension, state.isLoginClient
                 )
                 screen.addPreference(infoPreference)
-                if (extension.type == ExtensionType.MUSIC) MaterialListPreference(context).apply {
+                if (extension.type == ExtensionType.MUSIC && extension.id != "deezer") MaterialListPreference(context).apply {
                     key = STREAM_QUALITY
                     title = getString(R.string.stream_quality)
                     summary = getString(R.string.x_specific_quality_summary, extension.name)

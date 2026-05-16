@@ -99,17 +99,17 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                         "Wi-Fi Streaming Quality",
                         "unmetered_stream_quality",
                         "Audio quality used on Wi-Fi or unmetered connections",
-                        mutableListOf("Auto (Global App Setting)", "Low (128kbps)", "Medium (320kbps)", "High (FLAC)"),
-                        mutableListOf("off", "lowest", "medium", "highest"),
-                        0
+                        mutableListOf("High (FLAC)", "Medium (320kbps)", "Low (128kbps)", "Auto (Global App Setting)"),
+                        mutableListOf("highest", "medium", "lowest", "off"),
+                        3
                     ),
                     SettingList(
                         "Mobile Data Streaming Quality",
                         "stream_quality",
                         "Audio quality used on mobile data connections",
-                        mutableListOf("Auto (Global App Setting)", "Low (128kbps)", "Medium (320kbps)", "High (FLAC)"),
-                        mutableListOf("off", "lowest", "medium", "highest"),
-                        0
+                        mutableListOf("High (FLAC)", "Medium (320kbps)", "Low (128kbps)", "Auto (Global App Setting)"),
+                        mutableListOf("highest", "medium", "lowest", "off"),
+                        3
                     ),
                     SettingSlider(
                         "Image Quality",

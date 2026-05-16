@@ -6,6 +6,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -18,8 +19,13 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
     private val playerViewModel by activityViewModels<PlayerViewModel>()
     private val adapter = HistoryAdapter { item ->
         val track = item.track ?: return@HistoryAdapter
-        playerViewModel.setQueue(item.extensionId, listOf(track), 0, item.context)
-        playerViewModel.setPlaying(true)
+        val context = item.context
+        if (context is EchoMediaItem.Lists) {
+            playerViewModel.play(item.extensionId, context, false, track.id)
+        } else {
+            playerViewModel.setQueue(item.extensionId, listOf(track), 0, context)
+            playerViewModel.setPlaying(true)
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
