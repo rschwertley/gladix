@@ -161,6 +161,7 @@ class PlayerEventListener(
         if (playbackState == Player.STATE_READY) {
             consecutiveUnavailableSkips = 0
             retried404MediaId = null
+            retriedSocketMediaId = null
         }
     }
 
@@ -190,6 +191,7 @@ class PlayerEventListener(
     private var bufferingWatchdog: Job? = null
     private var retriedMediaId: String? = null
     private var retried404MediaId: String? = null
+    private var retriedSocketMediaId: String? = null
 
     override fun onPlayerError(error: PlaybackException) {
         val cause = error.cause ?: error
@@ -239,13 +241,56 @@ class PlayerEventListener(
         }
 
         val isTransientServerError = rootCause is SocketException
-        if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true || isTransientServerError) {
+        if (isTransientServerError) {
+            val currentMediaId = mediaItem?.mediaId
+            if (retriedSocketMediaId == null || retriedSocketMediaId != currentMediaId) {
+                retriedSocketMediaId = currentMediaId
+                Log.d("GladixPlayback", "onPlayerError: SocketException for $currentMediaId, retrying")
+                val savedIndex = player.currentMediaItemIndex
+                val savedPosition = player.currentPosition
+                player.stop()
+                player.seekTo(savedIndex, savedPosition)
+                player.prepare()
+                player.play()
+            } else {
+                retriedSocketMediaId = null
+                Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
+                consecutiveUnavailableSkips++
+                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                    consecutiveUnavailableSkips = 0
+                    player.pause()
+                    return
+                }
+                val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                if (!hasMore) {
+                    player.pause()
+                    return
+                }
+                if (isAndroidAutoConnected()) {
+                    scope.launch {
+                        withContext(Dispatchers.Main) {
+                            player.pause()
+                            delay(50)
+                            player.seekToNextMediaItem()
+                            player.prepare()
+                            player.play()
+                        }
+                    }
+                } else {
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                    player.play()
+                }
+            }
+            return
+        }
+
+        if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
                 player.pause()
-                val isRetryExhausted = isTransientServerError
-                    || rootCause.message?.contains("not available after retries", ignoreCase = true) == true
+                val isRetryExhausted = rootCause.message?.contains("not available after retries", ignoreCase = true) == true
                 if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 return
             }

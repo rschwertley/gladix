@@ -123,7 +123,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                     )
                     RadioKind.PLAYLIST -> item.asCollectionTrackRadio("playlist")
                     RadioKind.ALBUM -> item.asCollectionTrackRadio("album")
-                    RadioKind.FLOW -> context
+                    RadioKind.FLOW -> context.copy(title = "${context.title} Flow")
                 }
                 is Artist -> Radio(context.id, context.name, context.cover,
                     mapOf("radio" to "artist") as List<Artist>
@@ -134,7 +134,9 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             }
         }
 
-        is Radio -> item
+        is Radio -> if (item.kind() == RadioKind.FLOW && !item.title.endsWith("Flow"))
+            item.copy(title = "${item.title} Flow")
+        else item
     }
 
     private enum class RadioKind { TRACK, ARTIST, PLAYLIST, ALBUM, FLOW }
