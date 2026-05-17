@@ -71,7 +71,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     entryValues = streamQualities
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
-                    setDefaultValue(streamQualities[1])
+                    setDefaultValue(streamQualities[2])
                     addPreference(this)
                 }
 
@@ -84,7 +84,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     entryValues = streamQualities + "off"
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
-                    setDefaultValue("off")
+                    setDefaultValue(streamQualities[1])
                     addPreference(this)
                 }
             }

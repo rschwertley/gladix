@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions.login
 
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.text.InputType.TYPE_CLASS_NUMBER
 import android.text.InputType.TYPE_CLASS_TEXT
@@ -162,8 +163,10 @@ class LoginFragment : Fragment() {
             setupTransition(view)
             val binding = FragmentExtensionLoginSelectorBinding.bind(view)
             val client = loginViewModel.extension.value?.instance?.value
+            val isTV = requireContext().packageManager
+                .hasSystemFeature(PackageManager.FEATURE_LEANBACK)
             val clients = listOfNotNull(
-                if (client is LoginClient.WebView) {
+                if (client is LoginClient.WebView && !isTV) {
                     val button = ItemExtensionButtonBinding.inflate(
                         layoutInflater, binding.loginToggleGroup, false
                     ).root
@@ -193,6 +196,14 @@ class LoginFragment : Fragment() {
                 binding.loginToggleGroup.addView(button)
                 button.id = index
             }
+            val count = binding.loginToggleGroup.childCount
+            repeat(count) { i ->
+                val button = binding.loginToggleGroup.getChildAt(i)
+                button.isFocusable = true
+                button.nextFocusDownId = if (i < count - 1) i + 1 else i
+                button.nextFocusUpId = if (i > 0) i - 1 else 0
+            }
+            if (count > 0) binding.loginToggleGroup.getChildAt(0).requestFocus()
         }
     }
 
@@ -270,6 +281,9 @@ class LoginFragment : Fragment() {
                     }
 
                     customInput.addView(input.root)
+                }
+                if (form.inputFields.isNotEmpty()) {
+                    customInput.getChildAt(0)?.requestFocus()
                 }
                 loginCustomSubmit.setOnClickListener {
                     form.inputFields.forEach {

@@ -144,9 +144,12 @@ object MediaItemUtils {
         background: Streamable.Media.Background?,
         subtitle: Streamable.Media.Subtitle?,
     ) = with(mediaItem) {
-        val bundle = mediaMetadata.extras!!
-        bundle.putSerialized("background", background)
+        val bundle = Bundle().apply {
+            putAll(mediaMetadata.extras!!)
+            putSerialized("background", background)
+        }
         val item = buildUpon()
+        item.setMediaMetadata(mediaMetadata.buildUpon().setExtras(bundle).build())
         item.setSubtitleConfigurations(
             if (subtitle == null) listOf()
             else listOf(
