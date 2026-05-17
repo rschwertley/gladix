@@ -111,7 +111,7 @@ class DeezerApi(private val session: DeezerSession) {
             // callTimeout is intentionally omitted there.
             if (useProxy || login) callTimeout(25, TimeUnit.SECONDS)
             if (useProxy && configuredProxy != null) {
-                val proxy = if (login) "uk1.proxy.murglar.app" else configuredProxy
+                val proxy = if (login && configuredProxy != "uk2.proxy.murglar.app") "uk1.proxy.murglar.app" else configuredProxy
                 sslSocketFactory(createTrustAllSslSocketFactory(), createTrustAllTrustManager())
                 hostnameVerifier { _, _ -> true }
                 proxy(
@@ -390,6 +390,12 @@ class DeezerApi(private val session: DeezerSession) {
                 session.updateCredentials(sid = it.second.substringAfter("sid=").substringBefore(";"))
             }
         }
+    }
+
+    suspend fun getSmartLoginCode(): JsonObject = callAppApi("deezer.createSmartLoginCode")
+
+    suspend fun pollSmartLogin(code: String): JsonObject = callAppApi("deezer.checkSmartLoginCode") {
+        put("code", code)
     }
 
     //<============= Media =============>

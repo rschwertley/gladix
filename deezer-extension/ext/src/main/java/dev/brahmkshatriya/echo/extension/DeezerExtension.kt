@@ -624,6 +624,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         }
     }
 
+    // Temporary diagnostic — remove after confirming SmartLogin API response
+    suspend fun debugSmartLoginCode(): String = runCatching {
+        api.getSid()
+        api.getSmartLoginCode().toString()
+    }.getOrElse { "Error: ${it.message}" }
+
     private val shelf: String get() = session.settings?.getString("shelf") ?: DEFAULT_TYPE
     private val log: Boolean get() = session.settings?.getBoolean("log") == true
     private val history: Boolean get() = session.settings?.getBoolean("history") != false
