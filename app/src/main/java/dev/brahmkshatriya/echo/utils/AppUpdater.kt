@@ -26,7 +26,6 @@ object AppUpdater {
 
     @Suppress("KotlinConstantConditions")
     suspend fun updateApp(app: App): File? {
-        val throwableFlow = app.throwFlow
         val messageFlow = app.messageFlow
         val githubRepo = app.context.getString(R.string.app_github_repo)
         val appType = BuildConfig.BUILD_TYPE
@@ -49,7 +48,6 @@ object AppUpdater {
                 else -> return null
             }
         }.getOrElse {
-            throwableFlow.emit(it)
             return null
         }
 
@@ -64,7 +62,6 @@ object AppUpdater {
             val download = downloadUpdate(app.context, url, client).getOrThrow()
             if (appType == "stable") download else unzipApk(download)
         }.getOrElse {
-            throwableFlow.emit(it)
             return null
         }
     }

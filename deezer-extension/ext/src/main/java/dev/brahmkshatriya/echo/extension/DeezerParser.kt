@@ -321,9 +321,11 @@ class DeezerParser(private val session: DeezerSession) {
         val image = this["pictures"]?.jsonArray?.firstOrNull()?.jsonObject
         val md5 = image?.str("md5")
         val type = image?.str("type")
+        val rawTitle = data.str("title").orEmpty()
+        val title = if (rawTitle.endsWith("Flow")) rawTitle else "$rawTitle Flow"
         return Radio(
             id = data.str("id").orEmpty(),
-            title = data.str("title").orEmpty(),
+            title = title,
             cover = getCover(md5, type),
             extras = mapOf("radio" to "flow")
         )

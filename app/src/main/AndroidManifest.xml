@@ -155,8 +155,8 @@
                 <data android:scheme="content" />
                 <data android:host="*" />
                 <data android:scheme="file" />
-                <data android:pathPattern=".*" />
-                <data android:pathPattern=".*\\.eapk" />
+                <data android:pathPattern="/.*" />
+                <data android:pathPattern="/.*\\.eapk" />
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
