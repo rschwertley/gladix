@@ -14,7 +14,6 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CACHE_SIZE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CLOSE_PLAYER
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.LOUDNESS_NORMALIZATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.MORE_BRAIN_CAPACITY
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_SILENCE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
@@ -124,16 +123,6 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
                     setDefaultValue(true)
-                    addPreference(this)
-                }
-
-                SwitchPreferenceCompat(context).apply {
-                    key = LOUDNESS_NORMALIZATION
-                    title = getString(R.string.loudness_normalization)
-                    summary = getString(R.string.loudness_normalization_summary)
-                    layoutResource = R.layout.preference_switch
-                    isIconSpaceReserved = false
-                    setDefaultValue(false)
                     addPreference(this)
                 }
 

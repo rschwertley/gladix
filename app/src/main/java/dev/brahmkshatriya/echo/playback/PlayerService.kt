@@ -437,8 +437,10 @@ class PlayerService : MediaLibraryService() {
         ): E? {
             if (app.isUnmetered) {
                 val unmeteredQuality = settings.getString(UNMETERED_STREAM_QUALITY, "off")
-                if (unmeteredQuality == "off") return null
-                return selectQuality(unmeteredQuality, quality)
+                if (unmeteredQuality != "off") return selectQuality(unmeteredQuality, quality)
+                if (default == "off") return null  // extension level — stop here
+                // app level — fall through to stream_quality
+                return selectQuality(settings.getString(STREAM_QUALITY, default), quality)
             }
             return selectQuality(settings.getString(STREAM_QUALITY, default), quality)
         }
