@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.common
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.os.Bundle
 import android.view.View
 import androidx.core.net.toFile
@@ -92,6 +93,7 @@ object FragmentUtils {
     private fun FragmentActivity.onIntent(uiViewModel: UiViewModel, intent: Intent?) {
         this.intent = null
         intent ?: return
+        Log.d("GladixAuto", "onIntent: action=${intent.action} extras=${intent.extras?.keySet()} referrer=$referrer")
         val fromNotif = intent.hasExtra("fromNotification")
         if (fromNotif) uiViewModel.run {
             if (playerSheetState.value == STATE_HIDDEN) return@run

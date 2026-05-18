@@ -436,6 +436,13 @@ class PlayerCallback(
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet=true")
             return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)
         }
+        val hasActiveQueue = withContext(Dispatchers.Main) {
+            mediaSession.player.mediaItemCount > 0
+        }
+        if (hasActiveQueue) {
+            Log.d("GladixPlayback", "onPlaybackResumption: skipping, player already has queue")
+            return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)
+        }
         if (state.activeLoadCount.get() > 0) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
             return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)

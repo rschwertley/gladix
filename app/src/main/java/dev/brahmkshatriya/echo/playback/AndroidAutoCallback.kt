@@ -93,10 +93,26 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
-        if (params?.isRecent == true)
+        if (params?.isRecent == true) {
+            val tracks = context.recoverTracks()
+            val index = context.recoverIndex() ?: 0
+            val track = (tracks?.getOrNull(index) ?: tracks?.firstOrNull())?.first?.item
             return Futures.immediateFuture(
-                LibraryResult.ofItem(browsableItem("recent", "", browsable = false), null)
+                LibraryResult.ofItem(
+                    if (track != null)
+                        browsableItem(
+                            "recent",
+                            track.title,
+                            track.subtitleWithE,
+                            browsable = false,
+                            artWorkUri = track.cover?.toUri(context)
+                        )
+                    else
+                        browsableItem("recent", "", browsable = false),
+                    null
+                )
             )
+        }
         if (browser.packageName != "com.google.android.projection.gearhead")
             return Futures.immediateFuture(
                 LibraryResult.ofItem(browsableItem(ROOT, "", browsable = false), null)
