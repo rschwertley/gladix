@@ -86,6 +86,7 @@ dependencies {
     implementation(libs.bundles.media3)
     implementation(libs.bundles.coil)
 
+    implementation(libs.zxing.core)
     implementation(libs.pikolo)
     implementation(libs.fadingedgelayout)
     implementation(libs.fastscroll)

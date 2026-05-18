@@ -40,6 +40,7 @@ class LoginViewModel(
         data object Selector : FragmentType()
         data object WebView : FragmentType()
         data class CustomInput(val index: Int?) : FragmentType()
+        data object SmartLogin : FragmentType()
     }
 
     private suspend fun loginNotSupported(extName: String?) {
@@ -73,6 +74,10 @@ class LoginViewModel(
         }
         loading.value = false
         loadingOver.emit(Unit)
+    }
+
+    fun onSmartLoginComplete(users: Result<List<User>>) = viewModelScope.launch {
+        afterLogin(users)
     }
 
     fun onWebViewStop(

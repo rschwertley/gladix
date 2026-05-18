@@ -58,6 +58,8 @@ coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
+zxing-core = { module = "com.google.zxing:core", version = "3.5.3" }
+
 pikolo = { module = "com.github.madrapps:pikolo", version = "2.0.2" }
 fadingedgelayout = { module = "com.github.bosphere.android-fadingedgelayout:fadingedgelayout", version = "1.0.0" }
 fastscroll = { module = "me.zhanghai.android.fastscroll:library", version = "1.3.0" }

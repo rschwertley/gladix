@@ -1,6 +1,11 @@
 package dev.brahmkshatriya.echo.ui.extensions.login
 
+import android.app.UiModeManager
+import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType.TYPE_CLASS_NUMBER
 import android.text.InputType.TYPE_CLASS_TEXT
@@ -18,17 +23,21 @@ import androidx.fragment.app.commit
 import androidx.fragment.app.replace
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.transition.MaterialSharedAxis
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LoginClient
 import dev.brahmkshatriya.echo.common.clients.LoginClient.InputField.Type
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginCustomInputBinding
+import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSmartBinding
 import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSelectorBinding
 import dev.brahmkshatriya.echo.databinding.FragmentGenericCollapsableBinding
 import dev.brahmkshatriya.echo.databinding.FragmentWebviewBinding
 import dev.brahmkshatriya.echo.databinding.ItemExtensionButtonBinding
 import dev.brahmkshatriya.echo.databinding.ItemInputBinding
+import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
@@ -39,7 +48,9 @@ import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.configureAppBar
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.koin.core.parameter.parametersOf
@@ -150,6 +161,7 @@ class LoginFragment : Fragment() {
                     putAll(arguments)
                     putInt("formIndex", it.index ?: 0)
                 })
+                LoginViewModel.FragmentType.SmartLogin -> add<SmartLogin>(arguments)
             }
         }
     }
@@ -163,8 +175,11 @@ class LoginFragment : Fragment() {
             setupTransition(view)
             val binding = FragmentExtensionLoginSelectorBinding.bind(view)
             val client = loginViewModel.extension.value?.instance?.value
+            val uiModeManager = requireContext()
+                .getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
             val isTV = requireContext().packageManager
-                .hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                .hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+                uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
             val clients = listOfNotNull(
                 if (client is LoginClient.WebView && !isTV) {
                     val button = ItemExtensionButtonBinding.inflate(
@@ -189,6 +204,16 @@ class LoginFragment : Fragment() {
                         }
                     }
                 } else listOf()).toTypedArray(),
+                *(if (isTV && client is DeezerExtension) {
+                    val button = ItemExtensionButtonBinding.inflate(
+                        layoutInflater, binding.loginToggleGroup, false
+                    ).root
+                    button.text = "Link your device"
+                    button.setIconResource(R.drawable.ic_login)
+                    listOf(button to {
+                        loginViewModel.changeFragment(LoginViewModel.FragmentType.SmartLogin)
+                    })
+                } else emptyList()).toTypedArray(),
             )
             clients.forEachIndexed { index, pair ->
                 val button = pair.first
@@ -316,6 +341,106 @@ class LoginFragment : Fragment() {
             lifecycleScope.launch {
                 loginViewModel.messageFlow.emit(m)
             }
+        }
+    }
+
+    class SmartLogin : Fragment(R.layout.fragment_extension_login_smart) {
+        private val loginViewModel by lazy {
+            requireParentFragment().viewModel<LoginViewModel>().value
+        }
+        private val deezerExt by lazy {
+            loginViewModel.extension.value?.instance?.value as? DeezerExtension
+        }
+        private var pollingJob: Job? = null
+        private var countdownJob: Job? = null
+
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            setupTransition(view, axis = MaterialSharedAxis.X)
+            val binding = FragmentExtensionLoginSmartBinding.bind(view)
+            loadCode(binding)
+            binding.regenerateButton.setOnClickListener { loadCode(binding) }
+        }
+
+        private fun loadCode(binding: FragmentExtensionLoginSmartBinding) {
+            pollingJob?.cancel()
+            countdownJob?.cancel()
+            binding.qrCode.visibility = View.INVISIBLE
+            binding.smartCode.visibility = View.INVISIBLE
+            binding.qrLoading.visibility = View.VISIBLE
+            binding.ttlCountdown.isVisible = false
+            binding.pollingStatus.isVisible = false
+            binding.errorText.isVisible = false
+            binding.regenerateButton.isVisible = false
+
+            lifecycleScope.launch {
+                val ext = deezerExt
+                if (ext == null) {
+                    showError(binding, "DeezerExtension not available")
+                    return@launch
+                }
+                val session = runCatching { ext.startSmartLogin() }.getOrElse { e ->
+                    showError(binding, e.message ?: "Unknown error starting SmartLogin")
+                    return@launch
+                }
+
+                if (session.journeyUrl.isNotEmpty()) {
+                    runCatching {
+                        val writer = QRCodeWriter()
+                        val matrix = writer.encode(session.journeyUrl, BarcodeFormat.QR_CODE, 512, 512)
+                        val bmp = Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565)
+                        for (x in 0 until 512) {
+                            for (y in 0 until 512) {
+                                bmp.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+                            }
+                        }
+                        binding.qrCode.setImageBitmap(bmp)
+                    }
+                }
+                binding.qrLoading.visibility = View.GONE
+                binding.qrCode.visibility = View.VISIBLE
+                binding.smartCode.text = session.code
+                binding.smartCode.visibility = View.VISIBLE
+                binding.pollingStatus.isVisible = true
+
+                countdownJob = launch {
+                    for (remaining in session.ttlSeconds downTo 0) {
+                        binding.ttlCountdown.text = "Expires in: ${remaining}s"
+                        binding.ttlCountdown.isVisible = true
+                        delay(1000)
+                    }
+                    pollingJob?.cancel()
+                    binding.pollingStatus.isVisible = false
+                    binding.ttlCountdown.text = "Code expired"
+                    binding.regenerateButton.isVisible = true
+                }
+
+                pollingJob = launch {
+                    while (isActive) {
+                        delay(session.pollIntervalSeconds * 1000L)
+                        val accessToken = runCatching {
+                            ext.checkSmartLoginCode(session.code)
+                        }.getOrNull() ?: continue
+                        if (accessToken.isEmpty()) continue
+                        countdownJob?.cancel()
+                        val users = runCatching { ext.completeSmartLogin(accessToken) }
+                        loginViewModel.onSmartLoginComplete(users)
+                        return@launch
+                    }
+                }
+            }
+        }
+
+        private fun showError(binding: FragmentExtensionLoginSmartBinding, message: String) {
+            binding.qrLoading.visibility = View.GONE
+            binding.errorText.text = message
+            binding.errorText.isVisible = true
+            binding.regenerateButton.isVisible = true
+        }
+
+        override fun onDestroyView() {
+            super.onDestroyView()
+            pollingJob?.cancel()
+            countdownJob?.cancel()
         }
     }
 }

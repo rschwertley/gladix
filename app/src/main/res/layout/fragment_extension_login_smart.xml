@@ -1,0 +1,93 @@
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:focusable="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="24dp"
+        android:layout_marginVertical="24dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="Scan with the Deezer app on your phone"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <ImageView
+                android:id="@+id/qrCode"
+                android:layout_width="256dp"
+                android:layout_height="256dp"
+                android:contentDescription="QR code"
+                android:visibility="invisible" />
+
+            <ProgressBar
+                android:id="@+id/qrLoading"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center" />
+
+        </FrameLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="Or visit deezer.com/link and enter:"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <TextView
+            android:id="@+id/smartCode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:textAppearance="?attr/textAppearanceHeadlineMedium"
+            android:textStyle="bold"
+            android:visibility="invisible" />
+
+        <TextView
+            android:id="@+id/ttlCountdown"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/pollingStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="Waiting for confirmation…"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/errorText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/regenerateButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="64dp"
+            android:text="Generate new code"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

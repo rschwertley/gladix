@@ -56,6 +56,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -608,6 +609,35 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         }
     }
 
+    //<============= SmartLogin =============>
+
+    suspend fun startSmartLogin(): SmartLoginSession {
+        api.getSid()
+        val response = api.getSmartLoginCode()
+        val results = response["results"]?.let { it as? JsonObject }
+            ?: throw Exception("No results in response: $response")
+        val code = results["SMARTLOGIN_CODE"]?.jsonPrimitive?.content
+            ?: throw Exception("No SMARTLOGIN_CODE in response: $response")
+        return SmartLoginSession(
+            code = code,
+            journeyUrl = results["journeyUrl"]?.jsonPrimitive?.content ?: "",
+            pollIntervalSeconds = results["pollingIntervalInSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
+            ttlSeconds = results["ttlInSeconds"]?.jsonPrimitive?.intOrNull ?: 300
+        )
+    }
+
+    suspend fun checkSmartLoginCode(code: String): String? {
+        val response = api.pollSmartLoginCode(code)
+        val results = response["results"]?.let { it as? JsonObject } ?: return null
+        val token = results["accessToken"]?.jsonPrimitive?.content
+        return token?.takeIf { it.isNotEmpty() }
+    }
+
+    suspend fun completeSmartLogin(accessToken: String): List<User> {
+        api.loginWithAccessToken(accessToken)
+        return api.makeUser()
+    }
+
     //<============= Utils =============>
 
     suspend fun handleArlExpiration() {
@@ -630,5 +660,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     companion object {
         private const val DEFAULT_TYPE = "grid"
+
+        data class SmartLoginSession(
+            val code: String,
+            val journeyUrl: String,
+            val pollIntervalSeconds: Int,
+            val ttlSeconds: Int
+        )
     }
 }
