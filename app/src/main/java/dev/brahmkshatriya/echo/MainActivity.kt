@@ -25,6 +25,9 @@ import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel.Companion.confi
 import dev.brahmkshatriya.echo.ui.main.MainFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
@@ -67,6 +70,13 @@ open class MainActivity : AppCompatActivity() {
             add<PlayerFragment>(R.id.playerFragmentContainer, "player")
         }
         setupIntents(uiViewModel)
+        if (savedInstanceState == null &&
+            referrer?.host == "com.google.android.projection.gearhead" &&
+            !recoverTracks().isNullOrEmpty()
+        ) {
+            uiViewModel.changePlayerState(STATE_EXPANDED)
+            uiViewModel.changeMoreState(STATE_COLLAPSED)
+        }
     }
 
     companion object {
