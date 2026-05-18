@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.media
 
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -76,6 +77,8 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
         applyInsets {
             binding.fabContainer.applyFabInsets(it, systemInsets.value)
         }
+        val isTV = requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        if (isTV) binding.appBarLayout.setExpanded(false, false)
 
         observe(viewModel.itemResultFlow) { result ->
             val item = result?.getOrNull()?.item ?: item

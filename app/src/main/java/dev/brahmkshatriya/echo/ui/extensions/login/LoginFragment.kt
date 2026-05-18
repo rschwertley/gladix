@@ -2,8 +2,6 @@ package dev.brahmkshatriya.echo.ui.extensions.login
 
 import android.content.pm.PackageManager
 import android.os.Bundle
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import dev.brahmkshatriya.echo.extension.DeezerExtension
 import android.text.InputType.TYPE_CLASS_NUMBER
 import android.text.InputType.TYPE_CLASS_TEXT
 import android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
@@ -205,20 +203,7 @@ class LoginFragment : Fragment() {
                 button.nextFocusDownId = if (i < count - 1) i + 1 else i
                 button.nextFocusUpId = if (i > 0) i - 1 else 0
             }
-            if (count > 0) binding.loginToggleGroup.getChildAt(0).requestFocus()
-            if (isTV) {
-                val deezerExt = client as? DeezerExtension
-                if (deezerExt != null) {
-                    lifecycleScope.launch {
-                        val result = deezerExt.debugSmartLoginCode()
-                        MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("SmartLogin Response")
-                            .setMessage(result)
-                            .setPositiveButton("OK", null)
-                            .show()
-                    }
-                }
-            }
+            if (count > 0) view.post { binding.loginToggleGroup.getChildAt(0).requestFocus() }
         }
     }
 
@@ -298,7 +283,11 @@ class LoginFragment : Fragment() {
                     customInput.addView(input.root)
                 }
                 if (form.inputFields.isNotEmpty()) {
-                    customInput.getChildAt(0)?.requestFocus()
+                    view.post {
+                        val firstLayout = customInput.getChildAt(0)
+                            as? com.google.android.material.textfield.TextInputLayout
+                        (firstLayout?.editText ?: customInput.getChildAt(0))?.requestFocus()
+                    }
                 }
                 loginCustomSubmit.setOnClickListener {
                     form.inputFields.forEach {

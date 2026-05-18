@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.utils.ui
 
 import android.graphics.drawable.RippleDrawable
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import java.util.Timer
@@ -46,6 +47,14 @@ interface GestureListener {
                 detector.onTouchEvent(event)
                 performClick()
                 true
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_UP &&
+                    (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    listener.onClick()
+                    true
+                } else false
             }
         }
     }

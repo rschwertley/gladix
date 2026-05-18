@@ -2,6 +2,7 @@
 <com.google.android.material.textfield.TextInputLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     style="@style/TextInput"
+    android:focusable="false"
     app:startIconTint="?colorControlNormal">
 
     <com.google.android.material.textfield.TextInputEditText
