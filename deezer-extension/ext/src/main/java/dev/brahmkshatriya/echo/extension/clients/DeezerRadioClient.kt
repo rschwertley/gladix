@@ -39,7 +39,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                             ?: emptyList()
                     }
                 }.awaitAll()
-            }.flatten().distinctBy { it.id }.shuffled()
+            }.flatten().distinctBy { it.id }.filter { it.id !in seedIds }.shuffled()
 
             merged.mapIndexed { index, track ->
                 val nextId = merged.getOrNull(index + 1)?.id.orEmpty()
@@ -66,7 +66,9 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                 }
 
                 track.copy(extras = track.extras + mapOf("NEXT" to nextId) + addlExtras)
-            }.filterNotNull()
+            }.filterNotNull().let { tracks ->
+                if (kind == RadioKind.TRACK) tracks.filter { it.id != radio.id } else tracks
+            }
         }
     }.toFeed()
 

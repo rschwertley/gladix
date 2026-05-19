@@ -113,7 +113,11 @@ class PlayerRadio(
             player.mediaItemCount - player.currentMediaItemIndex - 1
         }
         if (remaining > RADIO_PREFETCH_THRESHOLD) return
-        loadPlaylist()
+        when (val state = stateFlow.value) {
+            is PlayerState.Radio.Loaded -> play(player, downloadFlow, app, stateFlow, state)
+            is PlayerState.Radio.Empty -> loadPlaylist()
+            else -> {}
+        }
     }
 
     private var autoStartRadio = app.settings.getBoolean(AUTO_START_RADIO, true)

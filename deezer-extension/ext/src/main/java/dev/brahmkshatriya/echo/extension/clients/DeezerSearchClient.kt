@@ -10,6 +10,8 @@ import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.extension.DeezerApi
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -17,7 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.Locale
 
-class DeezerSearchClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val history: Boolean, private val parser: DeezerParser) {
+class DeezerSearchClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val scope: CoroutineScope, private val history: Boolean, private val parser: DeezerParser) {
 
     @Volatile
     private var oldSearch: Triple<String, List<Shelf>, JsonObject?>? = null
@@ -54,7 +56,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         query.ifBlank { return browseFeed(shelf).toFeed() }
 
         if (history) {
-            api.setSearchHistory(query)
+            scope.launch { runCatching { api.setSearchHistory(query) } }
         }
 
         return Feed(loadSearchFeedTabs(query)) { tab ->

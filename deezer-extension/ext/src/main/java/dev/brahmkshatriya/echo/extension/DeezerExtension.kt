@@ -51,7 +51,9 @@ import dev.brahmkshatriya.echo.extension.clients.DeezerPlaylistClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerRadioClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerSearchClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerTrackClient
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
@@ -66,6 +68,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     TrackerClient, LoginClient.WebView, LoginClient.CustomInput,
     LibraryFeedClient, PlaylistEditClient, SaveClient {
 
+    private val extensionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val session by lazy { DeezerSession.getInstance() }
     private val api by lazy { DeezerApi(session) }
     private val parser by lazy { DeezerParser(session) }
@@ -361,7 +364,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     //<============= Search =============>
 
-    private val deezerSearchClient by lazy { DeezerSearchClient(this, api, history, parser) }
+    private val deezerSearchClient by lazy { DeezerSearchClient(this, api, extensionScope, history, parser) }
 
     override suspend fun quickSearch(query: String): List<QuickSearchItem.Query> = deezerSearchClient.quickSearch(query)
 

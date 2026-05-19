@@ -20,6 +20,9 @@ import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.playback.PlayerCommands
+import dev.brahmkshatriya.echo.playback.PlayerService
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.download.DownloadFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
@@ -86,6 +89,14 @@ object FragmentUtils {
         uiViewModel: UiViewModel,
     ) {
         addOnNewIntentListener { onIntent(uiViewModel, it) }
+        addOnNewIntentListener {
+            if (referrer?.host == "com.google.android.projection.gearhead" &&
+                !recoverTracks().isNullOrEmpty()
+            ) {
+                uiViewModel.changePlayerState(STATE_EXPANDED)
+                uiViewModel.changeMoreState(STATE_COLLAPSED)
+            }
+        }
         onIntent(uiViewModel, intent)
     }
 
@@ -94,7 +105,20 @@ object FragmentUtils {
         intent ?: return
         val fromNotif = intent.hasExtra("fromNotification")
         if (fromNotif) uiViewModel.run {
-            if (playerSheetState.value == STATE_HIDDEN) return@run
+            if (playerSheetState.value == STATE_HIDDEN) {
+                if (!recoverTracks().isNullOrEmpty()) {
+                    PlayerService.getController(application) { controller ->
+                        controller.sendCustomCommand(
+                            PlayerCommands.resumeCommand,
+                            Bundle().apply { putBoolean("cleared", false) }
+                        )
+                        controller.release()
+                    }
+                    changePlayerState(STATE_EXPANDED)
+                    changeMoreState(STATE_COLLAPSED)
+                }
+                return
+            }
             changePlayerState(STATE_EXPANDED)
             changeMoreState(STATE_COLLAPSED)
             return

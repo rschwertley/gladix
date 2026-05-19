@@ -55,7 +55,9 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -79,6 +81,7 @@ abstract class AndroidAutoCallback(
     @Volatile protected var userQueueSet = false
     @Volatile private var lastSearchQuery = ""
     private val searchResults = boundedMap<String, List<MediaItem>>()
+    private val searchJobs = boundedMap<String, Deferred<List<MediaItem>>>()
     private val searchMutex = Mutex()
     private var extensionWatcherJob: Job? = null
 
@@ -156,13 +159,19 @@ abstract class AndroidAutoCallback(
         ).firstOrNull() ?: query
         Log.d("GladixAuto", "onSearch: rawQuery='$query' effectiveQuery='$effectiveQuery'")
         lastSearchQuery = effectiveQuery
+        val deferred = scope.async { performSearch(effectiveQuery) }
+        searchJobs[query] = deferred
         scope.launch {
             runCatching {
-                val tracks = performSearch(effectiveQuery)
+                val tracks = deferred.await()
                 searchResults[query] = tracks
+                searchJobs.remove(query)
                 Log.d("GladixAuto", "onSearch: notifySearchResultChanged query='$query' count=${tracks.size}")
                 session.notifySearchResultChanged(browser, query, tracks.size, params)
-            }.onFailure { if (it is CancellationException) throw it else it.printStackTrace() }
+            }.onFailure {
+                searchJobs.remove(query)
+                if (it is CancellationException) throw it else it.printStackTrace()
+            }
         }
     }
 
@@ -317,11 +326,14 @@ abstract class AndroidAutoCallback(
         Log.d("GladixAuto", "onGetSearchResult: query='$query' page=$page pageSize=$pageSize lastSearchQuery='$lastSearchQuery' cachedResults=${searchResults[query]?.size ?: "none"}")
         return scope.future {
             val effectiveQuery = lastSearchQuery.ifEmpty { query }
-            val allTracks = searchMutex.withLock {
-                searchResults[query] ?: performSearch(effectiveQuery).also {
-                    searchResults[query] = it
+            val allTracks = searchResults[query]
+                ?: runCatching { searchJobs[query]?.await() }.getOrNull()
+                    ?.also { searchResults[query] = it }
+                ?: searchMutex.withLock {
+                    searchResults[query] ?: performSearch(effectiveQuery).also {
+                        searchResults[query] = it
+                    }
                 }
-            }
             val from = page * pageSize
             Log.d("GladixAuto", "onGetSearchResult: returning ${allTracks.drop(from).take(pageSize).size} items (total=${allTracks.size}) for query='$query'")
             LibraryResult.ofItemList(allTracks.drop(from).take(pageSize), null)
@@ -341,7 +353,7 @@ abstract class AndroidAutoCallback(
                         return@withTimeout emptyList<MediaItem>()
                     }
                     val feed = client.loadSearchFeed(query)
-                    val tab = feed.notSortTabs.firstOrNull()
+                    val tab = feed.notSortTabs.firstOrNull { it.id == "TRACK" }
                     Log.d("GladixAuto", "performSearch: ext='${ext.id}' feed tabs=${feed.notSortTabs.map { it.title }} using tab=${tab?.title}")
                     val pagedData = feed.getPagedData(tab).pagedData
                     val (shelves, _) = pagedData.loadPage(null)

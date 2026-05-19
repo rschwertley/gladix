@@ -121,9 +121,19 @@ class PlayerEventListener(
                 withContext(Dispatchers.Main) {
                     if (player.playbackState != Player.STATE_BUFFERING) return@withContext
                     val currentMediaId = player.currentMediaItem?.mediaId
-                    if (retriedMediaId == null || retriedMediaId != currentMediaId) {
+                    if (retriedMediaId != currentMediaId) {
                         retriedMediaId = currentMediaId
-                        Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId")
+                        retriedWatchdogCount = 1
+                        Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt 1/$maxWatchdogRetries)")
+                        val savedIndex = player.currentMediaItemIndex
+                        val savedPosition = player.currentPosition
+                        player.stop()
+                        player.seekTo(savedIndex, savedPosition)
+                        player.prepare()
+                        player.play()
+                    } else if (retriedWatchdogCount < maxWatchdogRetries) {
+                        retriedWatchdogCount++
+                        Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
                         val savedIndex = player.currentMediaItemIndex
                         val savedPosition = player.currentPosition
                         player.stop()
@@ -132,6 +142,7 @@ class PlayerEventListener(
                         player.play()
                     } else {
                         retriedMediaId = null
+                        retriedWatchdogCount = 0
                         Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
                         consecutiveUnavailableSkips++
                         if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
@@ -190,6 +201,8 @@ class PlayerEventListener(
 
     private var bufferingWatchdog: Job? = null
     private var retriedMediaId: String? = null
+    private var retriedWatchdogCount = 0
+    private val maxWatchdogRetries = 2
     private var retried404MediaId: String? = null
     private var retriedSocketMediaId: String? = null
 
