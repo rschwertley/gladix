@@ -63,6 +63,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
@@ -96,6 +97,7 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
+        Log.d("GladixAuto", "onGetLibraryRoot: isRecent=${params?.isRecent} extensionCount=${extensionList.value.size} tracksAvailable=${context.recoverTracks()?.size ?: 0}")
         if (params?.isRecent == true) {
             val tracks = context.recoverTracks()
             val index = context.recoverIndex() ?: 0
@@ -356,8 +358,9 @@ abstract class AndroidAutoCallback(
                 shelves.toTracks().map { it.toItem(context, ext.id) }
             }
         }.getOrElse {
-            if (it is CancellationException) throw it
-            emptyList()
+            if (it is TimeoutCancellationException) emptyList()
+            else if (it is CancellationException) throw it
+            else emptyList()
         }
     }
 
