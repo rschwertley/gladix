@@ -132,6 +132,7 @@ abstract class AndroidAutoCallback(
                 if (extensions.isNotEmpty()) {
                     Log.d("GladixAuto", "extensionWatcher: calling notifyChildrenChanged ROOT count=${extensions.size}")
                     session.notifyChildrenChanged(browser, ROOT, extensions.size, null)
+                    session.notifyChildrenChanged(browser, "recent", 1, null)
                 }
             }
         }
@@ -297,7 +298,7 @@ abstract class AndroidAutoCallback(
                         browsableItem("$ROOT/$extId/$HOME", context.getString(R.string.home))
                     else null,
                     if (extension.isClient<SearchFeedClient>())
-                        browsableItem("$ROOT/$extId/$SEARCH", context.getString(R.string.search))
+                        browsableItem("$ROOT/$extId/$SEARCH", context.getString(R.string.aa_browse))
                     else null,
                     if (extension.isClient<LibraryFeedClient>())
                         browsableItem("$ROOT/$extId/$LIBRARY", context.getString(R.string.library))
@@ -352,9 +353,11 @@ abstract class AndroidAutoCallback(
                         Log.d("GladixAuto", "performSearch: ext='${ext.id}' not a SearchFeedClient, skipping")
                         return@withTimeout emptyList<MediaItem>()
                     }
+                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' calling loadSearchFeed query='$query'")
                     val feed = client.loadSearchFeed(query)
+                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' loadSearchFeed returned, tabs=${feed.notSortTabs.map { it.id }}")
                     val tab = feed.notSortTabs.firstOrNull { it.id == "TRACK" }
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' feed tabs=${feed.notSortTabs.map { it.title }} using tab=${tab?.title}")
+                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' calling getPagedData tab=${tab?.id}")
                     val pagedData = feed.getPagedData(tab).pagedData
                     val (shelves, _) = pagedData.loadPage(null)
                     Log.d("GladixAuto", "performSearch: ext='${ext.id}' got ${shelves.size} shelves: ${shelves.map { it::class.simpleName }}")

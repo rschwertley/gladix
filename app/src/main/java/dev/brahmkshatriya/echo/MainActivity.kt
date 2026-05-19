@@ -27,8 +27,12 @@ import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+import androidx.lifecycle.lifecycleScope
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
@@ -70,12 +74,19 @@ open class MainActivity : AppCompatActivity() {
             add<PlayerFragment>(R.id.playerFragmentContainer, "player")
         }
         setupIntents(uiViewModel)
-        if (savedInstanceState == null &&
-            referrer?.host == "com.google.android.projection.gearhead" &&
-            !recoverTracks().isNullOrEmpty()
-        ) {
-            uiViewModel.changePlayerState(STATE_EXPANDED)
-            uiViewModel.changeMoreState(STATE_COLLAPSED)
+        val isFromGearhead = try {
+            referrer?.host == "com.google.android.projection.gearhead"
+        } catch (e: Exception) {
+            false
+        }
+        if (savedInstanceState == null && isFromGearhead) {
+            lifecycleScope.launch {
+                val hasTracks = withContext(Dispatchers.IO) { !recoverTracks().isNullOrEmpty() }
+                if (hasTracks) {
+                    uiViewModel.changePlayerState(STATE_EXPANDED)
+                    uiViewModel.changeMoreState(STATE_COLLAPSED)
+                }
+            }
         }
     }
 

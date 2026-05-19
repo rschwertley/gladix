@@ -221,9 +221,7 @@ class ExtensionsViewModel(
         val updateUrl = extension.metadata.updateUrl ?: return null
         val url = runCatching {
             getUpdateFileUrl(currentVersion, updateUrl, client).getOrThrow()
-        }.recoverCatching {
-            throw it.toAppException(extension)
-        }.getOrThrow(app.throwFlow)
+        }.getOrElse { return null }
         if (url == null) {
             if (show) message(
                 app.context.getString(R.string.no_update_available_for_x, extension.name)
@@ -233,9 +231,7 @@ class ExtensionsViewModel(
         message(app.context.getString(R.string.downloading_update_for_x, extension.name))
         val file = runCatching {
             downloadUpdate(app.context, url, client).getOrThrow()
-        }.recoverCatching {
-            throw it.toAppException(extension)
-        }.getOrThrow(app.throwFlow) ?: return null
+        }.getOrElse { return null } ?: return null
         return file
     }
 

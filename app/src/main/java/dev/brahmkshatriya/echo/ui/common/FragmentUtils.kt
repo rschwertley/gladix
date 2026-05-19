@@ -90,9 +90,12 @@ object FragmentUtils {
     ) {
         addOnNewIntentListener { onIntent(uiViewModel, it) }
         addOnNewIntentListener {
-            if (referrer?.host == "com.google.android.projection.gearhead" &&
-                !recoverTracks().isNullOrEmpty()
-            ) {
+            val isFromGearhead = try {
+                referrer?.host == "com.google.android.projection.gearhead"
+            } catch (e: Exception) {
+                false
+            }
+            if (isFromGearhead && !recoverTracks().isNullOrEmpty()) {
                 uiViewModel.changePlayerState(STATE_EXPANDED)
                 uiViewModel.changeMoreState(STATE_COLLAPSED)
             }

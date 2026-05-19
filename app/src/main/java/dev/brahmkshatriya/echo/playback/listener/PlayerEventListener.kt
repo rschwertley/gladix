@@ -7,6 +7,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
@@ -42,7 +43,7 @@ import kotlin.reflect.KClass
 class PlayerEventListener(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val session: MediaSession,
+    private val session: MediaLibrarySession,
     private val currentFlow: MutableStateFlow<PlayerState.Current?>,
     private val extensions: ExtensionLoader,
     private val throwableFlow: MutableSharedFlow<Throwable>,
@@ -82,6 +83,7 @@ class PlayerEventListener(
         updateCurrentFlow()
         updateCustomLayout()
         ResumptionUtils.saveIndex(context, player.currentMediaItemIndex)
+        session.notifyChildrenChanged("recent", 1, null)
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
