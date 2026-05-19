@@ -55,6 +55,9 @@ import dev.brahmkshatriya.echo.playback.renderer.GainNormalizationProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +66,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import java.io.File
 
@@ -200,6 +204,16 @@ class PlayerService : MediaLibraryService() {
         setMediaNotificationProvider(notificationProvider)
 
         mediaSession = session
+
+        scope.launch {
+            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
+            if (items.isEmpty()) return@launch
+            withContext(Dispatchers.Main) {
+                player.shuffleModeEnabled = recoverShuffle() ?: false
+                player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
+                player.setMediaItems(items, index, pos)
+            }
+        }
     }
 
     // Called at the very top of onCreate() to satisfy Android's 5-second startForeground()

@@ -58,6 +58,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -81,13 +82,17 @@ abstract class AndroidAutoCallback(
 
     @Volatile protected var userQueueSet = false
     @Volatile private var lastSearchQuery = ""
+    @Volatile protected var lastBrowsedExtId: String? = null
     private val searchResults = boundedMap<String, List<MediaItem>>()
     private val searchJobs = boundedMap<String, Deferred<List<MediaItem>>>()
     private val searchMutex = Mutex()
     private var extensionWatcherJob: Job? = null
+    private var pendingSearchJob: Job? = null
 
     override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
         userQueueSet = false
+        lastBrowsedExtId = null
+        pendingSearchJob?.cancel()
         super.onDisconnected(session, controller)
     }
 
@@ -162,9 +167,11 @@ abstract class AndroidAutoCallback(
         ).firstOrNull() ?: query
         Log.d("GladixAuto", "onSearch: rawQuery='$query' effectiveQuery='$effectiveQuery'")
         lastSearchQuery = effectiveQuery
-        val deferred = scope.async { performSearch(effectiveQuery) }
-        searchJobs[query] = deferred
-        scope.launch {
+        pendingSearchJob?.cancel()
+        pendingSearchJob = scope.launch {
+            delay(300)
+            val deferred = async { performSearch(effectiveQuery) }
+            searchJobs[query] = deferred
             runCatching {
                 val tracks = deferred.await()
                 searchResults[query] = tracks
@@ -213,6 +220,7 @@ abstract class AndroidAutoCallback(
             )
         }
         val extId = parentId.substringAfter("$ROOT/").substringBefore("/")
+        lastBrowsedExtId = extId
         val extension = extensions.firstOrNull { it.id == extId }
             ?: return@futureCatching LibraryResult.ofError(
                 SessionError(SessionError.ERROR_IO, context.getString(R.string.auto_error_loading))
@@ -343,7 +351,9 @@ abstract class AndroidAutoCallback(
         }
     }
 
-    protected open fun getCurrentExtension(): MusicExtension? = extensionList.value.firstOrNull()
+    protected open fun getCurrentExtension(): MusicExtension? =
+        lastBrowsedExtId?.let { id -> extensionList.value.firstOrNull { it.id == id } }
+            ?: extensionList.value.firstOrNull()
 
     private suspend fun performSearch(query: String): List<MediaItem> {
         val ext = getCurrentExtension() ?: return emptyList()
