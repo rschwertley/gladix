@@ -379,7 +379,7 @@ class DeezerParser(private val session: DeezerSession) {
     fun JsonElement.obj(): JsonObject = jsonObject
     fun JsonObject.unwrap(): JsonObject = this["data"]?.jsonObject ?: this["DATA"]?.jsonObject ?: this
 
-    fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull()
+    fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull()
     private fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
     private fun JsonObject.long(key: String): Long? = str(key)?.toLongOrNull()
     private fun JsonObject.arr(key: String): JsonArray? = this[key]?.jsonArray

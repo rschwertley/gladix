@@ -107,7 +107,7 @@ abstract class AndroidAutoCallback(
                             "recent",
                             track.title,
                             track.subtitleWithE,
-                            browsable = false,
+                            browsable = true,
                             artWorkUri = track.cover?.toUri(context)
                         )
                     else
@@ -341,37 +341,23 @@ abstract class AndroidAutoCallback(
         }
     }
 
+    protected open fun getCurrentExtension(): MusicExtension? = extensionList.value.firstOrNull()
+
     private suspend fun performSearch(query: String): List<MediaItem> {
-        val extensions = extensionList.value
-        Log.d("GladixAuto", "performSearch: query='$query' searching ${extensions.size} extensions")
-        return extensions.flatMap { ext ->
-            runCatching {
-                withTimeout(10_000) {
-                    Log.d("GladixAuto", "performSearch: trying ext='${ext.id}'")
-                    val client = ext.instance.value().getOrNull() as? SearchFeedClient
-                    if (client == null) {
-                        Log.d("GladixAuto", "performSearch: ext='${ext.id}' not a SearchFeedClient, skipping")
-                        return@withTimeout emptyList<MediaItem>()
-                    }
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' calling loadSearchFeed query='$query'")
-                    val feed = client.loadSearchFeed(query)
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' loadSearchFeed returned, tabs=${feed.notSortTabs.map { it.id }}")
-                    val tab = feed.notSortTabs.firstOrNull { it.id == "TRACK" }
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' calling getPagedData tab=${tab?.id}")
-                    val pagedData = feed.getPagedData(tab).pagedData
-                    val (shelves, _) = pagedData.loadPage(null)
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' got ${shelves.size} shelves: ${shelves.map { it::class.simpleName }}")
-                    val tracks = shelves.toTracks()
-                    Log.d("GladixAuto", "performSearch: ext='${ext.id}' extracted ${tracks.size} tracks")
-                    tracks.map { it.toItem(context, ext.id) }
-                }
-            }.getOrElse {
-                if (it is CancellationException) throw it
-                Log.d("GladixAuto", "performSearch: ext='${ext.id}' threw ${it::class.simpleName}: ${it.message}")
-                emptyList()
+        val ext = getCurrentExtension() ?: return emptyList()
+        return runCatching {
+            withTimeout(10_000) {
+                val client = ext.instance.value().getOrNull() as? SearchFeedClient
+                    ?: return@withTimeout emptyList<MediaItem>()
+                val feed = client.loadSearchFeed(query)
+                val tab = feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
+                val pagedData = feed.getPagedData(tab).pagedData
+                val (shelves, _) = pagedData.loadPage(null)
+                shelves.toTracks().map { it.toItem(context, ext.id) }
             }
-        }.also { results ->
-            Log.d("GladixAuto", "performSearch: query='$query' total results=${results.size}")
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            emptyList()
         }
     }
 
