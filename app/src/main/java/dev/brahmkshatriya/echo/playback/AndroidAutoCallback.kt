@@ -326,6 +326,16 @@ abstract class AndroidAutoCallback(
     }
 
     @OptIn(UnstableApi::class)
+    override fun onGetItem(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        mediaId: String
+    ): ListenableFuture<LibraryResult<MediaItem>> {
+        Log.d("GladixAuto", "onGetItem: mediaId='$mediaId' lastBrowsedExtId=$lastBrowsedExtId")
+        return super.onGetItem(session, browser, mediaId)
+    }
+
+    @OptIn(UnstableApi::class)
     @CallSuper
     override fun onGetSearchResult(
         session: MediaLibrarySession,

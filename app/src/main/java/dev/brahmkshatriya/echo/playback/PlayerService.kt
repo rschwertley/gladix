@@ -240,6 +240,7 @@ class PlayerService : MediaLibraryService() {
         )
             .setSmallIcon(R.drawable.ic_gladix_mono)
             .setContentTitle(getString(R.string.app_name))
+            .setContentIntent(getPendingIntent(this))
             .setSilent(true)
             .build()
         try {
