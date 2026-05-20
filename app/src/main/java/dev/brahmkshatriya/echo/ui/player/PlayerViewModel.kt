@@ -155,7 +155,7 @@ class PlayerViewModel(
 
     fun setPlaying(isPlaying: Boolean) {
         withBrowser {
-            if (isPlaying && it.playbackState == Player.STATE_IDLE) it.prepare()
+            if (isPlaying && (it.playbackState == Player.STATE_IDLE || it.playbackState == Player.STATE_ERROR)) it.prepare()
             it.playWhenReady = isPlaying
         }
     }

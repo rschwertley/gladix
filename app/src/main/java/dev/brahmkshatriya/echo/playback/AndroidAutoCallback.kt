@@ -139,7 +139,7 @@ abstract class AndroidAutoCallback(
                 if (extensions.isNotEmpty()) {
                     Log.d("GladixAuto", "extensionWatcher: calling notifyChildrenChanged ROOT count=${extensions.size}")
                     session.notifyChildrenChanged(browser, ROOT, extensions.size, null)
-                    session.notifyChildrenChanged(browser, "recent", 1, null)
+                    session.notifyChildrenChanged("recent", 1, null)
                 }
             }
         }
@@ -221,7 +221,7 @@ abstract class AndroidAutoCallback(
             )
         }
         val extId = parentId.substringAfter("$ROOT/").substringBefore("/")
-        lastBrowsedExtId = extId
+        if (parentId.substringAfter("$ROOT/$extId").isNotEmpty()) lastBrowsedExtId = extId
         val extension = extensions.firstOrNull { it.id == extId }
             ?: return@futureCatching LibraryResult.ofError(
                 SessionError(SessionError.ERROR_IO, context.getString(R.string.auto_error_loading))
@@ -376,7 +376,15 @@ abstract class AndroidAutoCallback(
                 val tab = feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
                 val pagedData = feed.getPagedData(tab).pagedData
                 val (shelves, _) = pagedData.loadPage(null)
-                shelves.toTracks().map { it.toItem(context, ext.id) }
+                shelves.toTracks().map { track ->
+                    val item = track.toItem(context, ext.id)
+                    val artist = item.mediaMetadata.artist
+                    item.buildUpon().setMediaMetadata(
+                        item.mediaMetadata.buildUpon()
+                            .setArtist(if (artist.isNullOrEmpty()) ext.name else "$artist • ${ext.name}")
+                            .build()
+                    ).build()
+                }
             }
         }.getOrElse {
             if (it is TimeoutCancellationException) emptyList()

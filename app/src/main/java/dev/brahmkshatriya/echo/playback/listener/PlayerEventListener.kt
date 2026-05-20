@@ -240,12 +240,12 @@ class PlayerEventListener(
                 consecutiveUnavailableSkips++
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                     consecutiveUnavailableSkips = 0
-                    player.pause()
+                    player.stop()
                     return
                 }
                 val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
                 if (!hasMore) {
-                    player.pause()
+                    player.stop()
                     return
                 }
                 player.seekToNextMediaItem()
@@ -273,12 +273,12 @@ class PlayerEventListener(
                 consecutiveUnavailableSkips++
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                     consecutiveUnavailableSkips = 0
-                    player.pause()
+                    player.stop()
                     return
                 }
                 val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
                 if (!hasMore) {
-                    player.pause()
+                    player.stop()
                     return
                 }
                 if (isAndroidAutoConnected()) {
@@ -304,14 +304,14 @@ class PlayerEventListener(
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
-                player.pause()
+                player.stop()
                 val isRetryExhausted = rootCause.message?.contains("not available after retries", ignoreCase = true) == true
                 if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 return
             }
             val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
             if (!hasMore) {
-                player.pause()
+                player.stop()
                 return
             }
             if (isAndroidAutoConnected()) {
@@ -347,7 +347,7 @@ class PlayerEventListener(
         if (retries >= maxSingleItemRetries) {
             val hasMore = index < player.mediaItemCount - 1
             if (!hasMore) {
-                player.pause()
+                player.stop()
                 return
             }
             player.seekToNextMediaItem()
