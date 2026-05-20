@@ -211,7 +211,7 @@ class PlayerService : MediaLibraryService() {
             withContext(Dispatchers.Main) {
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
-                player.setMediaItems(items, index, pos)
+                player.setMediaItems(items.toMutableList(), index, pos)
             }
         }
     }
