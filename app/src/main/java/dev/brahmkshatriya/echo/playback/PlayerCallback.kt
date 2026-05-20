@@ -309,6 +309,7 @@ class PlayerCallback(
                 player.with {
                     setMediaItems(mediaItems)
                     shuffleModeEnabled = shuffle
+                    if (playbackState == Player.STATE_IDLE) prepare()
                     seekTo(startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
                     play()
                 }

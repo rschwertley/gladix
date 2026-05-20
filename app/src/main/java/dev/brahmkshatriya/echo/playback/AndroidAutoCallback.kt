@@ -195,6 +195,7 @@ abstract class AndroidAutoCallback(
         pageSize: Int,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.futureCatching {
+        Log.d("GladixAuto", "onGetChildren: parentId='$parentId' page=$page lastBrowsedExtId=$lastBrowsedExtId")
         val extensions = if (parentId == ROOT) {
             withTimeoutOrNull(10_000L) { extensionList.first { it.isNotEmpty() } }
                 ?: return@futureCatching LibraryResult.ofError(
@@ -305,16 +306,16 @@ abstract class AndroidAutoCallback(
             else -> LibraryResult.ofItemList(
                 listOfNotNull(
                     if (extension.isClient<HomeFeedClient>())
-                        browsableItem("$ROOT/$extId/$HOME", context.getString(R.string.home))
+                        browsableItem("$ROOT/$extId/$HOME", "${extension.name} • ${context.getString(R.string.home)}")
                     else null,
                     if (extension.isClient<SearchFeedClient>())
-                        browsableItem("$ROOT/$extId/$SEARCH", context.getString(R.string.aa_browse))
+                        browsableItem("$ROOT/$extId/$SEARCH", "${extension.name} • ${context.getString(R.string.aa_browse)}")
                     else null,
                     if (extension.isClient<LibraryFeedClient>())
-                        browsableItem("$ROOT/$extId/$LIBRARY", context.getString(R.string.library))
+                        browsableItem("$ROOT/$extId/$LIBRARY", "${extension.name} • ${context.getString(R.string.library)}")
                     else null,
                     if (extension.isClient<LibraryFeedClient>())
-                        browsableItem("$ROOT/$extId/$PLAYLISTS", context.getString(R.string.playlists))
+                        browsableItem("$ROOT/$extId/$PLAYLISTS", "${extension.name} • ${context.getString(R.string.playlists)}")
                     else null,
                 ),
                 null
