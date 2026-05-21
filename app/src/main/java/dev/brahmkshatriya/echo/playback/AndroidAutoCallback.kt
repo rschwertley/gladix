@@ -102,7 +102,6 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
-        Log.d("GladixAuto", "onGetLibraryRoot: isRecent=${params?.isRecent} extensionCount=${extensionList.value.size} tracksAvailable=${context.recoverTracks()?.size ?: 0}")
         if (params?.isRecent == true) {
             val tracks = context.recoverTracks()
             val index = context.recoverIndex() ?: 0
@@ -195,7 +194,6 @@ abstract class AndroidAutoCallback(
         pageSize: Int,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.futureCatching {
-        Log.d("GladixAuto", "onGetChildren: parentId='$parentId' page=$page lastBrowsedExtId=$lastBrowsedExtId")
         val extensions = if (parentId == ROOT) {
             withTimeoutOrNull(10_000L) { extensionList.first { it.isNotEmpty() } }
                 ?: return@futureCatching LibraryResult.ofError(
@@ -331,7 +329,6 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         mediaId: String
     ): ListenableFuture<LibraryResult<MediaItem>> {
-        Log.d("GladixAuto", "onGetItem: mediaId='$mediaId' lastBrowsedExtId=$lastBrowsedExtId")
         return super.onGetItem(session, browser, mediaId)
     }
 

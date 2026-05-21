@@ -334,11 +334,22 @@ class DeezerApi(private val session: DeezerSession) {
             // Get access token
             val responseJson = getToken(params, sid)
             val apiResponse = decodeJson(responseJson)
-            session.updateCredentials(token = apiResponse.jsonObject["access_token"]!!.jsonPrimitive.content)
+            val accessToken = (apiResponse["access_token"] as? JsonPrimitive)?.content
+                ?: run {
+                    val errMsg = (apiResponse["error"] as? JsonPrimitive)?.contentOrNull
+                        ?: (apiResponse["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
+                    throw Exception(if (errMsg != null) "Login failed: $errMsg" else "Login failed: no access_token in response")
+                }
+            session.updateCredentials(token = accessToken)
 
             // Get ARL
             val arlObject = callApi("user.getArl")
-            session.updateCredentials(arl = arlObject["results"]!!.jsonPrimitive.content)
+            val arl = (arlObject["results"] as? JsonPrimitive)?.contentOrNull
+                ?: run {
+                    val errMsg = (arlObject["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
+                    throw Exception(if (errMsg != null) "Login failed: $errMsg" else "Login failed: no ARL in response")
+                }
+            session.updateCredentials(arl = arl)
         } catch (e: Exception) {
             if (remainingAttempts > 1) {
                 getArlByEmail(mail, password, remainingAttempts - 1)

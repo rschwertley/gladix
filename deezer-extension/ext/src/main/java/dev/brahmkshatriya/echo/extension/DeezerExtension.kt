@@ -456,12 +456,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     override suspend fun getCurrentUser(): User {
         val userList = api.makeUser()
-        return userList.first()
+        return userList.firstOrNull() ?: throw Exception("Login failed: could not retrieve user after authentication")
     }
 
     override val webViewRequest = object : WebViewRequest.Headers<List<User>> {
         override suspend fun onStop(requests: List<NetworkRequest>): List<User> {
-            val request = requests.first()
+            val request = requests.firstOrNull() ?: throw Exception("Login failed: no auth request intercepted — try logging in again")
             val data = request.headers
             val arl = extractCookieValue(data, "arl")
             val sid = extractCookieValue(data, "sid")

@@ -27,7 +27,9 @@ import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
+import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.HttpDataSource
+import java.io.FileNotFoundException
 import java.net.SocketException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -307,6 +309,41 @@ class PlayerEventListener(
                 player.stop()
                 val isRetryExhausted = rootCause.message?.contains("not available after retries", ignoreCase = true) == true
                 if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+                return
+            }
+            val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+            if (!hasMore) {
+                player.stop()
+                return
+            }
+            if (isAndroidAutoConnected()) {
+                scope.launch {
+                    withContext(Dispatchers.Main) {
+                        player.pause()
+                        delay(50)
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
+                }
+            } else {
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
+            }
+            return
+        }
+
+        val isMissingFile = rootCause is FileDataSource.FileDataSourceException
+                || rootCause is FileNotFoundException
+                || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
+        val is401 = rootCause is HttpDataSource.InvalidResponseCodeException
+                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode == 401
+        if (isMissingFile || is401) {
+            consecutiveUnavailableSkips++
+            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                consecutiveUnavailableSkips = 0
+                player.stop()
                 return
             }
             val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
