@@ -80,6 +80,15 @@ class LoginViewModel(
         afterLogin(users)
     }
 
+    fun onSmartLoginComplete(arl: String) = viewModelScope.launch {
+        loading.value = true
+        val extension = extension.first { it != null }!!
+        val users = extension.getAs<LoginClient.CustomInput, List<User>> {
+            onLogin("manual", mapOf("arl" to arl))
+        }
+        afterLogin(users)
+    }
+
     fun onWebViewStop(
         result: Result<List<User>>,
     ) = viewModelScope.launch {

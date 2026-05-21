@@ -405,18 +405,6 @@ class DeezerApi(private val session: DeezerSession) {
         }
     }
 
-    suspend fun getSmartLoginCode(): JsonObject = callAppApi("deezer.createSmartLoginCode")
-
-    suspend fun pollSmartLoginCode(code: String): JsonObject = callAppApi("deezer.checkSmartLoginCode") {
-        put("SMARTLOGIN_CODE", code)
-    }
-
-    suspend fun loginWithAccessToken(accessToken: String) {
-        session.updateCredentials(token = accessToken)
-        val arlObject = callApi("user.getArl")
-        session.updateCredentials(arl = arlObject["results"]!!.jsonPrimitive.content)
-    }
-
     //<============= Media =============>
 
     private val deezerMedia by lazy { DeezerMedia(this, clientNP) }

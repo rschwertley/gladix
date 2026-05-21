@@ -48,10 +48,12 @@ import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.configureAppBar
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.koin.core.parameter.parametersOf
 
@@ -348,9 +350,6 @@ class LoginFragment : Fragment() {
         private val loginViewModel by lazy {
             requireParentFragment().viewModel<LoginViewModel>().value
         }
-        private val deezerExt by lazy {
-            loginViewModel.extension.value?.instance?.value as? DeezerExtension
-        }
         private var pollingJob: Job? = null
         private var countdownJob: Job? = null
 
@@ -372,38 +371,30 @@ class LoginFragment : Fragment() {
             binding.errorText.isVisible = false
             binding.regenerateButton.isVisible = false
 
-            lifecycleScope.launch {
-                val ext = deezerExt
-                if (ext == null) {
-                    showError(binding, "DeezerExtension not available")
-                    return@launch
-                }
-                val session = runCatching { ext.startSmartLogin() }.getOrElse { e ->
-                    showError(binding, e.message ?: "Unknown error starting SmartLogin")
-                    return@launch
-                }
+            val charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            val code = (1..6).map { charset[kotlin.random.Random.nextInt(charset.length)] }.joinToString("")
+            val qrUrl = "gladix://pair?code=$code"
 
-                if (session.journeyUrl.isNotEmpty()) {
-                    runCatching {
-                        val writer = QRCodeWriter()
-                        val matrix = writer.encode(session.journeyUrl, BarcodeFormat.QR_CODE, 512, 512)
-                        val bmp = Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565)
-                        for (x in 0 until 512) {
-                            for (y in 0 until 512) {
-                                bmp.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
-                            }
+            lifecycleScope.launch {
+                runCatching {
+                    val writer = QRCodeWriter()
+                    val matrix = writer.encode(qrUrl, BarcodeFormat.QR_CODE, 512, 512)
+                    val bmp = Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565)
+                    for (x in 0 until 512) {
+                        for (y in 0 until 512) {
+                            bmp.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
                         }
-                        binding.qrCode.setImageBitmap(bmp)
                     }
+                    binding.qrCode.setImageBitmap(bmp)
                 }
                 binding.qrLoading.visibility = View.GONE
                 binding.qrCode.visibility = View.VISIBLE
-                binding.smartCode.text = session.code
+                binding.smartCode.text = code
                 binding.smartCode.visibility = View.VISIBLE
                 binding.pollingStatus.isVisible = true
 
                 countdownJob = launch {
-                    for (remaining in session.ttlSeconds downTo 0) {
+                    for (remaining in 600 downTo 0) {
                         binding.ttlCountdown.text = "Expires in: ${remaining}s"
                         binding.ttlCountdown.isVisible = true
                         delay(1000)
@@ -416,18 +407,27 @@ class LoginFragment : Fragment() {
 
                 pollingJob = launch {
                     while (isActive) {
-                        delay(session.pollIntervalSeconds * 1000L)
-                        val accessToken = runCatching {
-                            ext.checkSmartLoginCode(session.code)
-                        }.getOrNull() ?: continue
-                        if (accessToken.isEmpty()) continue
+                        delay(3000L)
+                        val arl = pollWorker(code) ?: continue
                         countdownJob?.cancel()
-                        val users = runCatching { ext.completeSmartLogin(accessToken) }
-                        loginViewModel.onSmartLoginComplete(users)
+                        loginViewModel.onSmartLoginComplete(arl)
                         return@launch
                     }
                 }
             }
+        }
+
+        private suspend fun pollWorker(code: String): String? = withContext(Dispatchers.IO) {
+            try {
+                val conn = java.net.URL("https://gladix-pairing.schwertley.workers.dev/pair/$code")
+                    .openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                if (conn.responseCode == 200) {
+                    val body = conn.inputStream.bufferedReader().readText()
+                    org.json.JSONObject(body).optString("arl", "").takeIf { it.isNotEmpty() }
+                } else null
+            } catch (e: Exception) { null }
         }
 
         private fun showError(binding: FragmentExtensionLoginSmartBinding, message: String) {

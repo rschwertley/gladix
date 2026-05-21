@@ -114,6 +114,13 @@
                 style="@style/DialogHorizontalButton"
                 app:icon="@drawable/ic_incognito"
                 android:text="@string/incognito" />
+
+            <Button
+                android:id="@+id/linkTv"
+                style="@style/DialogHorizontalButton"
+                android:text="@string/link_tv_device"
+                android:visibility="gone"
+                app:icon="@drawable/ic_sensors" />
         </LinearLayout>
     </HorizontalScrollView>
 

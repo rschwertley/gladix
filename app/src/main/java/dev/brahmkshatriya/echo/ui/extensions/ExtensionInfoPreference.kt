@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntit
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionInfoFragment.Companion.openLink
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment
+import dev.brahmkshatriya.echo.ui.settings.TvPairingFragment
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -125,6 +126,11 @@ class ExtensionInfoPreference(
                 binding.incognito.setOnClickListener {
                     ext ?: return@setOnClickListener
                     viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))
+                }
+
+                binding.linkTv.isVisible = user != null && ext?.id == "deezer"
+                binding.linkTv.setOnClickListener {
+                    requireActivity().openFragment<TvPairingFragment>()
                 }
 
                 binding.currentUserName.text = user?.name

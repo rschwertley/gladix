@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Gradient colour overlay sits behind everything -->
+    <ImageView
+        android:id="@+id/tv_bg_gradient"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        app:srcCompat="@drawable/gradient_track"
+        app:tint="?echoBackground" />
+
+    <!-- Horizontal split: album art (45%) | info + controls (55%) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?actionBarSize"
+        android:orientation="horizontal">
+
+        <!-- Left panel: Ken Burns album art -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.45">
+
+            <com.flaviofaria.kenburnsview.KenBurnsView
+                android:id="@+id/tv_album_art"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:focusable="false"
+                android:importantForAccessibility="no"
+                android:scaleType="centerCrop" />
+
+        </FrameLayout>
+
+        <!-- Right panel: info + controls -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.55"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingStart="32dp"
+            android:paddingEnd="56dp"
+            android:paddingVertical="24dp">
+
+            <!-- Title row: title + heart -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tv_track_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="marquee"
+                        android:maxLines="1"
+                        android:textSize="28sp"
+                        android:textStyle="bold"
+                        tools:text="Track Title" />
+
+                    <TextView
+                        android:id="@+id/tv_track_artist"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:paddingTop="4dp"
+                        android:textSize="18sp"
+                        tools:text="Artist Name" />
+
+                </LinearLayout>
+
+                <com.google.android.material.checkbox.MaterialCheckBox
+                    android:id="@+id/tv_track_heart"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/ripple_60dp"
+                    android:button="@drawable/anim_heart_40dp"
+                    android:contentDescription="@string/like"
+                    android:focusable="true"
+                    android:nextFocusDown="@+id/tv_seek_bar"
+                    app:buttonTint="@color/button_player" />
+
+            </LinearLayout>
+
+            <!-- Seek bar (buffer + slider overlapping) -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp">
+
+                <com.google.android.material.progressindicator.LinearProgressIndicator
+                    android:id="@+id/tv_buffer_bar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginHorizontal="12dp"
+                    android:alpha="0.5"
+                    app:indicatorColor="?attr/colorTertiary"
+                    app:indicatorTrackGapSize="0dp"
+                    app:trackColor="?attr/colorOnSurface"
+                    app:trackThickness="2dp" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/tv_seek_bar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="-3dp"
+                    android:layout_marginEnd="-3dp"
+                    android:contentDescription="@string/seekbar"
+                    android:focusable="true"
+                    android:nextFocusDown="@+id/tv_track_play_pause"
+                    android:nextFocusUp="@+id/tv_track_heart"
+                    android:paddingVertical="24dp"
+                    android:value="0.5"
+                    app:labelBehavior="gone"
+                    app:minTouchTargetSize="56dp"
+                    app:thumbColor="?attr/colorTertiary"
+                    app:thumbHeight="20dp"
+                    app:thumbWidth="20dp"
+                    app:trackColorActive="?attr/colorTertiary"
+                    app:trackColorInactive="@android:color/transparent"
+                    app:trackHeight="2dp"
+                    app:trackStopIndicatorSize="0dp" />
+
+            </FrameLayout>
+
+            <!-- Time labels -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp">
+
+                <TextView
+                    android:id="@+id/tv_current_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    tools:text="0:00" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/tv_total_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:alpha="0.66"
+                    android:textSize="14sp"
+                    tools:text="3:45" />
+
+            </LinearLayout>
+
+            <!-- Controls row: shuffle | prev | play/pause | next | repeat -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <com.google.android.material.checkbox.MaterialCheckBox
+                    android:id="@+id/tv_track_shuffle"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/ripple_60dp"
+                    android:button="@drawable/anim_shuffle"
+                    android:contentDescription="@string/shuffle"
+                    android:focusable="true"
+                    android:nextFocusUp="@id/tv_seek_bar"
+                    android:nextFocusRight="@+id/tv_track_previous"
+                    android:outlineProvider="none"
+                    app:buttonTint="@color/button_player" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_track_previous"
+                    style="?attr/materialIconButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/ripple_60dp"
+                    android:contentDescription="@string/previous"
+                    android:enabled="false"
+                    android:focusable="true"
+                    android:nextFocusUp="@id/tv_seek_bar"
+                    android:nextFocusLeft="@id/tv_track_shuffle"
+                    android:nextFocusRight="@+id/tv_track_play_pause"
+                    android:outlineProvider="none"
+                    app:elevation="1dp"
+                    app:icon="@drawable/ic_skip_previous_40dp"
+                    app:iconSize="40dp"
+                    app:iconTint="@color/button_player" />
+
+                <FrameLayout
+                    android:layout_width="72dp"
+                    android:layout_height="72dp">
+
+                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                        android:id="@+id/tv_playing_indicator"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:alpha="0"
+                        android:clickable="false"
+                        android:indeterminate="true"
+                        app:indicatorSize="64dp" />
+
+                    <com.google.android.material.checkbox.MaterialCheckBox
+                        android:id="@+id/tv_track_play_pause"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:background="@drawable/ripple_68dp"
+                        android:button="@drawable/anim_play_pause_48dp"
+                        android:checked="true"
+                        android:contentDescription="@string/play"
+                        android:focusable="true"
+                        android:nextFocusUp="@id/tv_seek_bar"
+                        android:nextFocusLeft="@id/tv_track_previous"
+                        android:nextFocusRight="@+id/tv_track_next"
+                        app:buttonTint="@color/button_player" />
+
+                </FrameLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_track_next"
+                    style="?attr/materialIconButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/ripple_60dp"
+                    android:contentDescription="@string/next"
+                    android:enabled="false"
+                    android:focusable="true"
+                    android:nextFocusUp="@id/tv_seek_bar"
+                    android:nextFocusLeft="@id/tv_track_play_pause"
+                    android:nextFocusRight="@+id/tv_track_repeat"
+                    android:outlineProvider="none"
+                    app:elevation="1dp"
+                    app:icon="@drawable/ic_skip_next_40dp"
+                    app:iconSize="40dp"
+                    app:iconTint="@color/button_player" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tv_track_repeat"
+                    style="?attr/materialIconButtonStyle"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/ripple_60dp"
+                    android:contentDescription="@string/repeat"
+                    android:focusable="true"
+                    android:nextFocusUp="@id/tv_seek_bar"
+                    android:nextFocusLeft="@id/tv_track_next"
+                    android:outlineProvider="none"
+                    android:padding="12dp"
+                    app:icon="@drawable/ic_repeat_off_40dp"
+                    app:iconSize="32dp"
+                    app:iconTint="@color/amoled_fg" />
+
+            </LinearLayout>
+
+            <!-- Quality / stream info label -->
+            <TextView
+                android:id="@+id/tv_track_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:textColor="@color/amoled_fg"
+                android:textSize="14sp"
+                tools:text="320kbps · FLAC" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Toolbar: back + Playing From context + more menu -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/tv_toolbar"
+        style="@style/PlayerToolbarStyle"
+        android:layout_gravity="top" />
+
+</FrameLayout>

@@ -1,8 +1,12 @@
 package dev.brahmkshatriya.echo.ui.player
 
+import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
+import android.view.KeyEvent
 import android.graphics.Outline
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.AnimatedVectorDrawable
@@ -465,6 +469,21 @@ class PlayerFragment : Fragment() {
                     override fun onStopTrackingTouch(slider: Slider) =
                         viewModel.seekTo(slider.value.toLong())
                 })
+                val uiModeManager =
+                    requireContext().getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
+                val isTV = requireContext().packageManager
+                    .hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+                    uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+                if (isTV) {
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> { viewModel.seekToAdd(-10_000); true }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> { viewModel.seekToAdd(10_000); true }
+                            else -> false
+                        }
+                    }
+                }
             }
 
             trackNext.setOnClickListener {

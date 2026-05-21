@@ -1,20 +1,32 @@
 package dev.brahmkshatriya.echo
 
+import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
 import com.google.android.material.navigation.NavigationBarView
 import dev.brahmkshatriya.echo.databinding.ActivityMainBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.playback.PlayerState
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.setupExceptionHandler
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.setupIntents
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.setupSnackBar
@@ -25,17 +37,17 @@ import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel.Companion.confi
 import dev.brahmkshatriya.echo.ui.main.MainFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
-import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
-import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-import androidx.lifecycle.lifecycleScope
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
+import dev.brahmkshatriya.echo.ui.player.PlayerTvFragment
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
+import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
+import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
-import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
-import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
@@ -46,6 +58,13 @@ open class MainActivity : AppCompatActivity() {
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
     private val uiViewModel by viewModel<UiViewModel>()
     private val extensionLoader by inject<ExtensionLoader>()
+    private val playerState by inject<PlayerState>()
+
+    private val isTV by lazy {
+        val uiModeManager = getSystemService(UI_MODE_SERVICE) as UiModeManager
+        packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+            uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +82,7 @@ open class MainActivity : AppCompatActivity() {
         )
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
+        setupTvNowPlaying()
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
@@ -71,7 +91,8 @@ open class MainActivity : AppCompatActivity() {
         supportFragmentManager.commit {
             if (savedInstanceState != null) return@commit
             add<MainFragment>(R.id.navHostFragment, "main")
-            add<PlayerFragment>(R.id.playerFragmentContainer, "player")
+            if (isTV) add<PlayerTvFragment>(R.id.playerFragmentContainer, "player")
+            else add<PlayerFragment>(R.id.playerFragmentContainer, "player")
         }
         setupIntents(uiViewModel)
         val isFromGearhead = try {
@@ -86,6 +107,36 @@ open class MainActivity : AppCompatActivity() {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                     uiViewModel.changeMoreState(STATE_COLLAPSED)
                 }
+            }
+        }
+    }
+
+    private fun setupTvNowPlaying() {
+        val nowPlayingRail = binding.root.findViewById<LinearLayout>(R.id.nowPlayingRail)
+            ?: return
+        val nowPlayingDivider = binding.root.findViewById<android.view.View>(R.id.nowPlayingDivider)
+        val nowPlayingThumb = binding.root.findViewById<ImageView>(R.id.nowPlayingThumb)
+        val nowPlayingTitle = binding.root.findViewById<TextView>(R.id.nowPlayingTitle)
+
+        nowPlayingRail.setOnClickListener {
+            uiViewModel.changePlayerState(STATE_EXPANDED)
+        }
+
+        var hadTrack = false
+        observe(playerState.current) { current ->
+            val hasTrack = current != null
+            if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
+                uiViewModel.changePlayerState(STATE_EXPANDED)
+            }
+            hadTrack = hasTrack
+
+            val visible = current != null
+            nowPlayingRail.isVisible = visible
+            nowPlayingDivider?.isVisible = visible
+            if (current != null) {
+                val track = current.track
+                nowPlayingTitle?.text = track.title
+                track.cover.loadInto(nowPlayingThumb, R.drawable.ic_music)
             }
         }
     }

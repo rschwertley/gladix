@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.ui.download.DownloadFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
 import dev.brahmkshatriya.echo.ui.extensions.WebViewUtils.onWebViewIntent
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
+import dev.brahmkshatriya.echo.ui.settings.TvPairingFragment
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 object FragmentUtils {
@@ -140,6 +141,12 @@ object FragmentUtils {
         val uri = intent.data
         when (uri?.scheme) {
             "echo" -> runCatching { openItemFragmentFromUri(uri) }
+            "gladix" -> {
+                if (uri.host == "pair") {
+                    val code = uri.getQueryParameter("code").orEmpty()
+                    openFragment<TvPairingFragment>(null, TvPairingFragment.getBundle(code))
+                }
+            }
             "file" -> {
                 val viewModel by viewModel<ExtensionsViewModel>()
                 viewModel.installWithPrompt(listOf(uri.toFile()))

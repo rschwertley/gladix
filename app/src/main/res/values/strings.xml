@@ -236,6 +236,9 @@
     <string name="logout">Logout</string>
     <string name="switch_account">Switch Account</string>
     <string name="incognito">Incognito</string>
+    <string name="link_tv_device">Link TV Device</string>
+    <string name="now_playing">Now Playing</string>
+    <string name="coming_soon">Coming soon</string>
     <string name="not_logged_in">Not logged in</string>
     <string name="x_login">%1$s Login</string>
     <string name="x_is_required">%1$s is required</string>

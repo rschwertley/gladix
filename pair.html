@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link your TV — Gladix</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0d;
+      --surface:   #1a1a1a;
+      --surface2:  #242424;
+      --border:    #2e2e2e;
+      --accent:    #f0c030;
+      --accent-dim:#c49a20;
+      --text:      #f0f0f0;
+      --text-muted:#888;
+      --radius:    12px;
+      --input-h:   52px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+
+    .bolt {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      color: var(--accent);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
+
+    .desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 32px;
+    }
+
+    /* ── Form ── */
+    .field { margin-bottom: 20px; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      height: var(--input-h);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      padding: 0 16px;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    #code {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 1.4rem;
+      letter-spacing: 0.25em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    /* ── ARL help ── */
+    details {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 11px 14px;
+      font-size: 0.82rem;
+      color: var(--accent);
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    summary::before {
+      content: "›";
+      display: inline-block;
+      transition: transform 0.2s;
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    details[open] summary::before { transform: rotate(90deg); }
+
+    .arl-help {
+      padding: 0 14px 14px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      background: var(--surface2);
+    }
+
+    .arl-help ol {
+      padding-left: 18px;
+      margin-top: 6px;
+    }
+
+    .arl-help li { margin-bottom: 4px; }
+
+    .arl-help code {
+      background: var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+
+    /* ── Button ── */
+    button[type="submit"] {
+      width: 100%;
+      height: var(--input-h);
+      background: var(--accent);
+      color: #111;
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s, opacity 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    button[type="submit"]:hover { background: #f5cc40; }
+    button[type="submit"]:active { background: var(--accent-dim); }
+    button[type="submit"]:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Status ── */
+    #status {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      display: none;
+      text-align: center;
+    }
+
+    #status.success {
+      display: block;
+      background: #1a2e1a;
+      border: 1px solid #2d5c2d;
+      color: #7ec87e;
+    }
+
+    #status.error {
+      display: block;
+      background: #2e1a1a;
+      border: 1px solid #5c2d2d;
+      color: #c87e7e;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 28px;
+      font-size: 0.75rem;
+      color: #444;
+      text-align: center;
+    }
+
+    footer a { color: #666; text-decoration: none; }
+    footer a:hover { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <svg class="bolt" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M13 2L4.5 13.5H11L10 22L19.5 10H13L13 2Z"/>
+    </svg>
+    <h1>Link your TV</h1>
+  </div>
+  <p class="desc">Enter the code shown on your TV and your Deezer ARL to link your account.</p>
+
+  <form id="form" novalidate>
+    <div class="field">
+      <label for="code">Code</label>
+      <input
+        id="code"
+        type="text"
+        name="code"
+        placeholder="GX4821"
+        maxlength="6"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="characters"
+        spellcheck="false"
+        required
+      >
+    </div>
+
+    <div class="field">
+      <label for="arl">ARL</label>
+      <input
+        id="arl"
+        type="text"
+        name="arl"
+        placeholder="Paste your ARL cookie value"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        required
+      >
+      <details>
+        <summary>How do I find my ARL?</summary>
+        <div class="arl-help">
+          <ol>
+            <li>Log into <strong>deezer.com</strong> in a desktop browser.</li>
+            <li>Open DevTools with <code>F12</code> (or right-click → Inspect).</li>
+            <li>Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>https://www.deezer.com</strong>.</li>
+            <li>Find the cookie named <code>arl</code>.</li>
+            <li>Copy the value from the <strong>Value</strong> column — it's a long string of letters and numbers.</li>
+          </ol>
+        </div>
+      </details>
+    </div>
+
+    <button type="submit" id="submit-btn">Link Device</button>
+  </form>
+
+  <div id="status" role="alert"></div>
+</div>
+
+<footer>
+  <a href="https://github.com/rschwertley/echo">Gladix</a>
+</footer>
+
+<script>
+  const codeInput = document.getElementById('code');
+  const form = document.getElementById('form');
+  const submitBtn = document.getElementById('submit-btn');
+  const statusEl = document.getElementById('status');
+
+  codeInput.addEventListener('input', () => {
+    codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = codeInput.value.trim().toUpperCase();
+    const arl = document.getElementById('arl').value.trim();
+
+    clearStatus();
+
+    if (code.length !== 6) {
+      showStatus('error', 'Please enter the full 6-character code.');
+      return;
+    }
+    if (!arl) {
+      showStatus('error', 'Please enter your ARL.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Linking…';
+
+    try {
+      const res = await fetch(
+        `https://gladix-pairing.schwertley.workers.dev/pair/${encodeURIComponent(code)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, arl }),
+        }
+      );
+
+      if (!res.ok) {
+        showStatus('error', `Server returned ${res.status}. Check the code and try again.`);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.ok) {
+        showStatus('success', '✓ TV linked successfully! You can close this page.');
+        form.reset();
+      } else {
+        showStatus('error', data.error || 'Linking failed. The code may have expired — generate a new one on your TV.');
+      }
+    } catch (err) {
+      showStatus('error', 'Network error. Check your connection and try again.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Link Device';
+    }
+  });
+
+  function showStatus(type, message) {
+    statusEl.className = type;
+    statusEl.textContent = message;
+  }
+
+  function clearStatus() {
+    statusEl.className = '';
+    statusEl.textContent = '';
+    statusEl.style.display = '';
+  }
+</script>
+
+</body>
+</html>
