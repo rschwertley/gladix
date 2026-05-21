@@ -212,7 +212,6 @@ class PlayerService : MediaLibraryService() {
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
                 player.setMediaItems(items.toMutableList(), index, pos)
-                player.prepare()
             }
         }
     }

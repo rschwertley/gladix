@@ -155,6 +155,7 @@ class PlayerCallback(
             player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
         }
         val (items, index, pos) = context.recoverPlaylist(app,downloadFlow.value, withClear)
+        if (items.isEmpty()) return@future SessionResult(RESULT_SUCCESS)
         withContext(Dispatchers.Main) {
             player.setMediaItems(items, index, pos)
             player.prepare()
