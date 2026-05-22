@@ -294,13 +294,18 @@ class DeezerApi(private val session: DeezerSession) {
         val userPass = pass ?: this.pass
         val userList = mutableListOf<User>()
         val jObject = callApi("deezer.getUserData")
-        val userResults = jObject["results"]!!
-        val userObject = userResults.jsonObject["USER"]!!
-        val token = userResults.jsonObject["checkForm"]!!.jsonPrimitive.content
-        val userId = userObject.jsonObject["USER_ID"]!!.jsonPrimitive.content
-        val licenseToken = userObject.jsonObject["OPTIONS"]!!.jsonObject["license_token"]!!.jsonPrimitive.content
-        val name = userObject.jsonObject["BLOG_NAME"]!!.jsonPrimitive.content
-        val cover = userObject.jsonObject["USER_PICTURE"]!!.jsonPrimitive.content
+        val userResults = jObject["results"]
+            ?: throw Exception("getUserData failed: no results in response")
+        val userObject = userResults.jsonObject["USER"]
+            ?: throw Exception("getUserData failed: no USER object — session may be expired")
+        val token = (userResults.jsonObject["checkForm"] as? JsonPrimitive)?.contentOrNull()
+            ?: throw Exception("getUserData failed: no checkForm token")
+        val userId = (userObject.jsonObject["USER_ID"] as? JsonPrimitive)?.contentOrNull()
+            ?: throw Exception("getUserData failed: no USER_ID — guest or expired session")
+        val licenseToken = (userObject.jsonObject["OPTIONS"] as? JsonObject)
+            ?.get("license_token")?.let { (it as? JsonPrimitive)?.contentOrNull() } ?: ""
+        val name = (userObject.jsonObject["BLOG_NAME"] as? JsonPrimitive)?.contentOrNull() ?: ""
+        val cover = (userObject.jsonObject["USER_PICTURE"] as? JsonPrimitive)?.contentOrNull() ?: ""
         val user = User(
             id = userId,
             name = name,

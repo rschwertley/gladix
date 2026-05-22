@@ -18,7 +18,9 @@ class StreamableResolver(
     @OptIn(UnstableApi::class)
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         val (id, index) = dataSpec.uri.toString().toKey().getOrNull() ?: return dataSpec
-        val streamable = runCatching { current[id]!!.getOrThrow().sources[index] }
+        val streamable = runCatching {
+            (current[id] ?: error("Server not found for $id")).getOrThrow().sources[index]
+        }
         val uri = streamable.map {
             if (!it.isLive)
                 context.saveToCache(it.uri.toString(), dataSpec.uri.toString(), "player")

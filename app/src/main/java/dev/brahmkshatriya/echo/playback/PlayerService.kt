@@ -209,10 +209,12 @@ class PlayerService : MediaLibraryService() {
             val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
             if (items.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
+                state.isRestoringQueue = true
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
                 player.setMediaItems(items.toMutableList(), index, pos)
                 player.prepare()
+                state.isRestoringQueue = false
             }
         }
     }

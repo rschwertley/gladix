@@ -50,8 +50,9 @@ class AddViewModel(
             val request = Request.Builder()
                 .addHeader("Cookie", "preview=1")
                 .url(link).build()
-            client.newCall(request).await().body.string()
-                .toData<List<ExtensionAssetResponse>>().getOrThrow()
+            val body = client.newCall(request).await().body.string()
+            if (body.trimStart().startsWith("<")) throw Exception("URL returned an HTML page, not a valid extension list")
+            body.toData<List<ExtensionAssetResponse>>().getOrThrow()
         }
     }.getOrElse {
         throw InvalidExtensionListException(link, it)

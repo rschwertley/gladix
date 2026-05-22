@@ -71,6 +71,9 @@ object Cached {
         runCatching {
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
+                if (new.id != state.item.id) error(
+                    "loadItem returned wrong item: expected ${state.item.id}, got ${new.id}"
+                )
                 val isSaved = async {
                     if (new.isSaveable) extension.getIf<SaveClient, Boolean> {
                         isItemSaved(new)

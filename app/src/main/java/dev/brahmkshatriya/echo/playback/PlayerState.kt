@@ -23,6 +23,7 @@ data class PlayerState(
         Collections.synchronizedMap(LinkedHashMap())
     val serverChanged = MutableSharedFlow<Unit>(replay = 1)
     val activeLoadCount = AtomicInteger(0)
+    @Volatile var isRestoringQueue = false
 
     data class Current(
         val index: Int,

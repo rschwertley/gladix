@@ -46,6 +46,7 @@ import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.await
@@ -56,6 +57,7 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -65,6 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
@@ -201,7 +204,7 @@ abstract class AndroidAutoCallback(
                 )
         } else extensionList.value
         if (parentId == ROOT) {
-            val enabled = extensions.filter { it.isEnabled }
+            val enabled = extensions.filter { it.isEnabled && it.id != UnifiedExtension.UNIFIED_ID }
             Log.d("GladixAuto", "onGetChildren ROOT: extensionList.first size=${extensions.size} enabled=${enabled.size}, ids=${enabled.map { it.id }}")
             return@futureCatching LibraryResult.ofItemList(
                 enabled.map { it.toMediaItem(context) },
@@ -209,6 +212,19 @@ abstract class AndroidAutoCallback(
             )
         }
         if (parentId == "recent") {
+            // Read from live player state first to avoid the race between saveQueue() (async
+            // in onTimelineChanged) and notifyChildrenChanged("recent") (sync in
+            // onMediaItemTransition) — recoverTracks() may still hold the previous extension's
+            // queue when AA calls onGetChildren("recent") after a cross-extension switch.
+            val liveItem = withContext(Dispatchers.Main) { session.player.currentMediaItem }
+            val liveTrack = runCatching { liveItem?.track }.getOrNull()
+            val liveExtId = runCatching { liveItem?.extensionId }.getOrNull()
+            if (liveTrack != null && liveExtId != null) {
+                return@futureCatching LibraryResult.ofItemList(
+                    ImmutableList.of(liveTrack.toItem(context, liveExtId)),
+                    null
+                )
+            }
             val tracks = context.recoverTracks()
             val index = context.recoverIndex() ?: 0
             val (state, _) = tracks?.getOrNull(index) ?: tracks?.firstOrNull()
@@ -359,9 +375,13 @@ abstract class AndroidAutoCallback(
         }
     }
 
-    protected open fun getCurrentExtension(): MusicExtension? =
-        lastBrowsedExtId?.let { id -> extensionList.value.firstOrNull { it.id == id } }
-            ?: extensionList.value.firstOrNull()
+    protected open fun getCurrentExtension(): MusicExtension? {
+        val aaEligible = { ext: MusicExtension -> ext.id != UnifiedExtension.UNIFIED_ID }
+        return lastBrowsedExtId
+            ?.takeIf { it != UnifiedExtension.UNIFIED_ID }
+            ?.let { id -> extensionList.value.firstOrNull { it.id == id } }
+            ?: extensionList.value.firstOrNull(aaEligible)
+    }
 
     private suspend fun performSearch(query: String): List<MediaItem> {
         val ext = getCurrentExtension() ?: return emptyList()

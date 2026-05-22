@@ -29,6 +29,7 @@ import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.extractor.ParserException
 import java.io.FileNotFoundException
 import java.net.SocketException
 import kotlinx.coroutines.CancellationException
@@ -339,7 +340,8 @@ class PlayerEventListener(
                 || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
         val is401 = rootCause is HttpDataSource.InvalidResponseCodeException
                 && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode == 401
-        if (isMissingFile || is401) {
+        val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
+        if (isMissingFile || is401 || isMalformedContent) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
@@ -380,7 +382,10 @@ class PlayerEventListener(
         val index = player.currentMediaItemIndex
         val retries = mediaItem.retries
 
-        if (currentRetries >= maxRetries) return
+        if (currentRetries >= maxRetries) {
+            player.stop()
+            return
+        }
         if (retries >= maxSingleItemRetries) {
             val hasMore = index < player.mediaItemCount - 1
             if (!hasMore) {

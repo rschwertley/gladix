@@ -125,7 +125,8 @@ open class MainActivity : AppCompatActivity() {
         var hadTrack = false
         observe(playerState.current) { current ->
             val hasTrack = current != null
-            if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
+            if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN
+                    && !playerState.isRestoringQueue) {
                 uiViewModel.changePlayerState(STATE_EXPANDED)
             }
             hadTrack = hasTrack

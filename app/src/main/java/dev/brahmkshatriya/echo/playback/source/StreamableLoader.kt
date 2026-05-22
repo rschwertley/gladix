@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback.source
 
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.MediaItem
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.MusicExtension
@@ -65,10 +66,14 @@ class StreamableLoader(
     }
 
     private suspend fun loadTrack(item: MediaItem): MediaState.Loaded<Track> {
+        val stub = item.state.item
+        Log.d("GladixPlayback", "loadTrack stub: id=${stub.id} servers=${stub.servers.map { it.id }} extras=${stub.extras}")
         val track = withClient(item) {
             Cached.loadMedia(app, it, item.state)
         }
-        return track.getOrThrow()
+        val result = track.getOrThrow()
+        Log.d("GladixPlayback", "loadTrack result: id=${result.item.id} servers=${result.item.servers.map { it.id }}")
+        return result
     }
 
     private suspend fun loadServer(mediaItem: MediaItem): Result<Streamable.Media.Server> {
