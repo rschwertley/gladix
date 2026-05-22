@@ -92,6 +92,12 @@ class AudioFocusListener(
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady) {
             requestFocus()
+        } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) {
+            // BT/headphone disconnect — cancel any pending focus-driven pause and abandon focus
+            // so AUDIOFOCUS_GAIN cannot re-enable playback on the now-disconnected device
+            handler.removeCallbacks(commitPauseRunnable)
+            pausedForFocus = false
+            abandonFocus()
         } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && !pausedForFocus) {
             // User explicitly paused (not focus-driven) — release focus so other apps can play
             handler.removeCallbacks(commitPauseRunnable)

@@ -87,6 +87,8 @@ class PlayerEventListener(
         updateCustomLayout()
         ResumptionUtils.saveIndex(context, player.currentMediaItemIndex)
         session.notifyChildrenChanged("recent", 1, null)
+        retriedMediaId = null
+        retriedWatchdogCount = 0
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -97,6 +99,10 @@ class PlayerEventListener(
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         updateCurrentFlow()
         scope.launch { ResumptionUtils.saveQueue(context, player) }
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            retriedMediaId = null
+            retriedWatchdogCount = 0
+        }
         if (!timeline.isEmpty() && reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED
             && player.playlistMetadata.title.isNullOrEmpty()
         ) {
