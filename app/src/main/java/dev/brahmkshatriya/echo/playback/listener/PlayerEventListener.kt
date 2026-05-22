@@ -29,7 +29,7 @@ import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.extractor.ParserException
+import androidx.media3.common.ParserException
 import java.io.FileNotFoundException
 import java.net.SocketException
 import kotlinx.coroutines.CancellationException
