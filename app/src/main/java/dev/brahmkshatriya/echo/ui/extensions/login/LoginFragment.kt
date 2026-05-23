@@ -210,7 +210,7 @@ class LoginFragment : Fragment() {
                     val button = ItemExtensionButtonBinding.inflate(
                         layoutInflater, binding.loginToggleGroup, false
                     ).root
-                    button.text = "Link your device"
+                    button.text = getString(R.string.tv_pairing_link_your_device)
                     button.setIconResource(R.drawable.ic_login)
                     listOf(button to {
                         loginViewModel.changeFragment(LoginViewModel.FragmentType.SmartLogin)
@@ -395,13 +395,13 @@ class LoginFragment : Fragment() {
 
                 countdownJob = launch {
                     for (remaining in 600 downTo 0) {
-                        binding.ttlCountdown.text = "Expires in: ${remaining}s"
+                        binding.ttlCountdown.text = getString(R.string.tv_pairing_expires_in, remaining)
                         binding.ttlCountdown.isVisible = true
                         delay(1000)
                     }
                     pollingJob?.cancel()
                     binding.pollingStatus.isVisible = false
-                    binding.ttlCountdown.text = "Code expired"
+                    binding.ttlCountdown.text = getString(R.string.tv_pairing_expired)
                     binding.regenerateButton.isVisible = true
                 }
 

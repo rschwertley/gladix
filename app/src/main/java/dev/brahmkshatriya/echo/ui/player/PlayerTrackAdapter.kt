@@ -149,6 +149,18 @@ class PlayerTrackAdapter(
             currentDrawableListener?.invoke(drawable)
         }
 
+        fun retryLoad(item: MediaItem?) {
+            if (coverDrawable != null) return
+            val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
+            item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+                val image = it
+                    ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
+                setImageDrawable(image)
+                coverDrawable = it
+                applyDrawable()
+            }
+        }
+
         fun bind(item: MediaItem?) {
             binding.playerCollapsed.run {
                 collapsedTrackTitle.text = item?.track?.title
@@ -203,6 +215,8 @@ class PlayerTrackAdapter(
         holder.updateInsets()
         holder.updateColors()
         holder.applyDrawable()
+        val pos = holder.bindingAdapterPosition
+        if (pos != RecyclerView.NO_POSITION) holder.retryLoad(getItem(pos))
     }
 
     override fun onViewDetachedFromWindow(holder: ViewHolder) {

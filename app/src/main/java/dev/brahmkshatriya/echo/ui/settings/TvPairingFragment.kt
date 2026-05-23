@@ -89,7 +89,7 @@ class TvPairingFragment : Fragment() {
 
     private suspend fun postPairing(code: String, arl: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val conn = java.net.URL("https://gladix-pairing.schwertley.workers.dev/pair/$code")
+            val conn = java.net.URL("https://gladix-pairing.schwertley.workers.dev/pair")
                 .openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -102,7 +102,10 @@ class TvPairingFragment : Fragment() {
                 val response = conn.inputStream.bufferedReader().readText()
                 org.json.JSONObject(response).optBoolean("ok", false)
             } else false
-        } catch (e: Exception) { false }
+        } catch (e: Exception) {
+            android.util.Log.e("GladixTV", "Pairing POST failed", e)
+            false
+        }
     }
 
     private fun showStatus(message: String) {

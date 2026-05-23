@@ -11,7 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -36,6 +35,8 @@ import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.getColorsFrom
 import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.getDetails
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadDrawable
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoClearedNullable
@@ -67,20 +68,15 @@ class PlayerTvFragment : Fragment() {
     }
 
     private fun configureBack() {
-        binding!!.tvToolbar.setNavigationOnClickListener {
-            uiViewModel.changePlayerState(STATE_HIDDEN)
+        val minimize = { uiViewModel.changePlayerState(STATE_HIDDEN) }
+        binding!!.tvToolbar.setNavigationOnClickListener { minimize() }
+        binding!!.tvMinimizeButton.setOnClickListener { minimize() }
+        val backCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() = minimize()
         }
-        requireActivity().onBackPressedDispatcher.addCallback(
-            viewLifecycleOwner,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    if (uiViewModel.playerSheetState.value == STATE_EXPANDED) {
-                        uiViewModel.changePlayerState(STATE_HIDDEN)
-                    }
-                }
-            }
-        )
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
         observe(uiViewModel.playerSheetState) { state ->
+            backCallback.isEnabled = state == STATE_EXPANDED
             if (state == STATE_EXPANDED) {
                 binding?.tvTrackPlayPause?.post { binding?.tvTrackPlayPause?.requestFocus() }
             }
@@ -250,7 +246,7 @@ class PlayerTvFragment : Fragment() {
             if (current == null) return@observe
             val cover = current.track.cover
             val albumArt = binding?.tvAlbumArt ?: return@observe
-            cover.loadInto(albumArt, R.drawable.ic_music)
+            cover.toMaxRes().loadInto(albumArt, R.drawable.ic_music)
             lifecycleScope.launch {
                 val drawable = cover.loadDrawable(requireContext())
                 if (lastDrawable !== drawable) {
@@ -299,6 +295,14 @@ class PlayerTvFragment : Fragment() {
             b.tvToolbar.setTitleTextColor(colors.onBackground)
             b.tvToolbar.setSubtitleTextColor(colors.onBackground)
         }
+    }
+
+    private fun ImageHolder?.toMaxRes(): ImageHolder? {
+        val holder = (this as? ImageHolder.NetworkRequestImageHolder) ?: return this
+        val url = holder.request.url
+        if (!url.contains("cdn-images.dzcdn.net")) return this
+        val newUrl = url.replace(Regex("""\d+x\d+(?=-000000-)"""), "1920x1920")
+        return newUrl.toImageHolder(holder.request.headers, holder.crop)
     }
 
     companion object {

@@ -239,6 +239,16 @@
     <string name="link_tv_device">Link TV Device</string>
     <string name="now_playing">Now Playing</string>
     <string name="coming_soon">Coming soon</string>
+    <string name="tv_pairing_title">Link Gladix on your phone</string>
+    <string name="tv_pairing_options_intro">Or enter the code another way:</string>
+    <string name="tv_pairing_option_1">1. Scan the QR code above to open Gladix on your phone</string>
+    <string name="tv_pairing_option_2">2. Open Gladix on your phone → Settings → Deezer → Link TV Device → enter the code</string>
+    <string name="tv_pairing_option_3">3. Visit rschwertley.github.io/gladix/pair.html and enter the code</string>
+    <string name="tv_pairing_waiting">Waiting for phone confirmation…</string>
+    <string name="tv_pairing_expired">Code expired</string>
+    <string name="tv_pairing_expires_in">Expires in: %1$ss</string>
+    <string name="tv_pairing_new_code">Generate new code</string>
+    <string name="tv_pairing_link_your_device">Link your device</string>
     <string name="not_logged_in">Not logged in</string>
     <string name="x_login">%1$s Login</string>
     <string name="x_is_required">%1$s is required</string>

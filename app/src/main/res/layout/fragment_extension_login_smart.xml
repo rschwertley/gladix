@@ -16,7 +16,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:text="Scan with the Deezer app on your phone"
+            android:text="@string/tv_pairing_title"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <FrameLayout
@@ -40,17 +40,10 @@
         </FrameLayout>
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
-            android:text="Or visit deezer.com/link and enter:"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-        <TextView
             android:id="@+id/smartCode"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="8dp"
             android:textAppearance="?attr/textAppearanceHeadlineMedium"
             android:textStyle="bold"
             android:visibility="invisible" />
@@ -68,9 +61,37 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:text="Waiting for confirmation…"
+            android:text="@string/tv_pairing_waiting"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:visibility="gone" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="@string/tv_pairing_options_intro"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="@string/tv_pairing_option_1"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="@string/tv_pairing_option_2"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="@string/tv_pairing_option_3"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
 
         <TextView
             android:id="@+id/errorText"
@@ -85,7 +106,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="64dp"
-            android:text="Generate new code"
+            android:text="@string/tv_pairing_new_code"
             android:visibility="gone" />
 
     </LinearLayout>
