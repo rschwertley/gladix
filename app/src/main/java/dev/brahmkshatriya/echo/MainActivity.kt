@@ -8,7 +8,6 @@ import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -116,7 +115,6 @@ open class MainActivity : AppCompatActivity() {
             ?: return
         val nowPlayingDivider = binding.root.findViewById<android.view.View>(R.id.nowPlayingDivider)
         val nowPlayingThumb = binding.root.findViewById<ImageView>(R.id.nowPlayingThumb)
-        val nowPlayingTitle = binding.root.findViewById<TextView>(R.id.nowPlayingTitle)
 
         nowPlayingRail.setOnClickListener {
             uiViewModel.changePlayerState(STATE_EXPANDED)
@@ -136,7 +134,6 @@ open class MainActivity : AppCompatActivity() {
             nowPlayingDivider?.isVisible = visible
             if (current != null) {
                 val track = current.track
-                nowPlayingTitle?.text = track.title
                 track.cover.loadInto(nowPlayingThumb, R.drawable.ic_music)
             }
         }
