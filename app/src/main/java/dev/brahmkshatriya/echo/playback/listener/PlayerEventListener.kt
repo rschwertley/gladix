@@ -347,6 +347,27 @@ class PlayerEventListener(
         val is401 = rootCause is HttpDataSource.InvalidResponseCodeException
                 && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode == 401
         val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
+
+        if (is401) {
+            val currentMediaId = mediaItem?.mediaId
+            if (retriedMediaId != currentMediaId) {
+                retriedMediaId = currentMediaId
+                retriedWatchdogCount = 1
+                Log.d("GladixPlayback", "onPlayerError: 401 for $currentMediaId, retrying with stop/prepare (fresh TRACK_TOKEN)")
+                val savedIndex = player.currentMediaItemIndex
+                val savedPosition = player.currentPosition
+                player.stop()
+                player.seekTo(savedIndex, savedPosition)
+                player.prepare()
+                player.play()
+                return
+            }
+            retriedMediaId = null
+            retriedWatchdogCount = 0
+            Log.d("GladixPlayback", "onPlayerError: 401 retry exhausted for $currentMediaId, skipping")
+            // fall through to silent skip below
+        }
+
         if (isMissingFile || is401 || isMalformedContent) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {

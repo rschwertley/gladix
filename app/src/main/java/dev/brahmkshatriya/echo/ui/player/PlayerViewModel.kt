@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.player
 
 import android.content.SharedPreferences
+import android.util.Log
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.os.bundleOf
@@ -155,7 +156,8 @@ class PlayerViewModel(
 
     fun setPlaying(isPlaying: Boolean) {
         withBrowser {
-            if (isPlaying && it.playbackState == Player.STATE_IDLE) it.prepare()
+            Log.d("GladixAudio", "setPlaying: isPlaying=$isPlaying playbackState=${it.playbackState} playWhenReady=${it.playWhenReady}")
+            if (isPlaying && (it.playbackState == Player.STATE_IDLE || it.playbackState == Player.STATE_ENDED)) it.prepare()
             it.playWhenReady = isPlaying
         }
     }

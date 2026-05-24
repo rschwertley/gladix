@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback.listener
 
 import android.content.Context
+import android.util.Log
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -29,6 +30,7 @@ class AudioFocusListener(
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d("GladixAudio", "AUDIOFOCUS_GAIN: playbackState=${player.playbackState} pausedForFocus=$pausedForFocus playWhenReady=${player.playWhenReady}")
                 handler.removeCallbacks(commitPauseRunnable)
                 if (loweringVolume) {
                     player.volume = 1f
