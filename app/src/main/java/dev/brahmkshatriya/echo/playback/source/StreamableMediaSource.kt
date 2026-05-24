@@ -113,11 +113,15 @@ class StreamableMediaSource(
                 mediaItem = new
 
                 handler.post {
-                    if (released) return@post
+                    if (released) {
+                        Log.d("GladixPlayback", "handler.post: released, skipping prepareChildSource for ${mediaItem.mediaId}")
+                        return@post
+                    }
+                    Log.d("GladixPlayback", "handler.post: prepareChildSource firing for ${mediaItem.mediaId}")
                     runCatching {
                         prepareChildSource(null, actualSource)
                     }.getOrElse {
-                        it.printStackTrace()
+                        Log.e("GladixPlayback", "prepareChildSource threw for ${mediaItem.mediaId}", it)
                     }
                 }
             } finally {

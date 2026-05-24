@@ -75,13 +75,27 @@ class AudioFocusListener(
     } else null
 
     private fun requestFocus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             audioManager.requestAudioFocus(focusRequest!!)
         else audioManager.requestAudioFocus(
             focusChangeListener,
             AudioManager.STREAM_MUSIC,
             AudioManager.AUDIOFOCUS_GAIN
         )
+        when (result) {
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> { /* normal, proceed */ }
+            AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
+                // Focus queued — pause now, AUDIOFOCUS_GAIN resumes when it arrives.
+                // pausedForFocus=true prevents onPlayWhenReadyChanged from calling
+                // abandonFocus(), which would cancel the queued request.
+                pausedForFocus = true
+                player.pause()
+            }
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
+                // Focus denied — pause without auto-resume.
+                player.pause()
+            }
+        }
     }
 
     private fun abandonFocus() {
@@ -116,7 +130,7 @@ class AudioFocusListener(
     }
 
     companion object {
-        private const val GRACE_WINDOW_MS = 1500L
+        private const val GRACE_WINDOW_MS = 500L
         private const val DUCK_VOLUME = 0.2f
     }
 }

@@ -199,7 +199,7 @@ class PlayerEventListener(
     }
 
     companion object {
-        private const val BUFFERING_WATCHDOG_MS = 8_000L
+        private const val BUFFERING_WATCHDOG_MS = 5_000L
     }
 
     private val maxRetries = 3
@@ -213,7 +213,7 @@ class PlayerEventListener(
     private var bufferingWatchdog: Job? = null
     private var retriedMediaId: String? = null
     private var retriedWatchdogCount = 0
-    private val maxWatchdogRetries = 2
+    private val maxWatchdogRetries = 1
     private var retried404MediaId: String? = null
     private var retriedSocketMediaId: String? = null
 

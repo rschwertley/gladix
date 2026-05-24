@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback.source
 
 import android.content.Context
+import android.util.Log
 import androidx.core.net.toUri
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
@@ -46,6 +47,7 @@ class StreamableDataSource(
     }
 
     override fun open(dataSpec: DataSpec): Long {
+        Log.d("GladixPlayback", "StreamableDataSource.open: ${dataSpec.uri}")
         val result = dataSpec.customData as? Result<*>
         val (factory, spec) = when (result) {
             null -> defaultDataSourceFactory to dataSpec
