@@ -66,6 +66,7 @@ class StreamableMediaSource(
     private lateinit var actualSource: MediaSource
 
     override fun prepareSourceInternal(mediaTransferListener: TransferListener?) {
+        released = false
         super.prepareSourceInternal(mediaTransferListener)
         Log.d("GladixPlayback", "prepareSourceInternal: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
         val handler = Util.createHandlerForCurrentLooper()

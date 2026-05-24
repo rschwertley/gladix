@@ -121,11 +121,13 @@ class UiViewModel(
 
     fun setPlayerNavViewInsets(context: Context, isNavVisible: Boolean, isRail: Boolean): Insets {
         val insets = context.resources.run {
-            if (!isNavVisible) return@run Insets()
-            val height = getDimensionPixelSize(R.dimen.nav_height)
-            if (!isRail) return@run Insets(bottom = height)
-            val width = getDimensionPixelSize(R.dimen.nav_width)
-            if (context.isRTL()) Insets(end = width) else Insets(start = width)
+            if (isRail) {
+                val width = getDimensionPixelSize(R.dimen.nav_width)
+                if (context.isRTL()) Insets(end = width) else Insets(start = width)
+            } else {
+                if (!isNavVisible) return@run Insets()
+                Insets(bottom = getDimensionPixelSize(R.dimen.nav_height))
+            }
         }
         playerNavViewInsets.value = insets
         return insets
@@ -422,7 +424,7 @@ class UiViewModel(
             return state == STATE_HIDDEN || state == STATE_COLLAPSED || state == STATE_EXPANDED
         }
 
-        fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View) {
+        fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false) {
             val behavior = BottomSheetBehavior.from(view)
             viewModel.playerBehaviour = WeakReference(behavior)
             observe(viewModel.moreSheetState) { behavior.isDraggable = it == STATE_COLLAPSED }
@@ -446,6 +448,12 @@ class UiViewModel(
             }
             val callback = object : BottomSheetBehavior.BottomSheetCallback() {
                 override fun onStateChanged(bottomSheet: View, newState: Int) {
+                    if (isTV && newState == STATE_COLLAPSED) {
+                        behavior.isHideable = true
+                        behavior.state = STATE_HIDDEN
+                        viewModel.playerSheetState.value = STATE_HIDDEN
+                        return
+                    }
                     val expanded = newState == STATE_EXPANDED
                     behavior.isHideable = !expanded
                     viewModel.playerSheetState.value = newState

@@ -10,6 +10,9 @@ interface HistoryDao {
     @Upsert
     suspend fun upsert(entry: HistoryEntity)
 
+    @Query("DELETE FROM HistoryEntity WHERE rowid IN (SELECT rowid FROM HistoryEntity ORDER BY playedAt ASC LIMIT MAX(0, (SELECT COUNT(*) FROM HistoryEntity) - 500))")
+    suspend fun trimToLimit()
+
     @Query("SELECT * FROM HistoryEntity ORDER BY playedAt DESC")
     fun getAll(): Flow<List<HistoryEntity>>
 

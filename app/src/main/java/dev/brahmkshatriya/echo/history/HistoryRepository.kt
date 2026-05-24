@@ -22,6 +22,7 @@ class HistoryRepository(private val dao: HistoryDao) {
                 contextData = context?.toJson(),
             )
         )
+        dao.trimToLimit()
     }
 
     suspend fun clearHistory() = dao.deleteAll()

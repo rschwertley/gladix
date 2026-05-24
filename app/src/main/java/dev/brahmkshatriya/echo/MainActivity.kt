@@ -83,7 +83,7 @@ open class MainActivity : AppCompatActivity() {
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
         setupTvNowPlaying()
-        setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer)
+        setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
         checkBatteryOptimization()

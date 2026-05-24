@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.clients.TrackerClient
+import dev.brahmkshatriya.echo.common.clients.TrackerMarkClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.WebViewRequest
 import dev.brahmkshatriya.echo.common.models.Album
@@ -64,7 +65,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     SearchFeedClient, QuickSearchClient,AlbumClient, ArtistClient, FollowClient, PlaylistClient, LyricsClient, ShareClient,
-    TrackerClient, LoginClient.WebView, LoginClient.CustomInput,
+    TrackerClient, TrackerMarkClient, LoginClient.WebView, LoginClient.CustomInput,
     LibraryFeedClient, PlaylistEditClient, SaveClient {
 
     private val extensionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -86,7 +87,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                 "Enable Logging",
                 "log",
                 "Enables logging to deezer",
-                false
+                true
             ),
             SettingSwitch(
                 "Enable Search History",
@@ -549,6 +550,14 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             session.updateCredentials(arl = data["arl"] ?: "")
             api.getSid()
             val userList = api.makeUser()
+            userList.firstOrNull()?.extras?.let { extras ->
+                session.updateCredentials(
+                    token = extras["token"] ?: "",
+                    userId = extras["user_id"] ?: "",
+                    licenseToken = extras["license_token"] ?: "",
+                    sid = extras["sid"] ?: ""
+                )
+            }
             return userList
         }
     }
@@ -592,12 +601,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     //<============= Tracking =============>
 
-    override suspend fun onTrackChanged(details: TrackDetails?) {
-        if (details != null) {
-            if (log) {
-                api.log(details.track)
-            }
-        }
+    override suspend fun onTrackChanged(details: TrackDetails?) {}
+
+    override suspend fun getMarkAsPlayedDuration(details: TrackDetails): Long? = 30000L
+
+    override suspend fun onMarkAsPlayed(details: TrackDetails) {
+        if (log) api.log(details.track)
     }
 
     override suspend fun onPlayingStateChanged(details: TrackDetails?, isPlaying: Boolean) {

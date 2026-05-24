@@ -53,6 +53,15 @@
             android:textSize="12sp"
             tools:text="2h ago" />
 
+        <TextView
+            android:id="@+id/extensionName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:alpha="0.5"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="12sp"
+            tools:text="Deezer" />
+
     </LinearLayout>
 
 </LinearLayout>

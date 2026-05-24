@@ -53,10 +53,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="72dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
+            android:orientation="vertical"
+            android:gravity="center"
             android:focusable="true"
             android:clickable="true"
             android:background="?attr/selectableItemBackground"
@@ -70,33 +68,6 @@
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_music"
                 android:importantForAccessibility="no" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/now_playing"
-                    android:textAppearance="?attr/textAppearanceLabelSmall"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:id="@+id/nowPlayingTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textStyle="bold"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    tools:text="Track Title" />
-
-            </LinearLayout>
 
         </LinearLayout>
 

@@ -157,7 +157,7 @@ class PlayerViewModel(
     fun setPlaying(isPlaying: Boolean) {
         withBrowser {
             Log.d("GladixAudio", "setPlaying: isPlaying=$isPlaying playbackState=${it.playbackState} playWhenReady=${it.playWhenReady}")
-            if (isPlaying && (it.playbackState == Player.STATE_IDLE || it.playbackState == Player.STATE_ENDED)) it.prepare()
+            if (isPlaying && it.playbackState == Player.STATE_IDLE) it.prepare()
             it.playWhenReady = isPlaying
         }
     }

@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.databinding.ItemHistoryBinding
+import dev.brahmkshatriya.echo.databinding.ItemHistoryHeaderBinding
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import java.text.SimpleDateFormat
@@ -13,24 +14,45 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+sealed class HistoryListItem {
+    data class Header(val label: String) : HistoryListItem()
+    data class Item(val entity: HistoryEntity, val extensionName: String) : HistoryListItem()
+}
+
 class HistoryAdapter(
     private val onTrackClick: (HistoryEntity) -> Unit
-) : ListAdapter<HistoryEntity, HistoryAdapter.ViewHolder>(DIFF) {
+) : ListAdapter<HistoryListItem, RecyclerView.ViewHolder>(DIFF) {
 
-    class ViewHolder(val binding: ItemHistoryBinding) : RecyclerView.ViewHolder(binding.root)
+    class ItemViewHolder(val binding: ItemHistoryBinding) : RecyclerView.ViewHolder(binding.root)
+    class HeaderViewHolder(val binding: ItemHistoryHeaderBinding) : RecyclerView.ViewHolder(binding.root)
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(
-        ItemHistoryBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-    )
+    override fun getItemViewType(position: Int) = when (getItem(position)) {
+        is HistoryListItem.Header -> VIEW_TYPE_HEADER
+        is HistoryListItem.Item -> VIEW_TYPE_ITEM
+    }
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) = with(holder.binding) {
-        val item = getItem(position)
-        val track = item.track ?: return
-        root.setOnClickListener { onTrackClick(item) }
-        track.cover.loadInto(cover)
-        title.text = track.title
-        artist.text = track.artists.joinToString(", ") { it.name }
-        playedAt.text = item.playedAt.toRelativeTime()
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return if (viewType == VIEW_TYPE_HEADER)
+            HeaderViewHolder(ItemHistoryHeaderBinding.inflate(inflater, parent, false))
+        else
+            ItemViewHolder(ItemHistoryBinding.inflate(inflater, parent, false))
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (val listItem = getItem(position)) {
+            is HistoryListItem.Header ->
+                (holder as HeaderViewHolder).binding.headerLabel.text = listItem.label
+            is HistoryListItem.Item -> with((holder as ItemViewHolder).binding) {
+                val track = listItem.entity.track ?: return
+                root.setOnClickListener { onTrackClick(listItem.entity) }
+                track.cover.loadInto(cover)
+                title.text = track.title
+                artist.text = track.artists.joinToString(", ") { it.name }
+                playedAt.text = listItem.entity.playedAt.toRelativeTime()
+                extensionName.text = listItem.extensionName
+            }
+        }
     }
 
     private fun Long.toRelativeTime(): String {
@@ -45,9 +67,18 @@ class HistoryAdapter(
     }
 
     companion object {
-        private val DIFF = object : DiffUtil.ItemCallback<HistoryEntity>() {
-            override fun areItemsTheSame(a: HistoryEntity, b: HistoryEntity) = a.trackId == b.trackId
-            override fun areContentsTheSame(a: HistoryEntity, b: HistoryEntity) = a == b
+        private const val VIEW_TYPE_HEADER = 0
+        private const val VIEW_TYPE_ITEM = 1
+
+        private val DIFF = object : DiffUtil.ItemCallback<HistoryListItem>() {
+            override fun areItemsTheSame(a: HistoryListItem, b: HistoryListItem) = when {
+                a is HistoryListItem.Header && b is HistoryListItem.Header -> a.label == b.label
+                a is HistoryListItem.Item && b is HistoryListItem.Item ->
+                    a.entity.trackId == b.entity.trackId && a.entity.extensionId == b.entity.extensionId
+                else -> false
+            }
+
+            override fun areContentsTheSame(a: HistoryListItem, b: HistoryListItem) = a == b
         }
     }
 }

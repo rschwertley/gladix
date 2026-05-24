@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [HistoryEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class HistoryDatabase : RoomDatabase() {
@@ -22,8 +22,29 @@ abstract class HistoryDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE HistoryEntity_new (
+                        trackId TEXT NOT NULL,
+                        extensionId TEXT NOT NULL,
+                        playedAt INTEGER NOT NULL,
+                        trackData TEXT NOT NULL,
+                        contextData TEXT,
+                        PRIMARY KEY (trackId, extensionId)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT OR IGNORE INTO HistoryEntity_new
+                    SELECT trackId, extensionId, playedAt, trackData, contextData FROM HistoryEntity
+                """.trimIndent())
+                db.execSQL("DROP TABLE HistoryEntity")
+                db.execSQL("ALTER TABLE HistoryEntity_new RENAME TO HistoryEntity")
+            }
+        }
+
         fun create(app: Application) = Room.databaseBuilder(
             app, HistoryDatabase::class.java, "history-db"
-        ).addMigrations(MIGRATION_2_3).fallbackToDestructiveMigration(true).build()
+        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4).fallbackToDestructiveMigration(true).build()
     }
 }

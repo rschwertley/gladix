@@ -6,9 +6,8 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 
-@Entity
+@Entity(primaryKeys = ["trackId", "extensionId"])
 data class HistoryEntity(
-    @PrimaryKey
     val trackId: String,
     val extensionId: String,
     val playedAt: Long,
