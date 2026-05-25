@@ -352,8 +352,9 @@ class PlayerEventListener(
                 || rootCause is FileNotFoundException
                 || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
         val is401 = rootCause is HttpDataSource.InvalidResponseCodeException
-                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode == 401
+                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode in listOf(401, 403)
         val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
+        val isTimeout = rootCause is TimeoutCancellationException
 
         if (is401) {
             val currentMediaId = mediaItem?.mediaId
@@ -376,7 +377,7 @@ class PlayerEventListener(
             // fall through to silent skip below
         }
 
-        if (isMissingFile || is401 || isMalformedContent) {
+        if (isMissingFile || is401 || isMalformedContent || isTimeout) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 consecutiveUnavailableSkips = 0
