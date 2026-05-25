@@ -171,6 +171,20 @@ abstract class AndroidAutoCallback(
         ).firstOrNull() ?: query
         Log.d("GladixAuto", "onSearch: rawQuery='$query' effectiveQuery='$effectiveQuery'")
         lastSearchQuery = effectiveQuery
+        val existing = searchJobs[query]
+        if (existing != null && existing.isActive) {
+            Log.d("GladixAuto", "onSearch: joining existing in-flight search for query='$query'")
+            scope.launch {
+                runCatching {
+                    val tracks = existing.await()
+                    Log.d("GladixAuto", "onSearch: notifySearchResultChanged (joined) query='$query' count=${tracks.size}")
+                    session.notifySearchResultChanged(browser, query, tracks.size, params)
+                }.onFailure {
+                    if (it is CancellationException) throw it else it.printStackTrace()
+                }
+            }
+            return@also
+        }
         pendingSearchJob?.cancel()
         pendingSearchJob = scope.launch {
             delay(300)

@@ -354,6 +354,7 @@ class PlayerFragment : Fragment() {
                 val current = binding?.viewPager?.currentItem ?: 0
                 val smooth = !isInitialLoad && abs(index - current) <= 1
                 binding?.viewPager?.setCurrentItem(index, smooth)
+                adapter.onCurrentChanged(index)
                 isInitialLoad = false
             }
         }

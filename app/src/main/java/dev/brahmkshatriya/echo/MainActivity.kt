@@ -127,8 +127,8 @@ open class MainActivity : AppCompatActivity() {
                 if (!playerState.isRestoringQueue) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                 }
-                playerState.isRestoringQueue = false
             }
+            playerState.isRestoringQueue = false
             hadTrack = hasTrack
 
             val visible = current != null

@@ -174,6 +174,7 @@ class PlayerEventListener(
                             player.pause()
                             delay(50)
                         }
+                        player.seekTo(player.currentMediaItemIndex, 0)
                         player.seekToNextMediaItem()
                         player.prepare()
                         player.play()
