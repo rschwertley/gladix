@@ -33,6 +33,7 @@ import androidx.media3.common.ParserException
 import java.io.FileNotFoundException
 import java.net.SocketException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,7 +51,8 @@ class PlayerEventListener(
     private val currentFlow: MutableStateFlow<PlayerState.Current?>,
     private val extensions: ExtensionLoader,
     private val throwableFlow: MutableSharedFlow<Throwable>,
-    private val isAndroidAutoConnected: () -> Boolean = { false }
+    private val isAndroidAutoConnected: () -> Boolean = { false },
+    private val requestAudioFocus: () -> Unit = {}
 ) : Player.Listener {
 
     private val player get() = session.player
@@ -142,6 +144,7 @@ class PlayerEventListener(
                         player.seekTo(savedIndex, savedPosition)
                         player.prepare()
                         player.play()
+                        requestAudioFocus()
                     } else if (retriedWatchdogCount < maxWatchdogRetries) {
                         retriedWatchdogCount++
                         Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
@@ -151,6 +154,7 @@ class PlayerEventListener(
                         player.seekTo(savedIndex, savedPosition)
                         player.prepare()
                         player.play()
+                        requestAudioFocus()
                     } else {
                         retriedMediaId = null
                         retriedWatchdogCount = 0
@@ -222,7 +226,7 @@ class PlayerEventListener(
         val rootCause = cause.rootCause
         val mediaItem = player.currentMediaItem
 
-        if (rootCause is CancellationException) {
+        if (rootCause is CancellationException && rootCause !is TimeoutCancellationException) {
             Log.d("GladixPlayback", "onPlayerError: ignoring CancellationException for ${mediaItem?.mediaId}")
             return
         }
@@ -243,6 +247,7 @@ class PlayerEventListener(
                 player.seekTo(savedIndex, savedPosition)
                 player.prepare()
                 player.play()
+                requestAudioFocus()
             } else {
                 retried404MediaId = null
                 Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
@@ -276,6 +281,7 @@ class PlayerEventListener(
                 player.seekTo(savedIndex, savedPosition)
                 player.prepare()
                 player.play()
+                requestAudioFocus()
             } else {
                 retriedSocketMediaId = null
                 Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
@@ -360,6 +366,7 @@ class PlayerEventListener(
                 player.seekTo(savedIndex, savedPosition)
                 player.prepare()
                 player.play()
+                requestAudioFocus()
                 return
             }
             retriedMediaId = null

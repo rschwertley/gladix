@@ -162,7 +162,10 @@ class PlayerService : MediaLibraryService() {
             .build()
 
         player.addListener(
-            PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow) { isAndroidAutoConnected }
+            PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow,
+                isAndroidAutoConnected = { isAndroidAutoConnected },
+                requestAudioFocus = { audioFocusListener.requestFocus() }
+            )
         )
         player.addListener(
             PlayerRadio(
@@ -209,12 +212,12 @@ class PlayerService : MediaLibraryService() {
             val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
             if (items.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
+                if (callback.userQueueSet) return@withContext
                 state.isRestoringQueue = true
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
                 player.setMediaItems(items.toMutableList(), index, pos)
                 player.prepare()
-                state.isRestoringQueue = false
             }
         }
     }

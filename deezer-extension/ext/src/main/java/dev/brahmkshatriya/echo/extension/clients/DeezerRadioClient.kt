@@ -128,7 +128,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                     RadioKind.FLOW -> context.copy(title = "${context.title} Flow")
                 }
                 is Artist -> Radio(context.id, context.name, context.cover,
-                    mapOf("radio" to "artist") as List<Artist>
+                    mapOf("radio" to "artist")
                 )
                 is Playlist -> item.asCollectionTrackRadio("playlist")
                 is Album -> item.asCollectionTrackRadio("album")

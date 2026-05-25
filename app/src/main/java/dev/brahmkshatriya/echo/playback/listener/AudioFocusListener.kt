@@ -74,7 +74,7 @@ class AudioFocusListener(
             .build()
     } else null
 
-    private fun requestFocus() {
+    internal fun requestFocus() {
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             audioManager.requestAudioFocus(focusRequest!!)
         else audioManager.requestAudioFocus(

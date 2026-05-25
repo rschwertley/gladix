@@ -79,9 +79,16 @@ class PlayerCallback(
     override val downloadFlow: StateFlow<List<Downloader.Info>>,
 ) : AndroidAutoCallback(app, scope, extensions.music, downloadFlow) {
 
-    override fun getCurrentExtension() =
-        lastBrowsedExtId?.let { id -> extensionList.value.firstOrNull { it.id == id } }
-            ?: extensions.current.value
+    override fun getCurrentExtension(): MusicExtension? {
+        val aaEligible = { ext: MusicExtension ->
+            ext.isEnabled && ext.id != UnifiedExtension.UNIFIED_ID
+        }
+        return lastBrowsedExtId
+            ?.takeIf { it != UnifiedExtension.UNIFIED_ID }
+            ?.let { id -> extensionList.value.firstOrNull { it.id == id } }
+            ?: extensions.current.value?.takeIf { aaEligible(it) }
+            ?: extensionList.value.firstOrNull(aaEligible)
+    }
 
     private val radioFlow get() = state.radio
 

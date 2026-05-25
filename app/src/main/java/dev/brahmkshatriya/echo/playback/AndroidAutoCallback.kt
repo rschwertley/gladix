@@ -85,7 +85,7 @@ abstract class AndroidAutoCallback(
 
     val context get() = app.context
 
-    @Volatile protected var userQueueSet = false
+    @Volatile internal var userQueueSet = false
     @Volatile private var lastSearchQuery = ""
     @Volatile protected var lastBrowsedExtId: String? = null
     private val searchResults = boundedMap<String, List<MediaItem>>()
@@ -386,16 +386,27 @@ abstract class AndroidAutoCallback(
     }
 
     private suspend fun performSearch(query: String): List<MediaItem> {
-        val ext = getCurrentExtension() ?: return emptyList()
+        val ext = getCurrentExtension()
+        if (ext == null) {
+            Log.d("GladixAuto", "performSearch: no extension available for query='$query'")
+            return emptyList()
+        }
+        Log.d("GladixAuto", "performSearch: query='$query' ext=${ext.id}")
         return runCatching {
             withTimeout(10_000) {
                 val client = ext.instance.value().getOrNull() as? SearchFeedClient
-                    ?: return@withTimeout emptyList<MediaItem>()
+                    ?: run {
+                        Log.d("GladixAuto", "performSearch: ${ext.id} has no SearchFeedClient")
+                        return@withTimeout emptyList<MediaItem>()
+                    }
+                Log.d("GladixAuto", "performSearch: calling loadSearchFeed query='$query' ext=${ext.id}")
                 val feed = client.loadSearchFeed(query)
                 val tab = feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
                 val pagedData = feed.getPagedData(tab).pagedData
                 val (shelves, _) = pagedData.loadPage(null)
-                shelves.toTracks().map { track ->
+                val tracks = shelves.toTracks()
+                Log.d("GladixAuto", "performSearch: ${tracks.size} results for query='$query' ext=${ext.id}")
+                tracks.map { track ->
                     val item = track.toItem(context, ext.id)
                     val artist = item.mediaMetadata.artist
                     item.buildUpon().setMediaMetadata(
@@ -406,9 +417,14 @@ abstract class AndroidAutoCallback(
                 }
             }
         }.getOrElse {
-            if (it is TimeoutCancellationException) emptyList()
-            else if (it is CancellationException) throw it
-            else emptyList()
+            if (it is TimeoutCancellationException) {
+                Log.d("GladixAuto", "performSearch: timeout for query='$query' ext=${ext.id}")
+                emptyList()
+            } else if (it is CancellationException) throw it
+            else {
+                Log.d("GladixAuto", "performSearch: error for query='$query' ext=${ext.id}: ${it::class.simpleName}: ${it.message}")
+                emptyList()
+            }
         }
     }
 
