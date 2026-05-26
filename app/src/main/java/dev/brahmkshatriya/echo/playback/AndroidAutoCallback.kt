@@ -88,7 +88,7 @@ abstract class AndroidAutoCallback(
     @Volatile internal var userQueueSet = false
     @Volatile private var lastSearchQuery = ""
     @Volatile protected var lastBrowsedExtId: String? = null
-    private val searchResults = boundedMap<String, List<MediaItem>>()
+    private val searchResults = boundedMap<Pair<String, String>, List<MediaItem>>()
     private val searchJobs = boundedMap<String, Deferred<List<MediaItem>>>()
     private val searchMutex = Mutex()
     private var extensionWatcherJob: Job? = null
@@ -171,6 +171,12 @@ abstract class AndroidAutoCallback(
         ).firstOrNull() ?: query
         Log.d("GladixAuto", "onSearch: rawQuery='$query' effectiveQuery='$effectiveQuery'")
         lastSearchQuery = effectiveQuery
+        val extId = getCurrentExtension()?.id ?: ""
+        val cacheKey = query to extId
+        val cached = searchResults[cacheKey]
+        if (cached != null) {
+            session.notifySearchResultChanged(browser, query, cached.size, params)
+        }
         val existing = searchJobs[query]
         if (existing != null && existing.isActive) {
             Log.d("GladixAuto", "onSearch: joining existing in-flight search for query='$query'")
@@ -192,7 +198,7 @@ abstract class AndroidAutoCallback(
             searchJobs[query] = deferred
             runCatching {
                 val tracks = deferred.await()
-                searchResults[query] = tracks
+                searchResults[cacheKey] = tracks
                 searchJobs.remove(query)
                 Log.d("GladixAuto", "onSearch: notifySearchResultChanged query='$query' count=${tracks.size}")
                 session.notifySearchResultChanged(browser, query, tracks.size, params)
@@ -374,15 +380,17 @@ abstract class AndroidAutoCallback(
         pageSize: Int,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-        Log.d("GladixAuto", "onGetSearchResult: query='$query' page=$page pageSize=$pageSize lastSearchQuery='$lastSearchQuery' cachedResults=${searchResults[query]?.size ?: "none"}")
+        val extId = getCurrentExtension()?.id ?: ""
+        val cacheKey = query to extId
+        Log.d("GladixAuto", "onGetSearchResult: query='$query' page=$page pageSize=$pageSize lastSearchQuery='$lastSearchQuery' cachedResults=${searchResults[cacheKey]?.size ?: "none"}")
         return scope.future {
             val effectiveQuery = lastSearchQuery.ifEmpty { query }
-            val allTracks = searchResults[query]
+            val allTracks = searchResults[cacheKey]
                 ?: runCatching { searchJobs[query]?.await() }.getOrNull()
-                    ?.also { searchResults[query] = it }
+                    ?.also { searchResults[cacheKey] = it }
                 ?: searchMutex.withLock {
-                    searchResults[query] ?: performSearch(effectiveQuery).also {
-                        searchResults[query] = it
+                    searchResults[cacheKey] ?: performSearch(effectiveQuery).also {
+                        searchResults[cacheKey] = it
                     }
                 }
             val from = page * pageSize
@@ -420,7 +428,7 @@ abstract class AndroidAutoCallback(
                 val (shelves, _) = pagedData.loadPage(null)
                 val tracks = shelves.toTracks()
                 Log.d("GladixAuto", "performSearch: ${tracks.size} results for query='$query' ext=${ext.id}")
-                tracks.map { track ->
+                tracks.take(25).map { track ->
                     val item = track.toItem(context, ext.id)
                     val artist = item.mediaMetadata.artist
                     item.buildUpon().setMediaMetadata(
@@ -775,7 +783,7 @@ abstract class AndroidAutoCallback(
             }
             val (list, next) = tracks.loadPage(continuations[id to page])
             continuations[id to page + 1] = next
-            return list.map { it.toItem(context, extId, item) }
+            return list.take(150).map { it.toItem(context, extId, item) }
         }
 
         private suspend fun List<Shelf>.toTracks(): List<Track> = flatMap { shelf ->

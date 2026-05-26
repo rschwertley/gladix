@@ -451,8 +451,10 @@ class PlayerCallback(
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet=true")
             return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)
         }
+        userQueueSet = true
         if (state.activeLoadCount.get() > 0) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
+            userQueueSet = false
             return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)
         }
         withContext(Dispatchers.Main) {
@@ -460,6 +462,10 @@ class PlayerCallback(
             mediaSession.player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
         }
         val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear = true)
+        if (items.isEmpty()) {
+            userQueueSet = false
+            return@future MediaItemsWithStartPosition(emptyList(), 0, 0L)
+        }
         MediaItemsWithStartPosition(items, index, pos)
     }
 
