@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback
 
 import android.app.Application
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -210,9 +211,13 @@ class PlayerService : MediaLibraryService() {
 
         scope.launch {
             val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
+            Log.d("GladixPlayback", "onCreate restore: items=${items.size} userQueueSet=${callback.userQueueSet}")
             if (items.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
-                if (callback.userQueueSet) return@withContext
+                if (callback.userQueueSet) {
+                    Log.d("GladixPlayback", "onCreate restore: skipping, userQueueSet=true")
+                    return@withContext
+                }
                 state.isRestoringQueue = true
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF

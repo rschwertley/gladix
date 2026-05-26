@@ -463,6 +463,7 @@ class PlayerCallback(
                 mediaSession.player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
             }
             val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear = true)
+            Log.d("GladixPlayback", "onPlaybackResumption: items=${items.size} userQueueSet=$userQueueSet")
             if (items.isEmpty()) {
                 throw UnsupportedOperationException("No saved queue")
             }

@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -36,6 +37,8 @@ object ResumptionUtils {
 
     suspend fun saveQueue(context: Context, player: Player) = withContext(Dispatchers.Main) {
         val list = player.mediaItems()
+        Log.d("GladixPlayback", "saveQueue: itemCount=${list.size} cleared=${list.isEmpty()}")
+        if (list.isEmpty()) Log.d("GladixPlayback", "saveQueue: CLEARING queue", Throwable("saveQueue stack trace"))
         context.saveToCache(CLEARED, list.isEmpty())
         if (list.isEmpty()) return@withContext
         val currentIndex = player.currentMediaItemIndex
@@ -97,6 +100,7 @@ object ResumptionUtils {
         withClear: Boolean = false
     ): Triple<List<MediaItem>, Int, Long> {
         val items = recoverQueue(app, downloads, withClear) ?: emptyList()
+        Log.d("GladixPlayback", "recoverPlaylist: CLEARED=${getFromCache<Boolean>(CLEARED)} returning ${items.size} items")
         // INDEX and TRACKS are saved independently; a crash or system kill between the two
         // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
         // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
