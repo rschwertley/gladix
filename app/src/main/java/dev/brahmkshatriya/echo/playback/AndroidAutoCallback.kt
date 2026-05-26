@@ -724,7 +724,7 @@ abstract class AndroidAutoCallback(
                     subtitleWithE,
                     true,
                     cover?.toUri(context),
-                    type
+                    type = type
                 )
             }
         }
