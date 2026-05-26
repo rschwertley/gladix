@@ -72,6 +72,9 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import java.util.Collections
 import java.util.LinkedHashMap
 
@@ -555,6 +558,7 @@ abstract class AndroidAutoCallback(
             feedMap.clear()
             tracksMap.clear()
             continuations.clear()
+            extensionIconCache.clear()
         }
 
         private fun shuffleItem(id: String, extId: String, context: Context) = MediaItem.Builder()
@@ -585,12 +589,41 @@ abstract class AndroidAutoCallback(
             is ImageHolder.HexColorImageHolder -> "".toUri()
         }
 
+        private suspend fun ImageHolder.loadBitmapBytes(context: Context, maxPx: Int): ByteArray? =
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val src: Bitmap = when (this@loadBitmapBytes) {
+                        is ImageHolder.ResourceIdImageHolder ->
+                            BitmapFactory.decodeResource(context.resources, resId)
+                        is ImageHolder.NetworkRequestImageHolder ->
+                            java.net.URL(request.url).openStream().use { BitmapFactory.decodeStream(it) }
+                        is ImageHolder.ResourceUriImageHolder ->
+                            context.contentResolver.openInputStream(uri.toUri())
+                                ?.use { BitmapFactory.decodeStream(it) }
+                        is ImageHolder.HexColorImageHolder -> null
+                    } ?: return@runCatching null
+                    val scale = minOf(1f, maxPx.toFloat() / maxOf(src.width, src.height))
+                    val scaled = if (scale < 1f) {
+                        Bitmap.createScaledBitmap(
+                            src, (src.width * scale).toInt().coerceAtLeast(1),
+                            (src.height * scale).toInt().coerceAtLeast(1), true
+                        ).also { src.recycle() }
+                    } else src
+                    ByteArrayOutputStream().use { out ->
+                        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        scaled.recycle()
+                        out.toByteArray()
+                    }
+                }.getOrNull()
+            }
+
         private fun browsableItem(
             id: String,
             title: String,
             subtitle: String? = null,
             browsable: Boolean = true,
             artWorkUri: Uri? = null,
+            artworkData: ByteArray? = null,
             type: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
         ) = MediaItem.Builder()
             .setMediaId(id)
@@ -601,7 +634,12 @@ abstract class AndroidAutoCallback(
                     .setMediaType(type)
                     .setTitle(title)
                     .setSubtitle(subtitle)
-                    .setArtworkUri(artWorkUri)
+                    .apply {
+                        if (artworkData != null)
+                            setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                        else
+                            setArtworkUri(artWorkUri)
+                    }
                     .build()
             )
             .build()
@@ -625,11 +663,18 @@ abstract class AndroidAutoCallback(
                 ).build()
         }
 
-        private suspend fun Extension<*>.toMediaItem(context: Context) = browsableItem(
-            "$ROOT/$id", name, context.getString(R.string.extension),
-            instance.value().isSuccess,
-            metadata.icon?.toUri(context)
-        )
+        private suspend fun Extension<*>.toMediaItem(context: Context): MediaItem {
+            val success = instance.value().isSuccess
+            val artworkData = if (extensionIconCache.containsKey(id)) {
+                extensionIconCache[id]
+            } else {
+                metadata.icon?.loadBitmapBytes(context, 96).also { extensionIconCache[id] = it }
+            }
+            return browsableItem(
+                "$ROOT/$id", name, context.getString(R.string.extension),
+                success, artworkData = artworkData
+            )
+        }
 
         @OptIn(UnstableApi::class)
         val notSupported =
@@ -658,6 +703,7 @@ abstract class AndroidAutoCallback(
         }
 
 
+        private val extensionIconCache = boundedMap<String, ByteArray?>()
         private val itemMap = boundedMap<String, EchoMediaItem>()
         private fun EchoMediaItem.toMediaItem(
             context: Context, extId: String
