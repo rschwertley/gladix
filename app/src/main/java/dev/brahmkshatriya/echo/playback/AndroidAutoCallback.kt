@@ -74,6 +74,10 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import java.io.ByteArrayOutputStream
 import java.util.Collections
 import java.util.LinkedHashMap
@@ -609,13 +613,24 @@ abstract class AndroidAutoCallback(
                             (src.height * scale).toInt().coerceAtLeast(1), true
                         ).also { src.recycle() }
                     } else src
+                    val grey = toGreyscale(scaled)
+                    scaled.recycle()
                     ByteArrayOutputStream().use { out ->
-                        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
-                        scaled.recycle()
+                        grey.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        grey.recycle()
                         out.toByteArray()
                     }
                 }.getOrNull()
             }
+
+        private fun toGreyscale(src: Bitmap): Bitmap {
+            val result = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+            val paint = Paint().apply {
+                colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+            }
+            Canvas(result).drawBitmap(src, 0f, 0f, paint)
+            return result
+        }
 
         private fun browsableItem(
             id: String,

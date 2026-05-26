@@ -160,17 +160,26 @@ class PlayerCallback(
             Log.d("GladixAuto", "resume: skipping, activeLoadCount=${state.activeLoadCount.get()}")
             return@future SessionResult(RESULT_SUCCESS)
         }
-        withContext(Dispatchers.Main) {
-            player.shuffleModeEnabled = context.recoverShuffle() == true
-            player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
+        userQueueSet = true
+        try {
+            withContext(Dispatchers.Main) {
+                player.shuffleModeEnabled = context.recoverShuffle() == true
+                player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
+            }
+            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear)
+            if (items.isEmpty()) {
+                userQueueSet = false
+                return@future SessionResult(RESULT_SUCCESS)
+            }
+            withContext(Dispatchers.Main) {
+                player.setMediaItems(items, index, pos)
+                player.prepare()
+            }
+            SessionResult(RESULT_SUCCESS)
+        } catch (e: Exception) {
+            userQueueSet = false
+            throw e
         }
-        val (items, index, pos) = context.recoverPlaylist(app,downloadFlow.value, withClear)
-        if (items.isEmpty()) return@future SessionResult(RESULT_SUCCESS)
-        withContext(Dispatchers.Main) {
-            player.setMediaItems(items, index, pos)
-            player.prepare()
-        }
-        SessionResult(RESULT_SUCCESS)
     }
 
     private var timerJob: Job? = null

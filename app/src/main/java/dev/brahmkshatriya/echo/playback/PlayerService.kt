@@ -213,15 +213,20 @@ class PlayerService : MediaLibraryService() {
             val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
             Log.d("GladixPlayback", "onCreate restore: items=${items.size} userQueueSet=${callback.userQueueSet}")
             if (items.isEmpty()) return@launch
+            if (callback.userQueueSet) {
+                Log.d("GladixPlayback", "onCreate restore: skipping, userQueueSet=true")
+                return@launch
+            }
+            // Claim before entering Main to block onPlaybackResumption from racing with
+            // setMediaItems. Not reset: the restore owns the queue from this point and the
+            // scope never cancels before process death.
+            callback.userQueueSet = true
             withContext(Dispatchers.Main) {
-                if (callback.userQueueSet) {
-                    Log.d("GladixPlayback", "onCreate restore: skipping, userQueueSet=true")
-                    return@withContext
-                }
                 state.isRestoringQueue = true
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
                 player.setMediaItems(items.toMutableList(), index, pos)
+                player.seekTo(index, pos)
                 player.prepare()
             }
         }
