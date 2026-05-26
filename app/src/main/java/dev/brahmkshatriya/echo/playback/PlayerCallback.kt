@@ -446,7 +446,7 @@ class PlayerCallback(
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
-    ) = scope.future {
+    ) = scope.futureCatching {
         if (userQueueSet) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet=true")
             throw UnsupportedOperationException("Queue already set")

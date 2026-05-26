@@ -125,6 +125,7 @@ class PlayerEventListener(
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
+        Log.d("GladixPlayback", "onPlaybackStateChanged: state=$playbackState")
         updateCurrentFlow()
         if (playbackState == Player.STATE_BUFFERING) {
             Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
