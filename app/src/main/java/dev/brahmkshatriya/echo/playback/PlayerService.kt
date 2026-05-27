@@ -222,7 +222,10 @@ class PlayerService : MediaLibraryService() {
                 player.shuffleModeEnabled = recoverShuffle() ?: false
                 player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
                 player.setMediaItems(items.toMutableList(), index, pos)
-                player.prepare()
+                // No prepare() here — ShufflePlayer.getPlaybackState() fakes STATE_READY when
+                // STATE_IDLE + items queued + !playWhenReady, giving AA STATE_PAUSED(2) for the
+                // thumbnail. prepare() is deferred to ShufflePlayer.play()/setPlayWhenReady()
+                // when the user actually initiates playback, eliminating the STATE_ENDED at ~88ms.
             }
         }
     }

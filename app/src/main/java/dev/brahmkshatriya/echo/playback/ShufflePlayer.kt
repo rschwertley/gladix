@@ -4,6 +4,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Player
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
@@ -180,6 +181,34 @@ class ShufflePlayer(
         original = emptyList()
         player.clearMediaItems()
         log("Clear media items")
+    }
+
+    // Reports STATE_READY when the inner player is STATE_IDLE with a queued but unstarted
+    // playlist and playWhenReady=false. This gives Media3's PlaybackStateCompat builder
+    // STATE_PAUSED(2) so AA shows the thumbnail play button on cold start, without calling
+    // prepare() in onCreate() which caused STATE_ENDED at ~88ms before stream load completed.
+    // Purely presentational: all Player.Listener callbacks come from real ExoPlayer (listeners
+    // are registered on the inner player by ForwardingPlayer.addListener), so no synthetic
+    // STATE_READY callback is delivered to PlayerEventListener or AudioFocusListener.
+    override fun getPlaybackState(): Int {
+        return if (player.playbackState == Player.STATE_IDLE && mediaItemCount > 0 && !playWhenReady)
+            Player.STATE_READY
+        else
+            player.playbackState
+    }
+
+    // Auto-prepares before play when inner player is STATE_IDLE (e.g. cold start restore with
+    // no prepare() call). Needed because the PlayerViewModel STATE_IDLE guard sees faked
+    // STATE_READY and never fires. Both play() and setPlayWhenReady() are overridden because
+    // setPlaying() in PlayerViewModel uses the playWhenReady property setter directly, not play().
+    override fun play() {
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        super.play()
+    }
+
+    override fun setPlayWhenReady(playWhenReady: Boolean) {
+        if (playWhenReady && player.playbackState == Player.STATE_IDLE) player.prepare()
+        super.setPlayWhenReady(playWhenReady)
     }
 
     // Prevent Media3 session initialization from re-enabling AudioFocusManager.

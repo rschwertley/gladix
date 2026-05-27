@@ -8,7 +8,6 @@ import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.ThumbRating
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
@@ -125,7 +124,6 @@ class PlayerViewModel(
     fun play(position: Int) {
         withBrowser {
             it.seekTo(position, 0)
-            if (it.playbackState == Player.STATE_IDLE) it.prepare()
             it.playWhenReady = true
         }
     }
@@ -157,7 +155,6 @@ class PlayerViewModel(
     fun setPlaying(isPlaying: Boolean) {
         withBrowser {
             Log.d("GladixAudio", "setPlaying: isPlaying=$isPlaying playbackState=${it.playbackState} playWhenReady=${it.playWhenReady}")
-            if (isPlaying && it.playbackState == Player.STATE_IDLE) it.prepare()
             it.playWhenReady = isPlaying
         }
     }
