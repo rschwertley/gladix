@@ -273,11 +273,16 @@ class PlayerFragment : Fragment() {
                 requireActivity().hideSystemUi(true)
         }
 
+        var seenNonHidden = false
         observe(uiViewModel.playerSheetState) {
             updateCollapsed()
             if (isFinalState(it)) adapter.playerSheetStateUpdated()
-            if (it == STATE_HIDDEN) viewModel.clearQueue()
-            else if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
+            if (it == STATE_HIDDEN) {
+                if (seenNonHidden) viewModel.clearQueue()
+            } else {
+                seenNonHidden = true
+                if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
+            }
         }
 
         binding.playerControls.root.doOnLayout {

@@ -33,7 +33,11 @@ object ResumptionUtils {
         File(context.filesDir, "context/queue").apply { mkdirs() }
 
     private inline fun <reified T> Context.saveToQueue(id: String, data: T?) = runCatching {
-        File(queueDir(this), id.hashCode().toString()).writeText(data.toJson())
+        val dir = queueDir(this)
+        val target = File(dir, id.hashCode().toString())
+        val tmp = File(dir, "${id.hashCode()}.tmp")
+        tmp.writeText(data.toJson())
+        check(tmp.renameTo(target)) { "Queue rename failed for $id" }
     }
 
     private inline fun <reified T> Context.getFromQueue(id: String): T? {
@@ -51,7 +55,10 @@ object ResumptionUtils {
     suspend fun saveQueue(context: Context, player: Player) = withContext(Dispatchers.Main) {
         val list = player.mediaItems()
         Log.d("GladixPlayback", "saveQueue: itemCount=${list.size}")
-        if (list.isEmpty()) return@withContext
+        if (list.isEmpty()) {
+            Log.d("GladixPlayback", "saveQueue: empty — stack: ${Thread.currentThread().stackTrace.take(10).joinToString(" < ") { it.methodName }}")
+            return@withContext
+        }
         val currentIndex = player.currentMediaItemIndex
         withContext(Dispatchers.IO) {
             val extensionIds = list.map { it.extensionId }
