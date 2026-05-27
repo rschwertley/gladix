@@ -13,14 +13,14 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
-import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
-import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
+import dev.brahmkshatriya.echo.utils.Serializer.toData
+import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 object ResumptionUtils {
 
-    private const val FOLDER = "queue"
     private const val TRACKS = "queue_tracks"
     private const val CONTEXTS = "queue_contexts"
     private const val EXTENSIONS = "queue_extensions"
@@ -29,9 +29,23 @@ object ResumptionUtils {
     private const val SHUFFLE = "shuffle"
     private const val REPEAT = "repeat"
 
+    private fun queueDir(context: Context) =
+        File(context.filesDir, "context/queue").apply { mkdirs() }
+
+    private inline fun <reified T> Context.saveToQueue(id: String, data: T?) = runCatching {
+        File(queueDir(this), id.hashCode().toString()).writeText(data.toJson())
+    }
+
+    private inline fun <reified T> Context.getFromQueue(id: String): T? {
+        val file = File(queueDir(this), id.hashCode().toString())
+        return if (file.exists()) runCatching { file.readText().toData<T>().getOrThrow() }.getOrNull()
+        else null
+    }
+
     private fun Player.mediaItems() = (0 until mediaItemCount).map { getMediaItemAt(it) }
+
     fun saveIndex(context: Context, index: Int) {
-        context.saveToCache(INDEX, index, FOLDER)
+        context.saveToQueue(INDEX, index)
     }
 
     suspend fun saveQueue(context: Context, player: Player) = withContext(Dispatchers.Main) {
@@ -43,21 +57,21 @@ object ResumptionUtils {
             val extensionIds = list.map { it.extensionId }
             val tracks = list.map { it.track }
             val contexts = list.map { it.context }
-            context.saveToCache(INDEX, currentIndex, FOLDER)
-            context.saveToCache(EXTENSIONS, extensionIds, FOLDER)
-            context.saveToCache(TRACKS, tracks, FOLDER)
-            context.saveToCache(CONTEXTS, contexts, FOLDER)
+            context.saveToQueue(INDEX, currentIndex)
+            context.saveToQueue(EXTENSIONS, extensionIds)
+            context.saveToQueue(TRACKS, tracks)
+            context.saveToQueue(CONTEXTS, contexts)
         }
     }
 
     fun saveCurrentPos(context: Context, position: Long) {
-        context.saveToCache(POSITION, position, FOLDER)
+        context.saveToQueue(POSITION, position)
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
-        val tracks = getFromCache<List<Track>>(TRACKS, FOLDER)
-        val extensionIds = getFromCache<List<String>>(EXTENSIONS, FOLDER)
-        val contexts = getFromCache<List<EchoMediaItem>>(CONTEXTS, FOLDER)
+        val tracks = getFromQueue<List<Track>>(TRACKS)
+        val extensionIds = getFromQueue<List<String>>(EXTENSIONS)
+        val contexts = getFromQueue<List<EchoMediaItem>>(CONTEXTS)
         return tracks?.mapIndexedNotNull { index, track ->
             val extensionId = extensionIds?.getOrNull(index) ?: return@mapIndexedNotNull null
             val item = contexts?.getOrNull(index)
@@ -75,18 +89,17 @@ object ResumptionUtils {
         }
     }
 
-    fun Context.recoverIndex() = getFromCache<Int>(INDEX, FOLDER)
-    private fun Context.recoverPosition() = getFromCache<Long>(POSITION, FOLDER)
+    fun Context.recoverIndex() = getFromQueue<Int>(INDEX)
+    private fun Context.recoverPosition() = getFromQueue<Long>(POSITION)
 
-
-    fun Context.recoverShuffle() = getFromCache<Boolean>(SHUFFLE, FOLDER)
+    fun Context.recoverShuffle() = getFromQueue<Boolean>(SHUFFLE)
     fun saveShuffle(context: Context, shuffle: Boolean) {
-        context.saveToCache(SHUFFLE, shuffle, FOLDER)
+        context.saveToQueue(SHUFFLE, shuffle)
     }
 
-    fun Context.recoverRepeat() = getFromCache<Int>(REPEAT, FOLDER)
+    fun Context.recoverRepeat() = getFromQueue<Int>(REPEAT)
     fun saveRepeat(context: Context, repeat: Int) {
-        context.saveToCache(REPEAT, repeat, FOLDER)
+        context.saveToQueue(REPEAT, repeat)
     }
 
     fun Context.recoverPlaylist(

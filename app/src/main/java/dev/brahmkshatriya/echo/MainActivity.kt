@@ -167,7 +167,6 @@ open class MainActivity : AppCompatActivity() {
             val isHidden = uiViewModel.playerSheetState.value == STATE_HIDDEN
             val showMini = hasTrack && isHidden
             miniPlayer.isVisible = showMini
-            binding.playerFragmentContainer.isVisible = !isHidden
             binding.navHostFragment.nextFocusDownId =
                 if (showMini) R.id.tvMiniPlayer else android.view.View.NO_ID
         }

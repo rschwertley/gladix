@@ -104,19 +104,20 @@ class UiViewModel(
     private val playerInsets = MutableStateFlow(Insets())
     val systemInsets = MutableStateFlow(Insets())
     val isMainFragment = MutableStateFlow(true)
+    var isRail = false
 
     val combined = systemInsets.combine(navViewInsets) { system, nav ->
-        if (isMainFragment.value) system.add(nav) else system
+        if (isMainFragment.value || isRail) system.add(nav) else system
     }.combine(playerInsets) { system, player ->
         system.add(player)
     }.stateIn(viewModelScope, Lazily, Insets())
 
-    fun getCombined() = (if (isMainFragment.value) systemInsets.value.add(navViewInsets.value)
+    fun getCombined() = (if (isMainFragment.value || isRail) systemInsets.value.add(navViewInsets.value)
     else systemInsets.value).add(playerInsets.value)
 
     fun getSnackbarInsets(): Insets {
         if (playerSheetState.value == STATE_EXPANDED) return Insets()
-        if (isMainFragment.value) return navViewInsets.value.add(playerInsets.value)
+        if (isMainFragment.value || isRail) return navViewInsets.value.add(playerInsets.value)
         return playerInsets.value
     }
 
@@ -361,6 +362,7 @@ class UiViewModel(
             navView: NavigationBarView
         ) {
             val isRail = navView is NavigationRailView
+            uiViewModel.isRail = isRail
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 uiViewModel.setSystemInsets(this, insets)
                 val navBarSize = uiViewModel.systemInsets.value.bottom

@@ -296,9 +296,11 @@ class DeezerApi(private val session: DeezerSession) {
         val jObject = callApi("deezer.getUserData")
         val userResults = jObject["results"]
             ?: throw Exception("getUserData failed: no results in response")
-        val userObject = userResults.jsonObject["USER"]
+        val userResultsObj = userResults as? JsonObject
+            ?: throw Exception("getUserData failed: results is not an object — session may be invalid")
+        val userObject = userResultsObj["USER"]
             ?: throw Exception("getUserData failed: no USER object — session may be expired")
-        val token = (userResults.jsonObject["checkForm"] as? JsonPrimitive)?.contentOrNull
+        val token = (userResultsObj["checkForm"] as? JsonPrimitive)?.contentOrNull
             ?: throw Exception("getUserData failed: no checkForm token")
         val userId = (userObject.jsonObject["USER_ID"] as? JsonPrimitive)?.contentOrNull
             ?: throw Exception("getUserData failed: no USER_ID — guest or expired session")
