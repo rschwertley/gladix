@@ -210,7 +210,7 @@ class PlayerService : MediaLibraryService() {
         mediaSession = session
 
         scope.launch {
-            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, withClear = true)
+            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value)
             Log.d("GladixPlayback", "onCreate restore: items=${items.size} userQueueSet=${callback.userQueueSet.get()}")
             if (items.isEmpty()) return@launch
             if (!callback.userQueueSet.compareAndSet(false, true)) {

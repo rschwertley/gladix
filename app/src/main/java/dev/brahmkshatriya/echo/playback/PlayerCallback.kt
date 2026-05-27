@@ -131,7 +131,7 @@ class PlayerCallback(
             addToNextCommand -> addToNext(player, args)
             radioCommand -> radio(player, args)
             sleepTimer -> onSleepTimer(player, args.getLong("ms"))
-            resumeCommand -> resume(player, args.getBoolean("cleared", true))
+            resumeCommand -> resume(player)
             imageCommand -> getImage(player)
             else -> super.onCustomCommand(session, controller, customCommand, args)
         }
@@ -139,7 +139,7 @@ class PlayerCallback(
 
     private fun getImage(player: Player) = scope.future {
         val item = player.with { currentMediaItem }
-            ?: context.recoverPlaylist(app, downloadFlow.value, false).run { first.getOrNull(second) }
+            ?: context.recoverPlaylist(app, downloadFlow.value).run { first.getOrNull(second) }
             ?: return@future SessionResult(SessionError.ERROR_UNKNOWN)
         val image = item.track.cover.loadDrawable(context)?.toScaledBitmap(720)
         SessionResult(RESULT_SUCCESS, Bundle().apply { putParcelable("image", image) })
@@ -151,7 +151,7 @@ class PlayerCallback(
         bmp.scale(width, height)
     }
 
-    private fun resume(player: Player, withClear: Boolean) = scope.future {
+    private fun resume(player: Player) = scope.future {
         if (!userQueueSet.compareAndSet(false, true)) {
             Log.d("GladixAuto", "resume: skipping, userQueueSet already claimed")
             return@future SessionResult(RESULT_SUCCESS)
@@ -166,7 +166,7 @@ class PlayerCallback(
                 player.shuffleModeEnabled = context.recoverShuffle() == true
                 player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
             }
-            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear)
+            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
             if (items.isEmpty()) {
                 userQueueSet.set(false)
                 return@future SessionResult(RESULT_SUCCESS)
@@ -470,7 +470,7 @@ class PlayerCallback(
                 mediaSession.player.shuffleModeEnabled = context.recoverShuffle() ?: false
                 mediaSession.player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
             }
-            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear = true)
+            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
             Log.d("GladixPlayback", "onPlaybackResumption: items=${items.size} userQueueSet=${userQueueSet.get()}")
             if (items.isEmpty()) {
                 throw UnsupportedOperationException("No saved queue")

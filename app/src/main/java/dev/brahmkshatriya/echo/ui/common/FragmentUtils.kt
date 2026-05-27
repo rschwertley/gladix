@@ -114,7 +114,7 @@ object FragmentUtils {
                     PlayerService.getController(application) { controller ->
                         controller.sendCustomCommand(
                             PlayerCommands.resumeCommand,
-                            Bundle().apply { putBoolean("cleared", false) }
+                            Bundle.EMPTY
                         )
                         controller.release()
                     }

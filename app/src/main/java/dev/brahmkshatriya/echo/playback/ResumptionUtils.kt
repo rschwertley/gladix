@@ -20,7 +20,6 @@ import kotlinx.coroutines.withContext
 
 object ResumptionUtils {
 
-    private const val CLEARED = "cleared"
     private const val FOLDER = "queue"
     private const val TRACKS = "queue_tracks"
     private const val CONTEXTS = "queue_contexts"
@@ -37,9 +36,7 @@ object ResumptionUtils {
 
     suspend fun saveQueue(context: Context, player: Player) = withContext(Dispatchers.Main) {
         val list = player.mediaItems()
-        Log.d("GladixPlayback", "saveQueue: itemCount=${list.size} cleared=${list.isEmpty()}")
-        if (list.isEmpty()) Log.d("GladixPlayback", "saveQueue: CLEARING queue", Throwable("saveQueue stack trace"))
-        context.saveToCache(CLEARED, list.isEmpty())
+        Log.d("GladixPlayback", "saveQueue: itemCount=${list.size}")
         if (list.isEmpty()) return@withContext
         val currentIndex = player.currentMediaItemIndex
         withContext(Dispatchers.IO) {
@@ -57,8 +54,7 @@ object ResumptionUtils {
         context.saveToCache(POSITION, position, FOLDER)
     }
 
-    fun Context.recoverTracks(withClear: Boolean = false): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
-        if (withClear && getFromCache<Boolean>(CLEARED) != false) return null
+    fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
         val tracks = getFromCache<List<Track>>(TRACKS, FOLDER)
         val extensionIds = getFromCache<List<String>>(EXTENSIONS, FOLDER)
         val contexts = getFromCache<List<EchoMediaItem>>(CONTEXTS, FOLDER)
@@ -72,9 +68,8 @@ object ResumptionUtils {
     private fun Context.recoverQueue(
         app: App,
         downloads: List<Downloader.Info>,
-        withClear: Boolean = false
     ): List<MediaItem>? {
-        val tracks = recoverTracks(withClear) ?: return null
+        val tracks = recoverTracks() ?: return null
         return tracks.map { (state, item) ->
             MediaItemUtils.build(app, downloads, state, item)
         }
@@ -97,10 +92,9 @@ object ResumptionUtils {
     fun Context.recoverPlaylist(
         app: App,
         downloads: List<Downloader.Info>,
-        withClear: Boolean = false
     ): Triple<List<MediaItem>, Int, Long> {
-        val items = recoverQueue(app, downloads, withClear) ?: emptyList()
-        Log.d("GladixPlayback", "recoverPlaylist: CLEARED=${getFromCache<Boolean>(CLEARED)} returning ${items.size} items")
+        val items = recoverQueue(app, downloads) ?: emptyList()
+        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items")
         // INDEX and TRACKS are saved independently; a crash or system kill between the two
         // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
         // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
@@ -110,7 +104,14 @@ object ResumptionUtils {
             rawIndex < items.size -> rawIndex
             else -> items.size - 1
         }
-        val position = recoverPosition() ?: -1L
-        return Triple(items, index, position)
+        val rawPos = recoverPosition() ?: 0L
+        val trackDuration = items.getOrNull(index)?.track?.duration
+        val safePos = when {
+            trackDuration != null && trackDuration > 0 && rawPos >= trackDuration + 2_000 -> 0L
+            trackDuration == null && rawPos > 90 * 60_000L -> 0L
+            else -> rawPos
+        }
+        Log.d("GladixPlayback", "recoverPlaylist: pos=$rawPos safePos=$safePos duration=$trackDuration")
+        return Triple(items, index, safePos)
     }
 }

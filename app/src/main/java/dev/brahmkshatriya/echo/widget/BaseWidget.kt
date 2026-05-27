@@ -9,7 +9,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.widget.RemoteViews
-import androidx.core.os.bundleOf
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import dev.brahmkshatriya.echo.R
@@ -71,7 +70,7 @@ abstract class BaseWidget : AppWidgetProvider(), KoinComponent {
             ACTION_REPEAT_OFF -> controller.sendCustomCommand(repeatOffCommand, Bundle.EMPTY)
             ACTION_REPEAT_ONE -> controller.sendCustomCommand(repeatOneCommand, Bundle.EMPTY)
             ACTION_RESUME -> controller.run {
-                sendCustomCommand(resumeCommand, bundleOf("cleared" to false))
+                sendCustomCommand(resumeCommand, Bundle.EMPTY)
                 playWhenReady = true
             }
 
