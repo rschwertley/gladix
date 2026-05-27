@@ -8,6 +8,9 @@ import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
+import com.google.android.material.checkbox.MaterialCheckBox
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -37,6 +40,8 @@ import dev.brahmkshatriya.echo.ui.main.MainFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
 import dev.brahmkshatriya.echo.ui.player.PlayerTvFragment
+import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
+import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
@@ -58,6 +63,8 @@ open class MainActivity : AppCompatActivity() {
     private val uiViewModel by viewModel<UiViewModel>()
     private val extensionLoader by inject<ExtensionLoader>()
     private val playerState by inject<PlayerState>()
+
+    private val playerViewModel by viewModel<PlayerViewModel>()
 
     private val isTV by lazy {
         val uiModeManager = getSystemService(UI_MODE_SERVICE) as UiModeManager
@@ -82,6 +89,7 @@ open class MainActivity : AppCompatActivity() {
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
         setupTvNowPlaying()
+        setupTvMiniPlayer()
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
@@ -138,6 +146,54 @@ open class MainActivity : AppCompatActivity() {
                 val track = current.track
                 track.cover.loadInto(nowPlayingThumb, R.drawable.ic_music)
             }
+        }
+    }
+
+    private fun setupTvMiniPlayer() {
+        val miniPlayer = binding.root.findViewById<LinearLayout>(R.id.tvMiniPlayer) ?: return
+        val miniArt = binding.root.findViewById<ImageView>(R.id.miniArt)
+        val miniTitle = binding.root.findViewById<TextView>(R.id.miniTitle)
+        val miniArtist = binding.root.findViewById<TextView>(R.id.miniArtist)
+        val miniPlayPause = binding.root.findViewById<MaterialCheckBox>(R.id.miniPlayPause)
+        val miniProgress = binding.root.findViewById<ProgressBar>(R.id.miniProgress)
+
+        miniPlayer.setOnClickListener { uiViewModel.changePlayerState(STATE_EXPANDED) }
+
+        val playPauseListener = CheckBoxListener { playerViewModel.setPlaying(it) }
+        miniPlayPause.addOnCheckedStateChangedListener(playPauseListener)
+
+        fun updateVisibility() {
+            val hasTrack = playerState.current.value != null
+            val isHidden = uiViewModel.playerSheetState.value == STATE_HIDDEN
+            val showMini = hasTrack && isHidden
+            miniPlayer.isVisible = showMini
+            binding.playerFragmentContainer.isVisible = !isHidden
+            binding.navHostFragment.nextFocusDownId =
+                if (showMini) R.id.tvMiniPlayer else android.view.View.NO_ID
+        }
+
+        observe(playerState.current) { current ->
+            updateVisibility()
+            if (current == null) return@observe
+            val track = current.track
+            miniTitle.text = track.title
+            miniArtist.text = track.artists.joinToString(", ") { it.name }
+            track.cover.loadInto(miniArt, R.drawable.ic_music)
+        }
+
+        observe(uiViewModel.playerSheetState) { updateVisibility() }
+
+        observe(playerViewModel.playWhenReady) {
+            playPauseListener.enabled = false
+            miniPlayPause.isChecked = it
+            playPauseListener.enabled = true
+        }
+
+        observe(playerViewModel.progress) { (curr, _) ->
+            val duration = playerViewModel.totalDuration.value
+                ?: playerState.current.value?.track?.duration ?: 0
+            miniProgress.progress =
+                if (duration > 0) ((curr.toFloat() / duration) * 1000).toInt() else 0
         }
     }
 

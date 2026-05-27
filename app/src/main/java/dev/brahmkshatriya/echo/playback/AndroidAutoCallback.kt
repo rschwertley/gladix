@@ -81,6 +81,7 @@ import android.graphics.Paint
 import java.io.ByteArrayOutputStream
 import java.util.Collections
 import java.util.LinkedHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 @UnstableApi
 abstract class AndroidAutoCallback(
@@ -92,7 +93,7 @@ abstract class AndroidAutoCallback(
 
     val context get() = app.context
 
-    @Volatile internal var userQueueSet = false
+    internal val userQueueSet = AtomicBoolean(false)
     @Volatile private var lastSearchQuery = ""
     @Volatile protected var lastBrowsedExtId: String? = null
     private val searchResults = boundedMap<Pair<String, String>, List<MediaItem>>()
@@ -102,7 +103,7 @@ abstract class AndroidAutoCallback(
     private var pendingSearchJob: Job? = null
 
     override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-        userQueueSet = false
+        userQueueSet.set(false)
         lastBrowsedExtId = null
         pendingSearchJob?.cancel()
         super.onDisconnected(session, controller)
@@ -465,7 +466,7 @@ abstract class AndroidAutoCallback(
         startIndex: Int,
         startPositionMs: Long
     ) = scope.future {
-        userQueueSet = true
+        userQueueSet.set(true)
         val shuffleItem = mediaItems.singleOrNull()
             ?.takeIf { it.mediaId.startsWith("$SHUFFLE_PREFIX/") }
         if (shuffleItem != null) {

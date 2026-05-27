@@ -152,23 +152,23 @@ class PlayerCallback(
     }
 
     private fun resume(player: Player, withClear: Boolean) = scope.future {
-        if (userQueueSet) {
-            Log.d("GladixAuto", "resume: skipping, userQueueSet=true")
+        if (!userQueueSet.compareAndSet(false, true)) {
+            Log.d("GladixAuto", "resume: skipping, userQueueSet already claimed")
             return@future SessionResult(RESULT_SUCCESS)
         }
-        if (state.activeLoadCount.get() > 0) {
-            Log.d("GladixAuto", "resume: skipping, activeLoadCount=${state.activeLoadCount.get()}")
-            return@future SessionResult(RESULT_SUCCESS)
-        }
-        userQueueSet = true
         try {
+            if (state.activeLoadCount.get() > 0) {
+                Log.d("GladixAuto", "resume: skipping, activeLoadCount=${state.activeLoadCount.get()}")
+                userQueueSet.set(false)
+                return@future SessionResult(RESULT_SUCCESS)
+            }
             withContext(Dispatchers.Main) {
                 player.shuffleModeEnabled = context.recoverShuffle() == true
                 player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
             }
             val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear)
             if (items.isEmpty()) {
-                userQueueSet = false
+                userQueueSet.set(false)
                 return@future SessionResult(RESULT_SUCCESS)
             }
             withContext(Dispatchers.Main) {
@@ -177,7 +177,7 @@ class PlayerCallback(
             }
             SessionResult(RESULT_SUCCESS)
         } catch (e: Exception) {
-            userQueueSet = false
+            userQueueSet.set(false)
             throw e
         }
     }
@@ -211,7 +211,7 @@ class PlayerCallback(
 
     @OptIn(UnstableApi::class)
     private fun radio(player: Player, args: Bundle) = scope.future {
-        userQueueSet = true
+        userQueueSet.set(true)
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future error
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
@@ -271,7 +271,7 @@ class PlayerCallback(
 
 
     private fun playItem(player: Player, args: Bundle) = scope.future {
-        userQueueSet = true
+        userQueueSet.set(true)
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future error
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
@@ -457,11 +457,10 @@ class PlayerCallback(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
     ) = scope.futureCatching {
-        if (userQueueSet) {
-            Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet=true")
+        if (!userQueueSet.compareAndSet(false, true)) {
+            Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet already claimed")
             throw UnsupportedOperationException("Queue already set")
         }
-        userQueueSet = true
         try {
             if (state.activeLoadCount.get() > 0) {
                 Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
@@ -472,13 +471,13 @@ class PlayerCallback(
                 mediaSession.player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
             }
             val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value, withClear = true)
-            Log.d("GladixPlayback", "onPlaybackResumption: items=${items.size} userQueueSet=$userQueueSet")
+            Log.d("GladixPlayback", "onPlaybackResumption: items=${items.size} userQueueSet=${userQueueSet.get()}")
             if (items.isEmpty()) {
                 throw UnsupportedOperationException("No saved queue")
             }
             MediaItemsWithStartPosition(items, index, pos)
         } catch (e: Exception) {
-            userQueueSet = false
+            userQueueSet.set(false)
             throw e
         }
     }

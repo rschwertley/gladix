@@ -16,6 +16,7 @@
         android:id="@+id/navHostFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:nextFocusDown="@id/tvMiniPlayer"
         tools:layout="@layout/fragment_home"
         tools:layout_marginStart="64dp" />
 
@@ -72,6 +73,14 @@
         </LinearLayout>
 
     </LinearLayout>
+
+    <!-- Mini-player bar: shown when a track is loaded but full-screen player is hidden -->
+    <include
+        layout="@layout/fragment_player_mini_tv"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="@dimen/nav_width" />
 
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/playerFragmentContainer"

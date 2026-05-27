@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.common
 import android.content.Context
 import android.graphics.drawable.Drawable
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
@@ -458,6 +459,11 @@ class UiViewModel(
                     behavior.isHideable = !expanded
                     viewModel.playerSheetState.value = newState
                     if (!isFinalState(newState)) return
+                    if (isTV) {
+                        (bottomSheet as? ViewGroup)?.descendantFocusability =
+                            if (newState == STATE_HIDDEN) ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                            else ViewGroup.FOCUS_BEFORE_DESCENDANTS
+                    }
                     viewModel.setPlayerInsets(view.context, newState != STATE_HIDDEN)
                     onSlide(view, if (newState == STATE_EXPANDED) 1f else 0f)
                 }
