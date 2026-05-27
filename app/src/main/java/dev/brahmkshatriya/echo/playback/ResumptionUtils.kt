@@ -94,13 +94,13 @@ object ResumptionUtils {
         downloads: List<Downloader.Info>,
     ): Triple<List<MediaItem>, Int, Long> {
         val items = recoverQueue(app, downloads) ?: emptyList()
-        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items")
         // INDEX and TRACKS are saved independently; a crash or system kill between the two
         // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
         // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
         val rawIndex = recoverIndex() ?: C.INDEX_UNSET
         val index = when {
-            items.isEmpty() || rawIndex == C.INDEX_UNSET -> C.INDEX_UNSET
+            items.isEmpty() -> C.INDEX_UNSET
+            rawIndex == C.INDEX_UNSET -> 0
             rawIndex < items.size -> rawIndex
             else -> items.size - 1
         }
@@ -111,7 +111,7 @@ object ResumptionUtils {
             trackDuration == null && rawPos > 90 * 60_000L -> 0L
             else -> rawPos
         }
-        Log.d("GladixPlayback", "recoverPlaylist: pos=$rawPos safePos=$safePos duration=$trackDuration")
+        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index pos=$rawPos safePos=$safePos duration=$trackDuration")
         return Triple(items, index, safePos)
     }
 }
