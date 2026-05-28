@@ -546,7 +546,10 @@ class PlayerFragment : Fragment() {
                 val colors =
                     if (context.isDynamic()) context.getColorsFrom(drawable?.toBitmap()) else null
                 uiViewModel.playerColors.value = colors
-                if (context.showBackground()) binding?.bgImage?.loadBlurred(drawable, 8f)
+                if (context.showBackground()) binding?.bgImage?.run {
+                    pause()
+                    loadBlurred(drawable, 8f) { resume() }
+                }
                 else binding?.bgImage?.setImageDrawable(null)
             }
         }

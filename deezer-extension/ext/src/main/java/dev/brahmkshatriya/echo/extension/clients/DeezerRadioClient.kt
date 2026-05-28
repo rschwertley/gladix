@@ -47,6 +47,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             val artistId = freshSeeds?.firstOrNull()?.artists?.firstOrNull()?.id.orEmpty()
                 .ifBlank { radio.extras["artist"].orEmpty() }
 
+            val includeSeeds = radio.extras["include_seeds"] == "true"
             val seedIdSet = seedIds.toSet()
             val (radioResults, fetchedSeedTracks) = coroutineScope {
                 val radioJobs = seedIds.zip(seedArtists).map { (tId, aId) ->
@@ -56,19 +57,22 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                             ?: emptyList()
                     }
                 }
-                val seedJobs = seedIds.map { tId ->
+                val seedJobs = if (includeSeeds) seedIds.map { tId ->
                     async {
                         runCatching {
                             api.track(tId)["results"]?.jsonObject?.toTrack(parser)
                         }.getOrNull()
                     }
-                }
+                } else emptyList()
                 val allRadio = radioJobs.awaitAll().flatten().distinctBy { it.id }
                     .filter { it.id !in seedIdSet }
                 val seeds = seedJobs.awaitAll().filterNotNull()
                 allRadio to seeds
             }
-            val merged = (fetchedSeedTracks + radioResults).distinctBy { it.id }.shuffled()
+            val seedsWithCover = fetchedSeedTracks.map { t ->
+                if (t.cover == null) t.copy(cover = radio.cover) else t
+            }
+            val merged = (seedsWithCover + radioResults).distinctBy { it.id }.shuffled()
 
             merged.mapIndexed { index, track ->
                 val nextId = merged.getOrNull(index + 1)?.id.orEmpty()
@@ -122,7 +126,8 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                     "source_type" to "album",
                     "artist" to seed.artists.firstOrNull()?.id.orEmpty(),
                     "seed_ids" to seeds.joinToString(",") { it.id },
-                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() }
+                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() },
+                    "include_seeds" to "true"
                 )
             )
         }
@@ -140,7 +145,8 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                     "source_type" to "playlist",
                     "artist" to seed.artists.firstOrNull()?.id.orEmpty(),
                     "seed_ids" to seeds.joinToString(",") { it.id },
-                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() }
+                    "seed_artists" to seeds.joinToString(",") { it.artists.firstOrNull()?.id.orEmpty() },
+                    "include_seeds" to "true"
                 )
             )
         }

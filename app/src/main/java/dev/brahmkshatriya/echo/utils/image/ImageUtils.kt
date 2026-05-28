@@ -13,6 +13,7 @@ import coil3.load
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
+import coil3.request.crossfade
 import coil3.request.error
 import coil3.request.placeholder
 import coil3.request.target
@@ -104,10 +105,12 @@ object ImageUtils {
         context.imageLoader.execute(request.build()).image?.asDrawable(context.resources)
     }
 
-    fun ImageView.loadBlurred(drawable: Drawable?, radius: Float) = tryWith {
-        if (drawable == null) setImageDrawable(null)
+    fun ImageView.loadBlurred(drawable: Drawable?, radius: Float, onLoaded: (() -> Unit)? = null) = tryWith {
+        if (drawable == null) { setImageDrawable(null); return@tryWith }
         load(drawable) {
             transformations(BlurTransformation(context, radius))
+            crossfade(false)
+            listener(onSuccess = { _, _ -> onLoaded?.invoke() })
         }
     }
 
