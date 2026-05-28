@@ -131,9 +131,11 @@ class ExtensionInfoPreference(
                     viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))
                 }
 
-                val isTV = (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as UiModeManager)
-                    .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
-                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                val isTV = context?.let {
+                    (it.getSystemService(android.content.Context.UI_MODE_SERVICE) as UiModeManager)
+                        .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                        it.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                } ?: false
                 binding.linkTv.isVisible = user != null && ext?.id == "deezer" && !isTV
                 binding.linkTv.setOnClickListener {
                     requireActivity().openFragment<TvPairingFragment>()
