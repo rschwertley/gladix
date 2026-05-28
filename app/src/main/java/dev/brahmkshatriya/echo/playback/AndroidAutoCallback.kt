@@ -75,10 +75,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
 import java.io.ByteArrayOutputStream
+import androidx.appcompat.content.res.AppCompatResources
 import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -601,7 +599,9 @@ abstract class AndroidAutoCallback(
                         is ImageHolder.ResourceIdImageHolder ->
                             BitmapFactory.decodeResource(context.resources, resId)
                         is ImageHolder.NetworkRequestImageHolder ->
-                            java.net.URL(request.url).openStream().use { BitmapFactory.decodeStream(it) }
+                            (java.net.URL(request.url).openConnection() as java.net.HttpURLConnection)
+                                .apply { connectTimeout = 3000; readTimeout = 3000 }
+                                .inputStream.use { BitmapFactory.decodeStream(it) }
                         is ImageHolder.ResourceUriImageHolder ->
                             context.contentResolver.openInputStream(uri.toUri())
                                 ?.use { BitmapFactory.decodeStream(it) }
@@ -614,24 +614,31 @@ abstract class AndroidAutoCallback(
                             (src.height * scale).toInt().coerceAtLeast(1), true
                         ).also { src.recycle() }
                     } else src
-                    val grey = toGreyscale(scaled)
-                    scaled.recycle()
                     ByteArrayOutputStream().use { out ->
-                        grey.compress(Bitmap.CompressFormat.PNG, 100, out)
-                        grey.recycle()
+                        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        scaled.recycle()
                         out.toByteArray()
                     }
                 }.getOrNull()
             }
 
-        private fun toGreyscale(src: Bitmap): Bitmap {
-            val result = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-            val paint = Paint().apply {
-                colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        private suspend fun getTabIconBytes(context: Context, resId: Int): ByteArray? =
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val size = 96
+                    val padding = 12
+                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    val drawable = AppCompatResources.getDrawable(context, resId) ?: return@runCatching null
+                    drawable.setBounds(padding, padding, size - padding, size - padding)
+                    drawable.draw(canvas)
+                    ByteArrayOutputStream().use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        bitmap.recycle()
+                        out.toByteArray()
+                    }
+                }.getOrNull()
             }
-            Canvas(result).drawBitmap(src, 0f, 0f, paint)
-            return result
-        }
 
         private fun browsableItem(
             id: String,
@@ -640,7 +647,7 @@ abstract class AndroidAutoCallback(
             browsable: Boolean = true,
             artWorkUri: Uri? = null,
             artworkData: ByteArray? = null,
-            type: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+            type: Int = MediaMetadata.MEDIA_TYPE_MIXED
         ) = MediaItem.Builder()
             .setMediaId(id)
             .setMediaMetadata(
@@ -684,7 +691,12 @@ abstract class AndroidAutoCallback(
             val artworkData = if (extensionIconCache.containsKey(id)) {
                 extensionIconCache[id]
             } else {
-                metadata.icon?.loadBitmapBytes(context, 96).also { extensionIconCache[id] = it }
+                val localResId = extensionIconResId[id]
+                val bytes = if (localResId != null)
+                    getTabIconBytes(context, localResId)
+                else
+                    metadata.icon?.loadBitmapBytes(context, 96)
+                bytes.also { extensionIconCache[id] = it }
             }
             return browsableItem(
                 "$ROOT/$id", name, context.getString(R.string.extension),
@@ -719,6 +731,15 @@ abstract class AndroidAutoCallback(
         }
 
 
+        private val extensionIconResId = mapOf(
+            "deezer" to R.drawable.ic_aa_deezer,
+            "spotify" to R.drawable.ic_aa_spotify,
+            "Youtube_music" to R.drawable.ic_aa_youtube_music,
+            "GoogleDrive_extension" to R.drawable.ic_aa_google_drive,
+            "jellyfin" to R.drawable.ic_aa_jellyfin,
+            "saavn_music" to R.drawable.ic_aa_saavn,
+            "Groove_music" to R.drawable.ic_aa_groove
+        )
         private val extensionIconCache = boundedMap<String, ByteArray?>()
         private val itemMap = boundedMap<String, EchoMediaItem>()
         private fun EchoMediaItem.toMediaItem(

@@ -20,7 +20,7 @@
         tools:layout="@layout/fragment_home"
         tools:layout_marginStart="64dp" />
 
-    <!-- Left navigation panel: rail + Now Playing footer -->
+    <!-- Left navigation panel -->
     <LinearLayout
         android:id="@+id/navRailContainer"
         android:layout_width="wrap_content"
@@ -34,42 +34,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="@dimen/nav_width"
-            android:nextFocusDown="@id/nowPlayingRail"
+            android:nextFocusDown="@id/tvMiniPlayer"
             app:elevation="0dp"
             app:itemMinHeight="64dp"
             app:menu="@menu/nav_menu"
             app:menuGravity="center" />
-
-        <View
-            android:id="@+id/nowPlayingDivider"
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="?attr/colorOutlineVariant"
-            android:visibility="gone" />
-
-        <!-- Now Playing footer — TV only, shown when a track is loaded -->
-        <LinearLayout
-            android:id="@+id/nowPlayingRail"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="72dp"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:focusable="true"
-            android:clickable="true"
-            android:background="?attr/selectableItemBackground"
-            android:visibility="gone"
-            android:nextFocusRight="@id/navHostFragment">
-
-            <ImageView
-                android:id="@+id/nowPlayingThumb"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_music"
-                android:importantForAccessibility="no" />
-
-        </LinearLayout>
 
     </LinearLayout>
 

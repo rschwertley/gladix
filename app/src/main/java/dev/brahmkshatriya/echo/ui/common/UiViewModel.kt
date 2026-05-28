@@ -16,6 +16,7 @@ import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -380,6 +381,9 @@ class UiViewModel(
                 val itemIndex = uiViewModel.navIds.indexOf(it.itemId)
                 val itemId = it.itemId
                 findViewById<View>(it.itemId).setOnClickListener { _ ->
+                    if (isRail && !uiViewModel.isMainFragment.value) {
+                        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+                    }
                     val isCurrentTab = navView.selectedItemId == itemId
                     if (isCurrentTab && lastTappedItemId == itemId)
                         uiViewModel.run { emit(navigationReselected, itemIndex) }

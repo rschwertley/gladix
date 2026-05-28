@@ -1,5 +1,9 @@
 package dev.brahmkshatriya.echo.ui.common
 
+import android.app.UiModeManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.core.util.toKotlinPair
 import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.ConcatAdapter
@@ -37,7 +41,11 @@ interface GridAdapter {
             val context = recycler.context
             val layoutManager = GridLayoutManager(context, 1)
             recycler.doOnLayout {
-                val itemWidth = context.resolveStyledDimension(R.attr.itemCoverSize)
+                val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
+                    .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                val itemWidth = if (isTV) 180.dpToPx(context)
+                    else context.resolveStyledDimension(R.attr.itemCoverSize)
                 val width = it.width - it.paddingLeft - it.paddingRight
                 val calc = floor(width.toFloat() / (itemWidth + 8.dpToPx(context))).toInt()
                 val count = if (calc > 1) calc - if (even) calc % 2 else 0 else 1

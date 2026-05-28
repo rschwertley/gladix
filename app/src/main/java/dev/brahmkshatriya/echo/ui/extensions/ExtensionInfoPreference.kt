@@ -1,6 +1,9 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
 import android.annotation.SuppressLint
+import android.app.UiModeManager
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.method.LinkMovementMethod
@@ -128,7 +131,10 @@ class ExtensionInfoPreference(
                     viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))
                 }
 
-                binding.linkTv.isVisible = user != null && ext?.id == "deezer"
+                val isTV = (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as UiModeManager)
+                    .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                binding.linkTv.isVisible = user != null && ext?.id == "deezer" && !isTV
                 binding.linkTv.setOnClickListener {
                     requireActivity().openFragment<TvPairingFragment>()
                 }

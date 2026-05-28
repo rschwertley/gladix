@@ -88,7 +88,6 @@ open class MainActivity : AppCompatActivity() {
         )
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
-        setupTvNowPlaying()
         setupTvMiniPlayer()
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
@@ -118,37 +117,6 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupTvNowPlaying() {
-        val nowPlayingRail = binding.root.findViewById<LinearLayout>(R.id.nowPlayingRail)
-            ?: return
-        val nowPlayingDivider = binding.root.findViewById<android.view.View>(R.id.nowPlayingDivider)
-        val nowPlayingThumb = binding.root.findViewById<ImageView>(R.id.nowPlayingThumb)
-
-        nowPlayingRail.setOnClickListener {
-            uiViewModel.changePlayerState(STATE_EXPANDED)
-        }
-
-        var hadTrack = false
-        observe(playerState.current) { current ->
-            val hasTrack = current != null
-            if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
-                if (!playerState.isRestoringQueue) {
-                    uiViewModel.changePlayerState(STATE_EXPANDED)
-                }
-            }
-            playerState.isRestoringQueue = false
-            hadTrack = hasTrack
-
-            val visible = current != null
-            nowPlayingRail.isVisible = visible
-            nowPlayingDivider?.isVisible = visible
-            if (current != null) {
-                val track = current.track
-                track.cover.loadInto(nowPlayingThumb, R.drawable.ic_music)
-            }
-        }
-    }
-
     private fun setupTvMiniPlayer() {
         val miniPlayer = binding.root.findViewById<LinearLayout>(R.id.tvMiniPlayer) ?: return
         val miniArt = binding.root.findViewById<ImageView>(R.id.miniArt)
@@ -171,7 +139,16 @@ open class MainActivity : AppCompatActivity() {
                 if (showMini) R.id.tvMiniPlayer else android.view.View.NO_ID
         }
 
+        var hadTrack = false
         observe(playerState.current) { current ->
+            val hasTrack = current != null
+            if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
+                if (!playerState.isRestoringQueue) {
+                    uiViewModel.changePlayerState(STATE_EXPANDED)
+                }
+            }
+            playerState.isRestoringQueue = false
+            hadTrack = hasTrack
             updateVisibility()
             if (current == null) return@observe
             val track = current.track

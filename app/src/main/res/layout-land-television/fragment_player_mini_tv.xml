@@ -76,6 +76,7 @@
             android:contentDescription="@string/play"
             android:focusable="true"
             android:nextFocusLeft="@id/tvMiniPlayer"
+            android:nextFocusRight="@id/miniPlayPause"
             app:buttonTint="@color/button_player" />
 
     </LinearLayout>
@@ -85,7 +86,7 @@
         android:id="@+id/miniProgress"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="4dp"
+        android:layout_height="12dp"
         android:max="1000"
         android:progress="0"
         android:progressBackgroundTint="?attr/colorSurfaceContainerHighest"
