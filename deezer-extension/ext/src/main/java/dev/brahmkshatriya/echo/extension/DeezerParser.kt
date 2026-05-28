@@ -285,6 +285,7 @@ class DeezerParser(private val session: DeezerSession) {
                 put("FILESIZE_MP3_MISC", data.str("FILESIZE_MP3_MISC") ?: "0")
                 put("TYPE", "cover")
                 put("GAIN", data.str("GAIN") ?: "0")
+                put("loved", data.str("LOVE_STATUS") ?: "0")
             }
         )
     }

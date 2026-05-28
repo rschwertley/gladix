@@ -249,11 +249,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     override suspend fun isItemLiked(item: EchoMediaItem): Boolean {
         when(item) {
             is Track -> {
-                val dataArray = api.getTracks()["results"]?.jsonObject
-                    ?.get("data")?.jsonArray ?: return false
-
-                val trackIds = dataArray.mapNotNull { it.jsonObject["SNG_ID"]?.jsonPrimitive?.content }.toSet()
-                return item.id in trackIds
+                return runCatching {
+                    api.track(item.id)["results"]?.jsonObject
+                        ?.get("LOVE_STATUS")?.jsonPrimitive?.content == "1"
+                }.getOrNull() == true
             }
 
             else -> {

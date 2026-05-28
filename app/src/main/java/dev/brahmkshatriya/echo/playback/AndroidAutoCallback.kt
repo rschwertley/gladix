@@ -626,7 +626,7 @@ abstract class AndroidAutoCallback(
             withContext(Dispatchers.IO) {
                 runCatching {
                     val size = 96
-                    val padding = 12
+                    val padding = 8
                     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(bitmap)
                     val drawable = AppCompatResources.getDrawable(context, resId) ?: return@runCatching null
