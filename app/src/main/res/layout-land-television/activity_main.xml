@@ -37,7 +37,7 @@
             android:nextFocusDown="@id/tvMiniPlayer"
             app:elevation="0dp"
             app:itemMinHeight="64dp"
-            app:menu="@menu/nav_menu"
+            app:menu="@menu/nav_menu_tv"
             app:menuGravity="center" />
 
     </LinearLayout>
@@ -47,8 +47,7 @@
         layout="@layout/fragment_player_mini_tv"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:layout_marginStart="@dimen/nav_width" />
+        android:layout_gravity="bottom" />
 
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/playerFragmentContainer"

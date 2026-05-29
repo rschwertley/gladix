@@ -12,6 +12,7 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
     android:nextFocusRight="@+id/miniPlayPause"
+    android:nextFocusUp="@id/navHostFragment"
     android:visibility="gone">
 
     <View
@@ -77,6 +78,7 @@
             android:focusable="true"
             android:nextFocusLeft="@id/tvMiniPlayer"
             android:nextFocusRight="@id/miniPlayPause"
+            android:nextFocusUp="@id/navHostFragment"
             app:buttonTint="@color/button_player" />
 
     </LinearLayout>

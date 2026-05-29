@@ -63,7 +63,6 @@ zxing-core = { module = "com.google.zxing:core", version = "3.5.3" }
 pikolo = { module = "com.github.madrapps:pikolo", version = "2.0.2" }
 fadingedgelayout = { module = "com.github.bosphere.android-fadingedgelayout:fadingedgelayout", version = "1.0.0" }
 fastscroll = { module = "me.zhanghai.android.fastscroll:library", version = "1.3.0" }
-kenburnsview = { module = "com.flaviofaria:kenburnsview", version = "1.0.7" }
 nestedscrollwebview = { module = "com.telefonica:nestedscrollwebview", version = "0.1.6" }
 acsbendi-webview = { module = "com.github.acsbendi:Android-Request-Inspector-WebView", version = "1.0.12" }
 

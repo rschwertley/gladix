@@ -11,7 +11,7 @@
         android:layout_height="match_parent"
         android:translationZ="-2dp">
 
-        <com.flaviofaria.kenburnsview.KenBurnsView
+        <dev.brahmkshatriya.echo.utils.image.KenBurnsImageView
             android:id="@+id/bg_image"
             android:layout_width="match_parent"
             android:layout_height="match_parent"

@@ -4,16 +4,15 @@ import android.content.Context
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import coil3.Image
 import coil3.asDrawable
 import coil3.imageLoader
-import coil3.load
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
-import coil3.request.crossfade
 import coil3.request.error
 import coil3.request.placeholder
 import coil3.request.target
@@ -107,11 +106,17 @@ object ImageUtils {
 
     fun ImageView.loadBlurred(drawable: Drawable?, radius: Float, onLoaded: (() -> Unit)? = null) = tryWith {
         if (drawable == null) { setImageDrawable(null); return@tryWith }
-        load(drawable) {
-            transformations(BlurTransformation(context, radius))
-            crossfade(false)
-            listener(onSuccess = { _, _ -> onLoaded?.invoke() })
-        }
+        val builder = ImageRequest.Builder(context)
+            .data(drawable)
+            .transformations(BlurTransformation(context, radius))
+            .lifecycle(findViewTreeLifecycleOwner())
+            .target(
+                onSuccess = { image ->
+                    setImageDrawable(image.asDrawable(resources))
+                    onLoaded?.invoke()
+                }
+            )
+        enqueue(builder)
     }
 
     private val ImageHolder.diskId

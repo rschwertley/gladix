@@ -72,6 +72,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     private val session by lazy { DeezerSession.getInstance() }
     private val api by lazy { DeezerApi(session) }
     private val parser by lazy { DeezerParser(session) }
+    private var likedTrackIds: HashSet<String>? = null
 
     override suspend fun getSettingItems(): List<Setting> {
         return listOf(
@@ -234,11 +235,13 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     override suspend fun likeItem(item: EchoMediaItem, shouldLike: Boolean) {
         handleArlExpiration()
-        when(item) {
+        when (item) {
             is Track -> {
                 if (shouldLike) {
+                    likedTrackIds?.add(item.id)
                     api.addFavoriteTrack(item.id)
                 } else {
+                    likedTrackIds?.remove(item.id)
                     api.removeFavoriteTrack(item.id)
                 }
             }
@@ -247,18 +250,18 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override suspend fun isItemLiked(item: EchoMediaItem): Boolean {
-        when(item) {
-            is Track -> {
-                return runCatching {
-                    api.track(item.id)["results"]?.jsonObject
-                        ?.get("LOVE_STATUS")?.jsonPrimitive?.content == "1"
-                }.getOrNull() == true
-            }
+        if (item !is Track) return false
+        val ids = likedTrackIds ?: fetchLikedTrackIds().also { likedTrackIds = it }
+        return item.id in ids
+    }
 
-            else -> {
-                return false
-            }
-        }
+    private suspend fun fetchLikedTrackIds(): HashSet<String> {
+        val dataArray = runCatching {
+            api.getTracks()["results"]?.jsonObject?.get("data")?.jsonArray
+        }.getOrNull() ?: return hashSetOf()
+        return dataArray.mapNotNull {
+            runCatching { it.jsonObject["SNG_ID"]?.jsonPrimitive?.content }.getOrNull()
+        }.toHashSet()
     }
 
     override suspend fun listEditablePlaylists(track: Track?): List<Pair<Playlist, Boolean>> {
@@ -562,6 +565,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override fun setLoginUser(user: User?) {
+        likedTrackIds = null
         if (user != null) {
             session.updateCredentials(
                 arl = user.extras["arl"] ?: "",

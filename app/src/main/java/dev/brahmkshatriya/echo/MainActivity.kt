@@ -7,10 +7,12 @@ import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
 import android.widget.ImageView
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.google.android.material.checkbox.MaterialCheckBox
+import com.google.android.material.navigationrail.NavigationRailView
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -88,6 +90,7 @@ open class MainActivity : AppCompatActivity() {
         )
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
+        setupTvNavRail()
         setupTvMiniPlayer()
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
@@ -115,6 +118,33 @@ open class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun setupTvNavRail() {
+        if (!isTV) return
+        val navView = binding.navView as? NavigationRailView ?: return
+        val nowPlayingItem = navView.menu.findItem(R.id.navNowPlaying) ?: return
+
+        // setupNavBarAndInsets installed a listener that does navIds.indexOf(itemId) — navNowPlaying
+        // is not in navIds so indexOf returns -1, corrupting navigation.value. Replace it.
+        navView.setOnItemSelectedListener { item ->
+            if (item.itemId == R.id.navNowPlaying) {
+                uiViewModel.changePlayerState(STATE_EXPANDED)
+                false
+            } else {
+                uiViewModel.navigation.value = uiViewModel.navIds.indexOf(item.itemId)
+                true
+            }
+        }
+
+        // setupNavBarAndInsets also installed a click listener on every menu item view.
+        // Override it for navNowPlaying so it expands the player instead of navigating.
+        findViewById<View>(R.id.navNowPlaying)?.setOnClickListener {
+            uiViewModel.changePlayerState(STATE_EXPANDED)
+        }
+
+        nowPlayingItem.isVisible = playerState.current.value != null
+        observe(playerState.current) { nowPlayingItem.isVisible = it != null }
     }
 
     private fun setupTvMiniPlayer() {

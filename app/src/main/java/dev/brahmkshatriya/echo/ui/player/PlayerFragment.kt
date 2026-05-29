@@ -124,6 +124,17 @@ class PlayerFragment : Fragment() {
         configureBackgroundPlayerView()
     }
 
+    override fun onPause() {
+        super.onPause()
+        binding?.bgImage?.pause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (uiViewModel.playerSheetState.value == STATE_EXPANDED)
+            binding?.bgImage?.resume()
+    }
+
     private val collapseHeight by lazy {
         resources.getDimension(R.dimen.collapsed_cover_size).toInt()
     }
@@ -278,10 +289,17 @@ class PlayerFragment : Fragment() {
             updateCollapsed()
             if (isFinalState(it)) adapter.playerSheetStateUpdated()
             if (it == STATE_HIDDEN) {
-                if (seenNonHidden) viewModel.clearQueue()
+                if (seenNonHidden) {
+                    viewModel.clearQueue()
+                    binding?.bgImage?.stop()
+                }
             } else {
                 seenNonHidden = true
                 if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
+            }
+            when (it) {
+                STATE_EXPANDED -> binding?.bgImage?.resume()
+                else -> binding?.bgImage?.pause()
             }
         }
 
@@ -546,10 +564,7 @@ class PlayerFragment : Fragment() {
                 val colors =
                     if (context.isDynamic()) context.getColorsFrom(drawable?.toBitmap()) else null
                 uiViewModel.playerColors.value = colors
-                if (context.showBackground()) binding?.bgImage?.run {
-                    pause()
-                    loadBlurred(drawable, 8f) { resume() }
-                }
+                if (context.showBackground()) binding?.bgImage?.loadBlurred(drawable, 8f)
                 else binding?.bgImage?.setImageDrawable(null)
             }
         }

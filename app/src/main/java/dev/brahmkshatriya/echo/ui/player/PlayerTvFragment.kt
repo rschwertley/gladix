@@ -76,7 +76,8 @@ class PlayerTvFragment : Fragment() {
             override fun handleOnBackPressed() = minimize()
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-        observe(uiViewModel.playerSheetState) { state ->
+        backCallback.isEnabled = uiViewModel.playerSheetState.value == STATE_EXPANDED
+        viewLifecycleOwner.observe(uiViewModel.playerSheetState) { state ->
             backCallback.isEnabled = state == STATE_EXPANDED
             if (state == STATE_EXPANDED) {
                 binding?.tvTrackPlayPause?.post { binding?.tvTrackPlayPause?.requestFocus() }

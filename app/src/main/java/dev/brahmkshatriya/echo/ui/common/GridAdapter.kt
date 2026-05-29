@@ -44,8 +44,12 @@ interface GridAdapter {
                 val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
                     .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
                     context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-                val itemWidth = if (isTV) 180.dpToPx(context)
-                    else context.resolveStyledDimension(R.attr.itemCoverSize)
+                val itemWidth = if (isTV) {
+                    val screenHeight = context.resources.displayMetrics.heightPixels
+                    val miniPlayerHeight = 84.dpToPx(context)
+                    val usableHeight = screenHeight - miniPlayerHeight
+                    (usableHeight / 2.5f).toInt()
+                } else context.resolveStyledDimension(R.attr.itemCoverSize)
                 val width = it.width - it.paddingLeft - it.paddingRight
                 val calc = floor(width.toFloat() / (itemWidth + 8.dpToPx(context))).toInt()
                 val count = if (calc > 1) calc - if (even) calc % 2 else 0 else 1
