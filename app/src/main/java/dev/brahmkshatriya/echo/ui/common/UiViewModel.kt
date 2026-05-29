@@ -369,9 +369,9 @@ class UiViewModel(
                 uiViewModel.setSystemInsets(this, insets)
                 val navBarSize = uiViewModel.systemInsets.value.bottom
                 val full = getSettings().getBoolean(NAVBAR_GRADIENT, true)
-                GradientDrawable.applyNav(binding.navGradientOverlay, isRail, navBarSize, !full)
+                binding.navGradientOverlay?.let { GradientDrawable.applyNav(it, isRail, navBarSize, !full) }
                 GradientDrawable.applyNav(navView, isRail, navBarSize, full = true)
-                binding.navGradientOverlay.isVisible = full
+                binding.navGradientOverlay?.isVisible = full
                 insets
             }
 
