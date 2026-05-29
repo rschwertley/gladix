@@ -19,6 +19,9 @@ interface HistoryDao {
     @Query("SELECT * FROM HistoryEntity ORDER BY playedAt DESC LIMIT 1")
     fun getLatest(): Flow<HistoryEntity?>
 
+    @Query("SELECT * FROM HistoryEntity WHERE extensionId = :extensionId ORDER BY playedAt DESC LIMIT :limit")
+    suspend fun getByExtension(extensionId: String, limit: Int): List<HistoryEntity>
+
     @Query("DELETE FROM HistoryEntity")
     suspend fun deleteAll()
 }

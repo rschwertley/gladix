@@ -12,6 +12,9 @@ class HistoryRepository(private val dao: HistoryDao) {
 
     fun getLatest() = dao.getLatest()
 
+    suspend fun getByExtension(extensionId: String, limit: Int = 50) =
+        dao.getByExtension(extensionId, limit)
+
     suspend fun recordTrack(extensionId: String, track: Track, context: EchoMediaItem? = null) {
         dao.upsert(
             HistoryEntity(

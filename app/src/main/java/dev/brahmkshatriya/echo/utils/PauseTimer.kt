@@ -18,7 +18,11 @@ class PauseTimer(
         if (isTimerPaused) {
             val diff = System.currentTimeMillis() - lastPauseTime
             val remainingTime =  millisInFuture - diff
-            if (remainingTime < 0) return
+            if (remainingTime < 0) {
+                isTimerPaused = false
+                onTimerFinish()
+                return
+            }
             job = scope.launch {
                 delay(remainingTime)
                 onTimerFinish()

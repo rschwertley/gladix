@@ -154,7 +154,7 @@ class PlayerService : MediaLibraryService() {
         }
 
         val callback = PlayerCallback(
-            app, scope, app.throwFlow, extensions, state, downloadFlow
+            app, scope, app.throwFlow, extensions, state, downloadFlow, historyRepository
         )
 
         val session = MediaLibrarySession.Builder(this, player, callback)

@@ -18,8 +18,6 @@ import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntit
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.extensions.list.ExtensionsListBottomSheet
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
-import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
-import dev.brahmkshatriya.echo.ui.history.HistoryFragment
 import dev.brahmkshatriya.echo.ui.settings.SettingsBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
@@ -42,10 +40,6 @@ class HeaderAdapter(
         binding.extensionsCont.setOnClickListener {
             ExtensionsListBottomSheet.newInstance(ExtensionType.MUSIC)
                 .show(parentFragmentManager, null)
-        }
-
-        binding.historyCont.setOnClickListener {
-            fragment.openFragment<HistoryFragment>()
         }
 
         binding.accountsCont.setOnClickListener {

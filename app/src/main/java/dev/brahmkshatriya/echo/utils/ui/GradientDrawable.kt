@@ -35,7 +35,7 @@ object GradientDrawable {
             setShape(RectShape())
             shaderFactory = object : ShapeDrawable.ShaderFactory() {
                 override fun resize(width: Int, height: Int): Shader {
-                    val centerY = if (isRail) 1f else (height * 0.5f + bottom) / (height + bottom)
+                    val centerY = if (isRail) 1f else (height * 0.2f + bottom) / (height + bottom)
                     val startX = if (isRail) if (isRTL) width.toFloat() else 0f else width / 2f
                     val startY = if (isRail) height / 2f else 0f
                     val endX = if (isRail) if (isRTL) 0f else width.toFloat() else width / 2f

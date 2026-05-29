@@ -45,6 +45,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.get
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
@@ -80,7 +81,10 @@ class PlayerCallback(
     private val extensions: ExtensionLoader,
     private val state: PlayerState,
     override val downloadFlow: StateFlow<List<Downloader.Info>>,
+    private val histRepo: HistoryRepository,
 ) : AndroidAutoCallback(app, scope, extensions.music, downloadFlow) {
+
+    override val historyRepository: HistoryRepository get() = histRepo
 
     override fun getCurrentExtension(): MusicExtension? {
         val aaEligible = { ext: MusicExtension ->

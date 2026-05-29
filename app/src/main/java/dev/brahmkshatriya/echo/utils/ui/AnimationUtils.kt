@@ -81,7 +81,7 @@ object AnimationUtils {
         animate: Boolean = true,
         action: (Float) -> Unit
     ) = doOnLayout {
-        val visible = if (isRail) true else (isMainFragment && isPlayerCollapsed)
+        val visible = if (isRail) true else isPlayerCollapsed
         val value = if (visible) 0f
         else if (isRail) -width.toFloat() else height.toFloat()
         if (animations && animate) {

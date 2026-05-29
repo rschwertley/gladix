@@ -170,6 +170,7 @@ open class MainActivity : AppCompatActivity() {
         }
 
         var hadTrack = false
+        var lastMiniArtId: String? = null
         observe(playerState.current) { current ->
             val hasTrack = current != null
             if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
@@ -184,7 +185,10 @@ open class MainActivity : AppCompatActivity() {
             val track = current.track
             miniTitle.text = track.title
             miniArtist.text = track.artists.joinToString(", ") { it.name }
-            track.cover.loadInto(miniArt, R.drawable.ic_music)
+            if (current.mediaItem.mediaId != lastMiniArtId) {
+                lastMiniArtId = current.mediaItem.mediaId
+                track.cover.loadInto(miniArt, R.drawable.ic_music)
+            }
         }
 
         observe(uiViewModel.playerSheetState) { updateVisibility() }

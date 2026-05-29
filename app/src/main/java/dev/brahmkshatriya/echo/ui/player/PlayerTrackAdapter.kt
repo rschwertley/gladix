@@ -140,6 +140,7 @@ class PlayerTrackAdapter(
         }
 
         private var coverDrawable: Drawable? = null
+        private var lastBoundMediaId: String? = null
         fun applyDrawable() {
             val index = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return
             val item = getItem(index) ?: return
@@ -166,13 +167,17 @@ class PlayerTrackAdapter(
                 collapsedTrackTitle.text = item?.track?.title
                 collapsedTrackArtist.text = item?.track?.artists?.joinToString(", ") { it.name }
             }
-            val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
-            item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
-                val image = it
-                    ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
-                setImageDrawable(image)
-                coverDrawable = it
-                applyDrawable()
+            if (item?.mediaId != lastBoundMediaId) {
+                lastBoundMediaId = item?.mediaId
+                coverDrawable = null
+                val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
+                item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+                    val image = it
+                        ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
+                    setImageDrawable(image)
+                    coverDrawable = it
+                    applyDrawable()
+                }
             }
             updateInsets()
             updateColors()

@@ -556,6 +556,7 @@ class PlayerFragment : Fragment() {
     private fun configureColors() {
         observe(viewModel.playerState.current) { adapter.onCurrentUpdated() }
         var last: Drawable? = null
+        var lastBlurredItemId: String? = null
         adapter.currentDrawableListener = { drawable ->
             if (last != drawable) {
                 last = drawable
@@ -564,8 +565,17 @@ class PlayerFragment : Fragment() {
                 val colors =
                     if (context.isDynamic()) context.getColorsFrom(drawable?.toBitmap()) else null
                 uiViewModel.playerColors.value = colors
-                if (context.showBackground()) binding?.bgImage?.loadBlurred(drawable, 8f)
-                else binding?.bgImage?.setImageDrawable(null)
+                val currentItemId = viewModel.playerState.current.value?.mediaItem?.mediaId
+                if (context.showBackground()) {
+                    if (drawable == null) {
+                        lastBlurredItemId = null
+                    } else if (currentItemId != lastBlurredItemId) {
+                        lastBlurredItemId = currentItemId
+                        binding?.bgImage?.loadBlurred(drawable, 8f)
+                    }
+                } else {
+                    binding?.bgImage?.setImageDrawable(null)
+                }
             }
         }
         val bufferView =

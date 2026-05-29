@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.BACKGROUND_GRADIENT
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyGradient
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
+import dev.brahmkshatriya.echo.ui.history.HistoryFragment
 import dev.brahmkshatriya.echo.ui.main.search.SearchFragment
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -56,6 +57,7 @@ class MainFragment : Fragment() {
             val toShow = when (it) {
                 1 -> addIfNull<SearchFragment>("search")
                 2 -> addIfNull<LibraryFragment>("library")
+                3 -> addIfNull<HistoryFragment>("history")
                 else -> addIfNull<HomeFragment>("home")
             }
 

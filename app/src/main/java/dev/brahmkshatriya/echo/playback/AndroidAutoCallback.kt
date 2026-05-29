@@ -43,6 +43,7 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
+import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -90,6 +91,8 @@ abstract class AndroidAutoCallback(
 ) : MediaLibrarySession.Callback {
 
     val context get() = app.context
+
+    open val historyRepository: HistoryRepository? = null
 
     internal val userQueueSet = AtomicBoolean(false)
     @Volatile private var lastSearchQuery = ""
@@ -345,6 +348,17 @@ abstract class AndroidAutoCallback(
                     .toMediaItems(parentId, context, extId, page)
             }
 
+            HISTORY -> {
+                val items = historyRepository?.getByExtension(extId) ?: emptyList()
+                LibraryResult.ofItemList(
+                    ImmutableList.copyOf(items.mapNotNull { entity ->
+                        val con = if (entity.context is Radio) null else entity.context
+                        entity.track?.toItem(context, extId, con)
+                    }),
+                    null
+                )
+            }
+
             else -> LibraryResult.ofItemList(
                 listOfNotNull(
                     if (extension.isClient<HomeFeedClient>())
@@ -358,6 +372,9 @@ abstract class AndroidAutoCallback(
                     else null,
                     if (extension.isClient<LibraryFeedClient>())
                         browsableItem("$ROOT/$extId/$PLAYLISTS", "${extension.name} • ${context.getString(R.string.playlists)}")
+                    else null,
+                    if (historyRepository != null)
+                        browsableItem("$ROOT/$extId/$HISTORY", "${extension.name} • ${context.getString(R.string.history)}")
                     else null,
                 ),
                 null
@@ -542,6 +559,7 @@ abstract class AndroidAutoCallback(
         private const val ALBUM = "album"
         private const val PLAYLIST = "playlist"
         private const val RADIO = "radio"
+        private const val HISTORY = "history"
 
         private const val SHUFFLE_PREFIX = "auto-shuffle"
 

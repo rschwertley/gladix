@@ -74,18 +74,16 @@ class TrackingListener(
 
     private val mutex = Mutex()
     private val timers = mutableMapOf<String, PauseTimer>()
+    private var historyTimer: PauseTimer? = null
     private fun onTrackChanged(mediaItem: MediaItem?) {
         previousId = current?.extensionId
         current = mediaItem
-        if (mediaItem != null) scope.launch {
-            runCatching {
-                historyRepository.recordTrack(mediaItem.extensionId, mediaItem.track, mediaItem.context)
-            }
-        }
         scope.launch {
             mutex.withLock {
                 timers.forEach { (_, timer) -> timer.pause() }
                 timers.clear()
+                historyTimer?.pause()
+                historyTimer = null
             }
             trackMedia { extension, details ->
                 onTrackChanged(details)
@@ -97,6 +95,22 @@ class TrackingListener(
                         scope.launch {
                             extension.runIf<TrackerMarkClient>(throwableFlow) {
                                 onMarkAsPlayed(details)
+                            }
+                        }
+                    }
+                }
+            }
+            if (mediaItem != null) {
+                val capturedItem = mediaItem
+                mutex.withLock {
+                    historyTimer = PauseTimer(scope, 30_000L) {
+                        scope.launch {
+                            runCatching {
+                                historyRepository.recordTrack(
+                                    capturedItem.extensionId,
+                                    capturedItem.track,
+                                    capturedItem.context
+                                )
                             }
                         }
                     }
@@ -147,6 +161,7 @@ class TrackingListener(
                         if (isPlaying) timer.resume()
                         else timer.pause()
                     }
+                    if (isPlaying) historyTimer?.resume() else historyTimer?.pause()
                 }
                 trackMedia { _, details ->
                     onPlayingStateChanged(details, isPlaying)

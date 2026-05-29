@@ -16,6 +16,11 @@
         android:title="@string/library" />
 
     <item
+        android:id="@+id/historyFragment"
+        android:icon="@drawable/ic_history"
+        android:title="@string/history" />
+
+    <item
         android:id="@+id/navNowPlaying"
         android:icon="@drawable/anim_now_playing"
         android:title="@string/now_playing"
