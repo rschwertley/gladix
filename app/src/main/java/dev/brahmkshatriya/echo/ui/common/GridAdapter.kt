@@ -4,6 +4,9 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Rect
+import android.view.FocusFinder
+import android.view.View
 import androidx.core.util.toKotlinPair
 import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.ConcatAdapter
@@ -39,11 +42,30 @@ interface GridAdapter {
             recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true
         ) {
             val context = recycler.context
-            val layoutManager = GridLayoutManager(context, 1)
+            val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
+                .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+            val layoutManager = if (isTV) {
+                object : GridLayoutManager(context, 1) {
+                    private val focusedRect = Rect()
+                    private val nextRect = Rect()
+                    override fun onInterceptFocusSearch(focused: View, direction: Int): View? {
+                        val next = FocusFinder.getInstance()
+                            .findNextFocus(recycler, focused, direction) ?: return null
+                        focused.getGlobalVisibleRect(focusedRect)
+                        next.getGlobalVisibleRect(nextRect)
+                        val valid = when (direction) {
+                            View.FOCUS_DOWN -> nextRect.top >= focusedRect.bottom - 2
+                            View.FOCUS_UP -> nextRect.bottom <= focusedRect.top + 2
+                            View.FOCUS_RIGHT -> nextRect.left >= focusedRect.right - 2
+                            View.FOCUS_LEFT -> nextRect.right <= focusedRect.left + 2
+                            else -> true
+                        }
+                        return if (valid) next else focused
+                    }
+                }
+            } else GridLayoutManager(context, 1)
             recycler.doOnLayout {
-                val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
-                    .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
-                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
                 val itemWidth = if (isTV) {
                     val screenHeight = context.resources.displayMetrics.heightPixels
                     val miniPlayerHeight = 84.dpToPx(context)

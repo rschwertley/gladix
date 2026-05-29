@@ -4,8 +4,8 @@ import android.content.Context
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
-import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.core.graphics.drawable.toDrawable
+import androidx.core.view.ViewCompat
 import androidx.core.graphics.toColorInt
 import coil3.Image
 import coil3.asDrawable
@@ -109,13 +109,11 @@ object ImageUtils {
         val builder = ImageRequest.Builder(context)
             .data(drawable)
             .transformations(BlurTransformation(context, radius))
-            .lifecycle(findViewTreeLifecycleOwner())
-            .target(
-                onSuccess = { image ->
-                    setImageDrawable(image.asDrawable(resources))
-                    onLoaded?.invoke()
-                }
-            )
+            .lifecycle(ViewCompat.findViewTreeLifecycleOwner(this))
+            .target({}, {}) { image ->
+                setImageDrawable(image.asDrawable(resources))
+                onLoaded?.invoke()
+            }
         enqueue(builder)
     }
 
