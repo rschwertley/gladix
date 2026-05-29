@@ -5,8 +5,8 @@ import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
 import androidx.core.graphics.drawable.toDrawable
-import androidx.core.view.ViewCompat
 import androidx.core.graphics.toColorInt
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import coil3.Image
 import coil3.asDrawable
 import coil3.imageLoader
@@ -14,6 +14,7 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.error
+import coil3.request.lifecycle
 import coil3.request.placeholder
 import coil3.request.target
 import coil3.request.transformations
@@ -109,7 +110,7 @@ object ImageUtils {
         val builder = ImageRequest.Builder(context)
             .data(drawable)
             .transformations(BlurTransformation(context, radius))
-            .lifecycle(ViewCompat.findViewTreeLifecycleOwner(this))
+            .lifecycle(findViewTreeLifecycleOwner())
             .target({}, {}) { image ->
                 setImageDrawable(image.asDrawable(resources))
                 onLoaded?.invoke()
