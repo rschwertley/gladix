@@ -90,6 +90,10 @@ open class MainActivity : AppCompatActivity() {
         )
 
         setupNavBarAndInsets(uiViewModel, binding.root, binding.navView as NavigationBarView)
+        observe(uiViewModel.playerSheetState) {
+            binding.navGradientOverlay.isVisible =
+                it != STATE_EXPANDED && getSettings().getBoolean(UiViewModel.NAVBAR_GRADIENT, true)
+        }
         setupTvNavRail()
         setupTvMiniPlayer()
         setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)

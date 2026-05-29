@@ -27,6 +27,14 @@
         app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
         tools:layout="@layout/fragment_player" />
 
+    <View
+        android:id="@+id/navGradientOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:layout_gravity="bottom"
+        android:clickable="false"
+        android:focusable="false" />
+
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/navView"
         style="@style/NavView"

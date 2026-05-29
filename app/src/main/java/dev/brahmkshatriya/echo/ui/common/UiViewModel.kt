@@ -369,7 +369,9 @@ class UiViewModel(
                 uiViewModel.setSystemInsets(this, insets)
                 val navBarSize = uiViewModel.systemInsets.value.bottom
                 val full = getSettings().getBoolean(NAVBAR_GRADIENT, true)
-                GradientDrawable.applyNav(navView, isRail, navBarSize, !full)
+                GradientDrawable.applyNav(binding.navGradientOverlay, isRail, navBarSize, !full)
+                GradientDrawable.applyNav(navView, isRail, navBarSize, full = true)
+                binding.navGradientOverlay.isVisible = full
                 insets
             }
 
@@ -396,7 +398,7 @@ class UiViewModel(
             fun animateNav(animate: Boolean) {
                 val isMainFragment = uiViewModel.isMainFragment.value
                 val insets =
-                    uiViewModel.setPlayerNavViewInsets(this, isMainFragment, isRail)
+                    uiViewModel.setPlayerNavViewInsets(this, true, isRail)
                 val isPlayerCollapsed = uiViewModel.playerSheetState.value != STATE_EXPANDED
                 navView.animateTranslation(isRail, isMainFragment, isPlayerCollapsed, animate) {
                     uiViewModel.setNavInsets(insets)
