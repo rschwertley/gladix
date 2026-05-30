@@ -50,6 +50,18 @@ class HistoryAdapter(
             is HistoryListItem.Item -> with((holder as ItemViewHolder).binding) {
                 val track = listItem.entity.track ?: return
                 root.setOnClickListener { onTrackClick(listItem.entity) }
+                root.setOnLongClickListener {
+                    MediaMoreBottomSheet.show(
+                        host = host,
+                        contId = R.id.navHostFragment,
+                        extensionId = listItem.entity.extensionId,
+                        item = track,
+                        loaded = true,
+                        context = listItem.entity.context,
+                        fromHistory = true
+                    )
+                    true
+                }
                 track.cover.loadInto(cover)
                 title.text = track.title
                 artist.text = track.artists.joinToString(", ") { it.name }

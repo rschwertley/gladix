@@ -18,6 +18,15 @@
         android:layout_height="match_parent"
         tools:layout="@layout/fragment_home" />
 
+    <View
+        android:id="@+id/navGradientOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:layout_gravity="bottom"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no" />
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/playerFragmentContainer"
         android:layout_width="match_parent"
@@ -26,14 +35,6 @@
         app:behavior_peekHeight="@dimen/bottom_player_peek_height"
         app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
         tools:layout="@layout/fragment_player" />
-
-    <View
-        android:id="@+id/navGradientOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="220dp"
-        android:layout_gravity="bottom"
-        android:clickable="false"
-        android:focusable="false" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/navView"

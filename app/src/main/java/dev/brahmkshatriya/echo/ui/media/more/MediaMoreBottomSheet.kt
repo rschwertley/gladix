@@ -399,8 +399,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     }
 
     private inline fun <reified T : Fragment> openFragment(bundle: Bundle) {
-        parentFragmentManager.findFragmentById(contId)!!
-            .openFragment<T>(null, bundle)
+        requireActivity().openFragment<T>(null, bundle, contId)
     }
 
     private fun openItemFragment(

@@ -5,10 +5,12 @@
     android:id="@+id/coordinatorLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/transparent"
     android:fitsSystemWindows="true">
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
+        style="@style/EchoAppBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="0dp">
@@ -67,7 +69,7 @@
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipToPadding="true"
+        android:clipToPadding="false"
         android:paddingHorizontal="20dp"
         android:paddingTop="0dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"

@@ -4,10 +4,12 @@ import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.recyclerview.widget.ConcatAdapter
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
+import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -41,7 +43,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
                 true
             } else false
         }
-        binding.recyclerView.adapter = adapter
+        binding.recyclerView.adapter = ConcatAdapter(HeaderAdapter(this), adapter)
         observe(viewModel.history) { adapter.submitList(it) }
     }
 }

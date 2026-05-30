@@ -31,6 +31,7 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -365,6 +366,7 @@ class PlayerFragment : Fragment() {
     private fun configurePlayerControls() {
         val viewPager = binding!!.viewPager
         viewPager.adapter = adapter
+        (viewPager.getChildAt(0) as? RecyclerView)?.itemAnimator = null
         viewPager.registerOnUserPageChangeCallback { pos, isUser ->
             val index = viewModel.playerState.current.value?.index
             if (index != pos && isUser) viewModel.seek(pos)
