@@ -52,6 +52,10 @@ object GradientDrawable {
                 }
             }
         }
+        // NavView style sets backgroundTint=?attr/navBackground which Android re-applies as a color
+        // filter whenever view.background is reassigned — this would tint the gradient to fully
+        // opaque. Clearing it here lets the PaintDrawable render without interference.
+        view.backgroundTintList = null
     }
 
     private const val RATIO = 0.33f

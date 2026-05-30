@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
+import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -35,15 +36,10 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         val binding = FragmentHistoryBinding.bind(view)
         setupTransition(view)
 
-        binding.toolBar.navigationIcon = null
         applyBackPressCallback()
-        binding.toolBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.menu_clear_history) {
-                viewModel.clearHistory()
-                true
-            } else false
-        }
-        binding.recyclerView.adapter = ConcatAdapter(HeaderAdapter(this), adapter)
+        applyInsets(binding.recyclerView, binding.appBarOutline)
+        binding.recyclerView.adapter =
+            ConcatAdapter(HeaderAdapter(this), HistoryTitleAdapter { viewModel.clearHistory() }, adapter)
         observe(viewModel.history) { adapter.submitList(it) }
     }
 }
