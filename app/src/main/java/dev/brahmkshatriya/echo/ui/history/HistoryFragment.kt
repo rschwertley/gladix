@@ -18,7 +18,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
 
     private val viewModel by viewModel<HistoryViewModel>()
     private val playerViewModel by activityViewModels<PlayerViewModel>()
-    private val adapter = HistoryAdapter { item ->
+    private val adapter = HistoryAdapter(this) { item ->
         val track = item.track ?: return@HistoryAdapter
         val context = item.context
         if (context is EchoMediaItem.Lists) {

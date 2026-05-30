@@ -2,12 +2,15 @@ package dev.brahmkshatriya.echo.ui.history
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.ItemHistoryBinding
 import dev.brahmkshatriya.echo.databinding.ItemHistoryHeaderBinding
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
+import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -20,6 +23,7 @@ sealed class HistoryListItem {
 }
 
 class HistoryAdapter(
+    private val host: Fragment,
     private val onTrackClick: (HistoryEntity) -> Unit
 ) : ListAdapter<HistoryListItem, RecyclerView.ViewHolder>(DIFF) {
 
@@ -51,6 +55,17 @@ class HistoryAdapter(
                 artist.text = track.artists.joinToString(", ") { it.name }
                 playedAt.text = listItem.entity.playedAt.toRelativeTime()
                 extensionName.text = listItem.extensionName
+                moreButton.setOnClickListener {
+                    MediaMoreBottomSheet.show(
+                        host = host,
+                        contId = R.id.navHostFragment,
+                        extensionId = listItem.entity.extensionId,
+                        item = track,
+                        loaded = true,
+                        context = listItem.entity.context,
+                        fromHistory = true
+                    )
+                }
             }
         }
     }

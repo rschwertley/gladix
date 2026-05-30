@@ -108,7 +108,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
     suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?): Radio = when (item) {
         is Artist -> Radio(
             id = item.id,
-            title = item.name,
+            title = item.name + " Radio",
             cover = item.cover,
             extras = mapOf("radio" to "artist")
         )
@@ -168,7 +168,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                 }
                 is Artist -> Radio(
                     id = context.id,
-                    title = context.name,
+                    title = context.name + " Radio",
                     cover = context.cover,
                     extras = mapOf("radio" to "artist")
                 )
@@ -222,7 +222,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
     private fun Track.asTrackRadio() = Radio(
         id = id,
-        title = title,
+        title = title + " Radio",
         cover = cover,
         extras = mapOf("radio" to "track")
     )

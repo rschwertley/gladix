@@ -24,4 +24,7 @@ interface HistoryDao {
 
     @Query("DELETE FROM HistoryEntity")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM HistoryEntity WHERE trackId = :trackId AND extensionId = :extensionId")
+    suspend fun delete(trackId: String, extensionId: String)
 }

@@ -22,7 +22,9 @@ import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.databinding.DialogMediaMoreBinding
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.MediaState
@@ -48,7 +50,10 @@ import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistBottomSheet
 import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.ui.playlist.save.SaveToPlaylistBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.koin.core.parameter.parametersOf
@@ -72,6 +77,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             context: EchoMediaItem? = null,
             tabId: String? = null,
             pos: Int? = null,
+            fromHistory: Boolean = false,
         ) {
             val argsVm by host.activityViewModels<Args>()
             argsVm.item = item
@@ -84,6 +90,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
                     putBoolean("fromPlayer", fromPlayer)
                     putString("tabId", tabId)
                     putInt("pos", pos ?: -1)
+                    putBoolean("fromHistory", fromHistory)
                 }
             }.show(manager, null)
         }
@@ -100,7 +107,9 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     private val tabId by lazy { args.getString("tabId") }
     private val pos by lazy { args.getInt("pos") }
     private val fromPlayer by lazy { args.getBoolean("fromPlayer") }
+    private val fromHistory by lazy { args.getBoolean("fromHistory") }
     private val delete by lazy { args.getBoolean("delete", false) }
+    private val historyRepository by inject<HistoryRepository>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,7 +182,23 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             getPlaylistEditButtons(client, state, loaded) +
             getDownloadButtons(client, state, downloads) +
             getActionButtons(client, state) +
-            getItemButtons(state?.item ?: item)
+            getItemButtons(state?.item ?: item) +
+            getHistoryButtons()
+
+    private fun getHistoryButtons(): List<MoreButton> {
+        if (!fromHistory || item !is Track) return listOf()
+        val buttons = mutableListOf<MoreButton>()
+        buttons.add(button("remove_from_history", R.string.remove_from_history, R.drawable.ic_cancel) {
+            lifecycleScope.launch { historyRepository.delete((item as Track).id, extensionId) }
+        })
+        val ctx = itemContext
+        if (ctx != null && ctx !is Radio && ctx !is Track) {
+            buttons.add(button("go_to_context", "Go to ${ctx.title}", ctx.icon) {
+                openItemFragment(extensionId, ctx, false)
+            })
+        }
+        return buttons
+    }
 
     private fun getPlayerButtons() = if (fromPlayer) listOf(
         button("audio_fx", R.string.audio_fx, R.drawable.ic_equalizer) {

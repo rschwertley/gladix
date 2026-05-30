@@ -29,4 +29,6 @@ class HistoryRepository(private val dao: HistoryDao) {
     }
 
     suspend fun clearHistory() = dao.deleteAll()
+
+    suspend fun delete(trackId: String, extensionId: String) = dao.delete(trackId, extensionId)
 }
