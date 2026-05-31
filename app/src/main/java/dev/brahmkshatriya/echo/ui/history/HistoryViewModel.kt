@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -61,6 +64,17 @@ class HistoryViewModel(
         }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshingFlow = _isRefreshing.asStateFlow()
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            delay(500)
+            _isRefreshing.value = false
+        }
+    }
 
     fun clearHistory() = viewModelScope.launch { repository.clearHistory() }
 

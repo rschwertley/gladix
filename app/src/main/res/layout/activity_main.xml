@@ -44,6 +44,8 @@
         android:layout_gravity="bottom"
         android:background="@android:color/transparent"
         android:minHeight="@dimen/nav_height"
+        app:backgroundTint="@android:color/transparent"
+        app:elevation="0dp"
         app:menu="@menu/nav_menu" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
