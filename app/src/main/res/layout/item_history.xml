@@ -2,27 +2,30 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
+    style="@style/Selectable"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginStart="-12dp"
-    android:layout_marginEnd="-12dp"
+    android:layout_marginStart="-20dp"
+    android:layout_marginEnd="-20dp"
+    android:baselineAligned="false"
     android:gravity="center_vertical"
     android:minHeight="44sp"
     android:orientation="horizontal"
+    android:paddingHorizontal="24dp"
     android:paddingVertical="4dp">
 
     <androidx.cardview.widget.CardView
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="@dimen/collapsed_cover_size"
+        android:layout_height="@dimen/collapsed_cover_size"
         android:layout_margin="12dp"
         app:cardCornerRadius="?itemCorner"
         app:cardElevation="0dp">
 
         <ImageView
             android:id="@+id/cover"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:background="@drawable/rounded_rectangle_cover"
+            android:layout_width="@dimen/collapsed_cover_size"
+            android:layout_height="@dimen/collapsed_cover_size"
+            android:background="?attr/colorSurfaceContainerHigh"
             android:importantForAccessibility="no"
             android:scaleType="centerCrop" />
 
@@ -39,8 +42,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:maxLines="1"
+            android:maxLines="2"
             android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp"
             tools:text="Track Title" />
 
         <TextView
@@ -60,25 +64,16 @@
             android:alpha="0.5"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="12sp"
-            tools:text="2h ago" />
-
-        <TextView
-            android:id="@+id/extensionName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:alpha="0.5"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:textSize="12sp"
-            tools:text="Deezer" />
+            tools:text="2h ago · Deezer" />
 
     </LinearLayout>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/moreButton"
-        style="?attr/materialIconButtonStyle"
+        style="@style/IconButtonTransparent"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="4dp"
+        android:layout_marginEnd="-12dp"
         android:clickable="true"
         android:focusable="true"
         android:importantForAccessibility="yes"

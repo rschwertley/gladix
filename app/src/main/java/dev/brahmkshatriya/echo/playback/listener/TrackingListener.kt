@@ -48,11 +48,12 @@ class TrackingListener(
     private var current: MediaItem? = null
     private var previousId: String? = null
 
-    private suspend fun getDetails() = withContext(Dispatchers.Main) {
-        current?.let { curr ->
-            val (pos, total) = player.currentPosition to player.duration.takeIf { it != C.TIME_UNSET }
-            TrackDetails(curr.extensionId, curr.track, curr.context, pos, total)
+    private suspend fun getDetails(): TrackDetails? {
+        val item = current ?: return null
+        val (pos, total) = withContext(Dispatchers.Main) {
+            player.currentPosition to player.duration.takeIf { it != C.TIME_UNSET }
         }
+        return TrackDetails(item.extensionId, item.track, item.context, pos, total)
     }
 
     private fun trackMedia(

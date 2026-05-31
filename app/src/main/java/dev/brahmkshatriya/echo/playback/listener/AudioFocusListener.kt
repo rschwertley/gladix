@@ -25,6 +25,7 @@ class AudioFocusListener(
     private val commitPauseRunnable = Runnable {
         pausedForFocus = true
         player.pause()
+        abandonFocus()
     }
 
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->

@@ -72,7 +72,6 @@
     </style>
 
     <style name="NavView" parent="Widget.Material3.BottomNavigationView">
-        <item name="backgroundTint">?attr/navBackground</item>
         <item name="itemActiveIndicatorStyle">@style/BottomNavbarActiveIndicator</item>
         <item name="itemTextAppearanceActiveBoldEnabled">false</item>
         <item name="itemTextAppearanceActive">@style/TextAppearance.Material3.BodySmall</item>

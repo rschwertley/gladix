@@ -85,7 +85,6 @@ class PlayerEventListener(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        updateCurrentFlow()
         updateCustomLayout()
         ResumptionUtils.saveIndex(context, player.currentMediaItemIndex)
         session.notifyChildrenChanged("recent", 1, null)
@@ -94,12 +93,10 @@ class PlayerEventListener(
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-        updateCurrentFlow()
         updateCustomLayout()
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        updateCurrentFlow()
         scope.launch { ResumptionUtils.saveQueue(context, player) }
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
             retriedMediaId = null
@@ -194,8 +191,20 @@ class PlayerEventListener(
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        updateCurrentFlow()
         ResumptionUtils.saveCurrentPos(context, player.currentPosition)
+    }
+
+    override fun onEvents(player: Player, events: Player.Events) {
+        if (events.containsAny(
+                Player.EVENT_MEDIA_ITEM_TRANSITION,
+                Player.EVENT_MEDIA_METADATA_CHANGED,
+                Player.EVENT_TIMELINE_CHANGED,
+                Player.EVENT_PLAYBACK_STATE_CHANGED,
+                Player.EVENT_IS_PLAYING_CHANGED
+            )
+        ) {
+            updateCurrentFlow()
+        }
     }
 
     override fun onPositionDiscontinuity(

@@ -65,8 +65,7 @@ class HistoryAdapter(
                 track.cover.loadInto(cover)
                 title.text = track.title
                 artist.text = track.artists.joinToString(", ") { it.name }
-                playedAt.text = listItem.entity.playedAt.toRelativeTime()
-                extensionName.text = listItem.extensionName
+                playedAt.text = "${listItem.entity.playedAt.toRelativeTime()} · ${listItem.extensionName}"
                 moreButton.setOnClickListener {
                     MediaMoreBottomSheet.show(
                         host = host,

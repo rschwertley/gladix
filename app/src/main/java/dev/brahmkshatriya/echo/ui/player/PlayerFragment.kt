@@ -373,9 +373,9 @@ class PlayerFragment : Fragment() {
         }
 
         fun submit() {
+            val capturedIndex = (viewModel.playerState.current.value?.index ?: -1).takeIf { it != -1 }
             adapter.submitList(viewModel.queue) {
-                val index = (viewModel.playerState.current.value?.index ?: -1).takeIf { it != -1 }
-                    ?: return@submitList
+                val index = capturedIndex ?: return@submitList
                 val current = binding?.viewPager?.currentItem ?: 0
                 val smooth = !isInitialLoad && abs(index - current) <= 1
                 binding?.viewPager?.setCurrentItem(index, smooth)
