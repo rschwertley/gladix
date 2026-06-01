@@ -13,6 +13,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.car.app.connection.CarConnection
 import androidx.core.app.NotificationCompat
@@ -29,11 +30,15 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaStyleNotificationHelper
 import androidx.media3.session.SessionToken
+import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ExtensionType
@@ -205,7 +210,44 @@ class PlayerService : MediaLibraryService() {
             .setChannelName(R.string.app_name)
             .build()
         notificationProvider.setSmallIcon(R.drawable.ic_gladix_mono)
-        setMediaNotificationProvider(notificationProvider)
+        @OptIn(UnstableApi::class)
+        val customProvider = object : MediaNotification.Provider {
+            override fun createNotification(
+                mediaSession: MediaSession,
+                mediaButtonPreferences: ImmutableList<CommandButton>,
+                actionFactory: MediaNotification.ActionFactory,
+                onNotificationChangedCallback: MediaNotification.Provider.Callback
+            ): MediaNotification {
+                if (mediaSession.player.currentTimeline.isEmpty) {
+                    val notification = NotificationCompat.Builder(
+                        this@PlayerService,
+                        DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
+                    )
+                        .setSmallIcon(R.drawable.ic_gladix_mono)
+                        .setContentTitle(getString(R.string.app_name))
+                        .setContentText(getString(R.string.loading))
+                        .setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+                        .build()
+                    return MediaNotification(
+                        DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
+                        notification
+                    )
+                }
+                return notificationProvider.createNotification(
+                    mediaSession,
+                    mediaButtonPreferences,
+                    actionFactory,
+                    onNotificationChangedCallback
+                )
+            }
+
+            override fun handleCustomCommand(
+                session: MediaSession,
+                action: String,
+                extras: Bundle
+            ): Boolean = notificationProvider.handleCustomCommand(session, action, extras)
+        }
+        setMediaNotificationProvider(customProvider)
 
         mediaSession = session
 
