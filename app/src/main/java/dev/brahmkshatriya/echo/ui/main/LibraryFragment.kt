@@ -3,6 +3,8 @@ package dev.brahmkshatriya.echo.ui.main
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LibraryFeedClient
@@ -81,8 +83,10 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         configureGridLayout(
             binding.recyclerView,
             feedAdapter.withLoading(this, headerAdapter, onCreatePlaylistClick = {
-                if (feedData.current.value?.isClient<PlaylistEditClient>() == true)
-                    CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
+                lifecycleScope.launch {
+                    if (feedData.current.value?.isClient<PlaylistEditClient>() == true)
+                        CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
+                }
             })
         )
         binding.swipeRefresh.run {

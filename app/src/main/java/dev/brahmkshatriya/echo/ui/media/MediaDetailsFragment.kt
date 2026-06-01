@@ -3,7 +3,9 @@ package dev.brahmkshatriya.echo.ui.media
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
+import kotlinx.coroutines.launch
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
 import dev.brahmkshatriya.echo.common.models.Feed
@@ -111,13 +113,15 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             GridAdapter.Concat(
                 mediaHeaderAdapter,
                 trackAdapter.withLoading(this, onEditPlaylistClick = {
-                    val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@withLoading
-                    val playlist = state.item as? Playlist ?: return@withLoading
-                    if (!playlist.isEditable) return@withLoading
-                    if (viewModel.extensionFlow.value?.isClient<PlaylistEditClient>() != true) return@withLoading
-                    requireParentFragment().openFragment<EditPlaylistFragment>(
-                        null, EditPlaylistFragment.getBundle(state.extensionId, playlist, state.loaded)
-                    )
+                    lifecycleScope.launch {
+                        val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@launch
+                        val playlist = state.item as? Playlist ?: return@launch
+                        if (!playlist.isEditable) return@launch
+                        if (viewModel.extensionFlow.value?.isClient<PlaylistEditClient>() != true) return@launch
+                        requireParentFragment().openFragment<EditPlaylistFragment>(
+                            null, EditPlaylistFragment.getBundle(state.extensionId, playlist, state.loaded)
+                        )
+                    }
                 }),
                 lineAdapter,
                 feedAdapter.withLoading(this)
