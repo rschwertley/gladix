@@ -63,7 +63,9 @@ class DeezerLibraryClient(
                 TabId.ALL.id -> loadAll() ?: emptyList()
                 else -> loadSingle(id)
             }
-            data.toFeedData(Feed.Buttons(showPlayAndShuffle = true))
+            val buttons = if (id == TabId.TRACKS.id) Feed.Buttons(showPlayAndShuffle = true)
+            else Feed.Buttons()
+            data.toFeedData(buttons)
         }
     }
 

@@ -156,7 +156,7 @@ class FeedAdapter(
         }
     }.flatten()
 
-    fun withLoading(fragment: Fragment, vararg before: GridAdapter): GridAdapter.Concat {
+    fun withLoading(fragment: Fragment, vararg before: GridAdapter, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null): GridAdapter.Concat {
         val tabs = TabsAdapter<FeedTab>({ tab.title }) { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
@@ -176,7 +176,7 @@ class FeedAdapter(
                     }
             }
         }
-        val buttons = ButtonsAdapter(viewModel, listener, ::getAllTracks) {
+        val buttons = ButtonsAdapter(viewModel, listener, ::getAllTracks, onCreatePlaylistClick, onEditPlaylistClick) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             }

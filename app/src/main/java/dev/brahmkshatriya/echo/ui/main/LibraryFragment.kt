@@ -2,7 +2,6 @@ package dev.brahmkshatriya.echo.ui.main
 
 import android.os.Bundle
 import android.view.View
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
@@ -74,28 +73,23 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
             uiViewModel.currentNavBackground.value = bg
         }
         applyInsets(binding.recyclerView, binding.appBarOutline, 72) {
-            binding.createPlaylistContainer.applyInsets(it)
             binding.swipeRefresh.configure(it)
         }
         applyBackPressCallback()
         getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
+        val parent = requireParentFragment()
         configureGridLayout(
             binding.recyclerView,
-            feedAdapter.withLoading(this, headerAdapter)
+            feedAdapter.withLoading(this, headerAdapter, onCreatePlaylistClick = {
+                if (feedData.current.value?.isClient<PlaylistEditClient>() == true)
+                    CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
+            })
         )
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
             observe(feedData.isRefreshingFlow) {
                 isRefreshing = it
             }
-        }
-
-        observe(feedData.current) {
-            binding.createPlaylist.isVisible = it?.isClient<PlaylistEditClient>() ?: false
-        }
-        val parent = requireParentFragment()
-        binding.createPlaylist.setOnClickListener {
-            CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
         }
 
         parent.parentFragmentManager.setFragmentResultListener("createPlaylist", this) { _, data ->

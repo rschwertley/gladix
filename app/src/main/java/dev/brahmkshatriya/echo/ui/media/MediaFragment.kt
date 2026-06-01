@@ -14,14 +14,12 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.databinding.FragmentMediaBinding
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
-import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyFabInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyGradient
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.icon
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.placeHolder
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.playlist.delete.DeletePlaylistBottomSheet
-import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.Serializer.getSerialized
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
@@ -74,9 +72,6 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
             )
             true
         }
-        applyInsets {
-            binding.fabContainer.applyFabInsets(it, systemInsets.value)
-        }
         val isTV = requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         if (isTV) binding.appBarLayout.setExpanded(false, false)
 
@@ -93,14 +88,6 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
             }
             item.cover.loadInto(binding.cover, null, item.placeHolder)
             item.background.loadWithThumb(view) { applyGradient(view, it) }
-            val isEditable = (result?.getOrNull()?.item as? Playlist)?.isEditable ?: false
-            binding.fabEditPlaylist.isVisible = isEditable
-            binding.fabEditPlaylist.setOnClickListener {
-                val playlist = item as? Playlist ?: return@setOnClickListener
-                openFragment<EditPlaylistFragment>(
-                    it, EditPlaylistFragment.getBundle(extensionId, playlist, loaded)
-                )
-            }
         }
         parentFragmentManager.setFragmentResultListener("reload", this) { _, data ->
             if (data.getString("id") == item.id) viewModel.refresh()

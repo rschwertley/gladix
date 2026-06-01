@@ -58,6 +58,20 @@
             android:contentDescription="@string/sort"
             android:scaleX="-1"
             app:icon="@drawable/ic_sort" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/createPlaylistButton"
+            style="@style/IconButtonOutlined"
+            android:contentDescription="@string/create"
+            android:visibility="gone"
+            app:icon="@drawable/ic_add_20dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/editPlaylistButton"
+            style="@style/IconButtonOutlined"
+            android:contentDescription="@string/edit_playlist"
+            android:visibility="gone"
+            app:icon="@drawable/ic_edit_note" />
     </LinearLayout>
 
     <LinearLayout

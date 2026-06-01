@@ -451,7 +451,7 @@ class PlayerService : MediaLibraryService() {
     // during super.onCreate() before our session is created, and returning false there
     // causes an immediate stopSelf() → restart loop.
     override fun isPlaybackOngoing(): Boolean {
-        return mediaSession?.player?.let { it.mediaItemCount > 0 } ?: true
+        return mediaSession?.player?.let { it.mediaItemCount > 0 && it.playbackState != Player.STATE_IDLE } ?: true
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

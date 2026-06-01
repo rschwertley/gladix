@@ -5,12 +5,16 @@ import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.paging.LoadState
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.databinding.FragmentMediaDetailsBinding
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
+import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
@@ -92,9 +96,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         val binding = FragmentMediaDetailsBinding.bind(view)
         FastScrollerHelper.applyTo(binding.recyclerView)
         applyInsets(viewModel.uiResultFlow) {
-            val item = viewModel.uiResultFlow.value?.getOrNull()?.item as? Playlist
-            val bottom = if (item?.isEditable == true) 72 else 16
-            binding.recyclerView.applyContentInsets(it, 20, 8, bottom)
+            binding.recyclerView.applyContentInsets(it, 20, 8, 16)
         }
         val lineAdapter = LineAdapter()
         observe(trackFeedData.shouldShowEmpty) {
@@ -108,7 +110,15 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             binding.recyclerView,
             GridAdapter.Concat(
                 mediaHeaderAdapter,
-                trackAdapter.withLoading(this),
+                trackAdapter.withLoading(this, onEditPlaylistClick = {
+                    val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@withLoading
+                    val playlist = state.item as? Playlist ?: return@withLoading
+                    if (!playlist.isEditable) return@withLoading
+                    if (viewModel.extensionFlow.value?.isClient<PlaylistEditClient>() != true) return@withLoading
+                    requireParentFragment().openFragment<EditPlaylistFragment>(
+                        null, EditPlaylistFragment.getBundle(state.extensionId, playlist, state.loaded)
+                    )
+                }),
                 lineAdapter,
                 feedAdapter.withLoading(this)
             )

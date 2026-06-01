@@ -19,11 +19,13 @@ class ButtonsAdapter(
     private val viewModel: FeedData,
     private val listener: FeedClickListener,
     private val getAllLoaded: () -> List<Track>,
+    private val onCreatePlaylistClick: (() -> Unit)? = null,
+    private val onEditPlaylistClick: (() -> Unit)? = null,
     private val onMicClick: () -> Unit,
 ) : ScrollAnimRecyclerAdapter<ButtonsAdapter.ViewHolder>(), GridAdapter {
     override fun getItemCount() = 1
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-        ViewHolder(parent, viewModel, listener, getAllLoaded, onMicClick)
+        ViewHolder(parent, viewModel, listener, getAllLoaded, onCreatePlaylistClick, onEditPlaylistClick, onMicClick)
 
     var buttons: FeedData.Buttons? = null
         set(value) {
@@ -48,6 +50,8 @@ class ButtonsAdapter(
         private val viewModel: FeedData,
         private val listener: FeedClickListener,
         private val getAllLoaded: () -> List<Track>,
+        private val onCreatePlaylistClick: (() -> Unit)? = null,
+        private val onEditPlaylistClick: (() -> Unit)? = null,
         private val onMicClick: () -> Unit,
         private val binding: ItemFeedButtonsBinding = ItemFeedButtonsBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -58,6 +62,8 @@ class ButtonsAdapter(
 
         init {
             binding.micButton.setOnClickListener { onMicClick() }
+            binding.createPlaylistButton.setOnClickListener { onCreatePlaylistClick?.invoke() }
+            binding.editPlaylistButton.setOnClickListener { onEditPlaylistClick?.invoke() }
             binding.searchToggleButton.addOnCheckedChangeListener { _, isChecked ->
                 viewModel.searchToggled = isChecked
                 if (!isChecked) {
@@ -111,6 +117,8 @@ class ButtonsAdapter(
             binding.shuffleButton.isVisible = buttons.showPlayAndShuffle
             binding.searchToggleButton.isVisible = buttons.showSearch
             binding.sortToggleButton.isVisible = buttons.showSort
+            binding.createPlaylistButton.isVisible = onCreatePlaylistClick != null
+            binding.editPlaylistButton.isVisible = onEditPlaylistClick != null
         }
 
         fun onViewDetached() {
