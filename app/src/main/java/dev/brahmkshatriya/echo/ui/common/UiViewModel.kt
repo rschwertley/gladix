@@ -384,7 +384,7 @@ class UiViewModel(
                 val itemIndex = uiViewModel.navIds.indexOf(it.itemId)
                 val itemId = it.itemId
                 findViewById<View>(it.itemId).setOnClickListener { _ ->
-                    if (isRail && !uiViewModel.isMainFragment.value) {
+                    if (!uiViewModel.isMainFragment.value) {
                         supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
                     }
                     val isCurrentTab = navView.selectedItemId == itemId

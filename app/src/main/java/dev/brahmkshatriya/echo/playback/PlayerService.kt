@@ -86,6 +86,18 @@ class PlayerService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
 
+    // Media3's onStartCommand() always returns START_STICKY, which causes the OS to restart the
+    // service after memory pressure kills it — even with no user intent to play. This produces a
+    // blank "Gladix" notification on cold restart with no track loaded. START_NOT_STICKY means
+    // the service only restarts when something explicitly starts it (ButtonReceiver on BT PLAY,
+    // or the app binding via PlayerViewModel). super.onStartCommand() must still be called: it
+    // dispatches the media button intent to MediaSessionImpl.handleMediaButtonEvent() via Handler,
+    // which is load-bearing for BT AVRCP PLAY triggering onPlaybackResumption().
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_NOT_STICKY
+    }
+
     private lateinit var audioFocusListener: AudioFocusListener
     private lateinit var carConnection: CarConnection
     private var isAndroidAutoConnected = false
@@ -210,44 +222,13 @@ class PlayerService : MediaLibraryService() {
             .setChannelName(R.string.app_name)
             .build()
         notificationProvider.setSmallIcon(R.drawable.ic_gladix_mono)
-        @OptIn(UnstableApi::class)
-        val customProvider = object : MediaNotification.Provider {
-            override fun createNotification(
-                mediaSession: MediaSession,
-                mediaButtonPreferences: ImmutableList<CommandButton>,
-                actionFactory: MediaNotification.ActionFactory,
-                onNotificationChangedCallback: MediaNotification.Provider.Callback
-            ): MediaNotification {
-                if (mediaSession.player.currentTimeline.isEmpty) {
-                    val notification = NotificationCompat.Builder(
-                        this@PlayerService,
-                        DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
-                    )
-                        .setSmallIcon(R.drawable.ic_gladix_mono)
-                        .setContentTitle(getString(R.string.app_name))
-                        .setContentText(getString(R.string.loading))
-                        .setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
-                        .build()
-                    return MediaNotification(
-                        DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
-                        notification
-                    )
-                }
-                return notificationProvider.createNotification(
-                    mediaSession,
-                    mediaButtonPreferences,
-                    actionFactory,
-                    onNotificationChangedCallback
-                )
-            }
-
-            override fun handleCustomCommand(
-                session: MediaSession,
-                action: String,
-                extras: Bundle
-            ): Boolean = notificationProvider.handleCustomCommand(session, action, extras)
-        }
-        setMediaNotificationProvider(customProvider)
+        setMediaNotificationProvider(notificationProvider)
+        // Suppress the notification entirely when the timeline is empty (no track loaded).
+        // NEVER mode causes MediaNotificationManager.shouldShowNotification() to return false
+        // and call removeNotification() instead of our provider when the player is idle.
+        // startForegroundCompat()'s initial placeholder remains visible until the first real
+        // track notification replaces it — this is acceptable and avoids the "Loading…" flash.
+        setShowNotificationForIdlePlayer(2) // SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
 
         mediaSession = session
 

@@ -107,6 +107,7 @@ abstract class AndroidAutoCallback(
         userQueueSet.set(false)
         lastBrowsedExtId = null
         pendingSearchJob?.cancel()
+        extensionWatcherJob?.cancel()
         super.onDisconnected(session, controller)
     }
 
