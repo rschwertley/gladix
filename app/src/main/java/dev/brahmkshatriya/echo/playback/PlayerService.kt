@@ -445,13 +445,16 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
-    // Keep the service foreground as long as there is anything in the queue so that
-    // paused playback survives overnight without being killed by the system.
+    // Returns true only when the user intends playback to continue (playWhenReady=true).
+    // Keying off playWhenReady rather than playbackState avoids the ShufflePlayer facade:
+    // ShufflePlayer.getPlaybackState() returns STATE_READY when STATE_IDLE+items+!playWhenReady
+    // so playbackState != STATE_IDLE is always true when the queue is populated, making it a no-op.
+    // playWhenReady is not overridden by ShufflePlayer and reads the real ExoPlayer value.
     // Default to true when mediaSession is null: isPlaybackOngoing() is called by Media3
     // during super.onCreate() before our session is created, and returning false there
     // causes an immediate stopSelf() → restart loop.
     override fun isPlaybackOngoing(): Boolean {
-        return mediaSession?.player?.let { it.mediaItemCount > 0 && it.playbackState != Player.STATE_IDLE } ?: true
+        return mediaSession?.player?.playWhenReady ?: true
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
