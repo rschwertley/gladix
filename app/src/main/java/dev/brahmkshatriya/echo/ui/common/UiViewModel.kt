@@ -428,6 +428,7 @@ class UiViewModel(
                     }
                 }
             }
+            observe(uiViewModel.playerSheetState) { animateNav(true) }
         }
 
         fun isFinalState(state: Int): Boolean {

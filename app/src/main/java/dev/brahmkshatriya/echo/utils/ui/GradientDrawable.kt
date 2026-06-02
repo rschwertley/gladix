@@ -35,7 +35,6 @@ object GradientDrawable {
             setShape(RectShape())
             shaderFactory = object : ShapeDrawable.ShaderFactory() {
                 override fun resize(width: Int, height: Int): Shader {
-                    val centerY = if (isRail) 1f else (height * 0.5f + bottom) / (height + bottom)
                     val startX = if (isRail) if (isRTL) width.toFloat() else 0f else width / 2f
                     val startY = if (isRail) height / 2f else 0f
                     val endX = if (isRail) if (isRTL) 0f else width.toFloat() else width / 2f
@@ -45,8 +44,13 @@ object GradientDrawable {
                         startY,
                         endX,
                         endY,
-                        intArrayOf(if (full) color else Color.TRANSPARENT, color, color),
-                        floatArrayOf(0f, centerY, 1f),
+                        intArrayOf(
+                            if (full) color else Color.TRANSPARENT,
+                            ColorUtils.setAlphaComponent(color, 153),
+                            ColorUtils.setAlphaComponent(color, 242),
+                            color
+                        ),
+                        floatArrayOf(0f, 0.4f, 0.8f, 1f),
                         Shader.TileMode.CLAMP
                     )
                 }
