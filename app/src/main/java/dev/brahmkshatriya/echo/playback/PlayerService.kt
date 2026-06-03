@@ -56,8 +56,7 @@ import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
-import dev.brahmkshatriya.echo.playback.renderer.CrossfadeAudioProcessor
-import dev.brahmkshatriya.echo.playback.renderer.GainNormalizationProcessor
+import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
@@ -115,16 +114,11 @@ class PlayerService : MediaLibraryService() {
     private val state by inject<PlayerState>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("PlayerService"))
 
-    private val crossfadeProcessor by lazy {
-        CrossfadeAudioProcessor().apply {
-            enabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
+    private val audioEffectsProcessor by lazy {
+        AudioEffectsProcessor().apply {
+            crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 5) * 1000
-        }
-    }
-
-    private val gainNormalizationProcessor by lazy {
-        GainNormalizationProcessor().apply {
-            enabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
+            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
         }
     }
 
@@ -138,20 +132,20 @@ class PlayerService : MediaLibraryService() {
                     .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
                     .build()
             LOUDNESS_NORMALIZATION -> {
-                gainNormalizationProcessor.enabled = prefs.getBoolean(key, false)
+                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
             }
             CROSSFADE_ENABLED -> {
-                crossfadeProcessor.enabled = prefs.getBoolean(key, true)
+                audioEffectsProcessor.crossfadeEnabled = prefs.getBoolean(key, true)
                 effects.updateCrossfadeSettings()
             }
             CROSSFADE_DURATION -> {
-                crossfadeProcessor.crossfadeDurationMs = prefs.getInt(key, 5) * 1000
+                audioEffectsProcessor.crossfadeDurationMs = prefs.getInt(key, 5) * 1000
                 effects.updateCrossfadeSettings()
             }
         }
     }
-    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, crossfadeProcessor, gainNormalizationProcessor) }
+    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor) }
 
     private val historyRepository by inject<HistoryRepository>()
     private val downloader by inject<Downloader>()
@@ -400,7 +394,7 @@ class PlayerService : MediaLibraryService() {
         )
 
         ExoPlayer.Builder(this, factory)
-            .setRenderersFactory(RenderersFactory(this, crossfadeProcessor, gainNormalizationProcessor))
+            .setRenderersFactory(RenderersFactory(this, audioEffectsProcessor))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(audioAttributes, false)

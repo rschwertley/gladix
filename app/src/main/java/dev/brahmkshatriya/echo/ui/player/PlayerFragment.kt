@@ -403,6 +403,11 @@ class PlayerFragment : Fragment() {
         }
 
         observe(viewModel.queueFlow) { submit() }
+        observe(viewModel.browser) { controller ->
+            if (controller != null && viewModel.queue.isNotEmpty() && adapter.currentList.isEmpty()) {
+                submit()
+            }
+        }
 
         val playPauseListener = CheckBoxListener { viewModel.setPlaying(it) }
         binding.playerControls.trackPlayPause

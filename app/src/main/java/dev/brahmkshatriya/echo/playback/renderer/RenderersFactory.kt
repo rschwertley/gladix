@@ -7,11 +7,11 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 
+
 @androidx.annotation.OptIn(UnstableApi::class)
 class RenderersFactory(
     context: Context,
-    private val crossfadeProcessor: CrossfadeAudioProcessor,
-    private val gainNormalizationProcessor: GainNormalizationProcessor,
+    private val audioEffectsProcessor: AudioEffectsProcessor,
 ) : DefaultRenderersFactory(context) {
 
     override fun buildAudioSink(
@@ -32,7 +32,7 @@ class RenderersFactory(
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
             .setAudioProcessorChain(
                 DefaultAudioSink.DefaultAudioProcessorChain(
-                    arrayOf(gainNormalizationProcessor, crossfadeProcessor),
+                    arrayOf(audioEffectsProcessor),
                     silenceSkippingAudioProcessor,
                     SonicAudioProcessor()
                 )

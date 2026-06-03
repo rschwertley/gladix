@@ -21,10 +21,8 @@ class AudioFocusListener(
     private var pausedForFocus = false
     private var loweringVolume = false
 
-    // Fires after the grace window expires — commits the pause caused by AUDIOFOCUS_LOSS
+    // Fires after the grace window expires — abandons focus after immediate pause on AUDIOFOCUS_LOSS
     private val commitPauseRunnable = Runnable {
-        pausedForFocus = true
-        player.pause()
         abandonFocus()
     }
 
@@ -45,6 +43,8 @@ class AudioFocusListener(
             AudioManager.AUDIOFOCUS_LOSS -> {
                 if (player.playWhenReady) {
                     handler.removeCallbacks(commitPauseRunnable)
+                    pausedForFocus = true
+                    player.pause()
                     handler.postDelayed(commitPauseRunnable, GRACE_WINDOW_MS)
                 }
             }
@@ -109,6 +109,10 @@ class AudioFocusListener(
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady) {
             requestFocus()
+            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && loweringVolume) {
+                player.volume = 1f
+                loweringVolume = false
+            }
         } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) {
             // BT/headphone disconnect — cancel any pending focus-driven pause and abandon focus
             // so AUDIOFOCUS_GAIN cannot re-enable playback on the now-disconnected device
@@ -131,7 +135,7 @@ class AudioFocusListener(
     }
 
     companion object {
-        private const val GRACE_WINDOW_MS = 500L
-        private const val DUCK_VOLUME = 0.2f
+        private const val GRACE_WINDOW_MS = 750L
+        private const val DUCK_VOLUME = 0.4f
     }
 }
