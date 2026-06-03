@@ -57,9 +57,8 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun queueEndOfStream() {
+    override fun onQueueEndOfStream() {
         if (crossfadeEnabled) isPendingFadeIn = true
-        super.queueEndOfStream()
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
