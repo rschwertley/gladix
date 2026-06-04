@@ -107,7 +107,8 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             FastScrollerHelper.applyTo(binding.recyclerView)
             configureGridLayout(
                 binding.recyclerView,
-                feedAdapter.withLoading(this)
+                feedAdapter.withLoading(this),
+                navRailView = requireActivity().findViewById(R.id.navRailContainer)
             )
             getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
             binding.swipeRefresh.run {

@@ -155,6 +155,8 @@
                     android:nextFocusUp="@+id/tv_track_heart"
                     android:paddingVertical="24dp"
                     android:value="0.5"
+                    app:haloColor="@color/tv_slider_focus_selector"
+                    app:haloRadius="24dp"
                     app:labelBehavior="gone"
                     app:minTouchTargetSize="56dp"
                     app:thumbColor="?attr/colorTertiary"

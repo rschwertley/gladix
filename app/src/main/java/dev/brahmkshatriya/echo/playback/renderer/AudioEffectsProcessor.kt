@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.playback.renderer
 
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
@@ -30,7 +31,14 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     // null = no gain data available, apply passthrough
     fun setTrackGain(gainDb: Float?) {
-        gainMultiplier.set(if (gainDb != null) 10f.pow(gainDb / 20f) else 1f)
+        if (gainDb == null) { gainMultiplier.set(1f); return }
+        if (gainDb < -20f || gainDb > 20f) {
+            Log.w("GladixGain", "Absurd GAIN value $gainDb ignored, using unity gain")
+            gainMultiplier.set(1f)
+            return
+        }
+        val clampedGain = gainDb.coerceIn(-15f, 5f)
+        gainMultiplier.set(10f.pow(clampedGain / 20f))
     }
 
     fun resetGain() {

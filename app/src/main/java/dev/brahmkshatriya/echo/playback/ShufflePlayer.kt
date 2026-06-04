@@ -211,11 +211,13 @@ class ShufflePlayer(
     // setPlaying() in PlayerViewModel uses the playWhenReady property setter directly, not play().
     override fun play() {
         if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0, 0)
         super.play()
     }
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
         if (playWhenReady && player.playbackState == Player.STATE_IDLE) player.prepare()
+        if (playWhenReady && player.playbackState == Player.STATE_ENDED) player.seekTo(0, 0)
         super.setPlayWhenReady(playWhenReady)
     }
 

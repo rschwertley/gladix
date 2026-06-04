@@ -125,7 +125,8 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
                 }),
                 lineAdapter,
                 feedAdapter.withLoading(this)
-            )
+            ),
+            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
         val loadingFlow = viewModel.isRefreshingFlow
             .combine(trackFeedData.isRefreshingFlow) { a, b -> a || b }

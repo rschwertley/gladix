@@ -146,7 +146,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
         configureGridLayout(
             binding.recyclerView,
-            feedAdapter.withLoading(this, HeaderAdapter(this), searchAdapter)
+            feedAdapter.withLoading(this, HeaderAdapter(this), searchAdapter),
+            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }

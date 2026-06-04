@@ -74,7 +74,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
         configureGridLayout(
             binding.recyclerView,
-            feedAdapter.withLoading(this, HeaderAdapter(this))
+            feedAdapter.withLoading(this, HeaderAdapter(this)),
+            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }

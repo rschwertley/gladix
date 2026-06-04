@@ -87,7 +87,8 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
                     if (feedData.current.value?.isClient<PlaylistEditClient>() == true)
                         CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
                 }
-            })
+            }),
+            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }

@@ -39,7 +39,8 @@ interface GridAdapter {
 
     companion object {
         fun configureGridLayout(
-            recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true
+            recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true,
+            navRailView: View? = null
         ) {
             val context = recycler.context
             val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
@@ -51,9 +52,14 @@ interface GridAdapter {
                     private val nextRect = Rect()
                     override fun onInterceptFocusSearch(focused: View, direction: Int): View? {
                         val next = FocusFinder.getInstance()
-                            .findNextFocus(recycler, focused, direction) ?: return null
-                        focused.getGlobalVisibleRect(focusedRect)
-                        next.getGlobalVisibleRect(nextRect)
+                            .findNextFocus(recycler, focused, direction)
+                        if (next == null) {
+                            return if (direction == View.FOCUS_LEFT) navRailView else null
+                        }
+                        focused.getDrawingRect(focusedRect)
+                        recycler.offsetDescendantRectToMyCoords(focused, focusedRect)
+                        next.getDrawingRect(nextRect)
+                        recycler.offsetDescendantRectToMyCoords(next, nextRect)
                         val valid = when (direction) {
                             View.FOCUS_DOWN -> nextRect.top >= focusedRect.bottom - 2
                             View.FOCUS_UP -> nextRect.bottom <= focusedRect.top + 2

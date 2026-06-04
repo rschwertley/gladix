@@ -71,6 +71,7 @@ class PlayerTvFragment : Fragment() {
     private fun configureBack() {
         val minimize = { uiViewModel.changePlayerState(STATE_HIDDEN) }
         binding!!.tvToolbar.setNavigationOnClickListener { minimize() }
+        binding!!.tvToolbar.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         binding!!.tvMinimizeButton.setOnClickListener { minimize() }
         val backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() = minimize()
