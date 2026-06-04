@@ -37,6 +37,14 @@ class ShufflePlayer(
         return player.currentMediaItemIndex < mediaItemCount - 1
     }
 
+    // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
+    // WindowedTimeline offset. CrossfadePlayer must override setAudioAttributes() to broadcast
+    // to both internal players.
+    fun peekNextItem(): MediaItem? {
+        val nextIndex = player.currentMediaItemIndex + 1
+        return if (nextIndex < player.mediaItemCount) player.getMediaItemAt(nextIndex) else null
+    }
+
     @Suppress("UNUSED_PARAMETER")
     private fun log(name: String) {
 //        println(name)

@@ -97,7 +97,10 @@ open class MainActivity : AppCompatActivity() {
         }
         setupTvNavRail()
         setupTvMiniPlayer()
-        setupPlayerBehavior(uiViewModel, binding.playerFragmentContainer, isTV)
+        setupPlayerBehavior(
+            uiViewModel, binding.playerFragmentContainer, isTV,
+            binding.root.findViewById(R.id.navRailContainer)
+        )
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
         checkBatteryOptimization()
@@ -179,11 +182,10 @@ open class MainActivity : AppCompatActivity() {
         observe(playerState.current) { current ->
             val hasTrack = current != null
             if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
-                if (!playerState.isRestoringQueue) {
+                if (playerViewModel.playWhenReady.value == true) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                 }
             }
-            playerState.isRestoringQueue = false
             hadTrack = hasTrack
             updateVisibility()
             if (current == null) return@observe
@@ -196,7 +198,14 @@ open class MainActivity : AppCompatActivity() {
             }
         }
 
-        observe(uiViewModel.playerSheetState) { updateVisibility() }
+        observe(uiViewModel.playerSheetState) { state ->
+            updateVisibility()
+            if (state == STATE_HIDDEN) {
+                binding.root.post {
+                    if (!miniPlayPause.requestFocus()) binding.navHostFragment.requestFocus()
+                }
+            }
+        }
 
         observe(playerViewModel.playWhenReady) {
             playPauseListener.enabled = false

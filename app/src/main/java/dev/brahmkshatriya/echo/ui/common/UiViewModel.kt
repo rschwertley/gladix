@@ -435,7 +435,7 @@ class UiViewModel(
             return state == STATE_HIDDEN || state == STATE_COLLAPSED || state == STATE_EXPANDED
         }
 
-        fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false) {
+        fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false, navRailContainer: ViewGroup? = null) {
             val behavior = BottomSheetBehavior.from(view)
             viewModel.playerBehaviour = WeakReference(behavior)
             observe(viewModel.moreSheetState) { behavior.isDraggable = it == STATE_COLLAPSED }
@@ -470,9 +470,23 @@ class UiViewModel(
                     viewModel.playerSheetState.value = newState
                     if (!isFinalState(newState)) return
                     if (isTV) {
-                        (bottomSheet as? ViewGroup)?.descendantFocusability =
-                            if (newState == STATE_HIDDEN) ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                            else ViewGroup.FOCUS_BEFORE_DESCENDANTS
+                        val hidden = newState == STATE_HIDDEN
+                        (bottomSheet as? ViewGroup)?.apply {
+                            descendantFocusability = if (hidden) ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                                                     else ViewGroup.FOCUS_BEFORE_DESCENDANTS
+                            importantForAccessibility = if (hidden)
+                                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                            else
+                                View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                        }
+                        navRailContainer?.apply {
+                            descendantFocusability = if (hidden) ViewGroup.FOCUS_AFTER_DESCENDANTS
+                                                     else ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                            importantForAccessibility = if (hidden)
+                                View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                            else
+                                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                        }
                     }
                     viewModel.setPlayerInsets(view.context, newState != STATE_HIDDEN)
                     onSlide(view, if (newState == STATE_EXPANDED) 1f else 0f)

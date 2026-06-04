@@ -80,7 +80,7 @@ class PlayerService : MediaLibraryService() {
 
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
-    private val exoPlayer by lazy { createExoplayer() }
+    private val exoPlayer by lazy { createExoplayer(this.audioEffectsProcessor, true) }
 
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
@@ -118,7 +118,7 @@ class PlayerService : MediaLibraryService() {
         AudioEffectsProcessor().apply {
             crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 5) * 1000
-            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
+            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, true)
         }
     }
 
@@ -132,11 +132,11 @@ class PlayerService : MediaLibraryService() {
                     .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
                     .build()
             LOUDNESS_NORMALIZATION -> {
-                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
+                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, true)
                 effects.updateNormalizationSettings()
             }
             CROSSFADE_ENABLED -> {
-                audioEffectsProcessor.crossfadeEnabled = prefs.getBoolean(key, true)
+                audioEffectsProcessor.crossfadeEnabled = prefs.getBoolean(key, false)
                 effects.updateCrossfadeSettings()
             }
             CROSSFADE_DURATION -> {
@@ -380,7 +380,10 @@ class PlayerService : MediaLibraryService() {
             .build()
 
     @OptIn(UnstableApi::class)
-    private fun createExoplayer() = run {
+    private fun createExoplayer(
+        audioEffectsProcessor: AudioEffectsProcessor,
+        handleAudioBecomingNoisy: Boolean = true
+    ) = run {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -395,7 +398,7 @@ class PlayerService : MediaLibraryService() {
 
         ExoPlayer.Builder(this, factory)
             .setRenderersFactory(RenderersFactory(this, audioEffectsProcessor))
-            .setHandleAudioBecomingNoisy(true)
+            .setHandleAudioBecomingNoisy(handleAudioBecomingNoisy)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(audioAttributes, false)
             .build()

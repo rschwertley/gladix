@@ -11,6 +11,8 @@
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
+    android:nextFocusDown="@id/tvMiniPlayer"
+    android:nextFocusLeft="@id/tvMiniPlayer"
     android:nextFocusRight="@+id/miniPlayPause"
     android:nextFocusUp="@id/navHostFragment"
     android:visibility="gone">
@@ -76,6 +78,7 @@
             android:checked="true"
             android:contentDescription="@string/play"
             android:focusable="true"
+            android:nextFocusDown="@id/miniPlayPause"
             android:nextFocusLeft="@id/tvMiniPlayer"
             android:nextFocusRight="@id/miniPlayPause"
             android:nextFocusUp="@id/navHostFragment"
