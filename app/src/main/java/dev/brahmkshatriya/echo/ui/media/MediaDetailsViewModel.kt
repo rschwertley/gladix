@@ -77,15 +77,9 @@ abstract class MediaDetailsViewModel(
                 },
                 PagedData.Single {
                     if (item.artists.isEmpty()) return@Single emptyList()
-                    listOf(
-                        Shelf.Lists.Items(
-                            item.id + "_artists",
-                            app.context.getString(R.string.artists),
-                            item.artists.map {
-                                loadItem(extension, it).getOrNull() ?: it
-                            },
-                        )
-                    )
+                    item.artists.map { artist ->
+                        (loadItem(extension, artist).getOrNull() ?: artist).toShelf()
+                    }
                 },
             ).toFeed(Feed.Buttons.EMPTY)
         } else null

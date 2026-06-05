@@ -125,10 +125,10 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
 
     private val actionAdapter by lazy { MoreButtonAdapter() }
     private val headerAdapter by lazy {
-        MoreHeaderAdapter({ dismiss() }, {
+        MoreHeaderAdapter {
             openItemFragment(extensionId, item, loaded)
             dismiss()
-        })
+        }
     }
 
     private val loadingAdapter by lazy {
@@ -151,7 +151,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             val downloads = vm.downloadsFlow.value.filter { it.download.finalFile != null }
             val loaded = if (result != null) true else loaded
             if (vm.uiResultFlow.value == null) {
-                actionAdapter.submitList(getPlayButtons(client, item, loaded) + getHistoryButtons())
+                actionAdapter.submitList(getButtons(client, null, loaded, downloads))
                 headerAdapter.item = item
                 return@observe
             }
@@ -175,7 +175,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     }
 
     private fun placeholderButton(id: String, title: Int, icon: Int) =
-        MoreButton(id, getString(title), icon, enabled = false) {}
+        MoreButton(id, getString(title), icon, enabled = false)
 
     private fun getButtons(
         client: ExtensionClient?,

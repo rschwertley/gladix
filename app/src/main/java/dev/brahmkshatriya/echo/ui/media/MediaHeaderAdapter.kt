@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.ui.media
 
 import android.content.Context
-import android.icu.text.CompactDecimalFormat
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.method.LinkMovementMethod
@@ -191,7 +190,7 @@ class MediaHeaderAdapter(
                 if (state.isFollowed == true) R.string.unfollow else R.string.follow
             )
 
-            savedButton.isVisible = state.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable)
+            savedButton.isVisible = state.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable) && !fromPlayer
             savedButton.isChecked = state.isSaved ?: false
             savedButton.contentDescription = root.context.getString(
                 if (state.isSaved == true) R.string.unsave else R.string.save
@@ -210,8 +209,8 @@ class MediaHeaderAdapter(
             )
 
             playButton.isVisible = state.item is Track && !fromPlayer && state.item.isPlayable == Track.Playable.Yes
-            radioButton.isVisible = state.showRadio
-            shareButton.isVisible = state.showShare
+            radioButton.isVisible = state.showRadio && !fromPlayer
+            shareButton.isVisible = state.showShare && !fromPlayer
             configureButtons()
 
             explicit.isVisible = state.item.isExplicit
@@ -351,60 +350,58 @@ class MediaHeaderAdapter(
 
             is Track -> {
                 SpannableString(buildString {
-                    val firstRow = listOfNotNull(
-                        getString(
-                            when (item.type) {
-                                Track.Type.Song, Track.Type.VideoSong -> R.string.song
-                                Track.Type.Video, Track.Type.HorizontalVideo -> R.string.video
-                                Track.Type.Podcast -> R.string.podcast
-                            }
-                        ),
-                        item.releaseDate
-                    ).joinToString(DIVIDER)
-                    val secondRow = listOfNotNull(
+                    val casualRow = listOfNotNull(
                         item.duration?.toTimeString(),
-                        if (item.plays != null) {
-                            val formatter = CompactDecimalFormat.getInstance()
-                            getString(R.string.x_plays, formatter.format(item.plays))
-                        } else null
+                        item.releaseDate?.toString()
                     ).joinToString(DIVIDER)
-                    if (firstRow.isNotEmpty()) appendLine(firstRow)
-                    if (secondRow.isNotEmpty()) appendLine(secondRow)
+                    if (casualRow.isNotEmpty()) appendLine(casualRow)
+
                     val notPlayable = item.playableString(this@getSpan)
                     if (!notPlayable.isNullOrEmpty()) {
                         appendLine()
                         appendLine(notPlayable)
                     }
+
                     val desc = item.description?.parseHtml()
                     if (desc != null) {
                         appendLine()
                         appendLine(if (compact) desc.ellipsize() else desc)
-                        appendLine()
                     }
-                    val genres = item.genres.joinToString(", ")
-                    if (genres.isNotEmpty()) {
-                        appendLine(getString(R.string.genres_x, genres))
-                    }
-                    val isrc = item.isrc
-                    if (isrc != null) {
-                        appendLine(getString(R.string.isrc_x, isrc))
-                    }
-                    val label = item.album?.label
-                    if (label != null) {
-                        appendLine()
-                        appendLine(label)
-                    }
-                    val lastRow = listOfNotNull(
-                        item.albumDiscNumber?.let {
-                            getString(R.string.disc_number_n, it)
-                        },
-                        item.albumOrderNumber?.let {
-                            getString(R.string.album_order_n, it)
+
+                    val contribs = listOf("CONTRIB_COMPOSER", "CONTRIB_AUTHOR", "CONTRIB_PRODUCER")
+                        .mapNotNull { key ->
+                            val names = item.extras[key]
+                            if (!names.isNullOrEmpty()) key.removePrefix("CONTRIB_") to names else null
                         }
-                    ).joinToString(DIVIDER)
-                    if (lastRow.isNotEmpty()) {
+                    if (contribs.isNotEmpty()) {
                         appendLine()
-                        appendLine(lastRow)
+                        contribs.forEachIndexed { idx, (role, names) ->
+                            if (idx > 0) appendLine()
+                            appendLine(role)
+                            appendLine(names)
+                        }
+                    }
+
+                    val genres = item.genres.joinToString(", ")
+                    val isrc = item.isrc
+                    val albumLabel = item.album?.label
+                    val discTrack = listOfNotNull(
+                        item.albumDiscNumber?.let { getString(R.string.disc_number_n, it) },
+                        item.albumOrderNumber?.let { getString(R.string.album_order_n, it) }
+                    ).joinToString(DIVIDER)
+                    val specs = listOfNotNull(
+                        if (genres.isNotEmpty()) "GENRE" to genres else null,
+                        if (isrc != null) "ISRC" to isrc else null,
+                        if (albumLabel != null) "LABEL" to albumLabel else null,
+                        if (discTrack.isNotEmpty()) "DISC / TRACK" to discTrack else null
+                    )
+                    if (specs.isNotEmpty()) {
+                        appendLine()
+                        specs.forEachIndexed { idx, (specLabel, specValue) ->
+                            if (idx > 0) appendLine()
+                            appendLine(specLabel)
+                            appendLine(specValue)
+                        }
                     }
                 }.trimStart('\n').trimEnd('\n'))
             }

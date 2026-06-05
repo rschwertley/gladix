@@ -34,7 +34,12 @@ class DeezerLyricsClient(private val api: DeezerApi) {
                 val lyricsText = lyricsObject["text"]!!.jsonPrimitive.content
                 Lyrics.Simple(lyricsText)
             }
-            listOf(Lyrics(lyricsId, track.title, lyrics = lyrics))
+            val writers = lyricsObject["writers"]
+                ?.takeIf { it != JsonNull }
+                ?.jsonPrimitive?.content
+                ?.takeIf { it.isNotEmpty() }
+            val extras = if (writers != null) mapOf("writers" to writers) else emptyMap()
+            listOf(Lyrics(lyricsId, track.title, lyrics = lyrics, extras = extras))
         } catch (e: Exception) {
             emptyList()
         }
