@@ -68,9 +68,9 @@ abstract class MediaDetailsViewModel(
         extensionFlow.value to result?.getOrNull()?.item
     }.stateIn(viewModelScope, Eagerly, null to null)
 
-    private fun trackFeed(item: EchoMediaItem, extension: Extension<*>) =
+    private fun trackFeed(item: EchoMediaItem, extension: Extension<*>) : Result<Feed<Shelf>>? =
         if (item is Track) runCatching {
-            PagedData.Concat(
+            PagedData.Concat<Shelf>(
                 PagedData.Single {
                     val album = item.album?.let { loadItem(extension, it).getOrNull() ?: it }
                     listOfNotNull(album?.toShelf())
@@ -89,8 +89,8 @@ abstract class MediaDetailsViewModel(
         if (!loadFeeds) return@transformLatest
         extension ?: return@transformLatest
         val item = item ?: cacheResultFlow.value?.getOrNull()?.item ?: return@transformLatest
-        val feed = trackFeed(item, extension)
-            ?: getTracks(app, extension.id, item).map { feed -> feed?.map { it.toShelf() } }
+        val feed : Result<Feed<Shelf>?> = trackFeed(item, extension)
+            ?: getTracks(app, extension.id, item).map { it?.map { t -> t.toShelf() } }
         emit(feed.map {
             it ?: return@map null
             FeedData.State(extension.id, item, it)
@@ -102,8 +102,8 @@ abstract class MediaDetailsViewModel(
         if (!loadFeeds) return@transformLatest
         extension ?: return@transformLatest
         item ?: return@transformLatest
-        val feed = trackFeed(item, extension)
-            ?: loadTracks(app, extension, item).map { feed -> feed?.map { it.toShelf() } }
+        val feed : Result<Feed<Shelf>?> = trackFeed(item, extension)
+            ?: loadTracks(app, extension, item).map { it?.map { t -> t.toShelf() } }
         emit(feed.map {
             it ?: return@map null
             FeedData.State(extension.id, item, it)
