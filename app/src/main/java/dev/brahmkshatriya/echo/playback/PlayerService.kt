@@ -79,6 +79,11 @@ import java.io.File
 @OptIn(UnstableApi::class)
 class PlayerService : MediaLibraryService() {
 
+    private val musicAudioAttributes = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
     private val exoPlayer by lazy { createExoplayer(this.audioEffectsProcessor, true) }
@@ -228,6 +233,12 @@ class PlayerService : MediaLibraryService() {
         setShowNotificationForIdlePlayer(2) // SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
 
         mediaSession = session
+        // Belt-and-suspenders: ensure ExoPlayer's internal AudioFocusManager has
+        // handleAudioFocus=false after all Media3 session initialization completes.
+        // Session init calls player.setAudioAttributes(DEFAULT, true) through ShufflePlayer
+        // (caught by the override), but calling directly on exoPlayer guarantees the
+        // AudioFocusManager's internal state is locked off regardless of any timing race.
+        exoPlayer.setAudioAttributes(musicAudioAttributes, false)
 
         scope.launch {
             val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, healthMonitor)
@@ -420,11 +431,6 @@ class PlayerService : MediaLibraryService() {
         audioEffectsProcessor: AudioEffectsProcessor,
         handleAudioBecomingNoisy: Boolean = true
     ) = run {
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
-
         val audioOffloadPreferences =
             offloadPreferences(app.settings.getBoolean(MORE_BRAIN_CAPACITY, false))
 
@@ -436,7 +442,7 @@ class PlayerService : MediaLibraryService() {
             .setRenderersFactory(RenderersFactory(this, audioEffectsProcessor))
             .setHandleAudioBecomingNoisy(handleAudioBecomingNoisy)
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setAudioAttributes(audioAttributes, false)
+            .setAudioAttributes(musicAudioAttributes, false)
             .build()
             .also {
                 it.trackSelectionParameters = it.trackSelectionParameters

@@ -151,7 +151,17 @@ abstract class BaseWidget : AppWidgetProvider(), KoinComponent {
                 R.id.trackArtist,
                 artist ?: context.getString(R.string.unknown).takeIf { title != null }
             )
-            val image = image?.run { copy(config ?: Bitmap.Config.ARGB_8888, false) }
+            val image = image?.run {
+                val maxPx = 256
+                if (width <= maxPx && height <= maxPx) {
+                    copy(config ?: Bitmap.Config.ARGB_8888, false)
+                } else {
+                    val scale = maxPx.toFloat() / maxOf(width, height)
+                    Bitmap.createScaledBitmap(
+                        this, (width * scale).toInt(), (height * scale).toInt(), true
+                    )
+                }
+            }
             if (image == null) views.setImageViewResource(R.id.trackCover, R.drawable.art_music)
             else views.setImageViewBitmap(R.id.trackCover, image)
 
