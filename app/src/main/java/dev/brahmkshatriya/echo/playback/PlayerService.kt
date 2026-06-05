@@ -47,6 +47,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
@@ -111,6 +112,7 @@ class PlayerService : MediaLibraryService() {
     }
 
     private val app by inject<App>()
+    private val healthMonitor by inject<HealthMonitor>()
     private val state by inject<PlayerState>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("PlayerService"))
 
@@ -145,7 +147,7 @@ class PlayerService : MediaLibraryService() {
             }
         }
     }
-    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor) }
+    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor, healthMonitor) }
 
     private val historyRepository by inject<HistoryRepository>()
     private val downloader by inject<Downloader>()
@@ -176,7 +178,8 @@ class PlayerService : MediaLibraryService() {
         player.addListener(
             PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow,
                 isAndroidAutoConnected = { isAndroidAutoConnected },
-                requestAudioFocus = { audioFocusListener.requestFocus() }
+                requestAudioFocus = { audioFocusListener.requestFocus() },
+                healthMonitor = healthMonitor,
             )
         )
         player.addListener(
@@ -216,7 +219,7 @@ class PlayerService : MediaLibraryService() {
             .setChannelName(R.string.app_name)
             .build()
         notificationProvider.setSmallIcon(R.drawable.ic_gladix_mono)
-        setMediaNotificationProvider(notificationProvider)
+        setMediaNotificationProvider(SafeNotificationProvider(notificationProvider))
         // Suppress the notification entirely when the timeline is empty (no track loaded).
         // NEVER mode causes MediaNotificationManager.shouldShowNotification() to return false
         // and call removeNotification() instead of our provider when the player is idle.
@@ -227,7 +230,7 @@ class PlayerService : MediaLibraryService() {
         mediaSession = session
 
         scope.launch {
-            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value)
+            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, healthMonitor)
             Log.d("GladixPlayback", "onCreate restore: items=${items.size} userQueueSet=${callback.userQueueSet.get()}")
             if (items.isEmpty()) return@launch
             if (!callback.userQueueSet.compareAndSet(false, true)) {
@@ -353,6 +356,39 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
+    // Wraps DefaultMediaNotificationProvider to catch ForegroundServiceStartNotAllowedException
+    // thrown from the async bitmap callback (OnBitmapLoadedFutureCallback.onSuccess). That path
+    // fires after onUpdateNotification() has already returned, so the catch in onUpdateNotification()
+    // cannot intercept it. Wrapping the Provider.Callback here catches it at the last public point
+    // before the exception propagates to an uncaught crash.
+    @OptIn(UnstableApi::class)
+    private class SafeNotificationProvider(
+        private val delegate: DefaultMediaNotificationProvider
+    ) : MediaNotification.Provider {
+        override fun createNotification(
+            session: MediaSession,
+            customLayout: ImmutableList<CommandButton>,
+            actionFactory: MediaNotification.ActionFactory,
+            callback: MediaNotification.Provider.Callback
+        ): MediaNotification {
+            val safeCallback = MediaNotification.Provider.Callback { notification ->
+                try {
+                    callback.onNotificationChanged(notification)
+                } catch (e: Exception) {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        e.javaClass.name != "android.app.ForegroundServiceStartNotAllowedException"
+                    ) throw e
+                    // Service was demoted while album art was loading — safe to swallow
+                }
+            }
+            return delegate.createNotification(session, customLayout, actionFactory, safeCallback)
+        }
+
+        override fun handleCustomCommand(
+            session: MediaSession, action: String, extras: Bundle
+        ): Boolean = delegate.handleCustomCommand(session, action, extras)
+    }
+
     override fun onDestroy() {
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         unregisterReceiver(clearQueueReceiver)
@@ -393,7 +429,7 @@ class PlayerService : MediaLibraryService() {
             offloadPreferences(app.settings.getBoolean(MORE_BRAIN_CAPACITY, false))
 
         val factory = StreamableMediaSource.Factory(
-            app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow
+            app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow, healthMonitor
         )
 
         ExoPlayer.Builder(this, factory)

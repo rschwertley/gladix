@@ -47,8 +47,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
 
             val (finalUrl, fallbackTrack) = when {
                 mjString.contains("Track token has no sufficient rights on requested media") || mediaIsEmpty -> {
-                    val t0 = System.currentTimeMillis()
-                    println("GladixPlayback: TRACK_TOKEN stale for ${track.id} quality=$quality mediaIsEmpty=$mediaIsEmpty — fetching fallback")
                     val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
                     if (quality == "128") {
                         val fallbackObject = api.track(fallBackId)
@@ -56,13 +54,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                         val fallBackTrack = parser.run { resultOj.toTrack() }
                         val fbMediaJson = api.getMP3MediaUrl(fallBackTrack, true)
                         val url = extractUrlFromJson(fbMediaJson)!!
-                        println("GladixPlayback: TRACK_TOKEN fallback resolved for ${track.id} in ${System.currentTimeMillis() - t0}ms fallbackId=$fallBackId")
                         url to fallBackTrack
                     } else {
                         val fallbackParsed = track.copy(id = fallBackId)
                         val fallbackMediaJson = api.getMediaUrl(fallbackParsed, quality)
                         val url = extractUrlFromJson(fallbackMediaJson)!!
-                        println("GladixPlayback: TRACK_TOKEN fallback resolved for ${track.id} in ${System.currentTimeMillis() - t0}ms fallbackId=$fallBackId")
                         url to fallbackParsed
                     }
                 }

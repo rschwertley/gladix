@@ -71,26 +71,28 @@ interface GridAdapter {
                     }
                 }
             } else GridLayoutManager(context, 1)
-            recycler.doOnLayout {
+            recycler.adapter = gridAdapter.adapter
+            recycler.layoutManager = layoutManager
+            recycler.doOnLayout { view ->
                 val itemWidth = if (isTV) {
                     val screenHeight = context.resources.displayMetrics.heightPixels
                     val miniPlayerHeight = 84.dpToPx(context)
                     val usableHeight = screenHeight - miniPlayerHeight
                     (usableHeight / 2.5f).toInt()
                 } else context.resolveStyledDimension(R.attr.itemCoverSize)
-                val width = it.width - it.paddingLeft - it.paddingRight
+                val width = view.width - view.paddingLeft - view.paddingRight
                 val calc = floor(width.toFloat() / (itemWidth + 8.dpToPx(context))).toInt()
                 val count = if (calc > 1) calc - if (even) calc % 2 else 0 else 1
-                layoutManager.spanCount = count
-                layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
-                    override fun getSpanSize(position: Int): Int {
-                        val size = gridAdapter.getSpanSize(position, width, count)
-                        return size
+                recycler.post {
+                    layoutManager.spanCount = count
+                    layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                        override fun getSpanSize(position: Int): Int {
+                            return gridAdapter.getSpanSize(position, width, count)
+                        }
                     }
+                    recycler.requestLayout()
                 }
             }
-            recycler.adapter = gridAdapter.adapter
-            recycler.layoutManager = layoutManager
         }
     }
 }

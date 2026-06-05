@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.ui.playlist.delete.DeletePlaylistViewModel
 import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistViewModel
 import dev.brahmkshatriya.echo.ui.playlist.save.SaveToPlaylistViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import org.koin.android.ext.koin.androidApplication
 import org.koin.androidx.workmanager.dsl.workerOf
 import org.koin.core.module.dsl.singleOf
@@ -38,6 +39,7 @@ object DI {
 
     private val baseModule = module {
         single { androidApplication().getSettings() }
+        single { HealthMonitor(androidApplication()) }
         singleOf(::App)
     }
 

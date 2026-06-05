@@ -146,11 +146,15 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         val actionFlow =
             combine(vm.downloadsFlow, vm.uiResultFlow, vm.extensionFlow) { _, _, _ -> }
         observe(actionFlow) {
-            if (vm.uiResultFlow.value == null) return@observe
             val client = vm.extensionFlow.value?.instance?.value()?.getOrNull()
             val result = vm.uiResultFlow.value?.getOrNull()
             val downloads = vm.downloadsFlow.value.filter { it.download.finalFile != null }
             val loaded = if (result != null) true else loaded
+            if (vm.uiResultFlow.value == null) {
+                actionAdapter.submitList(getPlayButtons(client, item, loaded) + getHistoryButtons())
+                headerAdapter.item = item
+                return@observe
+            }
             val list = getButtons(client, result, loaded, downloads)
             actionAdapter.submitList(list)
             headerAdapter.item = result?.item ?: item
@@ -178,12 +182,14 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         state: MediaState.Loaded<*>?,
         loaded: Boolean,
         downloads: List<Downloader.Info>
-    ) = getPlayerButtons() +
-            getPlayButtons(client, state?.item ?: item, loaded) +
+    ) = getPlayButtons(client, state?.item ?: item, loaded) +
+            getActionButtons(client, state) +
             getPlaylistEditButtons(client, state, loaded) +
             getDownloadButtons(client, state, downloads) +
-            getActionButtons(client, state) +
             getItemButtons(state?.item ?: item) +
+            getRadioButton(client, state) +
+            getShareButton(client, state) +
+            getPlayerButtons() +
             getHistoryButtons()
 
     private fun getHistoryButtons(): List<MoreButton> {
@@ -311,6 +317,30 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
 
     }
 
+    private fun getRadioButton(client: ExtensionClient?, state: MediaState.Loaded<*>?) = listOfNotNull(
+        when {
+            state?.showRadio == true -> button(
+                "radio", R.string.radio, R.drawable.ic_sensors
+            ) { playerViewModel.radio(extensionId, state.item, true) }
+            state == null && client is RadioClient && item.isRadioSupported -> placeholderButton(
+                "radio", R.string.radio, R.drawable.ic_sensors
+            )
+            else -> null
+        }
+    )
+
+    private fun getShareButton(client: ExtensionClient?, state: MediaState.Loaded<*>?) = listOfNotNull(
+        when {
+            state?.showShare == true -> button(
+                "share", R.string.share, R.drawable.ic_share
+            ) { vm.onShare() }
+            state == null && client is ShareClient && item.isShareable -> placeholderButton(
+                "share", R.string.share, R.drawable.ic_share
+            )
+            else -> null
+        }
+    )
+
     fun getActionButtons(
         client: ExtensionClient?,
         state: MediaState.Loaded<*>?,
@@ -366,24 +396,6 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             ) { vm.hideItem(!state.isHidden) }
             state == null && client is HideClient && item.isHideable -> placeholderButton(
                 "hide", R.string.hide, R.drawable.ic_hide
-            )
-            else -> null
-        },
-        when {
-            state?.showRadio == true -> button(
-                "radio", R.string.radio, R.drawable.ic_sensors
-            ) { playerViewModel.radio(extensionId, state.item, true) }
-            state == null && client is RadioClient && item.isRadioSupported -> placeholderButton(
-                "radio", R.string.radio, R.drawable.ic_sensors
-            )
-            else -> null
-        },
-        when {
-            state?.showShare == true -> button(
-                "share", R.string.share, R.drawable.ic_share
-            ) { vm.onShare() }
-            state == null && client is ShareClient && item.isShareable -> placeholderButton(
-                "share", R.string.share, R.drawable.ic_share
             )
             else -> null
         }

@@ -24,6 +24,7 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.getShuffleButton
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.R
@@ -52,7 +53,8 @@ class PlayerEventListener(
     private val extensions: ExtensionLoader,
     private val throwableFlow: MutableSharedFlow<Throwable>,
     private val isAndroidAutoConnected: () -> Boolean = { false },
-    private val requestAudioFocus: () -> Unit = {}
+    private val requestAudioFocus: () -> Unit = {},
+    private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
     private val player get() = session.player
@@ -159,7 +161,7 @@ class PlayerEventListener(
                         Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
                         consecutiveUnavailableSkips++
                         if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                            consecutiveUnavailableSkips = 0
+                            reportAndResetConsecutiveSkips(player.currentMediaItem?.extensionId)
                             player.pause()
                             return@withContext
                         }
@@ -232,6 +234,14 @@ class PlayerEventListener(
     private var retried404MediaId: String? = null
     private var retriedSocketMediaId: String? = null
 
+    private fun reportAndResetConsecutiveSkips(extensionId: String?) {
+        healthMonitor?.report(
+            HealthMonitor.ConsecutiveSkipException(consecutiveUnavailableSkips, extensionId ?: "unknown"),
+            HealthMonitor.Scope.MEMORY_ONLY, 10 * 60 * 1000L
+        )
+        consecutiveUnavailableSkips = 0
+    }
+
     override fun onPlayerError(error: PlaybackException) {
         val cause = error.cause ?: error
         val rootCause = cause.rootCause
@@ -264,7 +274,7 @@ class PlayerEventListener(
                 Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
                 consecutiveUnavailableSkips++
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                    consecutiveUnavailableSkips = 0
+                    reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                     player.stop()
                     return
                 }
@@ -298,7 +308,7 @@ class PlayerEventListener(
                 Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
                 consecutiveUnavailableSkips++
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                    consecutiveUnavailableSkips = 0
+                    reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                     player.stop()
                     return
                 }
@@ -329,7 +339,7 @@ class PlayerEventListener(
         if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                consecutiveUnavailableSkips = 0
+                reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                 player.stop()
                 val isRetryExhausted = rootCause.message?.contains("not available after retries", ignoreCase = true) == true
                 if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
@@ -361,8 +371,11 @@ class PlayerEventListener(
         val isMissingFile = rootCause is FileDataSource.FileDataSourceException
                 || rootCause is FileNotFoundException
                 || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
-        val is401 = rootCause is HttpDataSource.InvalidResponseCodeException
-                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode in listOf(401, 403)
+        val is401 = (rootCause is HttpDataSource.InvalidResponseCodeException
+                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode in listOf(401, 403))
+                || (rootCause is IllegalStateException
+                && (rootCause.message?.contains("HTTP 401") == true
+                    || rootCause.message?.contains("HTTP 403") == true))
         val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
         val isTimeout = rootCause is TimeoutCancellationException
 
@@ -390,7 +403,7 @@ class PlayerEventListener(
         if (isMissingFile || is401 || isMalformedContent || isTimeout) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                consecutiveUnavailableSkips = 0
+                reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                 player.stop()
                 return
             }
@@ -429,7 +442,37 @@ class PlayerEventListener(
         val retries = mediaItem.retries
 
         if (currentRetries >= maxRetries) {
-            player.stop()
+            currentRetries = 0
+            last = null
+            Log.d("GladixPlayback", "onPlayerError: maxRetries exhausted for ${mediaItem?.mediaId}, skipping")
+            consecutiveUnavailableSkips++
+            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                reportAndResetConsecutiveSkips(mediaItem?.extensionId)
+                player.stop()
+                return
+            }
+            val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+            if (!hasMore) {
+                player.stop()
+                return
+            }
+            if (isAndroidAutoConnected()) {
+                scope.launch {
+                    withContext(Dispatchers.Main) {
+                        player.pause()
+                        delay(50)
+                        player.seekTo(player.currentMediaItemIndex, 0)
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
+                }
+            } else {
+                player.seekTo(player.currentMediaItemIndex, 0)
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
+            }
             return
         }
         if (retries >= maxSingleItemRetries) {

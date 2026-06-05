@@ -25,7 +25,9 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.subtitleIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -36,24 +38,34 @@ import java.io.File
 class StreamableLoader(
     private val app: App,
     private val extensionListFlow: StateFlow<List<MusicExtension>>,
-    private val downloadFlow: StateFlow<List<Downloader.Info>>
+    private val downloadFlow: StateFlow<List<Downloader.Info>>,
+    private val healthMonitor: HealthMonitor,
 ) {
     suspend fun load(mediaItem: MediaItem) = withContext(Dispatchers.IO) {
-        withTimeout(30_000) {
-            extensionListFlow.first { it.isNotEmpty() }
-            val new = if (mediaItem.isLoaded) mediaItem
-            else MediaItemUtils.buildLoaded(
-                app, downloadFlow.value, mediaItem, loadTrack(mediaItem)
+        val startMs = System.currentTimeMillis()
+        try {
+            withTimeout(30_000) {
+                extensionListFlow.first { it.isNotEmpty() }
+                val new = if (mediaItem.isLoaded) mediaItem
+                else MediaItemUtils.buildLoaded(
+                    app, downloadFlow.value, mediaItem, loadTrack(mediaItem)
+                )
+
+                val server = async { loadServer(new) }
+                val background =
+                    async { if (new.backgroundIndex < 0) null else loadBackground(new).getOrNull() }
+                val subtitle = async { if (new.subtitleIndex < 0) null else loadSubtitle(new).getOrNull() }
+
+                MediaItemUtils.buildWithBackgroundAndSubtitle(
+                    new, background.await(), subtitle.await()
+                ) to server.await()
+            }
+        } catch (e: TimeoutCancellationException) {
+            healthMonitor.report(
+                HealthMonitor.ExtensionResolutionTimeout(mediaItem.extensionId, System.currentTimeMillis() - startMs),
+                HealthMonitor.Scope.PERSISTENT, 60 * 60 * 1000L
             )
-
-            val server = async { loadServer(new) }
-            val background =
-                async { if (new.backgroundIndex < 0) null else loadBackground(new).getOrNull() }
-            val subtitle = async { if (new.subtitleIndex < 0) null else loadSubtitle(new).getOrNull() }
-
-            MediaItemUtils.buildWithBackgroundAndSubtitle(
-                new, background.await(), subtitle.await()
-            ) to server.await()
+            throw e
         }
     }
 

@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,10 @@ object ResumptionUtils {
 
     private fun queueDir(context: Context) =
         File(context.filesDir, "context/queue").apply { mkdirs() }
+
+    fun clearQueue(context: Context) {
+        queueDir(context).listFiles()?.forEach { it.delete() }
+    }
 
     private inline fun <reified T> Context.saveToQueue(id: String, data: T?) = runCatching {
         val dir = queueDir(this)
@@ -89,7 +94,18 @@ object ResumptionUtils {
     private fun Context.recoverQueue(
         app: App,
         downloads: List<Downloader.Info>,
+        healthMonitor: HealthMonitor? = null,
     ): List<MediaItem>? {
+        val rawTracks = getFromQueue<List<Track>>(TRACKS)
+        val rawExtensions = getFromQueue<List<String>>(EXTENSIONS)
+        if (rawTracks != null && (rawExtensions == null || rawExtensions.isEmpty())) {
+            clearQueue(this)
+            healthMonitor?.report(
+                HealthMonitor.OrphanedSessionException(rawTracks.size, rawTracks.firstOrNull()?.id ?: "unknown"),
+                HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
+            )
+            return emptyList()
+        }
         val tracks = recoverTracks() ?: return null
         return tracks.map { (state, item) ->
             MediaItemUtils.build(app, downloads, state, item)
@@ -112,8 +128,9 @@ object ResumptionUtils {
     fun Context.recoverPlaylist(
         app: App,
         downloads: List<Downloader.Info>,
+        healthMonitor: HealthMonitor? = null,
     ): Triple<List<MediaItem>, Int, Long> {
-        val items = recoverQueue(app, downloads) ?: emptyList()
+        val items = recoverQueue(app, downloads, healthMonitor) ?: emptyList()
         // INDEX and TRACKS are saved independently; a crash or system kill between the two
         // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
         // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.

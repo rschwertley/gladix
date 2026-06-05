@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.subtitleIndex
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.select
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -199,9 +200,10 @@ class StreamableMediaSource(
         cache: SimpleCache,
         downloadFlow: StateFlow<List<Downloader.Info>>,
         private val changeFlow: MutableSharedFlow<Pair<MediaItem, MediaItem>>,
+        healthMonitor: HealthMonitor,
     ) : MediaSource.Factory {
 
-        private val loader = StreamableLoader(app, extensions.music, downloadFlow)
+        private val loader = StreamableLoader(app, extensions.music, downloadFlow, healthMonitor)
 
         val dataSourceFactory = StreamableDataSource.Factory(app.context)
         val streamableResolver = StreamableResolver(app.context, state.servers)
