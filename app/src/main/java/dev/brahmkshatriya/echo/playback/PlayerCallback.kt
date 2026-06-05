@@ -108,7 +108,7 @@ class PlayerCallback(
                 .add(repeatOneCommand).add(shuffleCommand).add(shuffleOffCommand)
                 .add(radioCommand).add(sleepTimer)
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
-                .add(resumeCommand).add(imageCommand)
+                .add(resumeCommand).add(imageCommand).add(backfillCommand)
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -137,6 +137,7 @@ class PlayerCallback(
             sleepTimer -> onSleepTimer(player, args.getLong("ms"))
             resumeCommand -> resume(player)
             imageCommand -> getImage(player)
+            backfillCommand -> backfillQueue(player, args)
             else -> super.onCustomCommand(session, controller, customCommand, args)
         }
     }
@@ -358,6 +359,37 @@ class PlayerCallback(
             count++
         }
         list
+    }
+
+    private fun backfillQueue(player: Player, args: Bundle) = scope.future {
+        val error = SessionResult(SessionError.ERROR_UNKNOWN)
+        val extId = args.getString("extId") ?: return@future error
+        val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
+        val loaded = args.getBoolean("loaded", false)
+        val startTrackId = args.getString("startTrackId") ?: return@future error
+        val extension = extensions.music.getExtension(extId) ?: return@future error
+        val tracks = listTracks(extension, item, loaded).getOrElse {
+            throwableFlow.emit(it)
+            return@future error
+        }
+        val (list, _) = extension.get { tracks.loadPage(null) }.getOrElse {
+            throwableFlow.emit(it)
+            return@future error
+        }
+        val correctIndex = list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
+        val mediaItems = list.map {
+            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
+        }
+        val before = mediaItems.subList(0, correctIndex)
+        val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
+        player.with {
+            if (before.isNotEmpty()) addMediaItems(0, before)
+            if (after.isNotEmpty()) addMediaItems(
+                currentMediaItemIndex + 1,
+                after
+            )
+        }
+        SessionResult(RESULT_SUCCESS)
     }
 
     private fun addToQueue(player: Player, args: Bundle) = scope.future {

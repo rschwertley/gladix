@@ -286,9 +286,10 @@ class DeezerParser(private val session: DeezerSession) {
                 put("TYPE", "cover")
                 put("GAIN", data.str("GAIN") ?: "0")
                 put("loved", data.str("LOVE_STATUS") ?: "0")
-                val contributors = data["SNG_CONTRIBUTORS"]?.jsonObject
+                val contributors = data["SNG_CONTRIBUTORS"] as? JsonObject
                 contributors?.forEach { (role, names) ->
-                    val nameList = names.jsonArray.mapNotNull { it.jsonObject.str("name") }.joinToString("\n")
+                    val arr = names as? JsonArray ?: return@forEach
+                    val nameList = arr.mapNotNull { (it as? JsonObject)?.str("name") }.joinToString("\n")
                     if (nameList.isNotEmpty()) put("CONTRIB_${role.uppercase()}", nameList)
                 }
             }

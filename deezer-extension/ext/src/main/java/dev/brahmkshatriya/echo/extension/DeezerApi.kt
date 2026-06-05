@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension
 
+import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
@@ -165,16 +166,20 @@ class DeezerApi(private val session: DeezerSession) {
         }.build()
     }
 
+    private fun String.sanitizeHeader() = replace("\n", "").replace("\r", "").trim()
+
     private fun getHeaders(method: String? = ""): Headers {
+        val safeArl = arl.sanitizeHeader()
+        val safeSid = sid.sanitizeHeader()
         return staticHeaders.newBuilder().apply {
             if (method != "user.getArl") {
-                add("Cookie", "arl=$arl; sid=$sid")
+                add("Cookie", "arl=$safeArl; sid=$safeSid")
             } else {
-                add("Cookie", "sid=$sid")
+                add("Cookie", "sid=$safeSid")
             }
             add("Accept-Language", "$language,*")
             add("Content-Language", language)
-            add("x-deezer-user", userId)
+            add("x-deezer-user", userId.sanitizeHeader())
         }.build()
     }
 
@@ -392,6 +397,7 @@ class DeezerApi(private val session: DeezerSession) {
             .build()
 
         clientLog.newCall(request).await().use { response ->
+            if (response.code == 403) throw ClientException.LoginRequired()
             if (!response.isSuccessful) throw Exception("Unexpected code $response")
             return response.body.string()
         }

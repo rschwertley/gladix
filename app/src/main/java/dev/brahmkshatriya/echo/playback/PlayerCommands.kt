@@ -24,6 +24,7 @@ object PlayerCommands {
     val sleepTimer = SessionCommand("sleep_timer", Bundle.EMPTY)
     val resumeCommand = SessionCommand("resume", Bundle.EMPTY)
     val imageCommand = SessionCommand("image", Bundle.EMPTY)
+    val backfillCommand = SessionCommand("backfill", Bundle.EMPTY)
 
     fun getLikeButton(context: Context, item: MediaItem) =
         if (!item.isLiked)

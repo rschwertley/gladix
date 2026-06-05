@@ -33,6 +33,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToNextCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToQueueCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.backfillCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.resumeCommand
@@ -252,6 +253,19 @@ class PlayerViewModel(
             }
             controller.setMediaItems(mediaItems, index, list[index].playedDuration ?: 0)
             controller.prepare()
+        }
+    }
+
+    fun backfillQueue(
+        extensionId: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String,
+    ) = viewModelScope.launch {
+        withBrowser {
+            it.sendCustomCommand(backfillCommand, Bundle().apply {
+                putString("extId", extensionId)
+                putSerialized("item", item)
+                putBoolean("loaded", loaded)
+                putString("startTrackId", startTrackId)
+            })
         }
     }
 

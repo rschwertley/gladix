@@ -120,7 +120,7 @@ open class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null && isFromGearhead) {
             lifecycleScope.launch {
                 val hasTracks = withContext(Dispatchers.IO) { !recoverTracks().isNullOrEmpty() }
-                if (hasTracks) {
+                if (hasTracks && playerViewModel.playWhenReady.value == true) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                     uiViewModel.changeMoreState(STATE_COLLAPSED)
                 }
