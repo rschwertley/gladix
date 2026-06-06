@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.databinding.FragmentLibraryBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.cache.Cached
+import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
@@ -62,6 +63,7 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentLibraryBinding.bind(view)
+        val recyclerView = binding.recyclerView as RecyclerView
         setupTransition(view, false, MaterialSharedAxis.Y)
         val headerAdapter = HeaderAdapter(this)
         val uiViewModel by activityViewModel<UiViewModel>()
@@ -75,14 +77,14 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
             if (curr != 2) return@observe
             uiViewModel.currentNavBackground.value = bg
         }
-        applyInsets(binding.recyclerView, binding.appBarOutline, 72) {
+        applyInsets(recyclerView, binding.appBarOutline, 72) {
             binding.swipeRefresh.configure(it)
         }
         applyBackPressCallback()
-        getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
+        getTouchHelper(listener).attachToRecyclerView(recyclerView)
         val parent = requireParentFragment()
         configureGridLayout(
-            binding.recyclerView,
+            recyclerView,
             feedAdapter.withLoading(this, headerAdapter, onCreatePlaylistClick = {
                 lifecycleScope.launch {
                     if (feedData.current.value?.isClient<PlaylistEditClient>() == true)
@@ -90,7 +92,7 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
                 }
             }),
         )
-        (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+        (recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }

@@ -19,6 +19,7 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.extensions.cache.Cached.savingFeed
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
+import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
@@ -105,19 +106,20 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
 
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             val binding = FragmentRecyclerWithRefreshBinding.bind(view)
+            val recyclerView = binding.recyclerView as RecyclerView
             val uiViewModel by activityViewModel<UiViewModel>()
             applyInsets(uiViewModel.tvMiniPlayerVisible) {
-                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(binding.recyclerView.context) else 0
-                binding.recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
+                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(recyclerView.context) else 0
+                recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
             }
-            FastScrollerHelper.applyTo(binding.recyclerView)
+            FastScrollerHelper.applyTo(recyclerView)
             configureGridLayout(
-                binding.recyclerView,
+                recyclerView,
                 feedAdapter.withLoading(this),
             )
-            (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+            (recyclerView as? TvAwareRecyclerView)?.navRailView =
                 requireActivity().findViewById(R.id.navRailContainer)
-            getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
+            getTouchHelper(listener).attachToRecyclerView(recyclerView)
             binding.swipeRefresh.run {
                 configure()
                 setOnRefreshListener { feedData.refresh() }

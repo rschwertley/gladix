@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.FragmentHomeBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.cache.Cached
+import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
@@ -55,8 +56,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentHomeBinding.bind(view)
+        val recyclerView = binding.recyclerView as RecyclerView
         setupTransition(view, false, MaterialSharedAxis.Y)
-        applyInsets(binding.recyclerView, binding.appBarOutline) {
+        applyInsets(recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)
         }
         val uiViewModel by activityViewModel<UiViewModel>()
@@ -72,12 +74,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             uiViewModel.currentNavBackground.value = bg
         }
         applyBackPressCallback()
-        getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
+        getTouchHelper(listener).attachToRecyclerView(recyclerView)
         configureGridLayout(
-            binding.recyclerView,
+            recyclerView,
             feedAdapter.withLoading(this, HeaderAdapter(this)),
         )
-        (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+        (recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
