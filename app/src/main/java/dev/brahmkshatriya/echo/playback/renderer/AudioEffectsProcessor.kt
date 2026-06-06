@@ -46,8 +46,8 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             val sign = if (signedInput >= 0.0) 1.0 else -1.0
             var x = abs(signedInput)
 
-            // Pass A — 2:1 downward compression above threshold 0.25
-            if (isNormalizationEnabled && x > 0.25) x = 0.25 * (x / 0.25).pow(0.5)
+            // Pass A — 2.5:1 downward compression above threshold 0.4
+            if (isNormalizationEnabled && x > 0.4) x = 0.4 * (x / 0.4).pow(PASS_A_EXPONENT)
 
             // Pass B — cubic soft limiter, C0-continuous at x=0.5 and x=1.25
             val out = when {
@@ -174,5 +174,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
         output.flip()
+    }
+
+    private companion object {
+        const val PASS_A_EXPONENT = 1.0 / 2.5  // 2.5:1 compression ratio, threshold 0.4
     }
 }
