@@ -23,43 +23,25 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         val jsonObject = api.artist(artist.id)
         val resultsObject = jsonObject["results"]?.jsonObject ?: return@Single emptyList()
 
-        orderedKeys.mapNotNull { key ->
-            val payload = resultsObject[key] ?: return@mapNotNull null
+        orderedKeys.flatMap { key ->
+            val payload = resultsObject[key] ?: return@flatMap emptyList()
             when (key) {
-                "ALBUMS" -> buildAlbumsShelf(artist, payload.jsonObject)
+                "ALBUMS" -> listOfNotNull(buildAlbumsShelf(artist, payload.jsonObject))
                 "TOP" -> buildTopTracksShelf(artist, payload.jsonObject)
-                "RELATED_ARTISTS" -> buildRelatedArtistsShelf(artist, payload.jsonObject)
-                else -> shelfFactories[key]?.invoke(parser, payload.jsonObject)
+                "RELATED_ARTISTS" -> listOfNotNull(buildRelatedArtistsShelf(artist, payload.jsonObject))
+                else -> listOfNotNull(shelfFactories[key]?.invoke(parser, payload.jsonObject))
             }
         }
     }.toFeed()
 
-    private fun buildTopTracksShelf(artist: Artist, jObject: JsonObject): Shelf? {
+    private fun buildTopTracksShelf(artist: Artist, jObject: JsonObject): List<Shelf> {
         val shelf = parser.run {
             jObject["data"]?.jsonArray?.toShelfItemsList("Top") as? Shelf.Lists.Items
         }
         val list = shelf?.list?.filterIsInstance<Track>().orEmpty()
-        if (list.isEmpty()) return null
-        return Shelf.Lists.Tracks(
-            id = shelf!!.id,
-            title = shelf.title,
-            subtitle = shelf.subtitle,
-            type = Shelf.Lists.Type.Linear,
-            more = PagedData.Continuous<Shelf> { continuation ->
-                deezerExtension.handleArlExpiration()
-                val index = continuation?.toIntOrNull() ?: 0
-                val response = api.artistTop(artist.id, index)
-                val total = response["total"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-                val tracks = response["data"]?.jsonArray?.mapNotNull { element ->
-                    runCatching {
-                        parser.run { element.jsonObject.toTrackFromRestApi() }.toShelf()
-                    }.getOrNull()
-                } ?: emptyList()
-                val nextIndex = index + PAGE_SIZE
-                Page(tracks, if (nextIndex < total) nextIndex.toString() else null)
-            }.toFeed(),
-            list = list.take(5)
-        )
+        if (list.isEmpty()) return emptyList()
+        return listOf(Shelf.Category("top", "Top", feed = null)) +
+            list.take(5).map { Shelf.Item(it) }
     }
 
     private fun buildRelatedArtistsShelf(artist: Artist, jObject: JsonObject): Shelf? {

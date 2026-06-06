@@ -22,6 +22,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
@@ -147,8 +148,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         configureGridLayout(
             binding.recyclerView,
             feedAdapter.withLoading(this, HeaderAdapter(this), searchAdapter),
-            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
+        (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+            requireActivity().findViewById(R.id.navRailContainer)
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
             observe(feedData.isRefreshingFlow) {

@@ -15,11 +15,13 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
@@ -97,8 +99,10 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentMediaDetailsBinding.bind(view)
         FastScrollerHelper.applyTo(binding.recyclerView)
-        applyInsets(viewModel.uiResultFlow) {
-            binding.recyclerView.applyContentInsets(it, 20, 8, 16)
+        val uiViewModel by activityViewModel<UiViewModel>()
+        applyInsets(viewModel.uiResultFlow, uiViewModel.tvMiniPlayerVisible) {
+            val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(binding.recyclerView.context) else 0
+            binding.recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
         }
         val lineAdapter = LineAdapter()
         observe(trackFeedData.shouldShowEmpty) {
@@ -126,8 +130,9 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
                 lineAdapter,
                 feedAdapter.withLoading(this)
             ),
-            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
+        (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+            requireActivity().findViewById(R.id.navRailContainer)
         val loadingFlow = viewModel.isRefreshingFlow
             .combine(trackFeedData.isRefreshingFlow) { a, b -> a || b }
                 .combine(feedData.isRefreshingFlow) { a, b -> a || b }

@@ -4,9 +4,6 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.Rect
-import android.view.FocusFinder
-import android.view.View
 import androidx.core.util.toKotlinPair
 import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.ConcatAdapter
@@ -39,38 +36,13 @@ interface GridAdapter {
 
     companion object {
         fun configureGridLayout(
-            recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true,
-            navRailView: View? = null
+            recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true
         ) {
             val context = recycler.context
             val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
                 .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
                 context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-            val layoutManager = if (isTV) {
-                object : GridLayoutManager(context, 1) {
-                    private val focusedRect = Rect()
-                    private val nextRect = Rect()
-                    override fun onInterceptFocusSearch(focused: View, direction: Int): View? {
-                        val next = FocusFinder.getInstance()
-                            .findNextFocus(recycler, focused, direction)
-                        if (next == null) {
-                            return if (direction == View.FOCUS_LEFT) navRailView else null
-                        }
-                        focused.getDrawingRect(focusedRect)
-                        recycler.offsetDescendantRectToMyCoords(focused, focusedRect)
-                        next.getDrawingRect(nextRect)
-                        recycler.offsetDescendantRectToMyCoords(next, nextRect)
-                        val valid = when (direction) {
-                            View.FOCUS_DOWN -> nextRect.top >= focusedRect.bottom - 2
-                            View.FOCUS_UP -> nextRect.bottom <= focusedRect.top + 2
-                            View.FOCUS_RIGHT -> nextRect.left >= focusedRect.right - 2
-                            View.FOCUS_LEFT -> nextRect.right <= focusedRect.left + 2
-                            else -> true
-                        }
-                        return if (valid) next else focused
-                    }
-                }
-            } else GridLayoutManager(context, 1)
+            val layoutManager = GridLayoutManager(context, 1)
             recycler.adapter = gridAdapter.adapter
             recycler.layoutManager = layoutManager
             recycler.doOnLayout { view ->
@@ -90,6 +62,8 @@ interface GridAdapter {
                             return gridAdapter.getSpanSize(position, width, count)
                         }
                     }
+                    layoutManager.spanSizeLookup.setSpanGroupIndexCacheEnabled(true)
+                    layoutManager.spanSizeLookup.setSpanIndexCacheEnabled(true)
                     recycler.requestLayout()
                 }
             }

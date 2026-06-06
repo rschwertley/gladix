@@ -169,6 +169,7 @@ class UiViewModel(
         if (playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
     val playerSheetState = MutableStateFlow(getState())
+    val tvMiniPlayerVisible = MutableStateFlow(false)
     val playerSheetOffset = MutableStateFlow(0f)
     val moreSheetState = MutableStateFlow(STATE_COLLAPSED)
     val moreSheetOffset = MutableStateFlow(0f)

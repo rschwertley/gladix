@@ -369,16 +369,20 @@ class MediaHeaderAdapter(
                         appendLine(if (compact) desc.ellipsize() else desc)
                     }
 
-                    val contribs = listOf("CONTRIB_COMPOSER", "CONTRIB_AUTHOR", "CONTRIB_PRODUCER")
-                        .mapNotNull { key ->
-                            val names = item.extras[key]
-                            if (!names.isNullOrEmpty()) key.removePrefix("CONTRIB_") to names else null
-                        }
+                    val contribs = listOf(
+                        "CONTRIB_AUTHOR" to "WRITTEN BY",
+                        "CONTRIB_COMPOSER" to "COMPOSED BY",
+                        "CONTRIB_PRODUCER" to "PRODUCED BY",
+                        "CONTRIB_ENGINEER" to "ENGINEER"
+                    ).mapNotNull { (key, label) ->
+                        val names = item.extras[key]
+                        if (!names.isNullOrEmpty()) label to names else null
+                    }
                     if (contribs.isNotEmpty()) {
                         appendLine()
-                        contribs.forEachIndexed { idx, (role, names) ->
+                        contribs.forEachIndexed { idx, (label, names) ->
                             if (idx > 0) appendLine()
-                            appendLine(role)
+                            appendLine(label)
                             appendLine(names)
                         }
                     }

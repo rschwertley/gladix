@@ -18,9 +18,12 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.extensions.cache.Cached.savingFeed
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
+import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment.Companion.bind
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
@@ -29,6 +32,7 @@ import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyPlayerBg
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.FastScrollerHelper
 import kotlinx.coroutines.flow.combine
+import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
@@ -101,15 +105,18 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
 
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             val binding = FragmentRecyclerWithRefreshBinding.bind(view)
-            applyInsets {
-                binding.recyclerView.applyContentInsets(it, 20, 8, 16)
+            val uiViewModel by activityViewModel<UiViewModel>()
+            applyInsets(uiViewModel.tvMiniPlayerVisible) {
+                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(binding.recyclerView.context) else 0
+                binding.recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
             }
             FastScrollerHelper.applyTo(binding.recyclerView)
             configureGridLayout(
                 binding.recyclerView,
                 feedAdapter.withLoading(this),
-                navRailView = requireActivity().findViewById(R.id.navRailContainer)
             )
+            (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+                requireActivity().findViewById(R.id.navRailContainer)
             getTouchHelper(listener).attachToRecyclerView(binding.recyclerView)
             binding.swipeRefresh.run {
                 configure()

@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
@@ -88,8 +89,9 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
                         CreatePlaylistBottomSheet().show(parent.parentFragmentManager, null)
                 }
             }),
-            navRailView = requireActivity().findViewById(R.id.navRailContainer)
         )
+        (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
+            requireActivity().findViewById(R.id.navRailContainer)
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
             observe(feedData.isRefreshingFlow) {

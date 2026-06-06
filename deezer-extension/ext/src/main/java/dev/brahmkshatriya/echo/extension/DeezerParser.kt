@@ -289,8 +289,8 @@ class DeezerParser(private val session: DeezerSession) {
                 val contributors = data["SNG_CONTRIBUTORS"] as? JsonObject
                 contributors?.forEach { (role, names) ->
                     val arr = names as? JsonArray ?: return@forEach
-                    val nameList = arr.mapNotNull { (it as? JsonObject)?.str("name") }.joinToString("\n")
-                    if (nameList.isNotEmpty()) put("CONTRIB_${role.uppercase()}", nameList)
+                    val nameList = arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull() ?: (it as? JsonObject)?.str("name") }.joinToString("\n")
+                    if (nameList.isNotEmpty()) put("CONTRIB_${if (role == "writer") "AUTHOR" else role.uppercase()}", nameList)
                 }
             }
         )

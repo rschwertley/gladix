@@ -100,8 +100,10 @@ class MainFragment : Fragment() {
                 }
             }
             val scroller = FastScrollerHelper.applyTo(recyclerView)
-            applyInsets {
-                recyclerView.applyInsets(it, 20, 20, bottom + 4)
+            val uiViewModel by activityViewModel<UiViewModel>()
+            applyInsets(uiViewModel.tvMiniPlayerVisible) {
+                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(recyclerView.context) else 0
+                recyclerView.applyInsets(it, 20, 20, bottom + 4 + miniExtra)
                 outline.updatePadding(top = it.top)
                 scroller?.setPadding(recyclerView.run {
                     val pad = 8.dpToPx(context)
