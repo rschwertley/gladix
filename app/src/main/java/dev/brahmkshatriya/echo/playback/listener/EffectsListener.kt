@@ -88,7 +88,7 @@ class EffectsListener(
                 HealthMonitor.Scope.PERSISTENT, 60 * 60 * 1000L
             )
         }
-        audioEffectsProcessor.setTrackGain(gainDb)
+        audioEffectsProcessor.setTrackGain(gainDb, mediaItem?.mediaId)
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {

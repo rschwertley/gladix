@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.playback.renderer
 
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
@@ -13,7 +12,10 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
-import kotlin.math.sign
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 class AudioEffectsProcessor : BaseAudioProcessor() {
@@ -22,27 +24,63 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     @Volatile var normalizationEnabled = false
     @Volatile var crossfadeDurationMs = 5000
 
-    private val gainMultiplier = AtomicReference(1f)
     private val fadeInFramesRemaining = AtomicLong(0)
     private val fadeOutFramesRemaining = AtomicLong(0)
     // audio thread only — no atomic needed
     private var isPendingFadeIn = false
     private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
 
-    // null = no gain data available, apply passthrough
-    fun setTrackGain(gainDb: Float?) {
-        if (gainDb == null) { gainMultiplier.set(1f); return }
-        if (gainDb < -20f || gainDb > 20f) {
-            Log.w("GladixGain", "Absurd GAIN value $gainDb ignored, using unity gain")
-            gainMultiplier.set(1f)
-            return
-        }
+    // LUT infrastructure
+    private var activeLut: ShortArray = generateDualStageLUT(0f)
+    private val pendingLut = AtomicReference<Pair<String, ShortArray>?>(null)
+    private val currentTrackToken = AtomicReference<String>("")
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    private fun generateDualStageLUT(gainDb: Float, isNormalizationEnabled: Boolean = true): ShortArray {
         val clampedGain = gainDb.coerceIn(-15f, 5f)
-        gainMultiplier.set(10f.pow(clampedGain / 20f))
+        val gainMultiplier = 10.0.pow(clampedGain / 20.0)
+        val lut = ShortArray(65536)
+        for (i in 0..65535) {
+            val rawSample = (i - 32768) / 32768.0
+            val signedInput = rawSample * gainMultiplier
+            val sign = if (signedInput >= 0.0) 1.0 else -1.0
+            var x = abs(signedInput)
+
+            // Pass A — 2:1 downward compression above threshold 0.25
+            if (isNormalizationEnabled && x > 0.25) x = 0.25 * (x / 0.25).pow(0.5)
+
+            // Pass B — cubic soft limiter, C0-continuous at x=0.5 and x=1.25
+            val out = when {
+                x <= 0.5  -> x
+                x <= 1.25 -> (-16.0 / 27.0) * x.pow(3) + (8.0 / 9.0) * x.pow(2) + (5.0 / 9.0) * x + (2.0 / 27.0)
+                else      -> 1.0
+            }
+
+            lut[i] = (out * sign * 32767.0).toInt().coerceIn(-32768, 32767).toShort()
+        }
+        return lut
+    }
+
+    fun setTrackGain(gainDb: Float?, trackId: String?) {
+        val token = trackId ?: ""
+        currentTrackToken.set(token)
+        scope.launch {
+            val effectiveGain = if (normalizationEnabled) gainDb ?: 0f else 0f
+            val lut = generateDualStageLUT(effectiveGain, normalizationEnabled)
+            if (currentTrackToken.get() == token) {
+                pendingLut.set(Pair(token, lut))
+            }
+        }
     }
 
     fun resetGain() {
-        gainMultiplier.set(1f)
+        val token = currentTrackToken.get()
+        scope.launch {
+            val lut = generateDualStageLUT(0f, normalizationEnabled)
+            if (currentTrackToken.get() == token) {
+                pendingLut.set(Pair(token, lut))
+            }
+        }
     }
 
     fun onFadeOutStart() {
@@ -71,9 +109,18 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
+
         if (isPendingFadeIn) {
             fadeInFramesRemaining.set(crossfadeFrames())
             isPendingFadeIn = false
+        }
+
+        // Swap in pending LUT if available and generation token still matches
+        pendingLut.get()?.let { (lutToken, lutArray) ->
+            if (lutToken == currentTrackToken.get()) {
+                activeLut = lutArray
+                pendingLut.set(null)
+            }
         }
 
         val fmt = configuredFormat
@@ -85,7 +132,6 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             return
         }
 
-        val gain = if (normalizationEnabled) gainMultiplier.get() else 1f
         var currentFi = fadeInFramesRemaining.get()
         var currentFo = fadeOutFramesRemaining.get()
         val total = crossfadeFrames()
@@ -96,12 +142,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             // Cosine² fade envelope — computed once per frame, applied to all channels
             val fadeGain: Float
             if (applyFade && (currentFi > 0 || currentFo > 0)) {
-                // fade-in: cos²(currentFi/total * π/2) — 0 at track start, 1 when complete
                 val fadeInGain = if (currentFi > 0) {
                     val c = cos(currentFi.toFloat() / total * (PI / 2).toFloat())
                     c * c
                 } else 1f
-                // fade-out: cos²((1 - currentFo/total) * π/2) — 1 at fade start, 0 at track end
                 val fadeOutGain = if (currentFo > 0) {
                     val c = cos((1f - currentFo.toFloat() / total) * (PI / 2).toFloat())
                     c * c
@@ -113,11 +157,12 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
                 fadeGain = 1f
             }
 
-            val combinedGain = gain * fadeGain
             repeat(channelCount) {
-                val normalized = inputBuffer.short.toInt() / 32768f
+                val raw = inputBuffer.short.toInt()
+                val index = (raw + 32768).coerceIn(0, 65535)
+                val processed = activeLut[index] / 32768f
                 output.putShort(
-                    (softLimit(normalized * combinedGain) * 32768f).toInt()
+                    (processed * fadeGain * 32768f).toInt()
                         .coerceIn(-32768, 32767).toShort()
                 )
             }
@@ -126,17 +171,5 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
         output.flip()
-    }
-
-    // Polynomial soft limiter on normalized float samples [-1f, 1f].
-    // Linear below 0.5, cubic knee 0.5–1.25, hard clamp at ±1 above 1.25.
-    // Always active — catches gain-normalization overshoot without hard PCM clipping.
-    private fun softLimit(x: Float): Float {
-        val a = abs(x)
-        return when {
-            a <= 0.5f -> x
-            a < 1.25f -> sign(x) * (3f - (2f * a - 2f) * (2f * a - 2f)) / 4f
-            else -> sign(x)
-        }
     }
 }
