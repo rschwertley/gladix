@@ -37,7 +37,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private fun generateDualStageLUT(gainDb: Float, isNormalizationEnabled: Boolean = true): ShortArray {
-        val clampedGain = gainDb.coerceIn(-15f, 5f)
+        val clampedGain = gainDb
         val gainMultiplier = 10.0.pow(clampedGain / 20.0)
         val lut = ShortArray(65536)
         for (i in 0..65535) {
@@ -65,7 +65,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val token = trackId ?: ""
         currentTrackToken.set(token)
         scope.launch {
-            val effectiveGain = if (normalizationEnabled) gainDb ?: 0f else 0f
+            val effectiveGain = if (normalizationEnabled) {
+            if (gainDb != null) (gainDb + 4f).coerceIn(-15f, 15f)
+            else 0f
+        } else 0f
             val lut = generateDualStageLUT(effectiveGain, normalizationEnabled)
             if (currentTrackToken.get() == token) {
                 pendingLut.set(Pair(token, lut))

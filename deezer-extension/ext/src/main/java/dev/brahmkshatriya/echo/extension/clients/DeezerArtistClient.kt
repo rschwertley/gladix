@@ -131,7 +131,8 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
 
         private val shelfFactories: Map<String, DeezerParser.(JsonObject) -> Shelf?> = mapOf(
             "HIGHLIGHT" to filterEmpty { jObject ->
-                jObject["ITEM"]?.jsonObject?.toShelfItemsList("Highlight").nullIfEmpty()
+                jObject["ITEM"]?.jsonObject?.toShelfItemsList("Highlight")
+                    ?.takeIf { it !is Shelf.Lists.Items || it.list.size > 1 }
             },
             "SELECTED_PLAYLIST" to filterEmpty { jObject ->
                 jObject["data"]?.jsonArray?.toShelfItemsList("Selected Playlists").nullIfEmpty()

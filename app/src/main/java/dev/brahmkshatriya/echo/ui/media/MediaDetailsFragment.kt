@@ -62,7 +62,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
     private val feedData by lazy {
         feedViewModel.getFeedData(
             "${parent.feedId}_feed",
-            Feed.Buttons(),
+            Feed.Buttons.EMPTY,
             false,
             viewModel.feedCachedFlow, viewModel.feedLoadedFlow,
             cached = { viewModel.feedCachedFlow.value?.getOrThrow() },
