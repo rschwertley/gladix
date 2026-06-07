@@ -29,6 +29,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         if (context is EchoMediaItem.Lists) {
             playerViewModel.setQueue(item.extensionId, listOf(track), 0, null)
             playerViewModel.backfillQueue(item.extensionId, context, false, track.id)
+            playerViewModel.setPlaying(true)
         } else {
             playerViewModel.setQueue(item.extensionId, listOf(track), 0, if (context is Radio) null else context)
             playerViewModel.setPlaying(true)

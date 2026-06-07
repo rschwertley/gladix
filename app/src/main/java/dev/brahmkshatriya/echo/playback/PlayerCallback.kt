@@ -79,7 +79,7 @@ import kotlinx.coroutines.withContext
 class PlayerCallback(
     override val app: App,
     override val scope: CoroutineScope,
-    private val throwableFlow: MutableSharedFlow<Throwable>,
+    override val throwableFlow: MutableSharedFlow<Throwable>,
     private val extensions: ExtensionLoader,
     private val state: PlayerState,
     override val downloadFlow: StateFlow<List<Downloader.Info>>,
@@ -386,12 +386,13 @@ class PlayerCallback(
         }
         val before = mediaItems.subList(0, correctIndex)
         val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
-        player.with {
-            if (before.isNotEmpty()) addMediaItems(0, before)
-            if (after.isNotEmpty()) addMediaItems(
-                currentMediaItemIndex + 1,
-                after
-            )
+        withContext(Dispatchers.Main) {
+            val currentIndex = player.currentMediaItemIndex
+            val itemCount = player.mediaItemCount
+            // Abort if the timeline changed while tracks were loading on IO
+            if (currentIndex < 0 || currentIndex >= itemCount) return@withContext
+            if (before.isNotEmpty()) player.addMediaItems(0, before)
+            if (after.isNotEmpty()) player.addMediaItems(currentIndex + before.size + 1, after)
         }
         SessionResult(RESULT_SUCCESS)
     }
@@ -519,6 +520,7 @@ class PlayerCallback(
             MediaItemsWithStartPosition(items, index, pos)
         } catch (e: Exception) {
             userQueueSet.set(false)
+            if (e !is UnsupportedOperationException) throwableFlow.emit(e)
             throw e
         }
     }

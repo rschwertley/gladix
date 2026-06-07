@@ -64,6 +64,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -92,6 +93,7 @@ abstract class AndroidAutoCallback(
 
     val context get() = app.context
 
+    open val throwableFlow: MutableSharedFlow<Throwable>? get() = null
     open val historyRepository: HistoryRepository? = null
 
     internal val userQueueSet = AtomicBoolean(false)
@@ -196,7 +198,9 @@ abstract class AndroidAutoCallback(
                     Log.d("GladixAuto", "onSearch: notifySearchResultChanged (joined) query='$query' count=${tracks.size}")
                     session.notifySearchResultChanged(browser, query, tracks.size, params)
                 }.onFailure {
-                    if (it is CancellationException) throw it else it.printStackTrace()
+                    if (it is CancellationException) throw it
+                    throwableFlow?.emit(it)
+                    it.printStackTrace()
                 }
             }
             return@also
@@ -214,7 +218,9 @@ abstract class AndroidAutoCallback(
                 session.notifySearchResultChanged(browser, query, tracks.size, params)
             }.onFailure {
                 searchJobs.remove(query)
-                if (it is CancellationException) throw it else it.printStackTrace()
+                if (it is CancellationException) throw it
+                throwableFlow?.emit(it)
+                it.printStackTrace()
             }
         }
     }
@@ -274,7 +280,7 @@ abstract class AndroidAutoCallback(
             )
         val type = parentId.substringAfter("$extId/").substringBefore("/")
         cacheMutex.withLock { withTimeoutOrNull(15_000L) { when (type) {
-            ALBUM -> extension.getList<AlbumClient>(context) {
+            ALBUM -> extension.getList<AlbumClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$ALBUM/").substringBefore("/")
                 val unloaded = itemMap[id] as Album
                 val tracks = getTracks(context, id, extId, page) {
@@ -284,7 +290,7 @@ abstract class AndroidAutoCallback(
                 if (page == 0) listOf(shuffleItem(id, extId, context)) + tracks else tracks
             }
 
-            PLAYLIST -> extension.getList<PlaylistClient>(context) {
+            PLAYLIST -> extension.getList<PlaylistClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$PLAYLIST/").substringBefore("/")
                 val unloaded = itemMap[id] as Playlist
                 val tracks = getTracks(context, id, extId, page) {
@@ -294,7 +300,7 @@ abstract class AndroidAutoCallback(
                 if (page == 0) listOf(shuffleItem(id, extId, context)) + tracks else tracks
             }
 
-            RADIO -> extension.getList<RadioClient>(context) {
+            RADIO -> extension.getList<RadioClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$RADIO/").substringBefore("/")
                 val radio = itemMap[id] as Radio
                 getTracks(context, id, extId, page) {
@@ -302,31 +308,31 @@ abstract class AndroidAutoCallback(
                 }
             }
 
-            USER -> extension.getList<ArtistClient>(context) {
+            USER -> extension.getList<ArtistClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$USER/").substringBefore("/")
                 val artist = loadArtist(itemMap[id] as Artist)
                 loadFeed(artist).toMediaItems(id, context, extId, page)
             }
 
-            LIST -> extension.getList<ExtensionClient>(context) {
+            LIST -> extension.getList<ExtensionClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$LIST/").substringBefore("/")
                 getListsItems(context, id, extId)
             }
 
-            SHELF -> extension.getList<ExtensionClient>(context) {
+            SHELF -> extension.getList<ExtensionClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$SHELF/").substringBefore("/")
                 getShelfItems(context, id, extId, page)
             }
 
             HOME -> extension.getFeed<HomeFeedClient>(
-                context, parentId, HOME, page
+                context, parentId, HOME, page, throwableFlow
             ) { loadHomeFeed() }
 
             LIBRARY -> extension.getFeed<LibraryFeedClient>(
-                context, parentId, LIBRARY, page
+                context, parentId, LIBRARY, page, throwableFlow
             ) { loadLibraryFeed() }
 
-            FEED -> extension.getList<ExtensionClient>(context) {
+            FEED -> extension.getList<ExtensionClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$ROOT/$extId/$FEED/")
                 val feed = feedMap[id] ?: return@getList emptyList()
                 feed.toMediaItems(id, context, extId, page)
@@ -335,11 +341,11 @@ abstract class AndroidAutoCallback(
             SEARCH -> {
                 val query = parentId.substringAfter("$ROOT/$extId/$SEARCH/", "")
                 extension.getFeed<SearchFeedClient>(
-                    context, parentId, SEARCH, page
+                    context, parentId, SEARCH, page, throwableFlow
                 ) { loadSearchFeed(query) }
             }
 
-            PLAYLISTS -> extension.getList<LibraryFeedClient>(context) {
+            PLAYLISTS -> extension.getList<LibraryFeedClient>(context, throwableFlow) {
                 val libFeed = loadLibraryFeed()
                 val playlistTab = libFeed.notSortTabs.firstOrNull {
                     it.id.contains("playlist", ignoreCase = true) ||
@@ -468,6 +474,7 @@ abstract class AndroidAutoCallback(
                 emptyList()
             } else if (it is CancellationException) throw it
             else {
+                throwableFlow?.emit(it)
                 Log.d("GladixAuto", "performSearch: error for query='$query' ext=${ext.id}: ${it::class.simpleName}: ${it.message}")
                 emptyList()
             }
@@ -732,6 +739,7 @@ abstract class AndroidAutoCallback(
 
         suspend inline fun <reified C> Extension<*>.getList(
             context: Context,
+            throwableFlow: MutableSharedFlow<Throwable>? = null,
             block: C.() -> List<MediaItem>
         ): LibraryResult<ImmutableList<MediaItem>> = runCatching {
             val client = instance.value().getOrThrow() as? C ?: return@runCatching notSupported
@@ -743,6 +751,7 @@ abstract class AndroidAutoCallback(
             )
         }.getOrElse {
             if (it is CancellationException) throw it
+            throwableFlow?.emit(it)
             it.printStackTrace()
             LibraryResult.ofError(
                 SessionError(SessionError.ERROR_IO, it.message ?: context.getString(R.string.auto_error_loading))
@@ -861,8 +870,9 @@ abstract class AndroidAutoCallback(
             parentId: String,
             page: String,
             pageNumber: Int,
+            throwableFlow: MutableSharedFlow<Throwable>? = null,
             getFeed: T.() -> Feed<Shelf>
-        ): LibraryResult<ImmutableList<MediaItem>> = getList<T>(context) {
+        ): LibraryResult<ImmutableList<MediaItem>> = getList<T>(context, throwableFlow) {
             val extId = parentId.substringAfter("$ROOT/").substringBefore("/")
             getFeed().toMediaItems(parentId, context, extId, pageNumber)
         }

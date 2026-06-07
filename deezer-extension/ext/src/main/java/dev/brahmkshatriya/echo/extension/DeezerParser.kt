@@ -268,7 +268,8 @@ class DeezerParser(private val session: DeezerSession) {
             },
             cover = getCover(md5, "cover"),
             duration = data.long("DURATION")?.times(1000),
-            releaseDate = data.str("DATE_ADD")?.let { parseDate(it) },
+            releaseDate = data.str("PHYSICAL_RELEASE_DATE")?.toDate()
+                ?: data.str("DIGITAL_RELEASE_DATE")?.toDate(),
             artists = parseArtists(artistsArr, data),
             album = Album(
                 id = data.str("ALB_ID").orEmpty(),
