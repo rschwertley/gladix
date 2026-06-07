@@ -29,7 +29,6 @@ class RenderersFactory(
 
         DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
-            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
             .setAudioProcessorChain(
                 DefaultAudioSink.DefaultAudioProcessorChain(
                     arrayOf(audioEffectsProcessor),

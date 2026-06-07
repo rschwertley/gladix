@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -335,8 +337,10 @@ class PlayerCallback(
                     setMediaItems(mediaItems)
                     shuffleModeEnabled = shuffle
                     if (playbackState == Player.STATE_IDLE) prepare()
-                    seekTo(startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
-                    play()
+                    Handler(Looper.getMainLooper()).post {
+                        seekTo(startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
+                        play()
+                    }
                 }
             }
         }
@@ -489,6 +493,7 @@ class PlayerCallback(
         }
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
