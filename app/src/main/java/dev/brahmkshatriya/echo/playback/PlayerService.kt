@@ -466,16 +466,6 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
-    // Returns true only when the user intends playback to continue (playWhenReady=true).
-    // Keying off playWhenReady rather than playbackState avoids the ShufflePlayer facade:
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        val shouldKeepRunning = player?.playWhenReady ?: true
-        if (!shouldKeepRunning) {
-            pauseAllPlayersAndStopSelf()
-        }
-    }
-
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (app.settings.getBoolean(CLOSE_PLAYER, false)) {
             mediaSession?.player?.run { stop(); clearMediaItems() }
