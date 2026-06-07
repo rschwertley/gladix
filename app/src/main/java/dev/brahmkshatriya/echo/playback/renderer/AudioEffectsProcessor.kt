@@ -66,7 +66,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         currentTrackToken.set(token)
         scope.launch {
             val effectiveGain = if (normalizationEnabled) {
-            if (gainDb != null) (gainDb + 4f).coerceIn(-15f, 15f)
+            if (gainDb != null) (gainDb + 4.5f).coerceIn(-15f, 15f)
             else 0f
         } else 0f
             val lut = generateDualStageLUT(effectiveGain, normalizationEnabled)

@@ -403,8 +403,8 @@ class PlayerService : MediaLibraryService() {
         unregisterReceiver(clearQueueReceiver)
         mediaSession?.run {
             audioFocusListener.release()
-            player.release()
-            release()
+            release()                  // mediaSession first — Media3 requirement
+            player.release()           // player second — main thread, synchronous
             mediaSession = null
         }
         scope.cancel()
@@ -441,6 +441,7 @@ class PlayerService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(handleAudioBecomingNoisy)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(musicAudioAttributes, false)
+            .setReleaseTimeoutMs(150)
             .build()
             .also {
                 it.trackSelectionParameters = it.trackSelectionParameters

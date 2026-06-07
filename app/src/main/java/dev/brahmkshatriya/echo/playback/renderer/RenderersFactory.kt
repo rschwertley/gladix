@@ -21,7 +21,7 @@ class RenderersFactory(
     ) = run {
         val silenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(
             2_000_000,
-            (20_000 / 2_000_000).toFloat(),
+            20_000f / 2_000_000f,
             2_000_000,
             0,
             256,
