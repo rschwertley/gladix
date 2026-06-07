@@ -263,6 +263,20 @@ class ShufflePlayer(
         return fullIndex - windowStart(count, fullIndex)
     }
 
+    // Returns the current period index relative to the windowed timeline so that Media3's
+    // PlayerWrapper.createPositionInfo() assertion (periodIndex < timeline.getPeriodCount()) holds.
+    // WindowedTimeline.init computes periodStart as the firstPeriodIndex of the window's first
+    // window; we apply the same offset here so the two values are always consistent.
+    override fun getCurrentPeriodIndex(): Int {
+        val full = super.getCurrentTimeline()
+        val count = full.windowCount
+        if (count <= QUEUE_WINDOW_SIZE) return player.currentPeriodIndex
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        val start = windowStart(count, fullIndex)
+        val periodStart = full.getWindow(start, Timeline.Window()).firstPeriodIndex
+        return player.currentPeriodIndex - periodStart
+    }
+
     private class WindowedTimeline(
         private val delegate: Timeline,
         private val windowStart: Int,

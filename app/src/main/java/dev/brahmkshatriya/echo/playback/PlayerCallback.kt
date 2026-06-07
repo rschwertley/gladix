@@ -391,10 +391,8 @@ class PlayerCallback(
             val itemCount = player.mediaItemCount
             // Abort if the timeline changed while tracks were loading on IO
             if (currentIndex < 0 || currentIndex >= itemCount) return@withContext
-            Handler(Looper.getMainLooper()).post {
-                if (before.isNotEmpty()) player.addMediaItems(0, before)
-                if (after.isNotEmpty()) player.addMediaItems(currentIndex + before.size + 1, after)
-            }
+            if (before.isNotEmpty()) player.addMediaItems(0, before)
+            if (after.isNotEmpty()) player.addMediaItems(currentIndex + before.size + 1, after)
         }
         SessionResult(RESULT_SUCCESS)
     }
