@@ -396,6 +396,8 @@ class PlayerService : MediaLibraryService() {
         override fun handleCustomCommand(
             session: MediaSession, action: String, extras: Bundle
         ): Boolean = delegate.handleCustomCommand(session, action, extras)
+
+        override fun getNotificationChannelInfo() = delegate.getNotificationChannelInfo()
     }
 
     override fun onDestroy() {
@@ -466,14 +468,12 @@ class PlayerService : MediaLibraryService() {
 
     // Returns true only when the user intends playback to continue (playWhenReady=true).
     // Keying off playWhenReady rather than playbackState avoids the ShufflePlayer facade:
-    // ShufflePlayer.getPlaybackState() returns STATE_READY when STATE_IDLE+items+!playWhenReady
-    // so playbackState != STATE_IDLE is always true when the queue is populated, making it a no-op.
-    // playWhenReady is not overridden by ShufflePlayer and reads the real ExoPlayer value.
-    // Default to true when mediaSession is null: isPlaybackOngoing() is called by Media3
-    // during super.onCreate() before our session is created, and returning false there
-    // causes an immediate stopSelf() → restart loop.
-    override fun isPlaybackOngoing(): Boolean {
-        return mediaSession?.player?.playWhenReady ?: true
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val player = mediaSession?.player
+        val shouldKeepRunning = player?.playWhenReady ?: true
+        if (!shouldKeepRunning) {
+            pauseAllPlayersAndStopSelf()
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
