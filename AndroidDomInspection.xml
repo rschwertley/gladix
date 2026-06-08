@@ -1,0 +1,38 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/app/src/main/AndroidManifest.xml</file>
+  <line>49</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/deezer-extension/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidDomInspection" severity="ERROR" attribute_key="WRONG_REFERENCES_ATTRIBUTES">Android Resources Validation</problem_class>
+  <description>Unresolved package 'link'</description>
+  <highlighted_element>link</highlighted_element>
+  <language>XML</language>
+  <offset>50</offset>
+  <length>4</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/app/src/main/AndroidManifest.xml</file>
+  <line>49</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/deezer-extension/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidDomInspection" severity="ERROR" attribute_key="WRONG_REFERENCES_ATTRIBUTES">Android Resources Validation</problem_class>
+  <description>Unresolved class 'Opener'</description>
+  <highlighted_element>Opener</highlighted_element>
+  <language>XML</language>
+  <offset>55</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/app/src/main/res/values/styles.xml</file>
+  <line>3</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/deezer-extension/app/src/main/res/values/styles.xml" />
+  <problem_class id="AndroidDomInspection" severity="ERROR" attribute_key="WRONG_REFERENCES_ATTRIBUTES">Android Resources Validation</problem_class>
+  <description>Cannot resolve symbol 'android:windowBackground'</description>
+  <highlighted_element>android:windowBackground</highlighted_element>
+  <language>XML</language>
+  <offset>20</offset>
+  <length>24</length>
+</problem>
+</problems>

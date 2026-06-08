@@ -1,0 +1,1328 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>val</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>url</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>=</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>downloadUpdate</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>14</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>26</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>app</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>context</highlighted_element>
+  <language>kotlin</language>
+  <offset>31</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>,</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>39</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>url</highlighted_element>
+  <language>kotlin</language>
+  <offset>40</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>,</highlighted_element>
+  <language>kotlin</language>
+  <offset>43</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>44</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>client</highlighted_element>
+  <language>kotlin</language>
+  <offset>45</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>51</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>52</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>getOrElse</highlighted_element>
+  <language>kotlin</language>
+  <offset>53</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>62</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>{</highlighted_element>
+  <language>kotlin</language>
+  <offset>63</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>114</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>64</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>app</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>throwFlow</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>29</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>emit</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>4</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>34</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>it</highlighted_element>
+  <language>kotlin</language>
+  <offset>35</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>37</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>115</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>116</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>null</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>4</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>116</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>13</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/add/AddViewModel.kt</file>
+  <line>117</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.add</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.add.AddViewModel kotlinx.coroutines.Job download(boolean download, dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel extensionsViewModel)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>}</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>39</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object updateApp(dev.brahmkshatriya.echo.di.App app, kotlin.coroutines.Continuation&lt;? super java.io.File&gt; $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>?:</highlighted_element>
+  <language>kotlin</language>
+  <offset>74</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>val</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>11</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>res</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>=</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>res</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>tagName</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>!=</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>26</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>86</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>currentVersion</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>14</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>res</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>assets</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>22</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>sortedByDescending</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>18</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>41</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>{</highlighted_element>
+  <language>kotlin</language>
+  <offset>42</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>87</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>43</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>it</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>18</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>name</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>4</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>contains</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>32</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>Build</highlighted_element>
+  <language>kotlin</language>
+  <offset>33</offset>
+  <length>5</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>SUPPORTED_ABIS</highlighted_element>
+  <language>kotlin</language>
+  <offset>39</offset>
+  <length>14</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>53</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>first</highlighted_element>
+  <language>kotlin</language>
+  <offset>54</offset>
+  <length>5</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>59</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>60</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>61</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>88</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>62</offset>
+  <length>13</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>}</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>13</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>firstOrNull</highlighted_element>
+  <language>kotlin</language>
+  <offset>14</offset>
+  <length>11</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>{</highlighted_element>
+  <language>kotlin</language>
+  <offset>26</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>89</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>it</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>18</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>name</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>4</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>.</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>endsWith</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>32</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>33</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>apk</highlighted_element>
+  <language>kotlin</language>
+  <offset>34</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>37</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>39</offset>
+  <length>13</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>}</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>?.</highlighted_element>
+  <language>kotlin</language>
+  <offset>13</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>browserDownloadUrl</highlighted_element>
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>18</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>33</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>?:</highlighted_element>
+  <language>kotlin</language>
+  <offset>34</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>36</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>throw</highlighted_element>
+  <language>kotlin</language>
+  <offset>37</offset>
+  <length>5</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element />
+  <language>kotlin</language>
+  <offset>42</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>Exception</highlighted_element>
+  <language>kotlin</language>
+  <offset>43</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>(</highlighted_element>
+  <language>kotlin</language>
+  <offset>52</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>53</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>No EApk assets found</highlighted_element>
+  <language>kotlin</language>
+  <offset>54</offset>
+  <length>20</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>74</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>)</highlighted_element>
+  <language>kotlin</language>
+  <offset>75</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppUpdater.kt</file>
+  <line>93</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.AppUpdater java.lang.Object getGithubUpdateUrl(java.lang.String currentVersion, java.lang.String updateUrl, okhttp3.OkHttpClient client, kotlin.coroutines.Continuation $completion)" />
+  <problem_class id="KotlinUnreachableCode" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unreachable code</problem_class>
+  <description>Unreachable code</description>
+  <highlighted_element>null</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>4</length>
+</problem>
+</problems>

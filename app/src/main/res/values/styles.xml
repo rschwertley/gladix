@@ -326,14 +326,6 @@
         <item name="backgroundTint">@android:color/transparent</item>
     </style>
 
-    <style name="IconButtonOutlinedBig" parent="IconButtonOutlined">
-        <item name="android:paddingStart">4dp</item>
-        <item name="android:paddingEnd">4dp</item>
-        <item name="android:paddingTop">4dp</item>
-        <item name="android:paddingBottom">4dp</item>
-        <item name="iconSize">32dp</item>
-    </style>
-
     <style name="ButtonOutlinedOverlay" parent="ThemeOverlay.Material3Expressive.Button.Outlined">
         <item name="colorContainerUnchecked">?navBackground</item>
         <item name="colorContainer">?navBackground</item>

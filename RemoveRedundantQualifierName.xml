@@ -1,0 +1,80 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>202</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer int getPlaybackState()" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>43</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>203</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer int getPlaybackState()" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>213</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer void play()" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>36</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>214</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer void play()" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>36</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>219</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer void setPlayWhenReady(boolean playWhenReady)" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>53</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>220</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer void setPlayWhenReady(boolean playWhenReady)" />
+  <problem_class id="RemoveRedundantQualifierName" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant qualifier name</problem_class>
+  <description>Remove redundant qualifier name</description>
+  <highlighted_element>Player</highlighted_element>
+  <language>kotlin</language>
+  <offset>53</offset>
+  <length>6</length>
+</problem>
+</problems>

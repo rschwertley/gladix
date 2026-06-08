@@ -8,62 +8,100 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingVertical="4dp">
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/historyTitle"
+        <View
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/history"
-            android:textAppearance="@style/TextAppearance.Material3.ActionBar.Title" />
+            android:visibility="invisible" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sortButton"
-            style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            style="@style/IconButtonOutlined"
             android:contentDescription="@string/sort_and_filter"
             app:icon="@drawable/ic_sort" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/searchButton"
-            style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            style="@style/IconButtonOutlined"
             android:contentDescription="@string/search"
             app:icon="@drawable/ic_search_outline" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/clearButton"
-            style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            style="@style/IconButtonOutlined"
             android:contentDescription="@string/clear_history"
             app:icon="@drawable/ic_delete" />
 
     </LinearLayout>
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/searchLayout"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    <LinearLayout
+        android:id="@+id/searchBarContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
+        android:layout_marginTop="-12dp"
+        android:layout_marginBottom="12dp"
+        android:alpha="1"
+        android:gravity="end|center_vertical"
+        android:orientation="horizontal"
+        android:translationZ="-1dp"
         android:visibility="gone">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/searchInput"
-            android:layout_width="match_parent"
+        <FrameLayout
+            android:id="@+id/searchContainer"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:hint="@string/search"
-            android:imeOptions="actionSearch"
-            android:inputType="text"
-            android:maxLines="1" />
+            android:layout_marginEnd="-96dp"
+            android:layout_weight="1">
 
-    </com.google.android.material.textfield.TextInputLayout>
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/searchLayout"
+                style="@style/Widget.Material3.TextInputEditText.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/search"
+                android:paddingVertical="0dp"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                app:boxBackgroundColor="@color/amoled_fg_semi"
+                app:boxCornerRadiusBottomEnd="24dp"
+                app:boxCornerRadiusBottomStart="24dp"
+                app:boxCornerRadiusTopEnd="24dp"
+                app:boxCornerRadiusTopStart="24dp"
+                app:boxStrokeWidth="0dp"
+                app:boxStrokeWidthFocused="1dp"
+                app:startIconDrawable="@drawable/ic_search_outline">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/searchBarText"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:inputType="text"
+                    android:padding="0dp"
+                    android:singleLine="true" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+        </FrameLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/micButton"
+            style="@style/IconButtonTransparent"
+            android:layout_gravity="bottom"
+            android:contentDescription="@string/voice_search"
+            app:icon="@drawable/ic_mic"
+            app:iconTint="@android:color/white" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/searchClose"
+            style="@style/IconButtonTransparent"
+            android:layout_gravity="bottom"
+            android:contentDescription="@string/close"
+            app:icon="@drawable/ic_close_small" />
+
+    </LinearLayout>
 
 </LinearLayout>

@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/history/HistoryAdapter.kt</file>
+  <line>100</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.history</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.history.HistoryAdapter$-1 boolean areItemsTheSame(dev.brahmkshatriya.echo.ui.history.HistoryListItem a, dev.brahmkshatriya.echo.ui.history.HistoryListItem b)" />
+  <problem_class id="IntroduceWhenSubject" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">'when' that can be simplified by introducing an argument</problem_class>
+  <description>Introduce 'a' as subject of 'when'</description>
+  <highlighted_element>when</highlighted_element>
+  <language>kotlin</language>
+  <offset>83</offset>
+  <length>4</length>
+</problem>
+</problems>

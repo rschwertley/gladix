@@ -238,7 +238,7 @@ class PlayerService : MediaLibraryService() {
         // and call removeNotification() instead of our provider when the player is idle.
         // startForegroundCompat()'s initial placeholder remains visible until the first real
         // track notification replaces it — this is acceptable and avoids the "Loading…" flash.
-        setShowNotificationForIdlePlayer(2) // SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
+        setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
 
         mediaSession = session
         // Belt-and-suspenders: ensure ExoPlayer's internal AudioFocusManager has

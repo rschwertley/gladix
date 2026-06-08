@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ResumptionUtils.kt</file>
+  <line>101</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ResumptionUtils java.util.List&lt;androidx.media3.common.MediaItem&gt; recoverQueue(android.content.Context $this$recoverQueue, dev.brahmkshatriya.echo.di.App app, java.util.List&lt;dev.brahmkshatriya.echo.download.Downloader.Info&gt; downloads, dev.brahmkshatriya.echo.utils.HealthMonitor healthMonitor)" />
+  <problem_class id="VerboseNullabilityAndEmptiness" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Verbose nullability and emptiness check</problem_class>
+  <description>Replace subsequent checks with 'isNullOrEmpty()' call</description>
+  <highlighted_element>rawExtensions == null</highlighted_element>
+  <language>kotlin</language>
+  <offset>34</offset>
+  <length>21</length>
+</problem>
+</problems>

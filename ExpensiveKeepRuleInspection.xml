@@ -1,0 +1,74 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>2</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class dev.brahmkshatriya.echo.common.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>87</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>3</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class kotlin.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>63</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>4</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class kotlinx.coroutines.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>75</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>5</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class kotlinx.serialization.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>78</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>6</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class okhttp3.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>64</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>7</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ExpensiveKeepRuleInspection" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">An inspection that identifies expensive keep rules</problem_class>
+  <description>Overly broad keep rule affecting more than 100 classes. Scope rules using annotations, specific classes, or using specific field/method selectors</description>
+  <highlighted_element>-keep,allowoptimization class com.google.protobuf.** { public protected *; }</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>0</offset>
+  <length>76</length>
+</problem>
+</problems>

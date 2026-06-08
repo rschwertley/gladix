@@ -1,0 +1,93 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/feed/FeedType.kt</file>
+  <line>65</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.feed</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.feed.FeedType.Category extras" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'extras' is always non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>48</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/feed/FeedType.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.feed</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.feed.FeedType.Media extras" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'extras' is always non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>48</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/feed/FeedType.kt</file>
+  <line>92</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.feed</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.feed.FeedType.Video extras" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'extras' is always non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>48</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/feed/FeedType.kt</file>
+  <line>106</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.feed</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.feed.FeedType.MediaGrid extras" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'extras' is always non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>48</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/feed/FeedType.kt</file>
+  <line>119</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.feed</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.feed.FeedType.HorizontalList extras" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'extras' is always non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>48</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerExtension.kt</file>
+  <line>609</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerExtension java.lang.Object getMarkAsPlayedDuration(dev.brahmkshatriya.echo.common.models.TrackDetails details, kotlin.coroutines.Continuation&lt;? super java.lang.Long&gt; $completion)" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'getMarkAsPlayedDuration' always returns non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>77</offset>
+  <length>1</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/clients/DeezerLibraryClient.kt</file>
+  <line>72</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.clients.DeezerLibraryClient java.lang.Object loadAll(kotlin.coroutines.Continuation&lt;? super java.util.List&lt;? extends dev.brahmkshatriya.echo.common.models.Shelf&gt;&gt; $completion)" />
+  <problem_class id="RedundantNullableReturnType" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Redundant nullable return type</problem_class>
+  <description>'loadAll' always returns non-null type</description>
+  <highlighted_element>?</highlighted_element>
+  <language>kotlin</language>
+  <offset>46</offset>
+  <length>1</length>
+</problem>
+</problems>

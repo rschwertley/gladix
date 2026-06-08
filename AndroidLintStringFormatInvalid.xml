@@ -1,0 +1,83 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInfoFragment.kt</file>
+  <line>161</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInfoFragment.kt" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;x_specific_quality_summary&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt;&lt;/html&gt;</description>
+  <highlighted_element>getString(R.string.x_specific_quality_summary, extension.name)</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>62</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInfoFragment.kt</file>
+  <line>161</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInfoFragment.kt" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;x_specific_quality_summary&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt;&lt;/html&gt;</description>
+  <highlighted_element>getString(R.string.x_specific_quality_summary, extension.name)</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>62</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/playlist/edit/EditPlaylistBottomSheet.kt</file>
+  <line>35</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.playlist.edit</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/playlist/edit/EditPlaylistBottomSheet.kt" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;adding_x&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt;&lt;/html&gt;</description>
+  <highlighted_element>context.getString(R.string.adding_x, tracks.joinToString(&quot;, &quot;) { it.title })</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>76</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values-pt/strings.xml</file>
+  <line>300</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values-pt/strings.xml" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;x_specific_quality_summary&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt; (This definition does not require arguments)&lt;/html&gt;</description>
+  <highlighted_element>string</highlighted_element>
+  <language>XML</language>
+  <offset>5</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values-pt/strings.xml</file>
+  <line>300</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values-pt/strings.xml" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;x_specific_quality_summary&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt; (This definition does not require arguments)&lt;/html&gt;</description>
+  <highlighted_element>string</highlighted_element>
+  <language>XML</language>
+  <offset>5</offset>
+  <length>6</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values-tr/strings.xml</file>
+  <line>281</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values-tr/strings.xml" />
+  <problem_class id="AndroidLintStringFormatInvalid" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Invalid format string</problem_class>
+  <hints />
+  <description>&lt;html&gt;Format string '&lt;code&gt;adding_x&lt;/code&gt;' is not a valid format string so it should not be passed to &lt;code&gt;String.format&lt;/code&gt; (This definition does not require arguments)&lt;/html&gt;</description>
+  <highlighted_element>string</highlighted_element>
+  <language>XML</language>
+  <offset>5</offset>
+  <length>6</length>
+</problem>
+</problems>

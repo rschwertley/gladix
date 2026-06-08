@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>10</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintForegroundServicesPolicy" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Foreground Services Insights</problem_class>
+  <hints />
+  <description>&lt;html&gt;Android 14+ requires Foreground Service types declaration and justification. &lt;/html&gt;</description>
+  <highlighted_element>android:name=&quot;android.permission.FOREGROUND_SERVICE&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>21</offset>
+  <length>52</length>
+</problem>
+</problems>

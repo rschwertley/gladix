@@ -1,0 +1,26 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/pair.html</file>
+  <line>245</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/pair.html" />
+  <problem_class id="HtmlUnknownAttribute" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unknown attribute</problem_class>
+  <description>Attribute autocorrect is not allowed here</description>
+  <highlighted_element>autocorrect</highlighted_element>
+  <language>XML</language>
+  <offset>8</offset>
+  <length>11</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/pair.html</file>
+  <line>260</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/pair.html" />
+  <problem_class id="HtmlUnknownAttribute" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unknown attribute</problem_class>
+  <description>Attribute autocorrect is not allowed here</description>
+  <highlighted_element>autocorrect</highlighted_element>
+  <language>XML</language>
+  <offset>8</offset>
+  <length>11</length>
+</problem>
+</problems>

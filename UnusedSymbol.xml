@@ -1,0 +1,210 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/DownloadExtension.kt</file>
+  <line>30</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="class" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.DownloadExtension" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Class &quot;DownloadExtension&quot; is never used</description>
+  <highlighted_element>DownloadExtension</highlighted_element>
+  <language>kotlin</language>
+  <offset>6</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/TrackerTestExtension.kt</file>
+  <line>11</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="class" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.TrackerTestExtension" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Class &quot;TrackerTestExtension&quot; is never used</description>
+  <highlighted_element>TrackerTestExtension</highlighted_element>
+  <language>kotlin</language>
+  <offset>6</offset>
+  <length>20</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginFragment.kt</file>
+  <line>433</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.login</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment.SmartLogin void showError(dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSmartBinding binding, java.lang.String message)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;showError&quot; is never used</description>
+  <highlighted_element>showError</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginViewModel.kt</file>
+  <line>79</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.login</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.login.LoginViewModel kotlinx.coroutines.Job onSmartLoginComplete(java.lang.Object users)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;onSmartLoginComplete&quot; is never used</description>
+  <highlighted_element>onSmartLoginComplete</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>20</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/CoroutineUtils.kt</file>
+  <line>31</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.CoroutineUtils java.lang.Object collectWith(kotlinx.coroutines.flow.Flow&lt;? extends T&gt; $this$collectWith, kotlinx.coroutines.flow.Flow&lt;? extends R&gt; flow, kotlin.jvm.functions.Function3&lt;? super T,? super R,? super kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt;,? extends java.lang.Object&gt; block, kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;collectWith&quot; is never used</description>
+  <highlighted_element>collectWith</highlighted_element>
+  <language>kotlin</language>
+  <offset>31</offset>
+  <length>11</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ui/AnimationUtils.kt</file>
+  <line>49</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils.ui</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ui.AnimationUtils void animateMarginTop(android.view.View $this$animateMarginTop, boolean hide, kotlin.jvm.functions.Function0&lt;kotlin.Unit&gt; onEnd)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;animateMarginTop&quot; is never used</description>
+  <highlighted_element>animateMarginTop</highlighted_element>
+  <language>kotlin</language>
+  <offset>13</offset>
+  <length>16</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ui/prefs/LongClickPreference.kt</file>
+  <line>7</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils.ui.prefs</package>
+  <entry_point TYPE="class" FQNAME="dev.brahmkshatriya.echo.utils.ui.prefs.LongClickPreference" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Class &quot;LongClickPreference&quot; is never used</description>
+  <highlighted_element>LongClickPreference</highlighted_element>
+  <language>kotlin</language>
+  <offset>11</offset>
+  <length>19</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/clients/PlaylistEditPrivacyClient.kt</file>
+  <line>18</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.clients.PlaylistEditPrivacyClient java.lang.Object setPrivacy(dev.brahmkshatriya.echo.common.models.Playlist playlist, boolean isPrivate, kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;setPrivacy&quot; is never used</description>
+  <highlighted_element>setPrivacy</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>10</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/clients/TrackChapterClient.kt</file>
+  <line>21</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.clients.TrackChapterClient java.lang.Object getChapters(dev.brahmkshatriya.echo.common.models.Track track, kotlin.coroutines.Continuation&lt;? super java.util.List&lt;dev.brahmkshatriya.echo.common.models.Chapter&gt;&gt; $completion)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;getChapters&quot; is never used</description>
+  <highlighted_element>getChapters</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>11</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/ImageHolder.kt</file>
+  <line>101</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.ImageHolder.Companion dev.brahmkshatriya.echo.common.models.ImageHolder.HexColorImageHolder toHexColorImageHolder(java.lang.String $this$toHexColorImageHolder)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;toHexColorImageHolder&quot; is never used</description>
+  <highlighted_element>toHexColorImageHolder</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>21</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/Track.kt</file>
+  <line>81</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.common.models.Track.Type VideoSong" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Class &quot;VideoSong&quot; is never used</description>
+  <highlighted_element>VideoSong</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerApi.kt</file>
+  <line>469</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerApi java.lang.Object artistTop(java.lang.String id, int index, kotlin.coroutines.Continuation&lt;? super kotlinx.serialization.json.JsonObject&gt; $completion)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;artistTop&quot; is never used</description>
+  <highlighted_element>artistTop</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerParser.kt</file>
+  <line>178</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerParser dev.brahmkshatriya.echo.common.models.Track toTrackFromRestApi(kotlinx.serialization.json.JsonObject $this$toTrackFromRestApi)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;toTrackFromRestApi&quot; is never used</description>
+  <highlighted_element>toTrackFromRestApi</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>18</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerParser.kt</file>
+  <line>364</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerParser dev.brahmkshatriya.echo.common.models.Date parseDate(java.lang.String raw)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;parseDate&quot; is never used</description>
+  <highlighted_element>parseDate</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/clients/DeezerRadioClient.kt</file>
+  <line>249</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.clients.DeezerRadioClient dev.brahmkshatriya.echo.common.models.Track lastTrackFromSongs(kotlinx.serialization.json.JsonObject $this$lastTrackFromSongs, dev.brahmkshatriya.echo.extension.DeezerParser parser)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;lastTrackFromSongs&quot; is never used</description>
+  <highlighted_element>lastTrackFromSongs</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>18</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/clients/DeezerRadioClient.kt</file>
+  <line>259</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.clients.DeezerRadioClient dev.brahmkshatriya.echo.common.models.Track randomTrackFromSongs(kotlinx.serialization.json.JsonObject $this$randomTrackFromSongs, dev.brahmkshatriya.echo.extension.DeezerParser parser)" />
+  <problem_class id="UnusedSymbol" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unused symbol</problem_class>
+  <description>Function &quot;randomTrackFromSongs&quot; is never used</description>
+  <highlighted_element>randomTrackFromSongs</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>20</length>
+</problem>
+</problems>

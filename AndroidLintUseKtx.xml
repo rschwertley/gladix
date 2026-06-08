@@ -1,0 +1,100 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/PlayerService.kt</file>
+  <line>129</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/PlayerService.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;SharedPreferences.edit&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>app.settings.edit()</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>19</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginFragment.kt</file>
+  <line>382</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.login</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginFragment.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX function &lt;code&gt;createBitmap&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565)</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>52</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginFragment.kt</file>
+  <line>385</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions.login</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/login/LoginFragment.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;Bitmap.set&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>bmp.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)</highlighted_element>
+  <language>kotlin</language>
+  <offset>28</offset>
+  <length>66</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/HealthMonitor.kt</file>
+  <line>36</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/HealthMonitor.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;SharedPreferences.edit&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>prefs.edit()</highlighted_element>
+  <language>kotlin</language>
+  <offset>32</offset>
+  <length>12</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt</file>
+  <line>118</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;SharedPreferences.edit&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>settings.edit()</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>15</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt</file>
+  <line>122</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;String.toUri&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>Uri.parse(&quot;package:$packageName&quot;)</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>33</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/widget/BaseWidget.kt</file>
+  <line>160</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.widget</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/widget/BaseWidget.kt" />
+  <problem_class id="AndroidLintUseKtx" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use KTX extension function</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use the KTX extension function &lt;code&gt;Bitmap.scale&lt;/code&gt; instead?&lt;/html&gt;</description>
+  <highlighted_element>Bitmap.createScaledBitmap( this, (width * scale).toInt(), (height * scale).t...</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>134</length>
+</problem>
+</problems>

@@ -1,0 +1,226 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/OfflineExtension.kt</file>
+  <line>206</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension java.lang.Object loadFeed(dev.brahmkshatriya.echo.common.models.Track track, kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.common.models.Feed&lt;dev.brahmkshatriya.echo.common.models.Shelf&gt;&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;loadFeed()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>loadFeed</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/OfflineExtension.kt</file>
+  <line>277</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension java.lang.Object loadFeed(dev.brahmkshatriya.echo.common.models.Playlist playlist, kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.common.models.Feed&lt;dev.brahmkshatriya.echo.common.models.Shelf&gt;&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;loadFeed()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>loadFeed</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/TestExtension.kt</file>
+  <line>142</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.TestExtension java.lang.Object getCurrentUser(kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.common.models.User&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;getCurrentUser()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>getCurrentUser</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>14</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/TestExtension.kt</file>
+  <line>169</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.TestExtension java.lang.Object loadFeed(dev.brahmkshatriya.echo.common.models.Track track, kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.common.models.Feed&lt;dev.brahmkshatriya.echo.common.models.Shelf&gt;&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;loadFeed()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>loadFeed</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/TestExtension.kt</file>
+  <line>304</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.TestExtension java.lang.Object getMarkAsPlayedDuration(dev.brahmkshatriya.echo.common.models.TrackDetails details, kotlin.coroutines.Continuation&lt;? super java.lang.Long&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;getMarkAsPlayedDuration()&lt;/code&gt; always returns &lt;code&gt;10000&lt;/code&gt;</description>
+  <highlighted_element>getMarkAsPlayedDuration</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>23</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/test/TestExtension.kt</file>
+  <line>311</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.test</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.test.TestExtension java.lang.Object getFollowersCount(dev.brahmkshatriya.echo.common.models.EchoMediaItem item, kotlin.coroutines.Continuation&lt;? super java.lang.Long&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;getFollowersCount()&lt;/code&gt; always returns &lt;code&gt;1000&lt;/code&gt;</description>
+  <highlighted_element>getFollowersCount</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/AndroidAutoCallback.kt</file>
+  <line>96</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.AndroidAutoCallback kotlinx.coroutines.flow.MutableSharedFlow&lt;java.lang.Throwable&gt; getThrowableFlow()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>58</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/helpers/WebViewRequest.kt</file>
+  <line>34</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.helpers</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.helpers.WebViewRequest long getMaxTimeout()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;15000&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/helpers/WebViewRequest.kt</file>
+  <line>40</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.helpers</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.helpers.WebViewRequest boolean getDontCache()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;false&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>61</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem boolean isExplicit()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;false&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>28</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>62</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem boolean isPrivate()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;false&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>68</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem.Lists java.lang.Long getDuration()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>28</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>69</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem.Lists dev.brahmkshatriya.echo.common.models.Date getDate()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>70</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem.Lists java.lang.String getLabel()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/models/EchoMediaItem.kt</file>
+  <line>71</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.models</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.models.EchoMediaItem.Lists dev.brahmkshatriya.echo.common.models.Album.Type getType()" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;get()&lt;/code&gt; always returns &lt;code&gt;null&lt;/code&gt;</description>
+  <highlighted_element>get</highlighted_element>
+  <language>kotlin</language>
+  <offset>30</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerExtension.kt</file>
+  <line>609</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerExtension java.lang.Object getMarkAsPlayedDuration(dev.brahmkshatriya.echo.common.models.TrackDetails details, kotlin.coroutines.Continuation&lt;? super java.lang.Long&gt; $completion)" />
+  <problem_class id="SameReturnValue" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Method always returns the same value</problem_class>
+  <hints />
+  <description>Method &lt;code&gt;getMarkAsPlayedDuration()&lt;/code&gt; always returns &lt;code&gt;30000&lt;/code&gt;</description>
+  <highlighted_element>getMarkAsPlayedDuration</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>23</length>
+</problem>
+</problems>

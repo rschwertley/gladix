@@ -1,7 +1,11 @@
 package dev.brahmkshatriya.echo.ui.history
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
+import android.speech.RecognizerIntent
 import android.view.View
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.ConcatAdapter
@@ -36,6 +40,25 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         }
     }
 
+    private val speechLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                ?.let { viewModel.searchQuery.value = it }
+        }
+    }
+
+    private fun launchVoiceSearch() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_search))
+        }
+        runCatching { speechLauncher.launch(intent) }
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentHistoryBinding.bind(view)
         setupTransition(view, false, MaterialSharedAxis.Y)
@@ -49,6 +72,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
             onClearClick = { viewModel.clearHistory() },
             onSortClick = { HistorySortBottomSheet().show(childFragmentManager, "history_sort") },
             onSearchChanged = { viewModel.searchQuery.value = it },
+            onMicClick = { launchVoiceSearch() },
         )
 
         binding.recyclerView.adapter =

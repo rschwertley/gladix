@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppShortcuts.kt</file>
+  <line>40</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/AppShortcuts.kt" />
+  <problem_class id="AndroidLintReportShortcutUsage" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Report shortcut usage</problem_class>
+  <hints />
+  <description>&lt;html&gt;Calling this method indicates use of dynamic shortcuts, but there are no calls to methods that track shortcut usage, such as &lt;code&gt;pushDynamicShortcut&lt;/code&gt; or &lt;code&gt;reportShortcutUsed&lt;/code&gt;. Calling these methods is recommended, as they track shortcut usage and allow launchers to adjust which shortcuts appear based on activation history. Please see &lt;a href=&quot;https://developer.android.com/develop/ui/views/launch/shortcuts/managing-shortcuts#track-usage&quot;&gt;https://developer.android.com/develop/ui/views/launch/shortcuts/managing-shortcuts#track-usage&lt;/a&gt;&lt;/html&gt;</description>
+  <highlighted_element>ShortcutManagerCompat.addDynamicShortcuts(this, shortcuts)</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>58</length>
+</problem>
+</problems>

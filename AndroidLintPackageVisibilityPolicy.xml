@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml</file>
+  <line>26</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/AndroidManifest.xml" />
+  <problem_class id="AndroidLintPackageVisibilityPolicy" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Package/App Visibility Insights</problem_class>
+  <hints />
+  <description>&lt;html&gt;Protect user privacy by limiting all app visibility, especially &lt;code&gt;QUERY_ALL_PACKAGES&lt;/code&gt; to essential core functions.&lt;/html&gt;</description>
+  <highlighted_element>android:name=&quot;android.permission.QUERY_ALL_PACKAGES&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>8</offset>
+  <length>52</length>
+</problem>
+</problems>

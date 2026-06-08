@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/build.gradle.kts</file>
+  <line>19</line>
+  <module>Echo.deezer-extension</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/deezer-extension/ext/build.gradle.kts" />
+  <problem_class id="AndroidLintUseTomlInstead" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Use TOML Version Catalog Instead</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use version catalog instead&lt;/html&gt;</description>
+  <highlighted_element>&quot;org.jetbrains.kotlin:kotlin-stdlib:2.2.10&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>43</length>
+</problem>
+</problems>

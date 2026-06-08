@@ -1,0 +1,41 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ApkLinkParser.kt</file>
+  <line>179</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.ApkLinkParser.CompressedXmlParser void parseStringTable()" />
+  <problem_class id="EmptyRange" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Range with start greater than endInclusive is empty</problem_class>
+  <description>This range is empty. Did you mean to use 'rangeTo'?</description>
+  <highlighted_element>0 until mStringsCount</highlighted_element>
+  <language>kotlin</language>
+  <offset>22</offset>
+  <length>21</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ApkLinkParser.kt</file>
+  <line>190</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.ApkLinkParser.CompressedXmlParser void parseResourceTable()" />
+  <problem_class id="EmptyRange" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Range with start greater than endInclusive is empty</problem_class>
+  <description>This range is empty. Did you mean to use 'rangeTo'?</description>
+  <highlighted_element>0 until mResCount</highlighted_element>
+  <language>kotlin</language>
+  <offset>22</offset>
+  <length>17</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ApkLinkParser.kt</file>
+  <line>262</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.ApkLinkParser.CompressedXmlParser java.lang.String getString(int index)" />
+  <problem_class id="EmptyRange" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Range with start greater than endInclusive is empty</problem_class>
+  <description>This range is empty. Did you mean to use 'rangeTo'?</description>
+  <highlighted_element>0..&lt;mStringsCount</highlighted_element>
+  <language>kotlin</language>
+  <offset>35</offset>
+  <length>17</length>
+</problem>
+</problems>

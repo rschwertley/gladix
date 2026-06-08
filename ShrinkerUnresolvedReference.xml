@@ -1,0 +1,38 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>9</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ShrinkerUnresolvedReference" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Unresolved reference in Shrinker Config file</problem_class>
+  <description>Unresolved class name</description>
+  <highlighted_element>okhttp3.WebSocketListener</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>12</offset>
+  <length>25</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>10</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ShrinkerUnresolvedReference" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Unresolved reference in Shrinker Config file</problem_class>
+  <description>Unresolved class name</description>
+  <highlighted_element>kotlinx.serialization.json.JsonTransformingSerializer</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>12</offset>
+  <length>53</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro</file>
+  <line>11</line>
+  <module>Echo.common.commonMain</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro" />
+  <problem_class id="ShrinkerUnresolvedReference" severity="ERROR" attribute_key="ERRORS_ATTRIBUTES">Unresolved reference in Shrinker Config file</problem_class>
+  <description>Unresolved class name</description>
+  <highlighted_element>kotlin.jvm.internal.MutablePropertyReference1Impl</highlighted_element>
+  <language>SHRINKER_CONFIG</language>
+  <offset>12</offset>
+  <length>49</length>
+</problem>
+</problems>

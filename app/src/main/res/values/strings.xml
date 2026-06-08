@@ -139,6 +139,7 @@
 
     <string name="history">History</string>
     <string name="clear_history">Clear History</string>
+    <string name="history_item_subtitle">%1$s · %2$s</string>
 
     <string name="auto_start_radio">Auto Start Radio</string>
     <string name="auto_start_radio_summary">Automatically add related songs of track in the playlist, to have an infinite queue</string>
@@ -247,8 +248,11 @@
     <string name="tv_pairing_option_3">3. Visit rschwertley.github.io/gladix/pair.html and enter the code</string>
     <string name="tv_pairing_waiting">Waiting for phone confirmation…</string>
     <string name="tv_pairing_expired">Code expired</string>
-    <string name="tv_pairing_expires_in">Expires in: %1$ss</string>
+    <string name="tv_pairing_expires_in">Expires in: %1$ds</string>
     <string name="tv_pairing_new_code">Generate new code</string>
+    <string name="tv_pairing_instructions">Enter the 6-character code shown on your TV, or scan its QR code with your camera app.</string>
+    <string name="tv_pairing_code_hint">Code (e.g. GX4821)</string>
+    <string name="qr_code">QR code</string>
     <string name="tv_pairing_link_your_device">Link your device</string>
     <string name="not_logged_in">Not logged in</string>
     <string name="x_login">%1$s Login</string>
@@ -341,8 +345,6 @@
     <string name="add_to_next">Add to next</string>
     <string name="queue">Queue</string>
     <string name="add_to_queue">Add to queue</string>
-    <string name="playback_paused">Paused</string>
-    <string name="clear">Clear</string>
     <string name="loading_radio_for_x">Loading radio for %1$s</string>
     <string name="playing_x">Playing %1$s</string>
     <string name="adding_x_to_queue">Adding %1$s to queue</string>
@@ -358,7 +360,6 @@
     <string name="tracks">Tracks</string>
     <string name="sort">Sort</string>
     <string name="explicit">Explicit</string>
-    <string name="x_plays">%1$s Plays</string>
     <string name="x_followers">%1$s Followers</string>
     <string name="n_songs">%1$d Songs</string>
     <string name="n_episodes">%1$d Episodes</string>
@@ -422,13 +423,10 @@
     <string name="merging_x">Merging %1$s</string>
     <string name="tagging_x">Tagging %1$s</string>
 
-    <string name="apply_player_color_to_app">Apply Player Color to the Entire App</string>
-    <string name="apply_player_color_to_app_summary">LAG ALERT!!!</string>
     <string name="delete_download">Delete Download</string>
     <string name="removed_x_from_downloads">Removed %1$s from Downloads</string>
     <string name="download_complete">Download Complete</string>
 
-    <string name="app_widget_description">Gladix on your home screen!</string>
     <string name="opening_webview_x">Opening Webview: %1$s</string>
     <string name="no_update_available_for_x">No update available for %1$s</string>
     <string name="other">Other</string>
@@ -458,15 +456,12 @@
     <string name="show">Show</string>
     <string name="book">Book</string>
     <string name="song">Song</string>
-    <string name="podcast">Podcast</string>
-    <string name="video">Video</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Genres: %1$s</string>
     <string name="disc_number_n">Disc %1$d</string>
     <string name="album_order_n">Track %1$d</string>
     <string name="confirmation">Confirmation</string>
     <string name="delete_playlist_confirmation">Are you sure you want to delete %1$s?</string>
     <string name="confirm">Confirm</string>
+    <string name="done">Done</string>
     <string name="big_cover">Bigger Covers</string>
     <string name="big_cover_summary">Good for devices with larger screens</string>
     <string name="unhide">Unhide</string>
@@ -483,7 +478,6 @@
     <string name="vertical">Vertical</string>
     <string name="export_settings">Export Settings</string>
     <string name="export_settings_summary">Export settings to a file</string>
-    <string name="exported_to">Exported to %1$s</string>
     <string name="import_settings">Import Settings</string>
     <string name="import_settings_summary">Import settings from a file</string>
 </resources>

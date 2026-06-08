@@ -1,0 +1,28 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerApi.kt</file>
+  <line>562</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerApi java.lang.Object lyrics(java.lang.String id, kotlin.coroutines.Continuation&lt;? super kotlinx.serialization.json.JsonObject&gt; $completion)" />
+  <problem_class id="CanConvertToMultiDollarString" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Multi-dollar interpolation can be used in string literals</problem_class>
+  <description>An interpolation prefix can simplify the string</description>
+  <highlighted_element>\$</highlighted_element>
+  <language>kotlin</language>
+  <offset>56</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerApi.kt</file>
+  <line>562</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerApi java.lang.Object lyrics(java.lang.String id, kotlin.coroutines.Continuation&lt;? super kotlinx.serialization.json.JsonObject&gt; $completion)" />
+  <problem_class id="CanConvertToMultiDollarString" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Multi-dollar interpolation can be used in string literals</problem_class>
+  <description>An interpolation prefix can simplify the string</description>
+  <highlighted_element>\$</highlighted_element>
+  <language>kotlin</language>
+  <offset>96</offset>
+  <length>2</length>
+</problem>
+</problems>

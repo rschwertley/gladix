@@ -1,0 +1,67 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/fragment_player_queue.xml</file>
+  <line>7</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/fragment_player_queue.xml" />
+  <problem_class id="AndroidLintOverdraw" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Overdraw: Painting regions more than once</problem_class>
+  <hints />
+  <description>&lt;html&gt;Possible overdraw: Root element paints background &lt;code&gt;?echoBackground&lt;/code&gt; with a theme that also paints a background (inferred theme is &lt;code&gt;@style/Default&lt;/code&gt;)&lt;/html&gt;</description>
+  <highlighted_element>android:background=&quot;?echoBackground&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>36</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/item_selectable_header.xml</file>
+  <line>9</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/item_selectable_header.xml" />
+  <problem_class id="AndroidLintOverdraw" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Overdraw: Painting regions more than once</problem_class>
+  <hints />
+  <description>&lt;html&gt;Possible overdraw: Root element paints background &lt;code&gt;?selectableItemBackground&lt;/code&gt; with a theme that also paints a background (inferred theme is &lt;code&gt;@style/Default&lt;/code&gt;)&lt;/html&gt;</description>
+  <highlighted_element>android:background=&quot;?selectableItemBackground&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>46</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/preference.xml</file>
+  <line>4</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/preference.xml" />
+  <problem_class id="AndroidLintOverdraw" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Overdraw: Painting regions more than once</problem_class>
+  <hints />
+  <description>&lt;html&gt;Possible overdraw: Root element paints background &lt;code&gt;?selectableItemBackground&lt;/code&gt; with a theme that also paints a background (inferred theme is &lt;code&gt;@style/Default&lt;/code&gt;)&lt;/html&gt;</description>
+  <highlighted_element>android:background=&quot;?selectableItemBackground&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>46</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/preference_switch.xml</file>
+  <line>4</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/preference_switch.xml" />
+  <problem_class id="AndroidLintOverdraw" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Overdraw: Painting regions more than once</problem_class>
+  <hints />
+  <description>&lt;html&gt;Possible overdraw: Root element paints background &lt;code&gt;?selectableItemBackground&lt;/code&gt; with a theme that also paints a background (inferred theme is &lt;code&gt;@style/Default&lt;/code&gt;)&lt;/html&gt;</description>
+  <highlighted_element>android:background=&quot;?selectableItemBackground&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>46</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout-land-television/fragment_player_mini_tv.xml</file>
+  <line>10</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout-land-television/fragment_player_mini_tv.xml" />
+  <problem_class id="AndroidLintOverdraw" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Overdraw: Painting regions more than once</problem_class>
+  <hints />
+  <description>&lt;html&gt;Possible overdraw: Root element paints background &lt;code&gt;?attr/colorSurfaceContainer&lt;/code&gt; with a theme that also paints a background (inferred theme is &lt;code&gt;@style/Default&lt;/code&gt;)&lt;/html&gt;</description>
+  <highlighted_element>android:background=&quot;?attr/colorSurfaceContainer&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>48</length>
+</problem>
+</problems>

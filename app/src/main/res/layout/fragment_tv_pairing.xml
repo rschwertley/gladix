@@ -36,7 +36,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                android:text="Enter the 6-character code shown on your TV, or scan its QR code with your camera app."
+                android:text="@string/tv_pairing_instructions"
                 android:textAppearance="?attr/textAppearanceBodyMedium" />
 
             <com.google.android.material.textfield.TextInputLayout
@@ -45,7 +45,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                android:hint="Code (e.g. GX4821)">
+                android:hint="@string/tv_pairing_code_hint">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/codeInput"
@@ -73,7 +73,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:minHeight="56dp"
-                android:text="Confirm" />
+                android:text="@string/confirm" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancelButton"

@@ -1,0 +1,28 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ContextUtils.kt</file>
+  <line>44</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ContextUtils kotlinx.coroutines.Job collect(androidx.lifecycle.LifecycleOwner $this$collect, kotlinx.coroutines.flow.Flow&lt;? extends T&gt; flow, kotlin.jvm.functions.Function2&lt;? super T,? super kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt;,? extends java.lang.Object&gt; block)" />
+  <problem_class id="NestedLambdaShadowedImplicitParameter" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Nested lambda has shadowed implicit parameter</problem_class>
+  <description>Implicit parameter 'it' of enclosing lambda is shadowed</description>
+  <highlighted_element>it</highlighted_element>
+  <language>kotlin</language>
+  <offset>37</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ContextUtils.kt</file>
+  <line>44</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ContextUtils kotlinx.coroutines.Job collect(androidx.lifecycle.LifecycleOwner $this$collect, kotlinx.coroutines.flow.Flow&lt;? extends T&gt; flow, kotlin.jvm.functions.Function2&lt;? super T,? super kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt;,? extends java.lang.Object&gt; block)" />
+  <problem_class id="NestedLambdaShadowedImplicitParameter" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Nested lambda has shadowed implicit parameter</problem_class>
+  <description>Implicit parameter 'it' of enclosing lambda is shadowed</description>
+  <highlighted_element>it</highlighted_element>
+  <language>kotlin</language>
+  <offset>72</offset>
+  <length>2</length>
+</problem>
+</problems>

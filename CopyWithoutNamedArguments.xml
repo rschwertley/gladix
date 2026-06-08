@@ -1,0 +1,28 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/unified/UnifiedExtension.kt</file>
+  <line>238</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.unified</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion dev.brahmkshatriya.echo.common.models.Feed&lt;dev.brahmkshatriya.echo.common.models.Lyrics&gt; injectLyricsExtId(dev.brahmkshatriya.echo.common.models.Feed&lt;dev.brahmkshatriya.echo.common.models.Lyrics&gt; $this$injectLyricsExtId, dev.brahmkshatriya.echo.common.Extension&lt;?&gt; extension)" />
+  <problem_class id="CopyWithoutNamedArguments" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">'copy' method of data class is called without named arguments</problem_class>
+  <description>Parameter names should be specified explicitly for the 'copy()' method call</description>
+  <highlighted_element>copy( tabs = tabs.map { it.injectId(extension.id) }, ) { tab -&gt; val ...</highlighted_element>
+  <language>kotlin</language>
+  <offset>70</offset>
+  <length>514</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/cache/Cached.kt</file>
+  <line>256</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.cache</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.cache.Cached java.lang.Object getFeed(dev.brahmkshatriya.echo.di.App app, java.lang.String extensionId, java.lang.String feedId, kotlin.jvm.functions.Function2&lt;? super T,? super kotlin.coroutines.Continuation&lt;? super T&gt;,? extends java.lang.Object&gt; transform, kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.common.models.Feed&lt;T&gt;&gt; $completion)" />
+  <problem_class id="CopyWithoutNamedArguments" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">'copy' method of data class is called without named arguments</problem_class>
+  <description>Parameter names should be specified explicitly for the 'copy()' method call</description>
+  <highlighted_element>copy(page.data.map { transform(it) })</highlighted_element>
+  <language>kotlin</language>
+  <offset>21</offset>
+  <length>37</length>
+</problem>
+</problems>

@@ -1,0 +1,30 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/history/HistoryAdapter.kt</file>
+  <line>68</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.history</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/history/HistoryAdapter.kt" />
+  <problem_class id="AndroidLintSetTextI18n" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">TextView Internationalization</problem_class>
+  <hints />
+  <description>&lt;html&gt;Do not concatenate text displayed with &lt;code&gt;setText&lt;/code&gt;. Use resource string with placeholders.&lt;/html&gt;</description>
+  <highlighted_element>&quot;${listItem.entity.playedAt.toRelativeTime()} · ${listItem.extensionName}&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>32</offset>
+  <length>74</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/settings/TvPairingFragment.kt</file>
+  <line>74</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.settings</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/settings/TvPairingFragment.kt" />
+  <problem_class id="AndroidLintSetTextI18n" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">TextView Internationalization</problem_class>
+  <hints />
+  <description>&lt;html&gt;String literal in &lt;code&gt;setText&lt;/code&gt; can not be translated. Use Android resources instead.&lt;/html&gt;</description>
+  <highlighted_element>Done</highlighted_element>
+  <language>kotlin</language>
+  <offset>45</offset>
+  <length>4</length>
+</problem>
+</problems>

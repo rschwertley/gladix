@@ -1,0 +1,54 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/more/lyrics/LyricsViewModel.kt</file>
+  <line>90</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player.more.lyrics</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.player.more.lyrics.LyricsViewModel cachedFeed" />
+  <problem_class id="UnsafeCastWithReturn" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unsafe cast with 'return' should be replaced with the safe one</problem_class>
+  <description>Replace the unsafe cast with the safe one</description>
+  <highlighted_element>it[0] as Extension&lt;*&gt;? ?: return@combineTransformLatest</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>55</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/more/lyrics/LyricsViewModel.kt</file>
+  <line>91</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player.more.lyrics</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.player.more.lyrics.LyricsViewModel cachedFeed" />
+  <problem_class id="UnsafeCastWithReturn" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unsafe cast with 'return' should be replaced with the safe one</problem_class>
+  <description>Replace the unsafe cast with the safe one</description>
+  <highlighted_element>it[1] as MediaItem? ?: return@combineTransformLatest</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>52</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/more/lyrics/LyricsViewModel.kt</file>
+  <line>101</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player.more.lyrics</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.player.more.lyrics.LyricsViewModel loadedFeed" />
+  <problem_class id="UnsafeCastWithReturn" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unsafe cast with 'return' should be replaced with the safe one</problem_class>
+  <description>Replace the unsafe cast with the safe one</description>
+  <highlighted_element>it[0] as Extension&lt;*&gt;? ?: return@combineTransformLatest</highlighted_element>
+  <language>kotlin</language>
+  <offset>24</offset>
+  <length>55</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/more/lyrics/LyricsViewModel.kt</file>
+  <line>102</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player.more.lyrics</package>
+  <entry_point TYPE="field" FQNAME="dev.brahmkshatriya.echo.ui.player.more.lyrics.LyricsViewModel loadedFeed" />
+  <problem_class id="UnsafeCastWithReturn" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Unsafe cast with 'return' should be replaced with the safe one</problem_class>
+  <description>Replace the unsafe cast with the safe one</description>
+  <highlighted_element>it[1] as MediaItem? ?: return@combineTransformLatest</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>52</length>
+</problem>
+</problems>

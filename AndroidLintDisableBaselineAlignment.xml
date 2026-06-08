@@ -1,0 +1,28 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/fragment_player_tv.xml</file>
+  <line>18</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/fragment_player_tv.xml" />
+  <problem_class id="AndroidLintDisableBaselineAlignment" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Missing baselineAligned attribute</problem_class>
+  <hints />
+  <description>&lt;html&gt;Set &lt;code&gt;android:baselineAligned=&quot;false&quot;&lt;/code&gt; on this element for better performance&lt;/html&gt;</description>
+  <highlighted_element>LinearLayout</highlighted_element>
+  <language>XML</language>
+  <offset>5</offset>
+  <length>12</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/item_more_header.xml</file>
+  <line>9</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/item_more_header.xml" />
+  <problem_class id="AndroidLintDisableBaselineAlignment" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Missing baselineAligned attribute</problem_class>
+  <hints />
+  <description>&lt;html&gt;Set &lt;code&gt;android:baselineAligned=&quot;false&quot;&lt;/code&gt; on this element for better performance&lt;/html&gt;</description>
+  <highlighted_element>LinearLayout</highlighted_element>
+  <language>XML</language>
+  <offset>5</offset>
+  <length>12</length>
+</problem>
+</problems>

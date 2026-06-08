@@ -1,0 +1,280 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/common/build.gradle.kts</file>
+  <line>7</line>
+  <module>Echo.common</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/build.gradle.kts" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.vanniktech.maven.publish than 0.34.0 is available: 0.36.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;0.34.0&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>47</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/build.gradle.kts</file>
+  <line>7</line>
+  <module>Echo.common</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/build.gradle.kts" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.vanniktech.maven.publish than 0.34.0 is available: 0.36.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;0.34.0&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>47</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/build.gradle.kts</file>
+  <line>8</line>
+  <module>Echo.common</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/build.gradle.kts" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.dokka than 2.0.0 is available: 2.2.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;2.0.0&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/build.gradle.kts</file>
+  <line>8</line>
+  <module>Echo.common</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/common/build.gradle.kts" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.dokka than 2.0.0 is available: 2.2.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;2.0.0&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/build.gradle.kts</file>
+  <line>5</line>
+  <module>Echo.deezer-extension</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/deezer-extension/ext/build.gradle.kts" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.gradleup.shadow than 9.0.2 is available: 9.4.2&lt;/html&gt;</description>
+  <highlighted_element>&quot;9.0.2&quot;</highlighted_element>
+  <language>kotlin</language>
+  <offset>38</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>3</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.kotlin.android than 2.2.10 is available: 2.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;2.2.10&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>9</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>3</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.kotlin.multiplatform than 2.2.10 is available: 2.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;2.2.10&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>9</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>3</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.kotlin.plugin.serialization than 2.2.10 is available: 2.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;2.2.10&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>9</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>9</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.insert-koin:koin-android than 4.1.0 is available: 4.2.1&lt;/html&gt;</description>
+  <highlighted_element>&quot;4.1.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>14</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>9</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.insert-koin:koin-androidx-startup than 4.1.0 is available: 4.2.1&lt;/html&gt;</description>
+  <highlighted_element>&quot;4.1.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>14</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>9</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.insert-koin:koin-androidx-workmanager than 4.1.0 is available: 4.2.1&lt;/html&gt;</description>
+  <highlighted_element>&quot;4.1.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>14</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>11</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.coil-kt.coil3:coil than 3.3.0 is available: 3.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;3.3.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>7</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>11</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.coil-kt.coil3:coil-gif than 3.3.0 is available: 3.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;3.3.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>7</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>11</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.coil-kt.coil3:coil-network-okhttp than 3.3.0 is available: 3.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;3.3.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>7</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>11</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of io.coil-kt.coil3:coil-svg than 3.3.0 is available: 3.4.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;3.3.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>7</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>14</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.squareup.okhttp3:okhttp than 5.1.0 is available: 5.3.2&lt;/html&gt;</description>
+  <highlighted_element>&quot;5.1.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>61</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>15</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.9.0 is available: 1.11.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;1.9.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>102</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>16</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.10.2 is available: 1.11.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;1.10.2&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>96</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>25</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.google.protobuf:protobuf-java than 4.32.0 is available: 4.35.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;4.32.0&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>74</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>61</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.google.zxing:core than 3.5.3 is available: 3.5.4&lt;/html&gt;</description>
+  <highlighted_element>&quot;3.5.3&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>59</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>66</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintNewerVersionAvailable" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Newer Library Versions Available</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.telefonica:nestedscrollwebview than 0.1.6 is available: 0.2.0&lt;/html&gt;</description>
+  <highlighted_element>&quot;0.1.6&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>81</offset>
+  <length>7</length>
+</problem>
+</problems>

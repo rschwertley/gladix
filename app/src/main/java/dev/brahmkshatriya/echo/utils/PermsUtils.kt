@@ -110,7 +110,6 @@ object PermsUtils {
     private const val BATTERY_OPTIMIZATION_ASKED = "battery_optimization_asked"
 
     fun ComponentActivity.checkBatteryOptimization() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val pm = getSystemService(PowerManager::class.java)
         if (pm.isIgnoringBatteryOptimizations(packageName)) return
         val settings = getSettings()

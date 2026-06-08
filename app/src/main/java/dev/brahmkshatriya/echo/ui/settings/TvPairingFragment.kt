@@ -71,7 +71,7 @@ class TvPairingFragment : Fragment() {
             val ok = postPairing(code, arl)
             if (ok) {
                 showStatus("TV linked successfully!")
-                binding.cancelButton.text = "Done"
+                binding.cancelButton.text = getString(R.string.done)
             } else {
                 showStatus("Failed to link. Check the code and try again.")
                 binding.confirmButton.isEnabled = true

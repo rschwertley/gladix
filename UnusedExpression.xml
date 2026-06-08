@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerApi.kt</file>
+  <line>250</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerApi java.lang.Object callApi(java.lang.String method, kotlin.jvm.functions.Function1&lt;? super kotlinx.serialization.json.JsonObjectBuilder,kotlin.Unit&gt; paramsBuilder, java.lang.String gatewayInput, boolean np, kotlin.coroutines.Continuation&lt;? super kotlinx.serialization.json.JsonObject&gt; $completion)" />
+  <problem_class id="UnusedExpression" severity="WARNING" attribute_key="NOT_USED_ELEMENT_ATTRIBUTES">Unused expression</problem_class>
+  <description>Expression is unused</description>
+  <highlighted_element>null</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>4</length>
+</problem>
+</problems>

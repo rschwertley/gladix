@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt</file>
+  <line>121</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt" />
+  <problem_class id="AndroidLintBatteryLife" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Battery Life Issues</problem_class>
+  <hints />
+  <description>&lt;html&gt;Use of &lt;code&gt;REQUEST_IGNORE_BATTERY_OPTIMIZATIONS&lt;/code&gt; violates the Play Store Content Policy regarding acceptable use cases, as described in &lt;a href=&quot;https://developer.android.com/training/monitoring-device-state/doze-standby.html&quot;&gt;https://developer.android.com/training/monitoring-device-state/doze-standby.html&lt;/a&gt;&lt;/html&gt;</description>
+  <highlighted_element>ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>43</length>
+</problem>
+</problems>

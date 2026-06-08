@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/build.gradle.kts</file>
+  <line>24</line>
+  <module>Echo.app</module>
+  <package>&lt;default&gt;</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/build.gradle.kts" />
+  <problem_class id="AndroidLintOldTargetApi" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Target SDK attribute is not targeting latest version</problem_class>
+  <hints />
+  <description>&lt;html&gt;Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the &lt;code&gt;android.os.Build.VERSION_CODES&lt;/code&gt; javadoc for details.&lt;/html&gt;</description>
+  <highlighted_element>targetSdk = 36</highlighted_element>
+  <language>kotlin</language>
+  <offset>8</offset>
+  <length>14</length>
+</problem>
+</problems>

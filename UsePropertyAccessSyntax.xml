@@ -1,0 +1,158 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/PlayerService.kt</file>
+  <line>408</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.PlayerService.SafeNotificationProvider androidx.media3.session.MediaNotification.Provider.NotificationChannelInfo getNotificationChannelInfo()" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of getter method instead of property access syntax</description>
+  <highlighted_element>getNotificationChannelInfo</highlighted_element>
+  <language>kotlin</language>
+  <offset>61</offset>
+  <length>26</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>21</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="class" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setShuffleOrder</highlighted_element>
+  <language>kotlin</language>
+  <offset>15</offset>
+  <length>15</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/EffectsListener.kt</file>
+  <line>164</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.EffectsListener.Effects java.lang.Object applyBassBoost(int strength)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setEnabled</highlighted_element>
+  <language>kotlin</language>
+  <offset>27</offset>
+  <length>10</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/EffectsListener.kt</file>
+  <line>165</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.EffectsListener.Effects java.lang.Object applyBassBoost(int strength)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setEnabled</highlighted_element>
+  <language>kotlin</language>
+  <offset>22</offset>
+  <length>10</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/EffectsListener.kt</file>
+  <line>168</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.EffectsListener.Effects java.lang.Object applyBassBoost(int strength)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setEnabled</highlighted_element>
+  <language>kotlin</language>
+  <offset>18</offset>
+  <length>10</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/EffectsListener.kt</file>
+  <line>169</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.EffectsListener.Effects java.lang.Object applyBassBoost(int strength)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setEnabled</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>10</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/PlayerEventListener.kt</file>
+  <line>107</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.PlayerEventListener void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of getter method instead of property access syntax</description>
+  <highlighted_element>isEmpty</highlighted_element>
+  <language>kotlin</language>
+  <offset>22</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/listener/PlayerEventListener.kt</file>
+  <line>110</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback.listener</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.listener.PlayerEventListener void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setPlaylistMetadata</highlighted_element>
+  <language>kotlin</language>
+  <offset>19</offset>
+  <length>19</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInstallerBottomSheet.kt</file>
+  <line>52</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.extensions</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.extensions.ExtensionInstallerBottomSheet.Companion androidx.appcompat.app.AlertDialog createLinksDialog(android.content.Context $this$createLinksDialog, java.io.File file, java.util.List&lt;java.lang.String&gt; links)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setData</highlighted_element>
+  <language>kotlin</language>
+  <offset>23</offset>
+  <length>7</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ui/GradientDrawable.kt</file>
+  <line>35</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils.ui</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ui.GradientDrawable void applyNav(android.view.View view, boolean isRail, int bottom, boolean full)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setShape</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ui/GradientDrawable.kt</file>
+  <line>77</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils.ui</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ui.GradientDrawable android.graphics.drawable.Drawable createBlurred(android.view.View view, android.graphics.drawable.Drawable toBlur)" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setShape</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/ui/prefs/MaterialListPreference.kt</file>
+  <line>22</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils.ui.prefs</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.utils.ui.prefs.MaterialListPreference void onClick()" />
+  <problem_class id="UsePropertyAccessSyntax" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Accessor call that can be replaced with property access syntax</problem_class>
+  <description>Use of setter method instead of property access syntax</description>
+  <highlighted_element>setValueIndex</highlighted_element>
+  <language>kotlin</language>
+  <offset>20</offset>
+  <length>13</length>
+</problem>
+</problems>

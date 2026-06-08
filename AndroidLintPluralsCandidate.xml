@@ -1,0 +1,93 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>42</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;Items&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_items&quot;&gt;%1$d Items&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>42</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>282</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;hours&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_hours&quot;&gt;%1$d hours&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>42</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>287</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;minutes&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_minutes&quot;&gt;%1$d minutes&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>46</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>363</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;Songs&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_songs&quot;&gt;%1$d Songs&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>42</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>364</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;Episodes&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_episodes&quot;&gt;%1$d Episodes&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>48</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>365</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;Chapters&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_chapters&quot;&gt;%1$d Chapters&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>48</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/values/strings.xml</file>
+  <line>366</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/values/strings.xml" />
+  <problem_class id="AndroidLintPluralsCandidate" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Potential Plurals</problem_class>
+  <hints />
+  <description>&lt;html&gt;Formatting %d followed by words (&quot;Tracks&quot;): This should probably be a plural rather than a string&lt;/html&gt;</description>
+  <highlighted_element>&lt;string name=&quot;n_tracks&quot;&gt;%1$d Tracks&lt;/string&gt;</highlighted_element>
+  <language>XML</language>
+  <offset>4</offset>
+  <length>44</length>
+</problem>
+</problems>

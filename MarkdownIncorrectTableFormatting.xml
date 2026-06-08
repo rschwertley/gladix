@@ -1,0 +1,146 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun01-05.md</file>
+  <line>108</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun01-05.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Error | Device | Verdict | |---|---|---| | `HttpDataSourceException` — unexpected end of stream | ...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>1614</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun01.md</file>
+  <line>124</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun01.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Event | Version | Verdict | |---|---|---| | ANR — `MaterialToolbar` inflation | v837, Pixel 6 Pro,...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>926</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun06.md</file>
+  <line>150</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun06.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Issue | Build | Action | Reason | |-------|-------|--------|--------| | `SNG_CONTRIBUTORS` JsonLit...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>510</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun07.md</file>
+  <line>86</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-jun07.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Issue | Build | Action | Reason | |-------|-------|--------|--------| | `InvalidExtensionListExcep...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>1252</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may21.md</file>
+  <line>61</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may21.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| ExoPlayer state | Condition | → PlaybackStateCompat | |---|---|---| | `playerError != null` | any ...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>519</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may21.md</file>
+  <line>166</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may21.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Error | Device | Verdict | |---|---|---| | ANR: `ButtonsAdapter` layout inflation | Pixel 6 Pro, A...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>329</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may22b.md</file>
+  <line>155</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may22b.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Issue | Device | Build | Verdict | |---|---|---|---| | YTM / Piped 403 + YTM 400 (×2) | WayDroid |...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>1277</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may23.md</file>
+  <line>30</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may23.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Issue | Device | Verdict | |---|---|---| | ANR: `ButtonsAdapter` layout inflation | Onn 4K Pro, An...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>185</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may24.md</file>
+  <line>105</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may24.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>|handler.post|createPeriod|StreamableDataSource.open|RawDataSource.open|Mechanism| |-|-|-|-|-| |rele...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>212</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may24b.md</file>
+  <line>132</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may24b.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Error | Device | Build | Verdict | |---|---|---|---| | YTM `HttpRequestTimeoutException` | RMX3741...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>365</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may25.md</file>
+  <line>155</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may25.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Error | Device | Build | Verdict | |---|---|---|---| | MP3 hardware decoder CodecException 0xfffff...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>751</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may30.md</file>
+  <line>292</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/.claude/rules/gladix-session-summary-may30.md" />
+  <problem_class id="MarkdownIncorrectTableFormatting" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Incorrect table formatting</problem_class>
+  <description>Table is not correctly formatted</description>
+  <highlighted_element>| Error | Device | Build | Verdict | |---|---|---|---| | `UnknownHostException` on `www.deezer.com` ...</highlighted_element>
+  <language>Markdown</language>
+  <offset>0</offset>
+  <length>272</length>
+</problem>
+</problems>

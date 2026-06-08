@@ -1,0 +1,41 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>2</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintAndroidGradlePluginVersion" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Obsolete Android Gradle Plugin Version</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.android.application than 8.12.2 is available: 9.2.1. (There is also a newer version of 8.12.𝑥 available, if upgrading to 9.2.1 is difficult: 8.12.3)&lt;/html&gt;</description>
+  <highlighted_element>&quot;8.12.2&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>6</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/libs.versions.toml</file>
+  <line>2</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/libs.versions.toml" />
+  <problem_class id="AndroidLintAndroidGradlePluginVersion" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Obsolete Android Gradle Plugin Version</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of com.android.kotlin.multiplatform.library than 8.12.2 is available: 9.2.1. (There is also a newer version of 8.12.𝑥 available, if upgrading to 9.2.1 is difficult: 8.12.3)&lt;/html&gt;</description>
+  <highlighted_element>&quot;8.12.2&quot;</highlighted_element>
+  <language>TOML</language>
+  <offset>6</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties</file>
+  <line>4</line>
+  <module>Echo</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" />
+  <problem_class id="AndroidLintAndroidGradlePluginVersion" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Obsolete Android Gradle Plugin Version</problem_class>
+  <hints />
+  <description>&lt;html&gt;A newer version of Gradle than 9.0.0 is available: 9.5.1&lt;/html&gt;</description>
+  <highlighted_element>https\://services.gradle.org/distributions/gradle-9.0.0-bin.zip</highlighted_element>
+  <language>Properties</language>
+  <offset>16</offset>
+  <length>63</length>
+</problem>
+</problems>

@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/common/ExceptionUtils.kt</file>
+  <line>201</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.common</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.common.ExceptionUtils java.lang.Object getPasteLink(dev.brahmkshatriya.echo.ui.common.ExceptionUtils.Data data, kotlin.coroutines.Continuation&lt;? super error.NonExistentClass&gt; $completion)" />
+  <problem_class id="HasPlatformType" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">Function or property has platform type</problem_class>
+  <description>Declaration has type inferred from a platform call, which can lead to unchecked nullability issues. Specify type explicitly as nullable or non-nullable.</description>
+  <highlighted_element>getPasteLink</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>12</length>
+</problem>
+</problems>

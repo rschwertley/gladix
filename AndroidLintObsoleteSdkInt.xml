@@ -1,0 +1,16 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt</file>
+  <line>113</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.utils</package>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/utils/PermsUtils.kt" />
+  <problem_class id="AndroidLintObsoleteSdkInt" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Obsolete SDK_INT Version Check</problem_class>
+  <hints />
+  <description>&lt;html&gt;Unnecessary; &lt;code&gt;SDK_INT&lt;/code&gt; is never &amp;lt; 24&lt;/html&gt;</description>
+  <highlighted_element>Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.M</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>45</length>
+</problem>
+</problems>

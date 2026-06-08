@@ -1,0 +1,162 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/MediaStoreUtils.kt</file>
+  <line>43</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.MediaStoreUtils.Item java.lang.Long getId()" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="true" />
+  </hints>
+  <description>All implementations of this method are empty</description>
+  <highlighted_element>id</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>2</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/MediaStoreUtils.kt</file>
+  <line>44</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.MediaStoreUtils.Item java.lang.String getTitle()" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="true" />
+  </hints>
+  <description>All implementations of this method are empty</description>
+  <highlighted_element>title</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>5</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/MediaStoreUtils.kt</file>
+  <line>45</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.MediaStoreUtils.Item java.util.Set&lt;dev.brahmkshatriya.echo.common.models.Track&gt; getSongList()" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="true" />
+  </hints>
+  <description>All implementations of this method are empty</description>
+  <highlighted_element>songList</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>8</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/OfflineExtension.kt</file>
+  <line>481</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension java.lang.Object onEnterPlaylistEditor(dev.brahmkshatriya.echo.common.models.Playlist playlist, java.util.List&lt;dev.brahmkshatriya.echo.common.models.Track&gt; tracks, kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>onEnterPlaylistEditor</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>21</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/playback/ShufflePlayer.kt</file>
+  <line>49</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.playback</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.playback.ShufflePlayer void log(java.lang.String name)" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>log</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/PlayerTrackAdapter.kt</file>
+  <line>46</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.player.PlayerTrackAdapter.Listener void onLongClick()" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>onLongClick</highlighted_element>
+  <language>kotlin</language>
+  <offset>12</offset>
+  <length>11</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/ui/player/more/lyrics/LyricsFragment.kt</file>
+  <line>257</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.ui.player.more.lyrics</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.ui.player.more.lyrics.LyricsFragment void slideDown()" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>slideDown</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>9</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/clients/ExtensionClient.kt</file>
+  <line>26</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.clients.ExtensionClient java.lang.Object onExtensionSelected(kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>onExtensionSelected</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>19</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/common/src/commonMain/kotlin/dev/brahmkshatriya/echo/common/clients/ExtensionClient.kt</file>
+  <line>32</line>
+  <module>Echo.common.commonMain</module>
+  <package>dev.brahmkshatriya.echo.common.clients</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.common.clients.ExtensionClient java.lang.Object onInitialize(kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>onInitialize</highlighted_element>
+  <language>kotlin</language>
+  <offset>16</offset>
+  <length>12</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerExtension.kt</file>
+  <line>607</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerExtension java.lang.Object onTrackChanged(dev.brahmkshatriya.echo.common.models.TrackDetails details, kotlin.coroutines.Continuation&lt;? super kotlin.Unit&gt; $completion)" />
+  <problem_class id="EmptyMethod" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Empty method</problem_class>
+  <hints>
+    <hint value="false" />
+  </hints>
+  <description>The method is empty</description>
+  <highlighted_element>onTrackChanged</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>14</length>
+</problem>
+</problems>

@@ -1,0 +1,28 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/java/dev/brahmkshatriya/echo/extensions/builtin/offline/MediaStoreUtils.kt</file>
+  <line>500</line>
+  <module>Echo.app.main</module>
+  <package>dev.brahmkshatriya.echo.extensions.builtin.offline</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extensions.builtin.offline.MediaStoreUtils java.lang.Object getAllSongs(android.content.Context context, dev.brahmkshatriya.echo.common.settings.Settings settings, kotlin.coroutines.Continuation&lt;? super dev.brahmkshatriya.echo.extensions.builtin.offline.MediaStoreUtils.LibraryStoreClass&gt; $completion)" />
+  <problem_class id="MapToForEach" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">'map' call can be replaced with 'forEach'</problem_class>
+  <description>'map' call can be replaced with forEach</description>
+  <highlighted_element>map</highlighted_element>
+  <language>kotlin</language>
+  <offset>25</offset>
+  <length>3</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/deezer-extension/ext/src/main/java/dev/brahmkshatriya/echo/extension/DeezerExtension.kt</file>
+  <line>275</line>
+  <module>Echo.deezer-extension.main</module>
+  <package>dev.brahmkshatriya.echo.extension</package>
+  <entry_point TYPE="method" FQNAME="dev.brahmkshatriya.echo.extension.DeezerExtension java.lang.Object listEditablePlaylists(dev.brahmkshatriya.echo.common.models.Track track, kotlin.coroutines.Continuation&lt;? super java.util.List&lt;kotlin.Pair&lt;dev.brahmkshatriya.echo.common.models.Playlist,java.lang.Boolean&gt;&gt;&gt; $completion)" />
+  <problem_class id="MapToForEach" severity="WEAK WARNING" attribute_key="INFO_ATTRIBUTES">'map' call can be replaced with 'forEach'</problem_class>
+  <description>'map' call can be replaced with forEach</description>
+  <highlighted_element>map</highlighted_element>
+  <language>kotlin</language>
+  <offset>18</offset>
+  <length>3</length>
+</problem>
+</problems>

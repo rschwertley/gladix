@@ -1,0 +1,15 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout-land-television/activity_main.xml</file>
+  <line>25</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout-land-television/activity_main.xml" />
+  <problem_class id="AndroidLintInconsistentLayout" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">Inconsistent Layouts</problem_class>
+  <hints />
+  <description>&lt;html&gt;The id &quot;navRailContainer&quot; in layout &quot;activity_main&quot; is missing from the following layout configurations: layout, layout-land (present in layout-land-television)&lt;/html&gt;</description>
+  <highlighted_element>android:id=&quot;@+id/navRailContainer&quot;</highlighted_element>
+  <language>XML</language>
+  <offset>8</offset>
+  <length>34</length>
+</problem>
+</problems>

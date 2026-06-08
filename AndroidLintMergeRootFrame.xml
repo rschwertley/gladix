@@ -1,0 +1,41 @@
+<problems>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/item_player_collapsed.xml</file>
+  <line>2</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/item_player_collapsed.xml" />
+  <problem_class id="AndroidLintMergeRootFrame" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">FrameLayout can be replaced with &lt;merge&gt; tag</problem_class>
+  <hints />
+  <description>&lt;html&gt;This &lt;code&gt;&amp;lt;FrameLayout&gt;&lt;/code&gt; can be replaced with a &lt;code&gt;&amp;lt;merge&gt;&lt;/code&gt; tag&lt;/html&gt;</description>
+  <highlighted_element>&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot; xmlns:tools=&quot;http://sche...</highlighted_element>
+  <language>XML</language>
+  <offset>0</offset>
+  <length>1965</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/item_shelf_media_cover.xml</file>
+  <line>1</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/item_shelf_media_cover.xml" />
+  <problem_class id="AndroidLintMergeRootFrame" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">FrameLayout can be replaced with &lt;merge&gt; tag</problem_class>
+  <hints />
+  <description>&lt;html&gt;This &lt;code&gt;&amp;lt;FrameLayout&gt;&lt;/code&gt; can be replaced with a &lt;code&gt;&amp;lt;merge&gt;&lt;/code&gt; tag&lt;/html&gt;</description>
+  <highlighted_element>&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot; xmlns:app=&quot;http://schema...</highlighted_element>
+  <language>XML</language>
+  <offset>0</offset>
+  <length>2179</length>
+</problem>
+<problem>
+  <file>file://$PROJECT_DIR$/app/src/main/res/layout/item_shelf_media_cover_big.xml</file>
+  <line>1</line>
+  <module>Echo.app.main</module>
+  <entry_point TYPE="file" FQNAME="file://$PROJECT_DIR$/app/src/main/res/layout/item_shelf_media_cover_big.xml" />
+  <problem_class id="AndroidLintMergeRootFrame" severity="WARNING" attribute_key="WARNING_ATTRIBUTES">FrameLayout can be replaced with &lt;merge&gt; tag</problem_class>
+  <hints />
+  <description>&lt;html&gt;This &lt;code&gt;&amp;lt;FrameLayout&gt;&lt;/code&gt; can be replaced with a &lt;code&gt;&amp;lt;merge&gt;&lt;/code&gt; tag&lt;/html&gt;</description>
+  <highlighted_element>&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot; xmlns:app=&quot;http://schema...</highlighted_element>
+  <language>XML</language>
+  <offset>0</offset>
+  <length>2151</length>
+</problem>
+</problems>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+        dev.brahmkshatriya.echo.link.Opener is defined in the host app, not the
+        extension module. The extension manifest declares it solely to register
+        Deezer deep-link intent filters; the host app provides the class at
+        runtime. The class will never exist in the extension classpath by design.
+    -->
+    <issue id="MissingClass">
+        <ignore regexp="dev\.brahmkshatriya\.echo\.link\.Opener" />
+    </issue>
+
+    <!--
+        android:windowBackground is a framework attribute available since API 1.
+        Lint cannot resolve it within this module due to the cross-module
+        boundary; it is a valid framework resource present at runtime.
+    -->
+    <issue id="UnknownAttribute">
+        <ignore path="src/main/res/values/styles.xml" />
+    </issue>
+</lint>
