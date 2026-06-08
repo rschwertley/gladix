@@ -495,11 +495,19 @@ class PlayerCallback(
         }
     }
 
-    @Suppress("OVERRIDE_DEPRECATION")
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
+        isForPlayback: Boolean,
     ) = scope.futureCatching {
+        if (!isForPlayback) {
+            // System UI metadata-only request (e.g. lock-screen notification after reboot).
+            // Media3 will not call play() — return a single stub item, no queue restore needed.
+            val (items, index, _) = context.recoverPlaylist(app, downloadFlow.value)
+            val item = items.getOrNull(index) ?: items.firstOrNull()
+                ?: throw UnsupportedOperationException("No saved queue")
+            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0)
+        }
         if (!userQueueSet.compareAndSet(false, true)) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet already claimed")
             throw UnsupportedOperationException("Queue already set")
