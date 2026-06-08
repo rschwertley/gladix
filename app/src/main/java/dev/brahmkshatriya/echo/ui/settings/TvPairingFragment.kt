@@ -8,6 +8,7 @@ import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.databinding.FragmentTvPairingBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
