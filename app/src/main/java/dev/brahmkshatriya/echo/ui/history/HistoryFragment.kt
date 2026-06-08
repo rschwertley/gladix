@@ -44,8 +44,15 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         applyInsets(binding.recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)
         }
+
+        val titleAdapter = HistoryTitleAdapter(
+            onClearClick = { viewModel.clearHistory() },
+            onSortClick = { HistorySortBottomSheet().show(childFragmentManager, "history_sort") },
+            onSearchChanged = { viewModel.searchQuery.value = it },
+        )
+
         binding.recyclerView.adapter =
-            ConcatAdapter(HeaderAdapter(this), HistoryTitleAdapter { viewModel.clearHistory() }, adapter)
+            ConcatAdapter(HeaderAdapter(this), titleAdapter, adapter)
         observe(viewModel.history) { adapter.submitList(it) }
         binding.swipeRefresh.run {
             setOnRefreshListener { viewModel.refresh() }

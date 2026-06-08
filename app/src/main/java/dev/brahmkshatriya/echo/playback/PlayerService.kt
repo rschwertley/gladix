@@ -123,9 +123,17 @@ class PlayerService : MediaLibraryService() {
 
     private val audioEffectsProcessor by lazy {
         AudioEffectsProcessor().apply {
+            // One-time migration: force normalization off for all existing users.
+            // Safe to re-enable by clearing normalization_force_disabled_v1 from prefs.
+            if (!app.settings.getBoolean("normalization_force_disabled_v1", false)) {
+                app.settings.edit {
+                    putBoolean(LOUDNESS_NORMALIZATION, false)
+                    putBoolean("normalization_force_disabled_v1", true)
+                }
+            }
             crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 5) * 1000
-            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, true)
+            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
         }
     }
 
@@ -139,7 +147,7 @@ class PlayerService : MediaLibraryService() {
                     .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
                     .build()
             LOUDNESS_NORMALIZATION -> {
-                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, true)
+                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
             }
             CROSSFADE_ENABLED -> {

@@ -114,13 +114,13 @@ open class MainActivity : AppCompatActivity() {
         setupIntents(uiViewModel)
         val isFromGearhead = try {
             referrer?.host == "com.google.android.projection.gearhead"
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
         if (savedInstanceState == null && isFromGearhead) {
             lifecycleScope.launch {
                 val hasTracks = withContext(Dispatchers.IO) { !recoverTracks().isNullOrEmpty() }
-                if (hasTracks && playerViewModel.playWhenReady.value == true) {
+                if (hasTracks && playerViewModel.playWhenReady.value) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                     uiViewModel.changeMoreState(STATE_COLLAPSED)
                 }
@@ -175,7 +175,7 @@ open class MainActivity : AppCompatActivity() {
             miniPlayer.isVisible = showMini
             uiViewModel.tvMiniPlayerVisible.value = showMini
             binding.navHostFragment.nextFocusDownId =
-                if (showMini) R.id.tvMiniPlayer else android.view.View.NO_ID
+                if (showMini) R.id.tvMiniPlayer else View.NO_ID
         }
 
         var hadTrack = false
@@ -183,7 +183,7 @@ open class MainActivity : AppCompatActivity() {
         observe(playerState.current) { current ->
             val hasTrack = current != null
             if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
-                if (playerViewModel.playWhenReady.value == true) {
+                if (playerViewModel.playWhenReady.value) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
                 }
             }

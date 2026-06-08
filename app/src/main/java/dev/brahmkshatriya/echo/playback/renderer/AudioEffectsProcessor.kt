@@ -33,12 +33,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // LUT infrastructure
     private var activeLut: ShortArray = generateDualStageLUT(0f)
     private val pendingLut = AtomicReference<Pair<String, ShortArray>?>(null)
-    private val currentTrackToken = AtomicReference<String>("")
+    private val currentTrackToken = AtomicReference("")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private fun generateDualStageLUT(gainDb: Float, isNormalizationEnabled: Boolean = true): ShortArray {
-        val clampedGain = gainDb
-        val gainMultiplier = 10.0.pow(clampedGain / 20.0)
+        val gainMultiplier = 10.0.pow(gainDb / 20.0)
         val lut = ShortArray(65536)
         for (i in 0..65535) {
             val rawSample = (i - 32768) / 32768.0

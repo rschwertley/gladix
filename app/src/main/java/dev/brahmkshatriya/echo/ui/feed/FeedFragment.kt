@@ -93,7 +93,7 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         }
     }
 
-    class Actual() : Fragment(R.layout.fragment_recycler_with_refresh) {
+    class Actual : Fragment(R.layout.fragment_recycler_with_refresh) {
         private val feedData by lazy {
             val vm by requireParentFragment().viewModel<FeedViewModel>()
             vm.feedDataMap.values.first()

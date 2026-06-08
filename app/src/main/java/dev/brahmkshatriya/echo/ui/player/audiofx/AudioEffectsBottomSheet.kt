@@ -20,7 +20,6 @@ import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.LOUDNESS_NORMALIZATION
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.BASS_BOOST
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CHANGE_PITCH
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
@@ -120,13 +119,7 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             }
             equalizer.setOnClickListener { onEqualizerClicked() }
 
-            loudnessNormalizationSwitch.isChecked = appSettings.getBoolean(LOUDNESS_NORMALIZATION, true)
-            loudnessNormalization.setOnClickListener {
-                loudnessNormalizationSwitch.isChecked = !loudnessNormalizationSwitch.isChecked
-            }
-            loudnessNormalizationSwitch.setOnCheckedChangeListener { _, isChecked ->
-                appSettings.edit { putBoolean(LOUDNESS_NORMALIZATION, isChecked) }
-            }
+            loudnessNormalization.isVisible = false
 
             crossfadeSwitch.isChecked = appSettings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationSlider.isEnabled = crossfadeSwitch.isChecked

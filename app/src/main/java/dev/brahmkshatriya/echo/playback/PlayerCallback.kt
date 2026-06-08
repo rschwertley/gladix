@@ -12,6 +12,7 @@ import androidx.annotation.OptIn
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
 import androidx.core.os.bundleOf
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Rating
 import androidx.media3.common.ThumbRating
@@ -390,7 +391,7 @@ class PlayerCallback(
             val currentIndex = player.currentMediaItemIndex
             val itemCount = player.mediaItemCount
             // Abort if the timeline changed while tracks were loading on IO
-            if (currentIndex < 0 || currentIndex >= itemCount) return@withContext
+            if (currentIndex !in 0..<itemCount) return@withContext
             if (before.isNotEmpty()) player.addMediaItems(0, before)
             if (after.isNotEmpty()) player.addMediaItems(currentIndex + before.size + 1, after)
         }
@@ -517,12 +518,22 @@ class PlayerCallback(
             if (items.isEmpty()) {
                 throw UnsupportedOperationException("No saved queue")
             }
-            MediaItemsWithStartPosition(items, index, pos)
+            MediaItemsWithStartPosition(items.map { withUnloaded(it) }, index, pos)
         } catch (e: Exception) {
             userQueueSet.set(false)
             if (e !is UnsupportedOperationException) throwableFlow.emit(e)
             throw e
         }
+    }
+
+    private fun withUnloaded(item: MediaItem): MediaItem {
+        val bundle = Bundle().apply {
+            putAll(item.mediaMetadata.extras!!)
+            putBoolean("loaded", false)
+        }
+        return item.buildUpon()
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(bundle).build())
+            .build()
     }
 
     @OptIn(UnstableApi::class)

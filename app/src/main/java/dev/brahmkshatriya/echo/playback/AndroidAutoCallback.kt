@@ -8,6 +8,8 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.CallSuper
 import androidx.annotation.OptIn
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -59,10 +61,8 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -100,7 +100,7 @@ abstract class AndroidAutoCallback(
     @Volatile private var lastSearchQuery = ""
     @Volatile protected var lastBrowsedExtId: String? = null
     private val searchResults = boundedMap<Pair<String, String>, List<MediaItem>>()
-    private val searchJobs = boundedMap<String, Deferred<List<MediaItem>>>()
+    private val searchJobs = boundedMap<String, Job>()
     private val searchMutex = Mutex()
     private var extensionWatcherJob: Job? = null
     private var pendingSearchJob: Job? = null
@@ -173,7 +173,7 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         query: String,
         params: MediaLibraryService.LibraryParams?
-    ) = Futures.immediateFuture(LibraryResult.ofVoid()).also {
+    ): ListenableFuture<LibraryResult<Void>> = Futures.immediateFuture(LibraryResult.ofVoid()).also {
         val extras = params?.extras
         val effectiveQuery = listOfNotNull(
             extras?.getString(MediaStore.EXTRA_MEDIA_TITLE),
@@ -194,9 +194,12 @@ abstract class AndroidAutoCallback(
             Log.d("GladixAuto", "onSearch: joining existing in-flight search for query='$query'")
             scope.launch {
                 runCatching {
-                    val tracks = existing.await()
-                    Log.d("GladixAuto", "onSearch: notifySearchResultChanged (joined) query='$query' count=${tracks.size}")
-                    session.notifySearchResultChanged(browser, query, tracks.size, params)
+                    existing.join()
+                    val tracks = searchResults[cacheKey]
+                    if (tracks != null) {
+                        Log.d("GladixAuto", "onSearch: notifySearchResultChanged (joined) query='$query' count=${tracks.size}")
+                        session.notifySearchResultChanged(browser, query, tracks.size, params)
+                    }
                 }.onFailure {
                     if (it is CancellationException) throw it
                     throwableFlow?.emit(it)
@@ -208,20 +211,20 @@ abstract class AndroidAutoCallback(
         pendingSearchJob?.cancel()
         pendingSearchJob = scope.launch {
             delay(300)
-            val deferred = async { performSearch(effectiveQuery) }
-            searchJobs[query] = deferred
-            runCatching {
-                val tracks = deferred.await()
-                searchResults[cacheKey] = tracks
-                searchJobs.remove(query)
-                Log.d("GladixAuto", "onSearch: notifySearchResultChanged query='$query' count=${tracks.size}")
-                session.notifySearchResultChanged(browser, query, tracks.size, params)
-            }.onFailure {
-                searchJobs.remove(query)
-                if (it is CancellationException) throw it
-                throwableFlow?.emit(it)
-                it.printStackTrace()
-            }
+            searchJobs[query] = coroutineContext[Job]!!
+            runCatching { performSearch(effectiveQuery) }
+                .onSuccess { tracks ->
+                    searchResults[cacheKey] = tracks
+                    searchJobs.remove(query)
+                    Log.d("GladixAuto", "onSearch: notifySearchResultChanged query='$query' count=${tracks.size}")
+                    session.notifySearchResultChanged(browser, query, tracks.size, params)
+                }
+                .onFailure {
+                    searchJobs.remove(query)
+                    if (it is CancellationException) throw it
+                    throwableFlow?.emit(it)
+                    it.printStackTrace()
+                }
         }
     }
 
@@ -325,11 +328,11 @@ abstract class AndroidAutoCallback(
             }
 
             HOME -> extension.getFeed<HomeFeedClient>(
-                context, parentId, HOME, page, throwableFlow
+                context, parentId, page, throwableFlow
             ) { loadHomeFeed() }
 
             LIBRARY -> extension.getFeed<LibraryFeedClient>(
-                context, parentId, LIBRARY, page, throwableFlow
+                context, parentId, page, throwableFlow
             ) { loadLibraryFeed() }
 
             FEED -> extension.getList<ExtensionClient>(context, throwableFlow) {
@@ -341,7 +344,7 @@ abstract class AndroidAutoCallback(
             SEARCH -> {
                 val query = parentId.substringAfter("$ROOT/$extId/$SEARCH/", "")
                 extension.getFeed<SearchFeedClient>(
-                    context, parentId, SEARCH, page, throwableFlow
+                    context, parentId, page, throwableFlow
                 ) { loadSearchFeed(query) }
             }
 
@@ -351,7 +354,7 @@ abstract class AndroidAutoCallback(
                     it.id.contains("playlist", ignoreCase = true) ||
                     it.title.contains("playlist", ignoreCase = true)
                 } ?: libFeed.notSortTabs.firstOrNull()
-                Feed<Shelf>(listOf()) { libFeed.getPagedData(playlistTab) }
+                Feed(listOf()) { libFeed.getPagedData(playlistTab) }
                     .toMediaItems(parentId, context, extId, page)
             }
 
@@ -416,8 +419,7 @@ abstract class AndroidAutoCallback(
         return scope.future {
             val effectiveQuery = lastSearchQuery.ifEmpty { query }
             val allTracks = searchResults[cacheKey]
-                ?: runCatching { searchJobs[query]?.await() }.getOrNull()
-                    ?.also { searchResults[cacheKey] = it }
+                ?: run { runCatching { searchJobs[query]?.join() }.getOrNull(); searchResults[cacheKey] }
                 ?: searchMutex.withLock {
                     searchResults[cacheKey] ?: performSearch(effectiveQuery).also {
                         searchResults[cacheKey] = it
@@ -469,14 +471,17 @@ abstract class AndroidAutoCallback(
                 }
             }
         }.getOrElse {
-            if (it is TimeoutCancellationException) {
-                Log.d("GladixAuto", "performSearch: timeout for query='$query' ext=${ext.id}")
-                emptyList()
-            } else if (it is CancellationException) throw it
-            else {
-                throwableFlow?.emit(it)
-                Log.d("GladixAuto", "performSearch: error for query='$query' ext=${ext.id}: ${it::class.simpleName}: ${it.message}")
-                emptyList()
+            when (it) {
+                is TimeoutCancellationException -> {
+                    Log.d("GladixAuto", "performSearch: timeout for query='$query' ext=${ext.id}")
+                    emptyList()
+                }
+                is CancellationException -> throw it
+                else -> {
+                    throwableFlow?.emit(it)
+                    Log.d("GladixAuto", "performSearch: error for query='$query' ext=${ext.id}: ${it::class.simpleName}: ${it.message}")
+                    emptyList()
+                }
             }
         }
     }
@@ -635,9 +640,9 @@ abstract class AndroidAutoCallback(
                     } ?: return@runCatching null
                     val scale = minOf(1f, maxPx.toFloat() / maxOf(src.width, src.height))
                     val scaled = if (scale < 1f) {
-                        Bitmap.createScaledBitmap(
-                            src, (src.width * scale).toInt().coerceAtLeast(1),
-                            (src.height * scale).toInt().coerceAtLeast(1), true
+                        src.scale(
+                            (src.width * scale).toInt().coerceAtLeast(1),
+                            (src.height * scale).toInt().coerceAtLeast(1)
                         ).also { src.recycle() }
                     } else src
                     ByteArrayOutputStream().use { out ->
@@ -653,7 +658,7 @@ abstract class AndroidAutoCallback(
                 runCatching {
                     val size = 96
                     val padding = 8
-                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                    val bitmap = createBitmap(size, size)
                     val canvas = Canvas(bitmap)
                     val drawable = AppCompatResources.getDrawable(context, resId) ?: return@runCatching null
                     drawable.setBounds(padding, padding, size - padding, size - padding)
@@ -735,7 +740,6 @@ abstract class AndroidAutoCallback(
             LibraryResult.ofError<ImmutableList<MediaItem>>(SessionError.ERROR_NOT_SUPPORTED)
 
         @OptIn(UnstableApi::class)
-        val errorIo = LibraryResult.ofError<ImmutableList<MediaItem>>(SessionError.ERROR_IO)
 
         suspend inline fun <reified C> Extension<*>.getList(
             context: Context,
@@ -868,7 +872,6 @@ abstract class AndroidAutoCallback(
         private suspend inline fun <reified T> Extension<*>.getFeed(
             context: Context,
             parentId: String,
-            page: String,
             pageNumber: Int,
             throwableFlow: MutableSharedFlow<Throwable>? = null,
             getFeed: T.() -> Feed<Shelf>
