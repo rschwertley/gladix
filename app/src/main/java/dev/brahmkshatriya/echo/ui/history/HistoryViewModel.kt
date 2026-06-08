@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.history
 
 import android.content.Context
 import androidx.annotation.StringRes
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.R
@@ -9,7 +10,6 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
-import dev.brahmkshatriya.echo.ui.history.HistoryListItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,7 +40,7 @@ class HistoryViewModel(
         val save: Boolean = false,
     )
 
-    private val prefs = app.getSharedPreferences("history_sort", Context.MODE_PRIVATE)
+    private val prefs = app.context.getSharedPreferences("history_sort", Context.MODE_PRIVATE)
 
     private fun loadSortState(): SortState {
         if (!prefs.getBoolean("saved", false)) return SortState()
@@ -58,25 +58,31 @@ class HistoryViewModel(
     fun applySortState(state: SortState) {
         sortState.value = state
         if (state.save) {
-            prefs.edit()
-                .putBoolean("saved", true)
-                .putString("sort_option", state.sortOption.name)
-                .putBoolean("reversed", state.reversed)
-                .apply()
+            prefs.edit {
+                putBoolean("saved", true)
+                putString("sort_option", state.sortOption.name)
+                putBoolean("reversed", state.reversed)
+            }
         } else {
-            prefs.edit().clear().apply()
+            prefs.edit { clear() }
         }
     }
 
-    val history = combine(
+    private val listWithExtNames = combine(
         repository.getHistory(),
+        extensionLoader.music,
+    ) { list, extensions ->
+        list to extensions.associate { it.id to it.metadata.name }
+    }
+
+    val history = combine(
+        listWithExtNames,
         sortState,
         extensionFilter,
         searchQuery,
-        extensionLoader.music,
-    ) { list, sort, extFilter, query, extensions ->
-        val extensionNames = extensions.associate { it.id to it.metadata.name }
-        fun extName(id: String) = extensionNames[id] ?: id
+    ) { pair, sort, extFilter, query ->
+        val (list, extNames) = pair
+        fun extName(id: String) = extNames[id] ?: id
 
         var items = list
 
@@ -89,7 +95,7 @@ class HistoryViewModel(
             items = items.filter { entity ->
                 val track = entity.track
                 track?.title?.lowercase()?.contains(q) == true ||
-                    track?.artists?.any { a -> a.name?.lowercase()?.contains(q) == true } == true
+                    track?.artists?.any { a -> a.name.lowercase().contains(q) } == true
             }
         }
 
