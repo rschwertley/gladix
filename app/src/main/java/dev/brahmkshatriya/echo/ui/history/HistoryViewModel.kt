@@ -28,7 +28,7 @@ class HistoryViewModel(
     val extensionLoader: ExtensionLoader,
 ) : ViewModel() {
 
-    enum class SortOption(@StringRes val title: Int) {
+    enum class SortOption(@param:StringRes val title: Int) {
         ByDate(R.string.sort_date),
         ByTitle(R.string.sort_title),
         ByArtist(R.string.artists),
