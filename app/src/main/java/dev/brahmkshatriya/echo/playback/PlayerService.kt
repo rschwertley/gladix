@@ -126,10 +126,10 @@ class PlayerService : MediaLibraryService() {
             // One-time migration: force normalization off for all existing users.
             // Safe to re-enable by clearing normalization_force_disabled_v1 from prefs.
             if (!app.settings.getBoolean("normalization_force_disabled_v1", false)) {
-                app.settings.edit {
-                    putBoolean(LOUDNESS_NORMALIZATION, false)
-                    putBoolean("normalization_force_disabled_v1", true)
-                }
+                app.settings.edit()
+                    .putBoolean(LOUDNESS_NORMALIZATION, false)
+                    .putBoolean("normalization_force_disabled_v1", true)
+                    .apply()
             }
             crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 5) * 1000
