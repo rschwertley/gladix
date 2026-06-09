@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -335,13 +333,10 @@ class PlayerCallback(
                     list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
                 else 0
                 player.with {
-                    setMediaItems(mediaItems)
+                    setMediaItems(mediaItems, startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
                     shuffleModeEnabled = shuffle
                     if (playbackState == Player.STATE_IDLE) prepare()
-                    Handler(Looper.getMainLooper()).post {
-                        seekTo(startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
-                        play()
-                    }
+                    play()
                 }
             }
         }
@@ -503,10 +498,10 @@ class PlayerCallback(
         if (!isForPlayback) {
             // System UI metadata-only request (e.g. lock-screen notification after reboot).
             // Media3 will not call play() — return a single stub item, no queue restore needed.
-            val (items, index, _) = context.recoverPlaylist(app, downloadFlow.value)
+            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
             val item = items.getOrNull(index) ?: items.firstOrNull()
                 ?: throw UnsupportedOperationException("No saved queue")
-            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0)
+            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, pos)
         }
         if (!userQueueSet.compareAndSet(false, true)) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet already claimed")

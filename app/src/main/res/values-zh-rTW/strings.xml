@@ -184,7 +184,6 @@
     <string name="nothing_to_download_in_x">%1$s 中無可下載項目</string>
     <string name="download_started">下載已開始</string>
     <string name="okay">好的</string>
-    <string name="video">視頻</string>
     <string name="write_storage">寫入存儲</string>
     <string name="remove">刪除</string>
     <string name="x_radio">%1$s 無線電</string>
@@ -228,7 +227,6 @@
     <string name="background_gradient_summary">背景中的漸變顏色色調，具體取決於上下文</string>
     <string name="all">都</string>
     <string name="more_brain_capacity">更多的腦容量</string>
-    <string name="x_plays">%1$s 次播放</string>
     <string name="x_followers">%1$s 個粉絲</string>
     <string name="shuffling_x">洗牌 %1$s</string>
     <string name="copying_the_error">複製錯誤</string>
@@ -244,8 +242,6 @@
     <string name="adding_x">添加 %1$s</string>
     <string name="moving_x">移動 %1$s</string>
     <string name="merging_x">合併 %1$s</string>
-    <string name="apply_player_color_to_app">將播放機顏色應用於整個應用程式</string>
-    <string name="apply_player_color_to_app_summary">延遲警報！！</string>
     <string name="scroll_animations_summary">滾動時的動畫</string>
     <string name="audio_permission_summary">訪問本地音樂庫</string>
     <string name="error_x">錯誤： %1$s</string>
@@ -287,7 +283,6 @@
     <string name="delete_download">刪除下載</string>
     <string name="removed_x_from_downloads">已從下載中刪除 %1$s</string>
     <string name="download_complete">下載完整</string>
-    <string name="app_widget_description">在您的主螢幕上回聲！</string>
     <string name="feed">回饋</string>
     <string name="item">項目</string>
     <plurals name="number_items">
@@ -354,9 +349,6 @@
     <string name="show">顯示</string>
     <string name="book">書籍</string>
     <string name="song">歌曲</string>
-    <string name="podcast">播客</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">曲風：%1$s</string>
     <string name="disc_number_n">碟號：%1$d</string>
     <string name="album_order_n">專輯排序號：%1$d</string>
     <string name="confirmation">確認</string>

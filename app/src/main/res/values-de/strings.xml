@@ -6,7 +6,6 @@
     <string name="x_permission_required">%1$s Berechtigung erforderlich</string>
     <string name="x_was_not_granted">%1$s wurde nicht gewährt</string>
     <string name="audio">Audio</string>
-    <string name="video">Video</string>
     <string name="read_storage">Speicher lesen</string>
     <string name="write_storage_permission_summary">So erstellst und bearbeitst Du lokale Wiedergabelisten</string>
     <string name="notifications">Benachrichtigungen</string>
@@ -239,7 +238,6 @@
     <string name="more_brain_capacity">Mehr Gehirnkapazität</string>
     <string name="sort">Sortieren</string>
     <string name="explicit">Explizit</string>
-    <string name="x_plays">%1$s Spiele</string>
     <string name="x_followers">%1$s Follower</string>
     <string name="shuffling_x">Mischen von %1$s</string>
     <string name="copying_the_error">Kopieren des Fehlers</string>
@@ -274,8 +272,6 @@
     <string name="download_started">Download gestartet</string>
     <string name="merging_x">Zusammenführen von %1$s</string>
     <string name="tagging_x">Markieren von %1$s</string>
-    <string name="apply_player_color_to_app">Anwenden der Playerfarbe auf die gesamte App</string>
-    <string name="apply_player_color_to_app_summary">VERZÖGERUNGS-WARNUNG!!</string>
     <string name="sort_and_filter">Sortieren und Filtern</string>
     <string name="delete_playlist">Wiedergabeliste löschen</string>
     <string name="subtitle_selection">Auswahl der Untertitel</string>
@@ -289,7 +285,6 @@
     <string name="delete_download">Download löschen</string>
     <string name="removed_x_from_downloads">%1$s aus Downloads entfernt</string>
     <string name="download_complete">Download Komplett</string>
-    <string name="app_widget_description">Echo auf Ihrem Startbildschirm!</string>
     <string name="item">Eintrag</string>
     <plurals name="number_items">
         <item quantity="one">%1$d Eintrag</item>
@@ -369,10 +364,7 @@
     <string name="ep">EP</string>
     <string name="lp">LP</string>
     <string name="song">Song</string>
-    <string name="podcast">Podcast</string>
     <string name="feed">Feed</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Genres: %1$s</string>
     <string name="colors">Farben</string>
     <string name="scroll_bar">Bildlaufleiste</string>
     <string name="scroll_bar_summary">Bildlaufleiste an der Seite für schnelleren Zugriff (kann fehlerhaft sein)</string>

@@ -199,7 +199,6 @@
     <string name="about">Ke Baare Mein</string>
     <string name="playlist">Playlist</string>
     <string name="album">Album</string>
-    <string name="video">Video</string>
     <string name="delete_playlist_confirmation">Kya Aap Sachemuch %1$s Delete Karna Chahte Hain?</string>
     <string name="confirm">Confirm Karo</string>
     <string name="hide">Chhupayein</string>
@@ -290,7 +289,6 @@
     <string name="more_brain_capacity_summary">Ise Enable Karne Se Audio Lag Fix Ho Sakta Hai Aur Battery Zyada Use Hogi (Audio Offloading Band Hoga).</string>
     <string name="tracks">Tracks</string>
     <string name="explicit">Spa sht</string>
-    <string name="x_plays">%1$s Plays</string>
     <string name="x_followers">%1$s Followers</string>
     <string name="n_songs">%1$d Gaane</string>
     <string name="n_episodes">%1$d Episodes</string>
@@ -335,12 +333,9 @@
     <string name="nothing_to_download_in_x">%1$s Mein Download Karne Ke Liye Kuch Nahi</string>
     <string name="merging_x">%1$s Merge Kar Rahe Hain</string>
     <string name="tagging_x">%1$s Tag Kar Rahe Hain</string>
-    <string name="apply_player_color_to_app">Poore App Mein Player Color Apply Karo</string>
-    <string name="apply_player_color_to_app_summary">LAG ALERT!!!</string>
     <string name="delete_download">Download Delete Karo</string>
     <string name="removed_x_from_downloads">%1$s Downloads Se Hataya</string>
     <string name="download_complete">Download Pura Ho Gaya</string>
-    <string name="app_widget_description">Echo Aapke Home Screen Par!</string>
     <string name="opening_webview_x">Webview Khul Raha Hai: %1$s</string>
     <string name="no_update_available_for_x">%1$s Ke Liye Koi Update Nahi</string>
     <string name="language_x">Bhasha: %1$s</string>
@@ -360,9 +355,6 @@
     <string name="show">Show</string>
     <string name="book">Kitab</string>
     <string name="song">Gaana</string>
-    <string name="podcast">Podcast</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Genres: %1$s</string>
     <string name="disc_number_n">Disc Number: %1$d</string>
     <string name="album_order_n">Album Order Number: %1$d</string>
     <string name="confirmation">Pushtikaran</string>

@@ -13,10 +13,12 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDE
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Buttons.Companion.EMPTY
 import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.FragmentSearchBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
@@ -29,7 +31,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCal
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
-import dev.brahmkshatriya.echo.ui.feed.FeedClickListener.Companion.getFeedListener
+import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedData
 import dev.brahmkshatriya.echo.ui.feed.FeedViewModel
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
@@ -95,7 +97,16 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     }
 
     private val listener by lazy {
-        getFeedListener(if (argId == null) requireParentFragment() else this)
+        val nav = if (argId == null) requireParentFragment() else this
+        object : FeedClickListener(this, nav.parentFragmentManager, nav.id) {
+            override fun onTracksClicked(
+                view: View?, extensionId: String?, context: EchoMediaItem?,
+                tracks: List<Track>?, pos: Int
+            ): Boolean {
+                val track = tracks?.getOrNull(pos)
+                return super.onTracksClicked(view, extensionId, null, track?.let { listOf(it) }, 0)
+            }
+        }
     }
 
     private val feedAdapter by lazy {

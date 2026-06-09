@@ -2,7 +2,6 @@
 <resources>
     <string name="loading_x">%1s ল’ড হৈ আছে</string>
     <string name="okay">ঠিক আছে</string>
-    <string name="video">ভিডিঅ’</string>
     <string name="remove">আঁতৰাওক</string>
     <string name="more_by_x">%1$sৰ আৰু অধিক</string>
     <string name="x_radio">%1$s ৰেডিঅ’</string>
@@ -266,7 +265,6 @@
     <string name="download_started">ডাউনলোড ষ্টাৰ্ট হৈছে</string>
     <string name="cache_playlist_warning">পৰীক্ষামূলক ফিচাৰ। শুনাৰ বাহিৰে আন কোনো কাৰ্য সমৰ্থিত নহয়।</string>
     <string name="no_download_extension">কোনো ডাউনলোড এক্সটেনশ্যন পোৱা নগ’ল, “echodown” ক’ড ব্যৱহাৰ কৰক।</string>
-    <string name="x_plays">%1$s প্লে</string>
     <string name="x_followers">%1$s ফ’ল’ৱাৰ</string>
     <string name="shuffling_x">%1$s শ্বাফল কৰা হৈছে</string>
     <string name="copying_the_error">ত্ৰুটি কপি কৰা হৈছে</string>
@@ -284,12 +282,9 @@
     <string name="tagging_x">%1$s টেগ কৰা হৈছে</string>
     <string name="more_brain_capacity_summary">ইয়াক এনেবল কৰিলে অডিঅ’ লেগ ফিক্স কৰাত হেল্প কৰিব পাৰে আৰু বেটাৰীৰ ইউজ বঢ়াব পাৰে (অডিঅ’ অফলোডিং ডিজেবল কৰে)।</string>
     <string name="downloading_update_for_x">%1$s বাবে আপডেট ডাউনলোড হৈ আছে</string>
-    <string name="apply_player_color_to_app_summary">লেগ এলাৰ্ট!!!</string>
-    <string name="apply_player_color_to_app">প্লেয়াৰৰ ৰং সমগ্ৰ এপত এপ্লাই কৰক</string>
     <string name="delete_download">ডাউনলোড ডিলিট কৰক</string>
     <string name="removed_x_from_downloads">ডাউনলোডৰ পৰা %1$s আঁতৰোৱা হ’ল</string>
     <string name="download_complete">ডাউনলোড কম্প্লিট</string>
-    <string name="app_widget_description">আপোনাৰ হোম স্ক্ৰীনত Echo!</string>
     <string name="feed">ফিড</string>
     <string name="item">আইটেম</string>
     <plurals name="number_items">
@@ -358,9 +353,6 @@
     <string name="show">শ্ব’</string>
     <string name="book">বুক</string>
     <string name="song">গান</string>
-    <string name="podcast">পডকাষ্ট</string>
-    <string name="isrc_x">আইএছআৰচি: %1$s</string>
-    <string name="genres_x">জেনৰ: %1$s</string>
     <string name="disc_number_n">ডিস্ক নম্বৰ: %1$d</string>
     <string name="album_order_n">এলবাম অৰ্ডাৰ নম্বৰ: %1$d</string>
     <string name="confirmation">কনফাৰ্মেশ্যন</string>

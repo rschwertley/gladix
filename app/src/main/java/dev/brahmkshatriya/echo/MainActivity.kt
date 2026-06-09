@@ -17,6 +17,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.lifecycle.Lifecycle
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.add
@@ -185,6 +186,8 @@ open class MainActivity : AppCompatActivity() {
             if (hasTrack && !hadTrack && uiViewModel.playerSheetState.value == STATE_HIDDEN) {
                 if (playerViewModel.playWhenReady.value) {
                     uiViewModel.changePlayerState(STATE_EXPANDED)
+                } else if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    uiViewModel.changePlayerState(STATE_COLLAPSED)
                 }
             }
             hadTrack = hasTrack

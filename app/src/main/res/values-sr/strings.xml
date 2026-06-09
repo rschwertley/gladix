@@ -258,7 +258,6 @@
     <string name="tracks">Trake</string>
     <string name="sort">Sortiraj</string>
     <string name="explicit">Eksplicitno</string>
-    <string name="x_plays">%1$s Pušta</string>
     <string name="x_followers">%1$s Pratilaca</string>
     <string name="n_songs">%1$d Pesama</string>
     <string name="n_episodes">%1$d Epizoda</string>
@@ -316,11 +315,9 @@
     <string name="download_started">Preuzimanje započeto</string>
     <string name="merging_x">Spajanje %1$s</string>
     <string name="tagging_x">Tagovanje%1$s</string>
-    <string name="apply_player_color_to_app">Primeni boju plejera u celoj aplikaciji</string>
     <string name="delete_download">Obriši preuzeto</string>
     <string name="removed_x_from_downloads">Uklonjeno%1$s iz Preuzimanja</string>
     <string name="download_complete">Preuzimanje dovršeno</string>
-    <string name="app_widget_description">Echo na tvom početnom ekranu!</string>
     <string name="opening_webview_x">Otvaranje Webview: %1$s</string>
     <string name="no_update_available_for_x">Nije pronađeno ni jedno ažuriranje za %1$s</string>
     <string name="other">Ostalo</string>
@@ -345,9 +342,6 @@
     <string name="show">Prikaži</string>
     <string name="book">Rezerviši</string>
     <string name="song">Pesma</string>
-    <string name="podcast">Podkest</string>
-    <string name="video">Video</string>
-    <string name="genres_x">Žanrovi:%1$s</string>
     <string name="disc_number_n">Disk broj:%1$d</string>
     <string name="album_order_n">Redosled Albuma:%1$d</string>
     <string name="confirmation">Potvrda</string>
@@ -378,8 +372,6 @@
     <string name="copying_the_error">Kopiranje greške</string>
     <string name="shuffle">Shuffle</string>
     <string name="shuffling_x">Shuffling %1$s</string>
-    <string name="apply_player_color_to_app_summary">LAG UPOZORENJE!</string>
-    <string name="isrc_x">ISRC: %1$s</string>
     <string name="colors">Boje</string>
     <string name="scroll_bar">Traka Za Pomeranje</string>
     <string name="scroll_bar_summary">Traka za skrolovanje sa strane za brži pristup (možda sadrži greške)</string>

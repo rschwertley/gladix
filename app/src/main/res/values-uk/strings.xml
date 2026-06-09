@@ -3,7 +3,6 @@
     <string name="back">Назад</string>
     <string name="cancel">Скасувати</string>
     <string name="okay">Гаразд</string>
-    <string name="video">Відео</string>
     <string name="audio">Звук</string>
     <string name="write_storage_permission_summary">Щоб створювати або редагувати локальні плейлисти</string>
     <string name="audio_permission_summary">Щоб отримати доступ до вашою локальної бібліотеки музики</string>
@@ -151,7 +150,6 @@
     <string name="playing_x">Відтворення %1$s</string>
     <string name="all">Усе</string>
     <string name="edit_playlist">Редагувати плейлист</string>
-    <string name="x_plays">%1$s прослуховувань</string>
     <string name="shuffling_x">Перемішування %1$s</string>
     <string name="copying_the_error">Копіювання помилки</string>
     <string name="filter">Фільтр</string>
@@ -171,11 +169,8 @@
     <string name="download_started">Завантаження розпочато</string>
     <string name="merging_x">Об\'єднання %1$s</string>
     <string name="tagging_x">Тегування %1$s</string>
-    <string name="apply_player_color_to_app">Застосувати колір програвача до всього застосунку</string>
-    <string name="apply_player_color_to_app_summary">ПОПЕРЕДЖЕННЯ ПРО ЗАТРИМКИ!!!</string>
     <string name="delete_download">Видалити завантаження</string>
     <string name="download_complete">Завантаження завершено</string>
-    <string name="app_widget_description">Echo на головному екрані!</string>
     <string name="webview">WebView</string>
     <string name="blacklist_folder_keywords_summary">Ключові слова до тек чорного списку, використовуйте кому як роздільник</string>
     <string name="scroll_animations_summary">Анімації під час гортання</string>
@@ -371,9 +366,6 @@
     <string name="show">Показати</string>
     <string name="book">Книга</string>
     <string name="song">Пісня</string>
-    <string name="podcast">Подкаст</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Жанри: %1$s</string>
     <string name="disc_number_n">Номер диску: %1$d</string>
     <string name="album_order_n">Номер замовлення альбому: %1$d</string>
     <string name="confirmation">Підтвердження</string>

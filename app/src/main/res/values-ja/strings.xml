@@ -32,7 +32,6 @@
     <string name="cancel">キャンセル</string>
     <string name="okay">はい</string>
     <string name="back">戻る</string>
-    <string name="video">動画</string>
     <string name="playlist_liked_desc">いいねした曲</string>
     <string name="no_internet">インターネット接続がありません</string>
     <string name="file">ファイル</string>
@@ -254,7 +253,6 @@
     <string name="tracks">トラック</string>
     <string name="sort">並び替え</string>
     <string name="explicit">明示的</string>
-    <string name="x_plays">%1$s回再生</string>
     <string name="x_followers">%1$sフォロワー</string>
     <string name="n_songs">%1$d曲</string>
     <string name="n_episodes">%1$dエピソード</string>
@@ -311,7 +309,6 @@
     <string name="download_started">ダウンロードか開始されました</string>
     <string name="merging_x">%1$sをマージ中</string>
     <string name="tagging_x">%1$sをタグ付け中</string>
-    <string name="apply_player_color_to_app">プレイヤーカラーをアプリ全体に適用する</string>
     <string name="delete_download">ダウンロードの削除</string>
     <string name="removed_x_from_downloads">%1$sがダウンロードから削除されました</string>
     <string name="download_complete">ダウンロード完了</string>
@@ -335,8 +332,6 @@
     <string name="show">表示</string>
     <string name="book">本</string>
     <string name="song">曲</string>
-    <string name="podcast">ポッドキャスト</string>
-    <string name="genres_x">ジャンル: %1$s</string>
     <string name="disc_number_n">ディスク番号: %1$d</string>
     <string name="confirmation">確認</string>
     <string name="delete_playlist_confirmation">本当に %1$s を削除しますか？</string>
@@ -350,7 +345,6 @@
     <string name="not_playable_x">再生できません: %1$s</string>
     <string name="ui">UI</string>
     <string name="webview">Webview</string>
-    <string name="isrc_x">ISRC: %1$s</string>
     <string name="lp">LP</string>
     <string name="ep">EP</string>
 </resources>

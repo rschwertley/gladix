@@ -6,7 +6,6 @@
     <string name="audio_permission_summary">Необходимо для доступа к вашей локальной музыкальной библиотеке</string>
     <string name="back">Назад</string>
     <string name="audio">Аудио</string>
-    <string name="video">Видео</string>
     <string name="notifications_permission_summary">Необходимо, чтобы показывать уведомления для скачиваний и музыки</string>
     <string name="songs">Песни</string>
     <string name="x_radio">%1$s Радио</string>
@@ -246,8 +245,6 @@
     <string name="delete">Удалить</string>
     <string name="no_download_extension">Расширение для скачивания не найдено. Используйте код \\\"echodown\\\", чтобы скачать его.</string>
     <string name="tagging_x">Тегирование %1$s</string>
-    <string name="apply_player_color_to_app">Применять цвет плеера ко всему приложению</string>
-    <string name="apply_player_color_to_app_summary">ПРЕДУПРЕЖДЕНИЕ О ЗАДЕРЖКАХ!!!</string>
     <string name="look_and_feel">Внешний вид и ощущения</string>
     <string name="invalid_extension_list">Список недопустимых расширений</string>
     <string name="open_links_instruction">Чтобы разрешить открытие этих ссылок, вам нужно:\n- Прокрутить вниз и нажать «Открыть по умолчанию».\n- Нажать «+ Добавить ссылку»</string>
@@ -282,7 +279,6 @@
     <string name="adding_x_to_next">Добавление %1$s следующим</string>
     <string name="background_gradient_summary">Градиентный цветовой оттенок фона в зависимости от обложки трека</string>
     <string name="sort_duration">Длительность</string>
-    <string name="x_plays">%1$s прослушиваний</string>
     <string name="save">Сохранить</string>
     <string name="sort_title">Название</string>
     <string name="scroll_animations_summary">Анимации при прокрутке элементов</string>
@@ -290,7 +286,6 @@
     <string name="delete_download">Удалить скачивание</string>
     <string name="removed_x_from_downloads">%1$s удалено из скачиваний</string>
     <string name="download_complete">Скачивание завершено</string>
-    <string name="app_widget_description">Echo на вашем главном экране!</string>
     <string name="feed">Лента</string>
     <string name="item">Элемент</string>
     <plurals name="number_items">
@@ -354,8 +349,6 @@
     <string name="donate">Пожертвование</string>
     <string name="unhidden_x">%1$s показано</string>
     <string name="app_desc">Просто музыкальный плеер.</string>
-    <string name="podcast">Подкаст</string>
-    <string name="genres_x">Жанры: %1$s</string>
     <string name="disc_number_n">Номер диска: %1$d</string>
     <string name="album_order_n">Порядковый номер в альбоме: %1$d</string>
     <string name="confirmation">Подтверждение</string>
@@ -386,7 +379,6 @@
     <string name="amoled">AMOLED</string>
     <string name="webview">Веб-просмотр</string>
     <string name="explicit">Возрастное ограничение</string>
-    <string name="isrc_x">ISRC: %1$s</string>
     <string name="scroll_bar">Полоса прокрутки</string>
     <string name="colors">Цвета</string>
     <string name="scroll_bar_summary">Полоса прокрутки сбоку для более быстрого доступа (может работать с ошибками)</string>

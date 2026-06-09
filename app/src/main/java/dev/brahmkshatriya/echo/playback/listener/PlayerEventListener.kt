@@ -87,6 +87,7 @@ class PlayerEventListener(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (mediaItem == null) return  // fired on player.release() with index=0; don't overwrite saved position
         updateCustomLayout()
         ResumptionUtils.saveIndex(context, player.currentMediaItemIndex)
         session.notifyChildrenChanged("recent", 1, null)
@@ -193,6 +194,7 @@ class PlayerEventListener(
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (player.mediaItemCount == 0) return  // fired during/after player.release(); position is 0
         ResumptionUtils.saveCurrentPos(context, player.currentPosition)
     }
 
@@ -212,6 +214,7 @@ class PlayerEventListener(
     override fun onPositionDiscontinuity(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
+        if (player.mediaItemCount == 0) return  // fired during player.release(); position is 0
         ResumptionUtils.saveCurrentPos(context, player.currentPosition)
     }
 

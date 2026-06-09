@@ -34,7 +34,6 @@
     <string name="write_storage_permission_summary">Para criar e editar listas de reprodução locais</string>
     <string name="notifications">Notificações</string>
     <string name="notifications_permission_summary">Para mostrar notificações de downloads e músicas</string>
-    <string name="video">Vídeo</string>
     <string name="songs">Canções</string>
     <string name="albums">Álbuns</string>
     <string name="x_radio">%1$s Rádio</string>
@@ -212,7 +211,6 @@
     <string name="more_brain_capacity">Mais capacidade cerebral</string>
     <string name="more_brain_capacity_summary">Ativando isso, pode corrigir o atraso de áudio, mas aumenta drasticamente o uso da bateria (Desativa o descarregamento de áudio).</string>
     <string name="sort">Ordenar</string>
-    <string name="x_plays">%1$s Reproduções</string>
     <string name="x_followers">%1$s Seguidores</string>
     <string name="shuffling_x">Embaralhando %1$s</string>
     <string name="copying_the_error">Copiar o erro</string>
@@ -244,8 +242,6 @@
     <string name="download_started">Download iniciado</string>
     <string name="merging_x">Mesclando %1$s</string>
     <string name="tagging_x">Marcando %1$s</string>
-    <string name="apply_player_color_to_app">Aplicar a cor do Player a todo o aplicativo</string>
-    <string name="apply_player_color_to_app_summary">ALERTA DE GAL!!</string>
     <plurals name="number_min">
         <item quantity="one">%1$d Minuto</item>
         <item quantity="many">%1$d Minutos</item>
@@ -291,7 +287,6 @@
     <string name="create">Criar</string>
     <string name="add_song">Adicionar música</string>
     <string name="download_complete">Download Completo</string>
-    <string name="app_widget_description">Eco na sua tela inicial!</string>
     <plurals name="number_items">
         <item quantity="one">%1$d Item</item>
         <item quantity="many">%1$d Ítens</item>
@@ -367,9 +362,6 @@
     <string name="show">Mostrar</string>
     <string name="book">Livro</string>
     <string name="song">Música</string>
-    <string name="podcast">Podcast</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Gêneros: %1$s</string>
     <string name="disc_number_n">Número do disco: %1$d</string>
     <string name="album_order_n">Número da ordem do álbum: %1$d</string>
     <string name="confirmation">Confirmação</string>

@@ -3,7 +3,6 @@
     <string name="okay">சரி</string>
     <string name="back">பின்</string>
     <string name="x_permission_required">%1$s இசைவு வேண்டும்</string>
-    <string name="video">படக்காட்சி</string>
     <string name="cancel">கைவிடு</string>
     <string name="x_was_not_granted">%1$s இசைவு இல்லை</string>
     <string name="audio">ஒலிதம்</string>
@@ -268,7 +267,6 @@
     <string name="tracks">தடங்கள்</string>
     <string name="sort">வரிசைப்படுத்து</string>
     <string name="explicit">வெளிப்படையான</string>
-    <string name="x_plays">%1$s நாடகங்கள்</string>
     <string name="x_followers">%1$s பின்தொடர்பவர்கள்</string>
     <string name="n_songs">%1$d பாடல்கள்</string>
     <string name="n_episodes">%1$d அத்தியாயங்கள்</string>
@@ -329,12 +327,9 @@
     <string name="download_started">பதிவிறக்கம் தொடங்கியது</string>
     <string name="merging_x">இணைத்தல் %1$s</string>
     <string name="tagging_x">குறிச்சொல் %1$s</string>
-    <string name="apply_player_color_to_app">முழு பயன்பாட்டிற்கும் இயக்கி வண்ணத்தைப் பயன்படுத்துங்கள்</string>
-    <string name="apply_player_color_to_app_summary">முன்னறிவிப்பு செய்யுங்கள் !!!</string>
     <string name="delete_download">பதிவிறக்கத்தை நீக்கு</string>
     <string name="removed_x_from_downloads">பதிவிறக்கங்களிலிருந்து %1$s அகற்றப்பட்டது</string>
     <string name="download_complete">முழுமையான பதிவிறக்கம்</string>
-    <string name="app_widget_description">உங்கள் முகப்புத் திரையில் எதிரொலி!</string>
     <string name="opening_webview_x">வலைக்காட்சியைத் திறத்தல்: %1$s</string>
     <string name="no_update_available_for_x">%1$s க்கு புதுப்பிப்பு எதுவும் கிடைக்கவில்லை</string>
     <string name="other">மற்றொன்று</string>
@@ -359,9 +354,6 @@
     <string name="show">காட்டு</string>
     <string name="book">நூல்</string>
     <string name="song">பாடல்</string>
-    <string name="podcast">நெற்றுவார்</string>
-    <string name="isrc_x">ஐஎச்ஆர்சி: %1$s</string>
-    <string name="genres_x">வகைகள்: %1$s</string>
     <string name="disc_number_n">வட்டு எண்: %1$d</string>
     <string name="album_order_n">தொகுப்பு ஆணை எண்: %1$d</string>
     <string name="confirmation">உறுதிப்படுத்தல்</string>

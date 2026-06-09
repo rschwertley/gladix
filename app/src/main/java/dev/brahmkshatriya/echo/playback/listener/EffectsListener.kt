@@ -18,9 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.PlayerMessage
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.copyTo
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
-import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.pow
@@ -32,7 +30,6 @@ class EffectsListener(
     private val context: Context,
     private val audioSessionFlow: MutableStateFlow<Int>,
     private val audioEffectsProcessor: AudioEffectsProcessor,
-    private val healthMonitor: HealthMonitor,
 ) : Player.Listener {
 
     init {
@@ -82,12 +79,6 @@ class EffectsListener(
         val gainDb = runCatching {
             mediaItem?.track?.extras?.get("GAIN")?.toFloatOrNull()
         }.getOrNull()
-        if (gainDb != null && (gainDb < -20f || gainDb > 20f)) {
-            healthMonitor.report(
-                HealthMonitor.CorruptMetadataAnomaly(mediaItem?.extensionId ?: "unknown", gainDb),
-                HealthMonitor.Scope.PERSISTENT, 60 * 60 * 1000L
-            )
-        }
         audioEffectsProcessor.setTrackGain(gainDb, mediaItem?.mediaId)
     }
 

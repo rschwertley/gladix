@@ -224,7 +224,6 @@
     <string name="x_permission_required">%1$s अनुमति आवश्यक</string>
     <string name="x_was_not_granted">%1$s दी नहीं गई</string>
     <string name="audio_permission_summary">स्थानीय संगीत लाइब्रेरी तक पहुँचने के लिए</string>
-    <string name="video">वीडियो</string>
     <string name="read_storage">संग्रहण पढ़ें</string>
     <string name="write_storage">संग्रहण लिखें</string>
     <string name="unified_liked_playlist_summary">विभिन्न एक्सटेंशन्स से आपके पसंदीदा ट्रैक्स</string>
@@ -265,7 +264,6 @@
     <string name="more_brain_capacity">ज़्यादा प्रोसेसिंग पावर</string>
     <string name="delete">मिटाएँ</string>
     <string name="more_brain_capacity_summary">इसे सक्षम करने से ऑडियो लैग ठीक हो सकता है और बैटरी खपत बढ़ सकती है (ऑडियो ऑफलोडिंग निष्क्रिय)।</string>
-    <string name="x_plays">%1$s बार चला</string>
     <string name="x_followers">%1$s फॉलोअर</string>
     <string name="shuffling_x">%1$s को शफ़ल कर रहे हैं</string>
     <string name="copying_the_error">त्रुटि कॉपी कर रहे हैं</string>
@@ -284,12 +282,9 @@
     <string name="deleting_x">%1$s मिटा रहे हैं</string>
     <string name="loading_x">%1s लोड हो रहा है</string>
     <string name="downloading_update_for_x">%1$s के लिए अपडेट डाउनलोड हो रहा है</string>
-    <string name="apply_player_color_to_app">पूरा ऐप पर प्लेयर रंग लागू करें</string>
-    <string name="apply_player_color_to_app_summary">लैग चेतावनी!!!</string>
     <string name="delete_download">डाउनलोड मिटाएँ</string>
     <string name="removed_x_from_downloads">%1$s को डाउनलोड से हटाया</string>
     <string name="download_complete">डाउनलोड पूरा</string>
-    <string name="app_widget_description">होम स्क्रीन पर इको!</string>
     <string name="feed">फ़ीड</string>
     <string name="item">आइटम</string>
     <plurals name="number_items">
@@ -358,9 +353,6 @@
     <string name="show">शो</string>
     <string name="book">किताब</string>
     <string name="song">गाना</string>
-    <string name="podcast">पॉडकास्ट</string>
-    <string name="isrc_x">आईएसआरसी: %1$s</string>
-    <string name="genres_x">शैलियाँ: %1$s</string>
     <string name="disc_number_n">डिस्क नंबर: %1$d</string>
     <string name="album_order_n">एल्बम क्रम नंबर: %1$d</string>
     <string name="confirmation">पुष्टिकरण</string>

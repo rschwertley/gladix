@@ -12,7 +12,6 @@
     <string name="playback">Lecture</string>
     <string name="x_permission_required">%1$s Autorisation Requise</string>
     <string name="view">Voir</string>
-    <string name="video">Vidéo</string>
     <string name="loading">Chargement…</string>
     <string name="extension_uninstalled_successfully">Extension désinstallée avec succès.</string>
     <string name="blacklist_folder_keywords_summary">Mots-clés pour exclure les dossiers, utiliser la virgule comme séparateur</string>
@@ -204,7 +203,6 @@
     <string name="saved_to_playlists">Sauvegardée dans la playlist</string>
     <string name="removing_x">Suppression de %1$s</string>
     <string name="download_complete">Téléchargement Terminé</string>
-    <string name="app_widget_description">Echo sur votre écran d\'accueil !</string>
     <string name="okay">OK</string>
     <string name="no_internet">Pas d\'Internet</string>
     <string name="error_x">Erreur : %1$s</string>
@@ -259,7 +257,6 @@
         <item quantity="other">%1$d Minutes</item>
     </plurals>
     <string name="unfollowed_x">%1$s Plus Suivi·e</string>
-    <string name="x_plays">%1$s Écoutes</string>
     <string name="download_started">Téléchargement Démarré</string>
     <string name="add_to_next">Ajouter à la suite</string>
     <string name="add_to_queue">Ajouter à la liste</string>
@@ -277,7 +274,6 @@
     <string name="removed_x_from_downloads">%1$s Supprimé des Téléchargements</string>
     <string name="nothing_to_download_in_x">Rien à télécharger dans %1$s</string>
     <string name="merging_x">Fusion de %1$s</string>
-    <string name="apply_player_color_to_app_summary">ALERTE AU LAG !!!</string>
     <string name="extension_x_not_found">Extension %1$s non trouvée</string>
     <string name="audio">Audio</string>
     <string name="version">Version</string>
@@ -291,7 +287,6 @@
     <string name="background_gradient">Dégradé d\'Arrière-plan</string>
     <string name="selected_n">%1$d Sélectionnées</string>
     <string name="unhiding_x">Affichage de %1$s</string>
-    <string name="apply_player_color_to_app">Appliquer la couleur du Lecteur à l\'ensemble de l\'application</string>
     <string name="feed">Flux</string>
     <string name="item">Objet</string>
     <plurals name="number_items">
@@ -365,9 +360,6 @@
     <string name="show">Montrer</string>
     <string name="book">Livre</string>
     <string name="song">Chanson</string>
-    <string name="podcast">Podcast</string>
-    <string name="isrc_x">ISRC : %1$s</string>
-    <string name="genres_x">Genres : %1$s</string>
     <string name="disc_number_n">Nombre du Disque : %1$d</string>
     <string name="album_order_n">Nombre de l\'ordre de l\'album : %1$d</string>
     <string name="confirmation">Confirmation</string>

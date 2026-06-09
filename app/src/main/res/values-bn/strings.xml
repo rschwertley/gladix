@@ -281,7 +281,6 @@
     <string name="tracks">ট্র্যাক</string>
     <string name="sort">সাজান</string>
     <string name="explicit">স্পষ্ট</string>
-    <string name="x_plays">%1$s প্লে</string>
     <string name="x_followers">%1$s ফলোয়ার</string>
     <string name="n_songs">%1$d গান</string>
     <string name="n_episodes">%1$d এপিসোড</string>
@@ -342,12 +341,9 @@
     <string name="download_started">ডাউনলোড শুরু হয়েছে</string>
     <string name="merging_x">%1$s মার্জ করা হচ্ছে</string>
     <string name="tagging_x">%1$s ট্যাগ করা হচ্ছে</string>
-    <string name="apply_player_color_to_app">সম্পূর্ণ অ্যাপে প্লেয়ার রঙ প্রয়োগ করুন</string>
-    <string name="apply_player_color_to_app_summary">ল্যাগ সতর্কতা!!!</string>
     <string name="delete_download">ডাউনলোড মুছুন</string>
     <string name="removed_x_from_downloads">%1$s ডাউনলোড থেকে সরানো হয়েছে</string>
     <string name="download_complete">ডাউনলোড সম্পূর্ণ</string>
-    <string name="app_widget_description">আপনার হোম স্ক্রিনে Echo!</string>
     <string name="opening_webview_x">ওয়েবভিউ খোলা হচ্ছে: %1$s</string>
     <string name="no_update_available_for_x">%1$s এর জন্য কোন আপডেট উপলব্ধ নেই</string>
     <string name="other">অন্যান্য</string>
@@ -372,10 +368,6 @@
     <string name="show">শো</string>
     <string name="book">বই</string>
     <string name="song">গান</string>
-    <string name="podcast">পডকাস্ট</string>
-    <string name="video">ভিডিও</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">জনরা: %1$s</string>
     <string name="disc_number_n">ডিস্ক নম্বর: %1$d</string>
     <string name="album_order_n">অ্যালবাম অর্ডার নম্বর: %1$d</string>
     <string name="confirmation">নিশ্চিতকরণ</string>

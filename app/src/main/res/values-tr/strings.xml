@@ -15,7 +15,6 @@
     <string name="cancel">İptal</string>
     <string name="x_permission_required">%1$s İzini Gerekli</string>
     <string name="x_was_not_granted">%1$s izini verilmedi</string>
-    <string name="video">Video</string>
     <string name="read_storage">Depolamayı Oku</string>
     <string name="notifications">Bildirimler</string>
     <string name="notifications_permission_summary">İndirme ve müzik bildirimlerini göstermek için</string>
@@ -104,7 +103,6 @@
     <string name="background_gradient_summary">Bağlama bağlamına bağlı olarak arka planda bir gradyan renk tonu</string>
     <string name="more_brain_capacity">Daha Fazla Beyin Kapasitesi</string>
     <string name="sort">Sırala</string>
-    <string name="x_plays">%1$s Oynat</string>
     <string name="x_followers">%1$s Takipçi</string>
     <string name="scroll_animations_summary">Kaydırma sırasında animasyonlar</string>
     <string name="delete">Sil</string>
@@ -120,7 +118,6 @@
         <item quantity="one">%1$d Dakika</item>
         <item quantity="other">%1$d Dakika</item>
     </plurals>
-    <string name="apply_player_color_to_app_summary">GECİKME UYARISI!!!</string>
     <string name="amoled_summary">Arka plan rengini tamamen siyah ile değiştirin. AMOLED ekranlar için pil tüketimini azaltmak ve ekran yanmasını önlemek için faydalıdır</string>
     <string name="stop_player">Oyuncuyu Durdur</string>
     <string name="blacklist_folders">Kara Liste Klasörleri</string>
@@ -285,11 +282,9 @@
     <string name="nothing_to_download_in_x">%1$s içinde indirilecek bir şey yok</string>
     <string name="merging_x">Birleştiriliyor %1$s</string>
     <string name="tagging_x">Etiketleme %1$s</string>
-    <string name="apply_player_color_to_app">Tüm Uygulamaya Oynatıcı Rengini Uygula</string>
     <string name="download_complete">İndirme Tamamlandı</string>
     <string name="delete_download">İndirimi Kaldır</string>
     <string name="removed_x_from_downloads">İndirilenlerden %1$s kaldırıldı</string>
-    <string name="app_widget_description">Ana ekranında yankı!</string>
     <string name="feed">Akış</string>
     <string name="item">Öğe</string>
     <plurals name="number_items">

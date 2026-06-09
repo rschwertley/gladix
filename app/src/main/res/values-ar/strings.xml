@@ -266,7 +266,6 @@
     <string name="tracks">اغاني</string>
     <string name="sort">فرز</string>
     <string name="explicit">غير منقحة</string>
-    <string name="x_plays">%1$s مرة تشغيل</string>
     <string name="x_followers">%1$s متابع</string>
     <string name="n_songs">%1$d اغنية</string>
     <string name="n_episodes">%1$d حلقات</string>
@@ -343,12 +342,9 @@
     <string name="download_started">ابتدأ التحميل</string>
     <string name="merging_x">دمج %1$s</string>
     <string name="tagging_x">وسم %1$s</string>
-    <string name="apply_player_color_to_app">طبق لون المشغل على التطبيق بالكامل</string>
-    <string name="apply_player_color_to_app_summary">انذار بالتعليق!!!</string>
     <string name="delete_download">احذف التحميل</string>
     <string name="removed_x_from_downloads">ازالة %1$s من قائمة التحميل</string>
     <string name="download_complete">اكتمل التحميل</string>
-    <string name="app_widget_description">ايكو على شاشتك الرئيسية!</string>
     <string name="opening_webview_x">افتح المتصفح: %1$s</string>
     <string name="no_update_available_for_x">لا يوجد تحديث متوفر لـ %1$s</string>
     <string name="other">آخر</string>
@@ -373,10 +369,6 @@
     <string name="show">عرض</string>
     <string name="book">كتاب</string>
     <string name="song">اغنية</string>
-    <string name="podcast">بودكاست</string>
-    <string name="video">فيديو</string>
-    <string name="isrc_x">اي اس ار سي %1$s</string>
-    <string name="genres_x">النوع الموسيقي: %1$s</string>
     <string name="disc_number_n">ترقيم الشريط: %1$d</string>
     <string name="album_order_n">ترقيم الالبوم: %1$d</string>
     <string name="confirmation">التأكيد</string>

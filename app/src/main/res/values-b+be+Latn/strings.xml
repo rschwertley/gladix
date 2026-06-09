@@ -273,7 +273,6 @@
     <string name="tracks">Treki</string>
     <string name="sort">Sartavać</string>
     <string name="explicit">Uzrostavaje abmiežavannie</string>
-    <string name="x_plays">%1$s prasłuchoŭvanniaŭ</string>
     <string name="x_followers">%1$s padpisčykaŭ</string>
     <string name="n_songs">%1$d piesień</string>
     <string name="n_episodes">%1$d epizodaŭ</string>
@@ -342,12 +341,9 @@
     <string name="download_started">Spampavannie pačałosia</string>
     <string name="merging_x">Zliccio %1$s</string>
     <string name="tagging_x">Tehiravannie %1$s</string>
-    <string name="apply_player_color_to_app">Dastasavać koler płejera da ŭsiaho dadatku</string>
-    <string name="apply_player_color_to_app_summary">PAPIAREDŽANNIE PRA ZATRYMKI!!!</string>
     <string name="delete_download">Vydalić spampavannie</string>
     <string name="removed_x_from_downloads">%1$s vydalena z spampavanniaŭ</string>
     <string name="download_complete">Spampavannie zavieršana</string>
-    <string name="app_widget_description">Echo na haloŭnym ekranie!</string>
     <string name="opening_webview_x">Adkryccio WebView: %1$s</string>
     <string name="no_update_available_for_x">Niama dastupnych abnaŭlenniaŭ dla %1$s</string>
     <string name="other">Inšaje</string>
@@ -372,10 +368,6 @@
     <string name="show">Pakazać</string>
     <string name="book">Kniha</string>
     <string name="song">Piesnia</string>
-    <string name="podcast">Padkast</string>
-    <string name="video">Videa</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Žanry: %1$s</string>
     <string name="disc_number_n">Numar dyska: %1$d</string>
     <string name="album_order_n">Paradkavy numar u albomie: %1$d</string>
     <string name="confirmation">Pacvierdžannie</string>

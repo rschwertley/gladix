@@ -205,7 +205,6 @@
     <string name="tracks">רצועות</string>
     <string name="sort">מיון</string>
     <string name="explicit">מפורש</string>
-    <string name="x_plays">%1$s מתנגן</string>
     <string name="x_followers">%1$s עוקבים</string>
     <string name="n_songs">%1$d שירים</string>
     <string name="n_episodes">%1$d פרקים</string>
@@ -270,12 +269,9 @@
     <string name="download_started">הורדה החלה</string>
     <string name="merging_x">ממזג את %1$s</string>
     <string name="tagging_x">מתייג את %1$s</string>
-    <string name="apply_player_color_to_app">החלת צבע הנגן על כל האפליקציה</string>
-    <string name="apply_player_color_to_app_summary">התראת לאג!!!</string>
     <string name="delete_download">מחק הורדה</string>
     <string name="removed_x_from_downloads">%1$s נמחק מהורדות</string>
     <string name="download_complete">הורדה הושלמה</string>
-    <string name="app_widget_description">Echo במסך הבית שלך!</string>
     <string name="opening_webview_x">פותח תצוגת אינטרנט: %1$s</string>
     <string name="no_update_available_for_x">אין עדכון זמין עבור %1$s</string>
     <string name="other">אחר</string>
@@ -300,10 +296,6 @@
     <string name="show">הצג</string>
     <string name="book">ספר</string>
     <string name="song">שיר</string>
-    <string name="podcast">פודקאסט</string>
-    <string name="video">סרטון</string>
-    <string name="isrc_x">קוד הקלטה תקני בינלאומי: %1$s</string>
-    <string name="genres_x">ז\'אנרים: %1$s</string>
     <string name="disc_number_n">מספר דיסק: %1$d</string>
     <string name="album_order_n">מספר סדר אלבום: %1$d</string>
     <string name="confirmation">אישור</string>

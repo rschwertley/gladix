@@ -270,7 +270,6 @@
     <string name="tracks">Трэкі</string>
     <string name="sort">Сартаваць</string>
     <string name="explicit">Узроставае абмежаванне</string>
-    <string name="x_plays">%1$s праслухоўванняў</string>
     <string name="x_followers">%1$s падпісчыкаў</string>
     <string name="n_songs">%1$d песень</string>
     <string name="n_episodes">%1$d эпізодаў</string>
@@ -339,12 +338,9 @@
     <string name="download_started">Спампаванне пачалося</string>
     <string name="merging_x">Зліццё %1$s</string>
     <string name="tagging_x">Тэгіраванне %1$s</string>
-    <string name="apply_player_color_to_app">Дастасаваць колер плэера да ўсяго дадатку</string>
-    <string name="apply_player_color_to_app_summary">ПАПЯРЭДЖАННЕ ПРА ЗАТРЫМКІ!!!</string>
     <string name="delete_download">Выдаліць спампаванне</string>
     <string name="removed_x_from_downloads">%1$s выдалена з спампаванняў</string>
     <string name="download_complete">Спампаванне завершана</string>
-    <string name="app_widget_description">Echo на галоўным экране!</string>
     <string name="opening_webview_x">Адкрыццё WebView: %1$s</string>
     <string name="no_update_available_for_x">Няма даступных абнаўленняў для %1$s</string>
     <string name="other">Іншае</string>
@@ -369,10 +365,6 @@
     <string name="show">Паказаць</string>
     <string name="book">Кніга</string>
     <string name="song">Песня</string>
-    <string name="podcast">Падкаст</string>
-    <string name="video">Відэа</string>
-    <string name="isrc_x">ISRC: %1$s</string>
-    <string name="genres_x">Жанры: %1$s</string>
     <string name="disc_number_n">Нумар дыска: %1$d</string>
     <string name="album_order_n">Парадкавы нумар у альбоме: %1$d</string>
     <string name="confirmation">Пацверджанне</string>

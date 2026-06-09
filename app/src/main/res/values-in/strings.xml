@@ -16,7 +16,6 @@
     <string name="audio_permission_summary">Akses musik lokal</string>
     <string name="albums">Album</string>
     <string name="artists">Artis</string>
-    <string name="video">Video</string>
     <string name="write_storage_permission_summary">Membuat dan merubah playlist lokal</string>
     <string name="more_by_x">Yang lain dari %1$s</string>
     <string name="recently_added">Baru-baru ini ditambahkan</string>
@@ -171,7 +170,6 @@
     <string name="sort">Sortir</string>
     <string name="explicit">Eksplisit</string>
     <string name="more_brain_capacity">Kapasitas Otak Lebih</string>
-    <string name="x_plays">%1$s diputar</string>
     <string name="shuffling_x">Acak %1$s</string>
     <string name="filter">Saring</string>
     <string name="reversed">Terbalik</string>
@@ -282,12 +280,9 @@
     <string name="look_and_feel">Tampilan dan Nuansa</string>
     <string name="sleep_timer_cancelled">Waktu tidur dibatalkan</string>
     <string name="could_not_find_the_file">File tidak ditemukan.</string>
-    <string name="apply_player_color_to_app">Terapkan warna pemutar ke seluruh aplikasi</string>
-    <string name="apply_player_color_to_app_summary">AWAS NGELAG!!!</string>
     <string name="delete_download">Hapus Unduhan</string>
     <string name="removed_x_from_downloads">Menghapus %1$s dari Unduhan</string>
     <string name="download_complete">Unduhan Selesai</string>
-    <string name="app_widget_description">Gema di layar beranda Anda!</string>
     <string name="feed">Pakan</string>
     <string name="item">Barang</string>
     <plurals name="number_items">
@@ -316,7 +311,6 @@
     <string name="colors">Warna</string>
     <string name="scroll_bar">Bilah Gulir</string>
     <string name="unhidden_x">Tidak tersembunyi%1$s</string>
-    <string name="genres_x">Genre: %1$s</string>
     <string name="guide">Panduan</string>
     <string name="donate">Donasi</string>
     <string name="contributors">Kontributor</string>
@@ -330,7 +324,6 @@
     <string name="single">Tunggal</string>
     <string name="compilation">Kompilasi</string>
     <string name="song">Lagu</string>
-    <string name="podcast">Podcast</string>
     <string name="disc_number_n">Piringan Nomor: %1$d</string>
     <string name="big_cover">Sampul Lebih Besar</string>
     <string name="no_last_played_track_found">Tidak ada lagu terakhir yang diputar.</string>
@@ -358,7 +351,6 @@
     </plurals>
     <string name="sort_date_added">Tanggal Ditambahkan</string>
     <string name="opening_webview_x">Membuka Tampilan Web: %1$s</string>
-    <string name="isrc_x">ISRC: %1$s</string>
     <string name="ep">EP</string>
     <string name="lp">LP</string>
 </resources>

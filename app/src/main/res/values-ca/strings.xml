@@ -130,7 +130,6 @@
     <string name="tracks">Pistes</string>
     <string name="sort">Endreça</string>
     <string name="explicit">Explícit</string>
-    <string name="x_plays">%1$s reproduccions</string>
     <string name="x_followers">%1$s seguidors</string>
     <string name="n_songs">%1$d cançons</string>
     <string name="n_episodes">%1$d episodis</string>
