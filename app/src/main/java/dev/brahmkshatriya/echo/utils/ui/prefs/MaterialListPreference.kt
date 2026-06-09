@@ -10,7 +10,12 @@ class MaterialListPreference(context: Context) : ListPreference(context) {
     private var customSummary: CharSequence? = null
 
     override fun onSetInitialValue(defaultValue: Any?) {
-        super.onSetInitialValue(defaultValue)
+        try {
+            super.onSetInitialValue(defaultValue)
+        } catch (e: ClassCastException) {
+            sharedPreferences?.edit()?.remove(key)?.apply()
+            value = (defaultValue as? String) ?: entryValues.firstOrNull()?.toString() ?: ""
+        }
         customSummary = summary
         updateSummary()
     }

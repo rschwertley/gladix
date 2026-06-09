@@ -628,6 +628,8 @@ class PlayerFragment : Fragment() {
                 collapsedSeekbar.setIndicatorColor(colors.accent)
                 collapsedBuffer.setIndicatorColor(colors.accent)
                 collapsedBuffer.trackColor = colors.onBackground
+                collapsedTrackTitle.setTextColor(colors.onBackground)
+                collapsedTrackArtist.setTextColor(colors.onBackground)
             }
 
             binding.playerControls.run {
@@ -663,6 +665,10 @@ class PlayerFragment : Fragment() {
                 onMoreClicked(item)
                 true
             }
+        }
+        playerCollapsedContainer.run {
+            collapsedTrackTitle.text = track.title
+            collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
         }
         playerControls.run {
             trackTitle.text = track.title

@@ -329,9 +329,11 @@ class PlayerCallback(
                         app, downloadFlow.value, MediaState.Unloaded(extId, it), item
                     )
                 }
-                val startIndex = if (startTrackId != null)
-                    list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
-                else 0
+                val startIndex = when {
+                    startTrackId != null -> list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
+                    shuffle -> list.indices.random()
+                    else -> 0
+                }
                 player.with {
                     setMediaItems(mediaItems, startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
                     shuffleModeEnabled = shuffle
