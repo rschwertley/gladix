@@ -98,7 +98,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private val listener by lazy {
         val nav = if (argId == null) requireParentFragment() else this
-        object : FeedClickListener(this, nav.parentFragmentManager, nav.id) {
+        object : FeedClickListener(this@SearchFragment, nav.parentFragmentManager, nav.id) {
             override fun onTracksClicked(
                 view: View?, extensionId: String?, context: EchoMediaItem?,
                 tracks: List<Track>?, pos: Int
