@@ -25,6 +25,16 @@ class ShufflePlayer(
 
     private var isShuffled = false
     private var original = getQueue()
+    private var isFreshShuffle = false
+
+    // Called by playItem() before setting shuffleModeEnabled=true so changeQueue() knows to
+    // place the starting track at physical index 0 with no "before" predecessors. Must be called
+    // explicitly rather than inferred from setMediaItems() to avoid false-positives from the
+    // cold-start restore paths (resume/onPlaybackResumption/PlayerService.onCreate), which all
+    // call setMediaItems AFTER shuffleModeEnabled and must never trigger this behavior.
+    internal fun notifyFreshShuffle() {
+        isFreshShuffle = true
+    }
 
     override fun setShuffleModeEnabled(enabled: Boolean) {
         if (enabled) original = getQueue()
@@ -55,9 +65,11 @@ class ShufflePlayer(
     private fun changeQueue(list: List<MediaItem>) {
         log("Change queue")
         if (list.size <= 1) return
+        val freshPlay = isFreshShuffle
+        isFreshShuffle = false
         val currentMediaItem = list.first { it.mediaId == currentMediaItem?.mediaId }
         val index = list.indexOf(currentMediaItem)
-        val before = list.take(index) - currentMediaItem
+        val before = if (freshPlay) emptyList() else list.take(index) - currentMediaItem
         val after = list.takeLast(list.size - index) - currentMediaItem
         // Use player.currentMediaItemIndex directly — this is the raw ExoPlayer index and must
         // not go through getCurrentMediaItemIndex(), which returns a windowed offset.

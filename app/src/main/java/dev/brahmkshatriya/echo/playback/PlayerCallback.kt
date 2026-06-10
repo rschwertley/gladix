@@ -334,6 +334,7 @@ class PlayerCallback(
                     shuffle -> list.indices.random()
                     else -> 0
                 }
+                if (shuffle) (player as? ShufflePlayer)?.notifyFreshShuffle()
                 player.with {
                     setMediaItems(mediaItems, startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
                     shuffleModeEnabled = shuffle
