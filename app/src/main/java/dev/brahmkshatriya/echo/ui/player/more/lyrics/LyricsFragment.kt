@@ -1,12 +1,10 @@
 package dev.brahmkshatriya.echo.ui.player.more.lyrics
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat.CONSUMED
 import androidx.core.view.isVisible
@@ -19,7 +17,6 @@ import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.behavior.HideViewOnScrollBehavior
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
@@ -27,7 +24,6 @@ import dev.brahmkshatriya.echo.common.clients.LyricsSearchClient
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Lyrics
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerLyricsBinding
-import dev.brahmkshatriya.echo.databinding.ItemLyricsItemBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
@@ -40,7 +36,6 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
-import dev.brahmkshatriya.echo.utils.ui.FastScrollerHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -93,7 +88,6 @@ class LyricsFragment : Fragment() {
             lyricAdapter.updateCurrent(currentIndex)
             if (!shouldAutoScroll) return
             binding.appBarLayout.setExpanded(false)
-            slideDown()
             if (currentIndex < 0 || currentIndex >= lyricAdapter.itemCount) return
             if (currentIndex == 0) {
                 layoutManager.scrollToPositionWithOffset(0, 0)
@@ -253,13 +247,4 @@ class LyricsFragment : Fragment() {
         override fun calculateTimeForDeceleration(dx: Int) = 650
     }
 
-    @SuppressLint("WrongConstant")
-    private fun slideDown() {
-        /*
-        val params = binding.lyricsItem.root.layoutParams as CoordinatorLayout.LayoutParams
-        val behavior = params.behavior as HideViewOnScrollBehavior
-        behavior.setViewEdge(1)
-        behavior.slideOut(binding.lyricsItem.root)
-        */
-    }
 }

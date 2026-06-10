@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.utils.ui.prefs
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.preference.ListPreference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.R
@@ -13,7 +14,7 @@ class MaterialListPreference(context: Context) : ListPreference(context) {
         try {
             super.onSetInitialValue(defaultValue)
         } catch (e: ClassCastException) {
-            sharedPreferences?.edit()?.remove(key)?.apply()
+            sharedPreferences?.edit { remove(key) }
             value = (defaultValue as? String) ?: entryValues.firstOrNull()?.toString() ?: ""
         }
         customSummary = summary

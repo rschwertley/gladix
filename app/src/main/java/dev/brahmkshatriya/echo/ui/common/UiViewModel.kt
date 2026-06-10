@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.common
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.ViewGroup
@@ -10,9 +11,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.ViewCompat
-import androidx.core.view.isVisible
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.forEach
+import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
@@ -45,6 +46,7 @@ import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animateTranslation
 import dev.brahmkshatriya.echo.utils.ui.GradientDrawable
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +56,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import java.lang.ref.WeakReference
@@ -237,14 +240,22 @@ class UiViewModel(
 
     companion object {
         const val BACKGROUND_GRADIENT = "bg_gradient"
-        fun Fragment.applyGradient(view: View, drawable: Drawable?) {
+        suspend fun Fragment.applyGradient(view: View, drawable: Drawable?) {
             val settings = requireContext().getSettings()
             val isGradient = settings.getBoolean(BACKGROUND_GRADIENT, true)
-            val drawable = if (isGradient) {
+            val source = if (isGradient) {
                 drawable ?: MaterialColors.getColor(view, androidx.appcompat.R.attr.colorPrimary)
                     .toDrawable()
             } else null
-            view.background = GradientDrawable.createBlurred(view, drawable)
+            val context = view.context
+            val bitmap: Bitmap? = source?.toBitmap(
+                source.intrinsicWidth.coerceAtLeast(1),
+                source.intrinsicHeight.coerceAtLeast(1)
+            )
+            val bg = withContext(Dispatchers.Default) {
+                GradientDrawable.createBlurred(context, bitmap)
+            }
+            view.background = bg
         }
 
         fun Fragment.applyInsets(vararg flows: Flow<*>, block: UiViewModel.(Insets) -> Unit) {

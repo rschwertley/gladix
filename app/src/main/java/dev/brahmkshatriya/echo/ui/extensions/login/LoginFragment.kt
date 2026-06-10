@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions.login
 
 import android.app.UiModeManager
-import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -15,6 +14,7 @@ import android.text.InputType.TYPE_TEXT_VARIATION_URI
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.getSystemService
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
@@ -31,8 +31,8 @@ import dev.brahmkshatriya.echo.common.clients.LoginClient.InputField.Type
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginCustomInputBinding
-import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSmartBinding
 import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSelectorBinding
+import dev.brahmkshatriya.echo.databinding.FragmentExtensionLoginSmartBinding
 import dev.brahmkshatriya.echo.databinding.FragmentGenericCollapsableBinding
 import dev.brahmkshatriya.echo.databinding.FragmentWebviewBinding
 import dev.brahmkshatriya.echo.databinding.ItemExtensionButtonBinding
@@ -177,8 +177,7 @@ class LoginFragment : Fragment() {
             setupTransition(view)
             val binding = FragmentExtensionLoginSelectorBinding.bind(view)
             val client = loginViewModel.extension.value?.instance?.value
-            val uiModeManager = requireContext()
-                .getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
+            val uiModeManager = requireContext().getSystemService<UiModeManager>()!!
             val isTV = requireContext().packageManager
                 .hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
                 uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION

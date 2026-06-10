@@ -4,18 +4,16 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.databinding.FragmentMediaBinding
-import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyGradient
-import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.icon
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.placeHolder
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
@@ -28,6 +26,7 @@ import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadWithThumb
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.configureAppBar
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.koin.core.parameter.parametersOf
 
@@ -87,7 +86,8 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
                 }
             }
             item.cover.loadInto(binding.cover, null, item.placeHolder)
-            item.background.loadWithThumb(view) { applyGradient(view, it) }
+            val gradientScope = viewLifecycleOwner.lifecycleScope
+            item.background.loadWithThumb(view) { gradientScope.launch { applyGradient(view, it) } }
         }
         parentFragmentManager.setFragmentResultListener("reload", this) { _, data ->
             if (data.getString("id") == item.id) viewModel.refresh()

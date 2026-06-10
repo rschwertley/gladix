@@ -6,10 +6,6 @@
 -keep,allowoptimization class okhttp3.** { public protected *; }
 -keep,allowoptimization class com.google.protobuf.** { public protected *; }
 
--keep class okhttp3.WebSocketListener { *; }
--keep class kotlinx.serialization.json.JsonTransformingSerializer { *; }
--keep class kotlin.jvm.internal.MutablePropertyReference1Impl { *; }
-
 -dontwarn com.oracle.svm.core.annotate.Delete
 -dontwarn com.oracle.svm.core.annotate.Substitute
 -dontwarn com.oracle.svm.core.annotate.TargetClass

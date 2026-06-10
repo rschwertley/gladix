@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+        getString(R.string.adding_x, ...) and getString(R.string.x_specific_quality_summary, ...)
+        both pass arguments to strings that contain %1$s placeholders. Lint's StringFormatMatches
+        check cannot statically verify the placeholder count through the getString() overload and
+        reports a false positive. The strings and call sites are correct.
+    -->
+    <issue id="StringFormatMatches">
+        <ignore path="src/main/java/dev/brahmkshatriya/echo/ui/playlist/edit/EditPlaylistBottomSheet.kt" />
+        <ignore path="src/main/java/dev/brahmkshatriya/echo/ui/extensions/ExtensionInfoFragment.kt" />
+    </issue>
+
+    <!--
+        These resources are all active but lint cannot trace their usage chains:
+        - art_brand/art_shivam: upstream Echo artwork; art_brand references art_shivam internally
+        - ic_launcher_background/ic_launcher_monochrome/ic_launcher_round/ic_mono: adaptive icon
+          system; lint cannot fully trace the mipmap→drawable→color reference chain
+        - app_color_highlight/app_color_shadow: referenced by ic_launcher_background.xml as
+          gradient stop colors for the launcher icon background
+        - item_lyrics_item: layout backing ItemLyricsItemBinding, used by LyricsFragment
+    -->
+    <issue id="UnusedResources">
+        <ignore path="src/main/res/drawable/art_brand.xml" />
+        <ignore path="src/main/res/drawable/art_shivam.xml" />
+        <ignore path="src/main/res/values/ic_launcher_background.xml" />
+        <ignore path="src/main/res/drawable/ic_launcher_background.xml" />
+        <ignore path="src/main/res/drawable/ic_launcher_monochrome.xml" />
+        <ignore path="src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml" />
+        <ignore path="src/main/res/drawable/ic_mono.xml" />
+        <ignore path="src/main/res/values/colors.xml" />
+        <ignore path="src/main/res/layout/item_lyrics_item.xml" />
+    </issue>
+</lint>

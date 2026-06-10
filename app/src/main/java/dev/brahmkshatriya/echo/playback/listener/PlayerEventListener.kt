@@ -2,13 +2,18 @@ package dev.brahmkshatriya.echo.playback.listener
 
 import android.content.Context
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
-import androidx.media3.session.MediaSession
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
@@ -23,28 +28,26 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.getRepeatButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getShuffleButton
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils
+import dev.brahmkshatriya.echo.playback.ShufflePlayer
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
-import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
-import dev.brahmkshatriya.echo.R
-import androidx.media3.datasource.FileDataSource
-import androidx.media3.datasource.HttpDataSource
-import androidx.media3.common.ParserException
-import java.io.FileNotFoundException
-import java.net.SocketException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.FileNotFoundException
+import java.net.SocketException
 import kotlin.reflect.KClass
 
+@OptIn(UnstableApi::class)
 class PlayerEventListener(
     private val context: Context,
     private val scope: CoroutineScope,
@@ -100,7 +103,8 @@ class PlayerEventListener(
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        scope.launch { ResumptionUtils.saveQueue(context, player) }
+        if ((session.player as? ShufflePlayer)?.isRearranging != true)
+            scope.launch { ResumptionUtils.saveQueue(context, player) }
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
             retriedMediaId = null
             retriedWatchdogCount = 0
@@ -122,6 +126,7 @@ class PlayerEventListener(
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         updateCustomLayout()
         ResumptionUtils.saveShuffle(context, shuffleModeEnabled)
+        scope.launch { ResumptionUtils.saveQueue(context, player) }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {

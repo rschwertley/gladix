@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.utils.ui
 
 import android.R.attr.colorPrimary
+import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Color
 import android.graphics.ComposeShader
@@ -60,19 +62,14 @@ object GradientDrawable {
 
     private const val RATIO = 0.33f
     private val maxColor = Color.argb(128, 0, 0, 0)
-    fun createBlurred(view: View, toBlur: Drawable?): Drawable {
-        val background = MaterialColors.getColor(view, R.attr.echoBackground)
-        val primary = MaterialColors.getColor(view, colorPrimary)
+    fun createBlurred(context: Context, toBlur: Bitmap?): Drawable {
+        val background = MaterialColors.getColor(context, R.attr.echoBackground, Color.BLACK)
+        val primary = MaterialColors.getColor(context, colorPrimary, Color.BLACK)
         if (toBlur == null) return background.toDrawable()
         val noise = ResourcesCompat.getDrawable(
-            view.resources, R.drawable.grain_noise, view.context.theme
+            context.resources, R.drawable.grain_noise, context.theme
         )!!.toBitmap()
-        val bitmap = toBlur.run {
-            toBitmap(
-                intrinsicWidth.coerceAtLeast(1),
-                intrinsicHeight.coerceAtLeast(1),
-            )
-        }.blurred(view.context)
+        val bitmap = toBlur.blurred(context)
         return PaintDrawable().apply {
             setShape(RectShape())
             paint.shader = null

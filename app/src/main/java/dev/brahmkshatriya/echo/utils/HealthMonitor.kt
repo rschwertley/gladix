@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.utils
 
 import android.app.Application
 import android.content.Context
+import androidx.core.content.edit
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.util.concurrent.ConcurrentHashMap
 
@@ -33,7 +34,7 @@ class HealthMonitor(application: Application) {
         }
         if (now - lastReported < cooldownMs) return
         when (scope) {
-            Scope.PERSISTENT -> prefs.edit().putLong(signature, now).apply()
+            Scope.PERSISTENT -> prefs.edit { putLong(signature, now) }
             Scope.MEMORY_ONLY -> memoryTimestamps[signature] = now
         }
         FirebaseCrashlytics.getInstance().recordException(exception)

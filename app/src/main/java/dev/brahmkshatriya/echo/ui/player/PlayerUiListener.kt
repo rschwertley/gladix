@@ -9,12 +9,16 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class PlayerUiListener(
     private val player: Player,
     private val viewModel: PlayerViewModel
 ) : Player.Listener {
+
+    private var pendingQueueUpdate: Job? = null
 
     init {
         updateList()
@@ -36,7 +40,11 @@ class PlayerUiListener(
 
         if (player.mediaItemCount > 0 || !showingPlaceholder) {
             queue = newQueue
-            viewModelScope.launch { queueFlow.emit(Unit) }
+            pendingQueueUpdate?.cancel()
+            pendingQueueUpdate = viewModelScope.launch {
+                delay(50)
+                queueFlow.emit(Unit)
+            }
         }
     }
 

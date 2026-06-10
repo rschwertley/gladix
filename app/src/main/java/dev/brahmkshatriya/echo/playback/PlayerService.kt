@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.playback
 
 import android.app.Application
-import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -14,9 +13,12 @@ import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.car.app.connection.CarConnection
 import androidx.core.app.NotificationCompat
+import androidx.core.content.edit
+import androidx.core.content.getSystemService
 import androidx.lifecycle.Observer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -36,7 +38,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaStyleNotificationHelper
 import androidx.media3.session.SessionToken
 import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
@@ -45,12 +46,14 @@ import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
-import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
-import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
+import dev.brahmkshatriya.echo.history.HistoryRepository
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.listener.AudioFocusListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
@@ -61,10 +64,8 @@ import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
+import dev.brahmkshatriya.echo.utils.HealthMonitor
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,10 +127,10 @@ class PlayerService : MediaLibraryService() {
             // One-time migration: force normalization off for all existing users.
             // Safe to re-enable by clearing normalization_force_disabled_v1 from prefs.
             if (!app.settings.getBoolean("normalization_force_disabled_v1", false)) {
-                app.settings.edit()
-                    .putBoolean(LOUDNESS_NORMALIZATION, false)
-                    .putBoolean("normalization_force_disabled_v1", true)
-                    .apply()
+                app.settings.edit {
+                    putBoolean(LOUDNESS_NORMALIZATION, false)
+                    putBoolean("normalization_force_disabled_v1", true)
+                }
             }
             crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
             crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 5) * 1000
@@ -276,7 +277,7 @@ class PlayerService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun startForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
+            val nm = getSystemService<NotificationManager>()!!
             if (nm.getNotificationChannel(DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID) == null) {
                 nm.createNotificationChannel(
                     NotificationChannel(

@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
-import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -16,9 +15,12 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.content.getSystemService
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -110,11 +112,11 @@ object PermsUtils {
     private const val BATTERY_OPTIMIZATION_ASKED = "battery_optimization_asked"
 
     fun ComponentActivity.checkBatteryOptimization() {
-        val pm = getSystemService(PowerManager::class.java)
+        val pm = getSystemService<PowerManager>() ?: return
         if (pm.isIgnoringBatteryOptimizations(packageName)) return
         val settings = getSettings()
         if (settings.getBoolean(BATTERY_OPTIMIZATION_ASKED, false)) return
-        settings.edit().putBoolean(BATTERY_OPTIMIZATION_ASKED, true).apply()
+        settings.edit { putBoolean(BATTERY_OPTIMIZATION_ASKED, true) }
         startActivity(
             Intent(
                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
