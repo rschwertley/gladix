@@ -7,6 +7,8 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
 import java.io.IOException
+//noinspection UnusedImport — needed for 1-arg resume; without it Kotlin resolves to CancellableContinuation.resume(value, onCancellation)
+import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class ContinuationCallback(
