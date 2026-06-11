@@ -10,9 +10,6 @@ class HealthMonitor(application: Application) {
 
     enum class Scope { PERSISTENT, MEMORY_ONLY }
 
-    class CorruptMetadataAnomaly(extensionId: String, gainDb: Float) :
-        Exception("extensionId=$extensionId gainDb=$gainDb")
-
     class ExtensionResolutionTimeout(extensionId: String, durationMs: Long) :
         Exception("extensionId=$extensionId durationMs=$durationMs")
 

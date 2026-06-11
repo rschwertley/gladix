@@ -175,41 +175,6 @@ class DeezerParser(private val session: DeezerSession) {
         )
     }
 
-    fun JsonObject.toTrackFromRestApi(): Track {
-        val titleVersion = str("title_version")
-        val albumObj = this["album"]?.jsonObject
-        val artistObj = this["artist"]?.jsonObject
-        val cover = albumObj?.let {
-            (it.str("cover_medium") ?: it.str("cover"))?.takeIf { url -> url.isNotEmpty() }?.toImageHolder()
-        }
-        return Track(
-            id = str("id").orEmpty(),
-            title = buildString {
-                append(str("title").orEmpty())
-                if (!titleVersion.isNullOrEmpty()) append(" ").append(titleVersion)
-            },
-            cover = cover,
-            duration = str("duration")?.toLongOrNull()?.times(1000),
-            isExplicit = str("explicit_lyrics") == "true",
-            artists = artistObj?.let {
-                listOf(Artist(
-                    id = it.str("id").orEmpty(),
-                    name = it.str("name").orEmpty(),
-                    cover = (it.str("picture_medium") ?: it.str("picture"))
-                        ?.takeIf { url -> url.isNotEmpty() }?.toImageHolder()
-                ))
-            } ?: emptyList(),
-            album = albumObj?.let {
-                Album(
-                    id = it.str("id").orEmpty(),
-                    title = it.str("title").orEmpty(),
-                    cover = cover
-                )
-            },
-            extras = mapOf("TYPE" to "cover")
-        )
-    }
-
     fun JsonObject.toArtistFromRestApi(): Artist {
         return Artist(
             id = str("id").orEmpty(),
@@ -360,9 +325,6 @@ class DeezerParser(private val session: DeezerSession) {
         val date = Date(this * 1000)
         return sdf.format(date).toDate()
     }
-
-    private fun parseDate(raw: String): EchoDate? =
-        if ("-" in raw) raw.toDate() else raw.toLongOrNull()?.toDate()
 
     private fun parseArtists(arr: JsonArray?, data: JsonObject): List<Artist> {
         return if (!arr.isNullOrEmpty()) {

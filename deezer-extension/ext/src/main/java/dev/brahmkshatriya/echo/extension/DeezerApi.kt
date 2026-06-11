@@ -466,8 +466,6 @@ class DeezerApi(private val session: DeezerSession) {
 
     suspend fun artistAlbums(id: String, index: Int): JsonObject = deezerArtist.artistAlbums(id, index)
 
-    suspend fun artistTop(id: String, index: Int): JsonObject = deezerArtist.artistTop(id, index)
-
     suspend fun artistRelated(id: String, index: Int): JsonObject = deezerArtist.artistRelated(id, index)
 
     //<============= Albums =============>
@@ -559,7 +557,7 @@ class DeezerApi(private val session: DeezerSession) {
         val jwt = jsonObject["jwt"]?.jsonPrimitive?.content
         val params = encodeJson {
             put("operationName", "SynchronizedTrackLyrics")
-            put("query", "query SynchronizedTrackLyrics(\$trackId: String!) {\n  track(trackId: \$trackId) {\n    id\n    isExplicit\n    lyrics {\n      id\n      copyright\n      text\n      writers\n      synchronizedLines {\n        lrcTimestamp\n        line\n        milliseconds\n        duration\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}")
+            put("query", $$"query SynchronizedTrackLyrics($trackId: String!) {\n  track(trackId: $trackId) {\n    id\n    isExplicit\n    lyrics {\n      id\n      copyright\n      text\n      writers\n      synchronizedLines {\n        lrcTimestamp\n        line\n        milliseconds\n        duration\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}")
             putJsonObject("variables") {
                 put("trackId", id)
             }

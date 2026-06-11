@@ -193,8 +193,8 @@ class ShufflePlayer(
     // are registered on the inner player by ForwardingPlayer.addListener), so no synthetic
     // STATE_READY callback is delivered to PlayerEventListener or AudioFocusListener.
     override fun getPlaybackState(): Int {
-        return if (player.playbackState == Player.STATE_IDLE && mediaItemCount > 0 && !playWhenReady)
-            Player.STATE_READY
+        return if (player.playbackState == STATE_IDLE && mediaItemCount > 0 && !playWhenReady)
+            STATE_READY
         else
             player.playbackState
     }
@@ -204,14 +204,14 @@ class ShufflePlayer(
     // STATE_READY and never fires. Both play() and setPlayWhenReady() are overridden because
     // setPlaying() in PlayerViewModel uses the playWhenReady property setter directly, not play().
     override fun play() {
-        if (player.playbackState == Player.STATE_IDLE) player.prepare()
-        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0, 0)
+        if (player.playbackState == STATE_IDLE) player.prepare()
+        if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.play()
     }
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
-        if (playWhenReady && player.playbackState == Player.STATE_IDLE) player.prepare()
-        if (playWhenReady && player.playbackState == Player.STATE_ENDED) player.seekTo(0, 0)
+        if (playWhenReady && player.playbackState == STATE_IDLE) player.prepare()
+        if (playWhenReady && player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.setPlayWhenReady(playWhenReady)
     }
 

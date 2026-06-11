@@ -93,11 +93,5 @@ sealed class ImageHolder {
          */
         fun Int.toResourceImageHolder(crop: Boolean = false) = ResourceIdImageHolder(this, crop)
 
-        /**
-         * Converts a hex color code to a [HexColorImageHolder]
-         *
-         * @param crop Whether to crop the image
-         */
-        fun String.toHexColorImageHolder() = HexColorImageHolder(this)
     }
 }

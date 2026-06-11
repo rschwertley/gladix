@@ -35,7 +35,7 @@ import java.util.Locale
  * @property extras Any extra data you want to associate with the track
  * @property isPlayable Whether the track is playable.
  * @property streamables The streamables of the track
- * @property isRadioSupported Whether the track can used to create a radio. Checkout [RadioClient]
+ * @property isRadioSupported Whether the track can be used to create a radio. Checkout [RadioClient]
  * @property isFollowable Whether the track can be followed. Checkout [FollowClient]
  * @property isSaveable Whether the track can be saved to library. Checkout [SaveClient]
  * @property isLikeable Whether the track can be liked. Checkout [LikeClient]
@@ -78,7 +78,7 @@ data class Track(
 ) : EchoMediaItem {
 
     enum class Type {
-        Song, Podcast, VideoSong, Video, HorizontalVideo
+        Song, Podcast, @Suppress("unused") VideoSong, Video, HorizontalVideo
     }
 
     @Serializable

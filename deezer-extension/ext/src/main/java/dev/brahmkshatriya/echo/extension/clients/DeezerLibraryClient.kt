@@ -60,7 +60,7 @@ class DeezerLibraryClient(
         return Feed(tabs) { tab ->
             val id = tab?.id
             val data = when (id) {
-                TabId.ALL.id -> loadAll() ?: emptyList()
+                TabId.ALL.id -> loadAll()
                 else -> loadSingle(id)
             }
             val buttons = if (id == TabId.TRACKS.id) Feed.Buttons(showPlayAndShuffle = true)
@@ -69,7 +69,7 @@ class DeezerLibraryClient(
         }
     }
 
-    private suspend fun loadAll(): List<Shelf>? = supervisorScope {
+    private suspend fun loadAll(): List<Shelf> = supervisorScope {
         deezerExtension.handleArlExpiration()
         configs.values.map { cfg ->
             async(cpuDispatcher) {

@@ -118,7 +118,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             val seed = seeds.firstOrNull() ?: error("No Radio")
             Radio(
                 id = seed.id,
-                title = (seed.artists.firstOrNull()?.name ?: item.title) + " Radio",
+                title = item.title + " Radio",
                 cover = item.cover ?: seed.cover,
                 extras = mapOf(
                     "radio" to "album",
@@ -245,26 +245,6 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
     private fun JsonObject.toTrack(parser: DeezerParser): Track =
         parser.run { this@toTrack.toTrack() }
-
-    private fun JsonObject.lastTrackFromSongs(parser: DeezerParser): Track? =
-        runCatching {
-            val songs = this["results"]?.jsonObject
-                ?.get("SONGS")?.jsonObject
-                ?.get("data")?.jsonArray
-                ?: return null
-            val lastObj = songs.lastOrNull()?.safeObj() ?: return null
-            lastObj.toTrack(parser)
-        }.getOrNull()
-
-    private fun JsonObject.randomTrackFromSongs(parser: DeezerParser): Track? =
-        runCatching {
-            val songs = this["results"]?.jsonObject
-                ?.get("SONGS")?.jsonObject
-                ?.get("data")?.jsonArray
-                ?: return null
-            val randomObj = songs.randomOrNull()?.safeObj() ?: return null
-            randomObj.toTrack(parser)
-        }.getOrNull()
 
     private fun JsonObject.randomTracksFromSongs(parser: DeezerParser, count: Int): List<Track> =
         runCatching {

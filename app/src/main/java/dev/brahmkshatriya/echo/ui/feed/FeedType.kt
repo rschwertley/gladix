@@ -26,6 +26,7 @@ sealed interface FeedType {
     val id: String
     val type: Enum
     val extId: String
+    @Suppress("RedundantNullableReturnType")
     val extras: Map<String, String>?
 
     val extensionId: String

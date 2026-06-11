@@ -15,5 +15,6 @@ interface PlaylistEditPrivacyClient : PlaylistEditClient {
      * @param playlist the playlist to set the privacy of.
      * @param isPrivate whether the playlist should be private.
      */
+    @Suppress("unused")
     suspend fun setPrivacy(playlist: Playlist, isPrivate: Boolean)
 }

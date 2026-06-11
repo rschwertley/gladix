@@ -606,7 +606,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     override suspend fun onTrackChanged(details: TrackDetails?) {}
 
-    override suspend fun getMarkAsPlayedDuration(details: TrackDetails): Long? = 30000L
+    override suspend fun getMarkAsPlayedDuration(details: TrackDetails): Long = 30000L
 
     override suspend fun onMarkAsPlayed(details: TrackDetails) {
         if (log) api.log(details.track)

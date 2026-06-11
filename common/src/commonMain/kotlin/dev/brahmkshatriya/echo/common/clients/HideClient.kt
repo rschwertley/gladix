@@ -9,7 +9,7 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 interface HideClient {
 
     /**
-     * Hides or unhides a item from the user's feed.
+     * Hides or unhides an item from the user's feed.
      *
      * @param item the item to hide or unhide.
      * @param shouldHide whether the item should be hidden or unhidden.
@@ -17,7 +17,7 @@ interface HideClient {
     suspend fun hideItem(item: EchoMediaItem, shouldHide: Boolean)
 
     /**
-     * Checks if a item is hidden.
+     * Checks if an item is hidden.
      *
      * @param item the item to check.
      * @return true if the track is hidden, false otherwise.

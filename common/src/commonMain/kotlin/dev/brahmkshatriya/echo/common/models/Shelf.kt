@@ -52,7 +52,7 @@ sealed interface Shelf {
         /**
          * Represents the type of the list.
          *
-         * - [Type.Linear] items displayed in a horizontally.
+         * - [Type.Linear] items displayed horizontally.
          * - [Type.Grid] items displayed in a grid layout, vertically. limited to 8 items.
          */
         enum class Type {

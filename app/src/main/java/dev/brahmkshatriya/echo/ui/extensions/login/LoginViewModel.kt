@@ -76,10 +76,6 @@ class LoginViewModel(
         loadingOver.emit(Unit)
     }
 
-    fun onSmartLoginComplete(users: Result<List<User>>) = viewModelScope.launch {
-        afterLogin(users)
-    }
-
     fun onSmartLoginComplete(arl: String) = viewModelScope.launch {
         loading.value = true
         val extension = extension.first { it != null }!!

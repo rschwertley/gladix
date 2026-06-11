@@ -170,7 +170,7 @@ data class Streamable(
      * A class representing the actual source where streamable audio/video is present.
      *
      * There are three types of sources:
-     * - [Http] - To represent a source that contains Audio/Video on a Http Url.
+     * - [Http] - To represent a source that contains Audio/Video on an Http Url.
      * - [Raw] - To represent a source that contains Audio/Video in a Byte Stream.
      *
      * @property quality The quality of the source, this is used to sort the sources
@@ -191,7 +191,7 @@ data class Streamable(
         abstract val isLive: Boolean
 
         /**
-         * A data class representing a source that contains Audio/Video on a Http Url.
+         * A data class representing a source that contains Audio/Video on an Http Url.
          *
          * @property request The request for the source
          * @property type The type of the source

@@ -18,5 +18,6 @@ interface TrackChapterClient {
      *
      * @see Chapter
      */
+    @Suppress("unused")
     suspend fun getChapters(track: Track) : List<Chapter>
 }

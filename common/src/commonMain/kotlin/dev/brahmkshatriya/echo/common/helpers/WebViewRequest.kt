@@ -6,9 +6,9 @@ import dev.brahmkshatriya.echo.common.models.NetworkRequest
  * Use this to access the webview from the extension. There are 3 types of requests:
  * - [Headers] - Used to intercept requests made by the webview and get the headers
  * - [Cookie] - Used to get the cookies stored in the webview
- * - [Evaluate] - Used to evaluate javascript in the webview
+ * - [Evaluate] - Used to evaluate JavaScript in the webview
  *
- * The extension can implement all of the sub-interfaces, and the onStop methods
+ * The extension can implement all the sub-interfaces, and the onStop methods
  * will be called in this order of [Headers], [Cookie], [Evaluate].
  *
  * The [initialUrl] is the URL to be loaded in the webview.
@@ -53,7 +53,7 @@ sealed interface WebViewRequest<T> {
         /**
          * Called when the webview stops loading a URL with the [stopUrlRegex]
          *
-         * You can convert the data returned from the javascript to [T].
+         * You can convert the data returned from the JavaScript to [T].
          *
          * @param requests The requests that were intercepted with [interceptUrlRegex]
          *
@@ -84,28 +84,28 @@ sealed interface WebViewRequest<T> {
     }
 
     /**
-     * If you want to evaluate javascript in the webview, use this.
+     * If you want to evaluate JavaScript in the webview, use this.
      *
      * The [javascriptToEvaluate] is evaluated when the webview stops loading a URL with the [stopUrlRegex]
      * and the result is passed to the [onStop] method.
      *
-     * You can also use [javascriptToEvaluateOnPageStart] to evaluate javascript when
+     * You can also use [javascriptToEvaluateOnPageStart] to evaluate JavaScript when
      * the webview starts loading a URL. Its result is not passed to the [onStop] method.
      *
-     * The javascript code should be wrapped in a function that returns some data.
+     * The JavaScript code should be wrapped in a function that returns some data.
      *
      * @see WebViewRequest
      */
     interface Evaluate<T> : WebViewRequest<T> {
 
         /**
-         * The javascript to be evaluated in the webview.
+         * The JavaScript to be evaluated in the webview.
          * Make sure this js code is wrapped in a function that can return some data.
          */
         val javascriptToEvaluate: String
 
         /**
-         * The javascript to be evaluated when the webview starts loading a URL.
+         * The JavaScript to be evaluated when the webview starts loading a URL.
          * This is useful for setting up the webview before it loads the URL.
          *
          * Make sure this js code is wrapped in a function
@@ -113,10 +113,10 @@ sealed interface WebViewRequest<T> {
         val javascriptToEvaluateOnPageStart: String?
 
         /**
-         * Called when the webview stops loading a URL with the [stopUrlRegex] and the javascript
+         * Called when the webview stops loading a URL with the [stopUrlRegex] and the JavaScript
          * is evaluated.
          *
-         * You need to convert the data returned from the javascript to [T].
+         * You need to convert the data returned from the JavaScript to [T].
          *
          * @param url The URL that the webview stopped at
          * @param data The data returned from the [javascriptToEvaluate]

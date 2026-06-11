@@ -429,13 +429,6 @@ class LoginFragment : Fragment() {
             } catch (e: Exception) { null }
         }
 
-        private fun showError(binding: FragmentExtensionLoginSmartBinding, message: String) {
-            binding.qrLoading.visibility = View.GONE
-            binding.errorText.text = message
-            binding.errorText.isVisible = true
-            binding.regenerateButton.isVisible = true
-        }
-
         override fun onDestroyView() {
             super.onDestroyView()
             pollingJob?.cancel()

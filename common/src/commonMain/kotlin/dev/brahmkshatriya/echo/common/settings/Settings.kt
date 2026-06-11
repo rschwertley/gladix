@@ -18,7 +18,7 @@ interface Settings {
 
     /**
      * Store the value for the given key.
-     * @param value: The value to store. If null, the key will be removed.
+     * @param value The value to store. If null, the key will be removed.
      */
     fun putString(key: String, value: String?)
 
@@ -29,7 +29,7 @@ interface Settings {
 
     /**
      * Store the value for the given key.
-     * @param value: The value to store. If null, the key will be removed.
+     * @param value The value to store. If null, the key will be removed.
      */
     fun putStringSet(key: String, value: Set<String>?)
 
@@ -40,7 +40,7 @@ interface Settings {
 
     /**
      * Store the value for the given key.
-     * @param value: The value to store. If null, the key will be removed.
+     * @param value The value to store. If null, the key will be removed.
      */
     fun putInt(key: String, value: Int?)
 
@@ -51,7 +51,7 @@ interface Settings {
 
     /**
      * Store the value for the given key.
-     * @param value: The value to store. If null, the key will be removed.
+     * @param value The value to store. If null, the key will be removed.
      */
     fun putBoolean(key: String, value: Boolean?)
 }

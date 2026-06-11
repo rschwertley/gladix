@@ -15,7 +15,7 @@ import dev.brahmkshatriya.echo.common.clients.LoginClient
  */
 sealed class ClientException : Exception() {
     /**
-     * To be thrown when the some operation requires user to be logged in.
+     * To be thrown when the operation requires user to be logged in.
      */
     open class LoginRequired : ClientException()
 

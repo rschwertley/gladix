@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  *
  * @property id The id of the tab
  * @property title The title of the tab
- * @property isSort Whether the tab is a sort tab, if true, it will not ne considered for loading in the [Feed.loadAll] method.
+ * @property isSort Whether the tab is a sort tab, if true, it will not be considered for loading in the [Feed.loadAll] method.
  * @property extras Any extra data you want to associate with the tab
  */
 @Serializable
