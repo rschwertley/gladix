@@ -248,6 +248,7 @@ class DeezerApi(private val session: DeezerSession) {
                         }
                     }
                 }
+                else -> {}
             }
             result
         }
