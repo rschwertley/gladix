@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.extension.api.DeezerShow
 import dev.brahmkshatriya.echo.extension.api.DeezerTrack
 import dev.brahmkshatriya.echo.extension.api.DeezerUtil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -232,6 +233,7 @@ class DeezerApi(private val session: DeezerSession) {
                 }
             }
 
+            @Suppress("KotlinConstantConditions")
             when(result["error"]) {
                 is JsonObject -> {
                     if (result["error"]?.jsonObject["VALID_TOKEN_REQUIRED"]?.jsonPrimitive?.content?.contains("Invalid CSRF token") == true) {
@@ -245,9 +247,6 @@ class DeezerApi(private val session: DeezerSession) {
                             return@withContext callApi(method, paramsBuilder, gatewayInput)
                         }
                     }
-                }
-                else -> {
-                    null
                 }
             }
             result
@@ -366,6 +365,7 @@ class DeezerApi(private val session: DeezerSession) {
             session.updateCredentials(arl = arl)
         } catch (e: Exception) {
             if (remainingAttempts > 1) {
+                delay(1500L * (4 - remainingAttempts))
                 getArlByEmail(mail, password, remainingAttempts - 1)
             } else {
                 throw e

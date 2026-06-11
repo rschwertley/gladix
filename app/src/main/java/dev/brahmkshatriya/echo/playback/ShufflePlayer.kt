@@ -5,7 +5,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
+
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -18,7 +18,7 @@ class ShufflePlayer(
 ) : ForwardingPlayer(player) {
 
     init {
-        player.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
+        player.shuffleOrder = ShuffleOrder.UnshuffledShuffleOrder(0)
     }
 
     private fun getQueue() = (0 until mediaItemCount).map { player.getMediaItemAt(it) }

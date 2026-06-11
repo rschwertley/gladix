@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.media
 
 import android.os.Bundle
 import android.view.View
+import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
@@ -142,6 +143,10 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             observe(loadingFlow) {
                 isRefreshing = it
             }
+        }
+        if (parent.fromPlayer) {
+            binding.swipeRefresh.isEnabled = false
+            ViewCompat.setNestedScrollingEnabled(binding.recyclerView, true)
         }
     }
 }

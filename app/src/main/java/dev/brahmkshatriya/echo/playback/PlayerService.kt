@@ -87,7 +87,7 @@ class PlayerService : MediaLibraryService() {
 
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
-    private val exoPlayer by lazy { createExoplayer(this.audioEffectsProcessor, true) }
+    private val exoPlayer by lazy { createExoplayer(this.audioEffectsProcessor) }
 
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
@@ -406,7 +406,7 @@ class PlayerService : MediaLibraryService() {
             session: MediaSession, action: String, extras: Bundle
         ): Boolean = delegate.handleCustomCommand(session, action, extras)
 
-        override fun getNotificationChannelInfo() = delegate.getNotificationChannelInfo()
+        override fun getNotificationChannelInfo() = delegate.notificationChannelInfo
     }
 
     override fun onDestroy() {
@@ -418,6 +418,7 @@ class PlayerService : MediaLibraryService() {
             player.release()           // player second — main thread, synchronous
             mediaSession = null
         }
+        cache.release()
         scope.cancel()
         super.onDestroy()
     }
@@ -498,13 +499,15 @@ class PlayerService : MediaLibraryService() {
             app: Application,
             settings: SharedPreferences,
         ): SimpleCache {
-            val databaseProvider = StandaloneDatabaseProvider(app)
+            val cacheDir = File(app.cacheDir, "exo-player")
             val cacheSize = settings.getInt(CACHE_SIZE, 250)
-            return SimpleCache(
-                File(app.cacheDir, "exo-player"),
-                LeastRecentlyUsedCacheEvictor(cacheSize * 1024 * 1024L),
-                databaseProvider
-            )
+            val evictor = LeastRecentlyUsedCacheEvictor(cacheSize * 1024 * 1024L)
+            return try {
+                SimpleCache(cacheDir, evictor, StandaloneDatabaseProvider(app))
+            } catch (e: Exception) {
+                cacheDir.deleteRecursively()
+                SimpleCache(cacheDir, evictor, StandaloneDatabaseProvider(app))
+            }
         }
 
         const val STREAM_QUALITY = "stream_quality"

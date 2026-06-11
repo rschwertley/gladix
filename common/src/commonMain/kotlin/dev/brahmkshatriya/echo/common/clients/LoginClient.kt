@@ -7,7 +7,7 @@ import dev.brahmkshatriya.echo.common.models.User
  * To be implemented by the extension to provide login functionality.
  *
  * Do not implement this interface directly, use the sub-interfaces.
- * The extension can implement all of the sub-interfaces.
+ * The extension can implement all the sub-interfaces.
  *
  * @see [WebView]
  * @see [CustomInput]

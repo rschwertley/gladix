@@ -7,13 +7,6 @@ import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SaveClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
-import dev.brahmkshatriya.echo.common.models.Album.Type.Book
-import dev.brahmkshatriya.echo.common.models.Album.Type.Compilation
-import dev.brahmkshatriya.echo.common.models.Album.Type.EP
-import dev.brahmkshatriya.echo.common.models.Album.Type.LP
-import dev.brahmkshatriya.echo.common.models.Album.Type.PreRelease
-import dev.brahmkshatriya.echo.common.models.Album.Type.Show
-import dev.brahmkshatriya.echo.common.models.Album.Type.Single
 import kotlinx.serialization.Serializable
 
 /**

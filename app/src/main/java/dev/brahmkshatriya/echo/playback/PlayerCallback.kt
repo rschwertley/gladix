@@ -324,6 +324,10 @@ class PlayerCallback(
                     throwableFlow.emit(it)
                     return@future error
                 }
+                if (list.isEmpty()) {
+                    throwableFlow.emit(Exception(app.getString(R.string.list_is_empty)))
+                    return@future error
+                }
                 val mediaItems = list.map {
                     MediaItemUtils.build(
                         app, downloadFlow.value, MediaState.Unloaded(extId, it), item

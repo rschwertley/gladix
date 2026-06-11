@@ -20,9 +20,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 class DeezerParser(private val session: DeezerSession) {
@@ -311,19 +308,12 @@ class DeezerParser(private val session: DeezerSession) {
         return url.toImageHolder()
     }
 
-    private val sdf by lazy { SimpleDateFormat("yyyy-MM-dd", Locale.ROOT) }
-
     private fun String.toDate(): EchoDate {
         // "yyyy-MM-dd" or "yyyy-MM-dd HH:mm:ss"
         val y = substringBefore("-").toInt()
         val m = substringAfter("-").substringBeforeLast("-").toInt()
         val d = substringAfterLast("-").substringBefore(" ").toInt()
         return EchoDate(year = y, month = m, day = d)
-    }
-
-    private fun Long.toDate(): EchoDate {
-        val date = Date(this * 1000)
-        return sdf.format(date).toDate()
     }
 
     private fun parseArtists(arr: JsonArray?, data: JsonObject): List<Artist> {

@@ -272,12 +272,11 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         val tabObject = resultObject["TAB"]!!.jsonObject
         val playlistObject = tabObject["playlists"]!!.jsonObject
         val dataArray = playlistObject["data"]!!.jsonArray
-        dataArray.map {
+        dataArray.forEach {
             val playlist = parser.run { it.jsonObject.toPlaylist() }
             if (playlist.isEditable) {
                 playlistList.add(Pair(playlist, false))
             }
-
         }
         return playlistList
     }

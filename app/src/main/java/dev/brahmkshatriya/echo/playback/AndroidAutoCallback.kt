@@ -782,7 +782,8 @@ abstract class AndroidAutoCallback(
                 val id = hashCode().toString()
                 itemMap[id] = this
                 val (page, type) = when (this) {
-                    is Artist, is Radio -> USER to MediaMetadata.MEDIA_TYPE_MIXED
+                    is Artist -> USER to MediaMetadata.MEDIA_TYPE_MIXED
+                    is Radio -> RADIO to MediaMetadata.MEDIA_TYPE_MIXED
                     is Album -> ALBUM to MediaMetadata.MEDIA_TYPE_ALBUM
                     is Playlist -> PLAYLIST to MediaMetadata.MEDIA_TYPE_PLAYLIST
                     else -> throw IllegalStateException("Invalid type")

@@ -103,8 +103,13 @@ class PlayerEventListener(
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        if ((session.player as? ShufflePlayer)?.isRearranging != true)
+        if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scope.launch { ResumptionUtils.saveQueue(context, player) }
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                bufferingWatchdog?.cancel()
+                bufferingWatchdog = null
+            }
+        }
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
             retriedMediaId = null
             retriedWatchdogCount = 0
