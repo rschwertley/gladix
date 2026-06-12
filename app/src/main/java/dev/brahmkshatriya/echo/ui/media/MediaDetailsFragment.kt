@@ -103,7 +103,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         val uiViewModel by activityViewModel<UiViewModel>()
         applyInsets(viewModel.uiResultFlow, uiViewModel.tvMiniPlayerVisible) {
             val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(binding.recyclerView.context) else 0
-            binding.recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
+            binding.recyclerView.applyContentInsets(it, 20, 0, 16 + miniExtra)
         }
         val lineAdapter = LineAdapter()
         observe(trackFeedData.shouldShowEmpty) {

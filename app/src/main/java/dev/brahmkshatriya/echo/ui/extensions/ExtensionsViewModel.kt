@@ -82,7 +82,7 @@ class ExtensionsViewModel(
         flow.value = list
     }
 
-    private val updateTime = 1000 * 60 * 60 * 2 // Check every 2hrs
+    private val updateTime = 1000 * 60 * 60 * 24 // Check every 24hrs
     private fun shouldCheckForExtensionUpdates(): Boolean {
         val check = app.settings.getBoolean("check_for_updates", true)
         if (!check) {
@@ -102,6 +102,7 @@ class ExtensionsViewModel(
 
     fun update(activity: FragmentActivity, force: Boolean) = viewModelScope.launch {
         Log.i("GladixUpdate", "update() called: force=$force extensions=${extensionLoader.all.value.size}")
+        if (!force) extensionLoader.isLoaded.first { it }
         if (!force && !shouldCheckForExtensionUpdates()) {
             Log.d("GladixUpdate", "update: skipped (force=$force)")
             return@launch

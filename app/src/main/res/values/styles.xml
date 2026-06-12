@@ -39,7 +39,7 @@
 
     <style name="EchoCollapsingBar" parent="TopCollapsingBar" />
 
-    <style name="MediaHeaderTitle" parent="TextAppearance.Material3.TitleLarge">
+    <style name="MediaHeaderTitle" parent="TextAppearance.Material3.HeadlineSmall">
         <item name="android:textStyle">bold</item>
     </style>
 

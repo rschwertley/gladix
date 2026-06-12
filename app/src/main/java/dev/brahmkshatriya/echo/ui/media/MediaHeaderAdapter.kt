@@ -319,8 +319,7 @@ class MediaHeaderAdapter(
                         appendLine(if (compact) desc.ellipsize() else desc)
                     }
                     if (madeBy.isNotEmpty()) {
-                        appendLine()
-                        appendLine(getString(R.string.by_x, madeBy))
+                        appendLine(madeBy)
                     }
                     if (item.label != null) {
                         appendLine()

@@ -204,6 +204,10 @@ class ExtensionLoader(
         music + tracker + lyrics + misc
     }.stateIn(scope, SharingStarted.Lazily, emptyList())
 
+    val isLoaded = repository.flow
+        .map { it != null }
+        .stateIn(scope, SharingStarted.Lazily, false)
+
     init {
         scope.launch {
             all.collect { list ->
