@@ -82,7 +82,7 @@ class ExtensionsViewModel(
         flow.value = list
     }
 
-    private val updateTime = 1000 * 60 * 60 * 24 // Check every 24hrs
+    private val updateTime = 1000 * 60 * 60 * 2 // Check every 2hrs
     private fun shouldCheckForExtensionUpdates(): Boolean {
         val check = app.settings.getBoolean("check_for_updates", true)
         if (!check) {

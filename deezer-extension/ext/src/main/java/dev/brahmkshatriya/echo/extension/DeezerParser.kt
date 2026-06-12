@@ -260,7 +260,6 @@ class DeezerParser(private val session: DeezerSession) {
     }
 
     fun JsonObject.toPlaylist(): Playlist = unwrap().let { data ->
-        println("GladixDebug playlist keys=${data.keys} | DURATION=${data["DURATION"]} | duration=${data["duration"]} | TIME_ADD=${data["TIME_ADD"]} | NB_FAN=${data["NB_FAN"]} | data=$data")
         val type = data.str("PICTURE_TYPE").orEmpty()
         val md5 = data.str("PLAYLIST_PICTURE").orEmpty()
         val parentUser = data.str("PARENT_USER_ID")
@@ -283,6 +282,7 @@ class DeezerParser(private val session: DeezerSession) {
             },
             isEditable = parentUser?.contains(session.credentials.userId) == true,
             trackCount = tracks?.toLong(),
+            duration = data.long("DURATION")?.times(1000),
             creationDate = created
         )
     }

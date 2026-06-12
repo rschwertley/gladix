@@ -43,6 +43,7 @@ import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ui.SimpleItemSpan
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.toCompactDurationString
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
@@ -303,14 +304,25 @@ class MediaHeaderAdapter(
             is EchoMediaItem.Lists -> {
                 val madeBy = item.artists.joinToString(", ") { it.name }
                 val span = SpannableString(buildString {
-                    val firstRow = listOfNotNull(
-                        getString(item.typeInt),
-                        item.date?.toString(),
-                    ).joinToString(DIVIDER)
-                    val secondRow = listOfNotNull(
-                        item.toTrackString(this@getSpan),
-                        item.duration?.toTimeString()
-                    ).joinToString(DIVIDER)
+                    val firstRow = when (item) {
+                        is Playlist -> listOfNotNull(
+                            getString(item.typeInt),
+                            item.date?.toString(),
+                            item.duration?.toCompactDurationString()
+                        ).joinToString(DIVIDER)
+                        else -> listOfNotNull(
+                            getString(item.typeInt),
+                            item.date?.toString(),
+                        ).joinToString(DIVIDER)
+                    }
+                    val secondRow = when (item) {
+                        is Album -> ""
+                        is Playlist -> ""
+                        else -> listOfNotNull(
+                            item.toTrackString(this@getSpan),
+                            item.duration?.toTimeString()
+                        ).joinToString(DIVIDER)
+                    }
                     if (firstRow.isNotEmpty()) appendLine(firstRow)
                     if (secondRow.isNotEmpty()) appendLine(secondRow)
                     val desc = item.description?.parseHtml()

@@ -63,6 +63,7 @@
         <item name="layout_collapseMode">pin</item>
         <item name="navigationContentDescription">@string/back</item>
         <item name="navigationIcon">@drawable/ic_back</item>
+        <item name="navigationIconSize">30dp</item>
     </style>
 
     <style name="EchoSnackBar" parent="Widget.Material3.Snackbar">
