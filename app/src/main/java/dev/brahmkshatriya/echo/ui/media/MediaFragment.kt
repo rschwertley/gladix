@@ -58,7 +58,6 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
         binding.appBarLayout.configureAppBar { offset ->
             binding.appbarOutline.alpha = offset
             binding.coverContainer.alpha = 1 - offset
-            binding.endIcon.alpha = 1 - offset
         }
         binding.toolBar.setNavigationOnClickListener {
             parentFragmentManager.popBackStack()
@@ -77,7 +76,6 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
         observe(viewModel.itemResultFlow) { result ->
             val item = result?.getOrNull()?.item ?: item
             binding.toolBar.title = item.title.trim()
-            binding.endIcon.setImageResource(item.icon)
             if (item is Artist) binding.coverContainer.run {
                 val maxWidth = 240.dpToPx(context)
                 radius = maxWidth.toFloat()

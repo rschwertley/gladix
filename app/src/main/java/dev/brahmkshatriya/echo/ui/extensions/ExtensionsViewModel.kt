@@ -101,6 +101,7 @@ class ExtensionsViewModel(
     }
 
     fun update(activity: FragmentActivity, force: Boolean) = viewModelScope.launch {
+        Log.i("GladixUpdate", "update() called: force=$force extensions=${extensionLoader.all.value.size}")
         if (!force && !shouldCheckForExtensionUpdates()) {
             Log.d("GladixUpdate", "update: skipped (force=$force)")
             return@launch
@@ -245,7 +246,6 @@ class ExtensionsViewModel(
         val url = runCatching {
             getUpdateFileUrl(currentVersion, updateUrl, client).getOrThrow()
         }.getOrElse {
-            Log.w("GladixUpdate", "getExtensionUpdate: ${extension.id} getUpdateFileUrl failed: ${it.message}")
             app.throwFlow.emit(it)
             return null
         }
@@ -261,7 +261,6 @@ class ExtensionsViewModel(
         val file = runCatching {
             downloadUpdate(app.context, url, client).getOrThrow()
         }.getOrElse {
-            Log.w("GladixUpdate", "getExtensionUpdate: ${extension.id} download failed: ${it.message}")
             app.throwFlow.emit(it)
             return null
         } ?: return null

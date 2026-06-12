@@ -39,6 +39,10 @@
 
     <style name="EchoCollapsingBar" parent="TopCollapsingBar" />
 
+    <style name="MediaHeaderTitle" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textStyle">bold</item>
+    </style>
+
     <style name="EchoCardView">
         <item name="cardCornerRadius">?itemCorner</item>
         <item name="cardBackgroundColor">?echoBackground</item>
