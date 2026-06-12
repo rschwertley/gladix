@@ -386,9 +386,15 @@
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerHigh</item>
         <item name="layout_constraintDimensionRatio">1,1</item>
         <item name="layout_constraintEnd_toEndOf">parent</item>
-        <item name="layout_constraintHeight_max">@dimen/max_cover_size</item>
+        <item name="layout_constraintHeight_max">@dimen/media_header_cover_size</item>
         <item name="layout_constraintStart_toStartOf">parent</item>
         <item name="layout_constraintTop_toTopOf">parent</item>
-        <item name="layout_constraintWidth_max">@dimen/max_cover_size</item>
+        <item name="layout_constraintWidth_max">@dimen/media_header_cover_size</item>
     </style>
+
+    <style name="ShapeAppearance.Collapsed.Cover" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">?itemCorner</item>
+    </style>
+
 </resources>

@@ -38,7 +38,7 @@
                 android:layout_height="match_parent"
                 android:paddingHorizontal="24dp"
                 android:paddingTop="64dp"
-                android:paddingBottom="80dp">
+                android:paddingBottom="48dp">
 
                 <androidx.cardview.widget.CardView
                     android:id="@+id/coverContainer"

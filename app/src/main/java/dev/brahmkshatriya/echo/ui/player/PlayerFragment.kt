@@ -81,6 +81,7 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.emit
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadBlurred
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animateVisibility
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoClearedNullable
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
@@ -669,6 +670,7 @@ class PlayerFragment : Fragment() {
         playerCollapsedContainer.run {
             collapsedTrackTitle.text = track.title
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
+            track.cover.loadInto(collapsedTrackCover, R.drawable.ic_music)
         }
         playerControls.run {
             trackTitle.text = track.title
