@@ -30,6 +30,10 @@
                 android:background="?colorSurfaceContainerHighest"
                 android:importantForAccessibility="no" />
 
+            <include
+                android:id="@+id/click_panel"
+                layout="@layout/item_click_panels" />
+
         </FrameLayout>
 
         <View
@@ -44,7 +48,5 @@
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <include
-        android:id="@+id/click_panel"
-        layout="@layout/item_click_panels" />
+
 </FrameLayout>

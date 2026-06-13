@@ -70,6 +70,7 @@
             android:id="@+id/more"
             style="@style/IconButtonTransparent"
             android:contentDescription="@string/more"
+            android:visibility="gone"
             app:icon="@drawable/ic_more_horiz" />
     </LinearLayout>
 </LinearLayout>
