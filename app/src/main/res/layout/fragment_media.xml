@@ -21,8 +21,7 @@
             app:expandedTitleMarginBottom="14dp"
             app:expandedTitleMarginEnd="24dp"
             app:expandedTitleTextAppearance="@style/MediaHeaderTitle"
-            app:maxLines="2"
-            app:expandedTitleEllipsize="end">
+            app:maxLines="2">
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"

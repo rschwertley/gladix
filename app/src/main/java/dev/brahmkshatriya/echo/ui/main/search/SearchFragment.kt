@@ -7,6 +7,7 @@ import android.speech.RecognizerIntent
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.updatePadding
 import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
@@ -230,6 +231,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         })
 
         binding.quickSearchRecyclerView.adapter = quickSearchAdapter
+        observe(uiViewModel.combined) { insets ->
+            binding.quickSearchRecyclerView.updatePadding(start = insets.start)
+        }
         observe(searchViewModel.quickFeed) { list ->
             quickSearchAdapter.submitList(list.map {
                 QuickSearchAdapter.Item(extensionId, it)
