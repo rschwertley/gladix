@@ -12,6 +12,7 @@ import androidx.paging.LoadState
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
+import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemLoadingBinding
 import dev.brahmkshatriya.echo.playback.PlayerState
@@ -156,7 +157,7 @@ class FeedAdapter(
         }
     }.flatten()
 
-    fun withLoading(fragment: Fragment, vararg before: GridAdapter, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null): GridAdapter.Concat {
+    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null): GridAdapter.Concat {
         val tabs = TabsAdapter<FeedTab>({ tab.title }) { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
@@ -183,6 +184,7 @@ class FeedAdapter(
             runCatching { speechLauncher.launch(intent) }
         }
         buttonsAdapter = buttons
+        if (initialButtons) buttons.buttons = FeedData.Buttons("", "", Feed.Buttons(showPlayAndShuffle = true))
         fragment.observe(viewModel.buttonsFlow) {
             buttons.buttons = it
             isPlayButtonShown = it?.buttons?.showPlayAndShuffle == true

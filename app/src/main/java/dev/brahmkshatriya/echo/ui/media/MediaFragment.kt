@@ -46,6 +46,7 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
 
     override val fromPlayer = false
     override val feedId by lazy { item.id }
+    override val showInitialButtons get() = item !is Artist
 
     override val viewModel by viewModel<MediaViewModel> {
         parametersOf(true, extensionId, item, loaded, false)

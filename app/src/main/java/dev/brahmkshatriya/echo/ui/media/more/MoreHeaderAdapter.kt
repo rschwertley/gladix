@@ -16,8 +16,8 @@ import dev.brahmkshatriya.echo.databinding.ItemMoreHeaderBinding
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.PlayerState.Current.Companion.isPlaying
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
-import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.applyCover
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.typeInt
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 
 class MoreHeaderAdapter(
@@ -28,10 +28,7 @@ class MoreHeaderAdapter(
     override fun getItemCount() = 1
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val holder = ViewHolder(parent)
-        holder.binding.run {
-            coverContainer.cover.clipToOutline = true
-            coverContainer.root.setOnClickListener { onItemClicked() }
-        }
+        holder.binding.cover.setOnClickListener { onItemClicked() }
         return holder
     }
 
@@ -79,11 +76,11 @@ class MoreHeaderAdapter(
                 }
                 is Radio -> ""
             }
-            coverContainer.run { applyCover(item, cover, listBg1, listBg2, icon) }
+            item.cover.loadInto(cover, R.drawable.ic_music)
         }
 
         fun onCurrentChanged(item: EchoMediaItem?, current: PlayerState.Current?) {
-            binding.coverContainer.isPlaying.run {
+            binding.isPlaying.run {
                 val isPlaying = current.isPlaying(item?.id)
                 isVisible = isPlaying
                 (icon as Animatable).start()

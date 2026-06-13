@@ -14,11 +14,25 @@
         android:orientation="horizontal"
         android:padding="16dp">
 
-        <include
-            android:id="@+id/coverContainer"
-            layout="@layout/item_shelf_media_cover_big"
-            android:layout_width="56dp"
-            android:layout_height="wrap_content" />
+        <FrameLayout
+            android:layout_width="@dimen/context_menu_cover_size"
+            android:layout_height="@dimen/context_menu_cover_size"
+            android:clipToPadding="false">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/cover"
+                android:layout_width="@dimen/context_menu_cover_size"
+                android:layout_height="@dimen/context_menu_cover_size"
+                android:importantForAccessibility="no"
+                android:scaleType="centerCrop"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Small" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/isPlaying"
+                style="@style/SmallNowPlayingButton"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"

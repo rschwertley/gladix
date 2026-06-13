@@ -41,6 +41,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         val feedId: String
         val viewModel: MediaDetailsViewModel
         val fromPlayer: Boolean
+        val showInitialButtons: Boolean get() = false
     }
 
     val parent by lazy { requireParentFragment() as Parent }
@@ -113,11 +114,12 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             mediaHeaderAdapter.result = result
         }
         getTouchHelper(feedListener).attachToRecyclerView(binding.recyclerView)
+        binding.recyclerView.itemAnimator = null
         configureGridLayout(
             binding.recyclerView,
             GridAdapter.Concat(
                 mediaHeaderAdapter,
-                trackAdapter.withLoading(this, onEditPlaylistClick = {
+                trackAdapter.withLoading(this, initialButtons = parent.showInitialButtons, onEditPlaylistClick = {
                     lifecycleScope.launch {
                         val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@launch
                         val playlist = state.item as? Playlist ?: return@launch
@@ -140,8 +142,10 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         binding.swipeRefresh.run {
             configure()
             setOnRefreshListener { viewModel.refresh() }
-            observe(loadingFlow) {
-                isRefreshing = it
+            var hasEverLoaded = false
+            observe(loadingFlow) { isLoading ->
+                if (!isLoading) hasEverLoaded = true
+                isRefreshing = hasEverLoaded && isLoading
             }
         }
         if (parent.fromPlayer) {

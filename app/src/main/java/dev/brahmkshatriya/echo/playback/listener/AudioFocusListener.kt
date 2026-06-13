@@ -41,6 +41,7 @@ class AudioFocusListener(
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.d("GladixAudio", "AUDIOFOCUS_LOSS: playWhenReady=${player.playWhenReady}")
                 if (player.playWhenReady) {
                     handler.removeCallbacks(commitPauseRunnable)
                     pausedForFocus = true
@@ -128,6 +129,10 @@ class AudioFocusListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         if (playbackState == Player.STATE_IDLE) abandonFocus()
+        else if (playbackState == Player.STATE_BUFFERING && player.playWhenReady) {
+            Log.d("GladixAudio", "STATE_BUFFERING+playWhenReady: re-requesting focus defensively")
+            requestFocus()
+        }
     }
 
     fun release() {

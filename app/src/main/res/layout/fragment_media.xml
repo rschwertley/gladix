@@ -19,7 +19,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:expandedTitleMarginBottom="14dp"
-            app:expandedTitleMarginEnd="24dp"
+            app:expandedTitleMarginEnd="0dp"
             app:expandedTitleTextAppearance="@style/MediaHeaderTitle"
             app:maxLines="3">
 

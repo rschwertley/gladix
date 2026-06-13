@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="collapsed_cover_size">64dp</dimen>
+    <dimen name="context_menu_cover_size">48dp</dimen>
     <dimen name="max_cover_size">384dp</dimen>
     <dimen name="media_header_cover_size">250dp</dimen>
     <dimen name="bottom_player_peek_height">136dp</dimen>
