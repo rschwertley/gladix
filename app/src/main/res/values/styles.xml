@@ -26,6 +26,7 @@
     <style name="EchoBottomSheetStyle" parent="Widget.Material3.BottomSheet">
         <item name="backgroundTint">?navBackground</item>
         <item name="behavior_peekHeight">512dp</item>
+        <item name="behavior_skipCollapsed">true</item>
     </style>
 
     <style name="TopCollapsingBar" parent="Widget.Material3.CollapsingToolbar.Large">
@@ -37,7 +38,9 @@
         <item name="layout_scrollFlags">scroll|exitUntilCollapsed|snap</item>
     </style>
 
-    <style name="EchoCollapsingBar" parent="TopCollapsingBar" />
+    <style name="EchoCollapsingBar" parent="TopCollapsingBar">
+        <item name="titleCollapseMode">fade</item>
+    </style>
 
     <style name="MediaHeaderTitle" parent="TextAppearance.Material3.HeadlineSmall">
         <item name="android:textStyle">bold</item>

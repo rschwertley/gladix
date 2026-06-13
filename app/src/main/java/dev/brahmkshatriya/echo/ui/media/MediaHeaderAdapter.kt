@@ -325,7 +325,7 @@ class MediaHeaderAdapter(
                     }
                     if (firstRow.isNotEmpty()) appendLine(firstRow)
                     if (secondRow.isNotEmpty()) appendLine(secondRow)
-                    val desc = item.description?.parseHtml()
+                    val desc = item.description?.parseHtml()?.takeIf { it.isNotEmpty() }
                     if (desc != null) {
                         appendLine()
                         appendLine(if (compact) desc.ellipsize() else desc)

@@ -110,14 +110,19 @@ class ExtensionsViewModel(
         Log.d("GladixUpdate", "update: running (force=$force extensions=${extensionLoader.all.value.size})")
         app.context.saveToCache("last_update_check", System.currentTimeMillis())
         activity.cleanupTempApks()
-        message(app.context.getString(R.string.checking_for_updates))
+        message(app.context.getString(R.string.checking_for_extension_updates))
         val appApk = updateApp(app)
         runCatching {
             if (appApk != null) {
                 Log.d("GladixUpdate", "update: app update found, prompting install")
                 app.context.saveToCache("last_update_check", 0)
                 awaitInstallation(appApk).getOrThrow()
-            } else extensionLoader.all.value.forEach { updateExt(it) }
+            } else {
+                var anyUpdateFound = false
+                extensionLoader.all.value.forEach { if (updateExt(it)) anyUpdateFound = true }
+                if (!anyUpdateFound)
+                    message(app.context.getString(R.string.all_extensions_up_to_date))
+            }
         }.getOrElse { app.throwFlow.emit(it) }
     }
 
@@ -151,11 +156,11 @@ class ExtensionsViewModel(
         promptResultFlow.emit(PromptResult(file, install, type, id, supportedLinks))
     }
 
-    private suspend fun updateExt(ext: Extension<*>, show: Boolean = false) {
+    private suspend fun updateExt(ext: Extension<*>, show: Boolean = false): Boolean {
         Log.d("GladixUpdate", "updateExt: checking ${ext.name} (${ext.id}) version=${ext.version}")
         val file = getExtensionUpdate(ext, show) ?: run {
             Log.d("GladixUpdate", "updateExt: no update for ${ext.id}")
-            return
+            return false
         }
         Log.d("GladixUpdate", "updateExt: update found for ${ext.name}, file=${file.name}")
         val type = ext.metadata.importType
@@ -164,13 +169,14 @@ class ExtensionsViewModel(
             installPromptFlow.emit(file)
             val result = promptResultFlow.first { it.file == file }
             Log.d("GladixUpdate", "updateExt: prompt result accepted=${result.accepted} for ${ext.id}")
-            if (!result.accepted) return
+            if (!result.accepted) return true
         }
         install(ext.id, type, file).onFailure {
             app.throwFlow.emit(it)
-            return
+            return true
         }
         message(app.context.getString(R.string.extension_updated_successfully, ext.name))
+        return true
     }
 
     fun update(extension: Extension<*>) = viewModelScope.launch { updateExt(extension, true) }

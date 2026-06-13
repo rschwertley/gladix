@@ -176,6 +176,8 @@
     <string name="add_extensions">Add Extensions</string>
     <string name="invalid_extension_list">Invalid extensions list</string>
     <string name="checking_for_updates">Checking for updates</string>
+    <string name="checking_for_extension_updates">Checking for third-party extension updates</string>
+    <string name="all_extensions_up_to_date">All third-party extensions are up to date</string>
 
     <string name="look_and_feel">Look and Feel</string>
 

@@ -200,8 +200,12 @@ class FeedAdapter(
                 shouldShowEmpty && itemCount == 0 && loadStates.append is LoadState.NotLoading
             empty.loadState = if (isEmpty) LoadState.Loading else LoadState.NotLoading(false)
         }
+        var hasEverLoaded = false
         addLoadStateListener { loadStates ->
-            header.loadState = loadStates.refresh
+            if (loadStates.refresh is LoadState.NotLoading) hasEverLoaded = true
+            header.loadState = if (hasEverLoaded && loadStates.refresh is LoadState.Loading)
+                LoadState.NotLoading(false)
+            else loadStates.refresh
             footer.loadState = loadStates.append
         }
         return GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)

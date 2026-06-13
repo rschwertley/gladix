@@ -19,15 +19,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:expandedTitleMarginBottom="14dp"
-            app:expandedTitleMarginEnd="0dp"
+            app:expandedTitleMarginEnd="24dp"
             app:expandedTitleTextAppearance="@style/MediaHeaderTitle"
-            app:maxLines="3">
+            app:maxLines="2"
+            app:expandedTitleEllipsize="end">
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:paddingTop="16dp"
-                android:paddingBottom="56dp">
+                android:paddingBottom="84dp">
 
                 <androidx.cardview.widget.CardView
                     android:id="@+id/coverContainer"
