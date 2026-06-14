@@ -9,7 +9,7 @@
     android:layout_marginEnd="-20dp"
     android:paddingHorizontal="20dp"
     android:clipToPadding="false"
-    android:layout_marginVertical="4dp"
+    android:layout_marginVertical="2dp"
     android:minHeight="48dp">
 
     <LinearLayout

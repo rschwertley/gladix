@@ -331,6 +331,7 @@ class MediaHeaderAdapter(
                         appendLine(if (compact) desc.ellipsize() else desc)
                     }
                     if (madeBy.isNotEmpty()) {
+                        if (item is Album) appendLine()
                         appendLine(madeBy)
                     }
                     if (item.label != null) {

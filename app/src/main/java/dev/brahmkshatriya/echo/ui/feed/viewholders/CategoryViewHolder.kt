@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.databinding.ItemShelfCategoryBinding
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
 import kotlin.math.roundToInt
 
@@ -59,6 +60,11 @@ class CategoryViewHolder(
                     ?: ResourcesCompat.getColor(resources, R.color.amoled_fg_semi, null)
                 setCardBackgroundColor(color)
             }
+            val isPlainLabel = category.image == null && category.backgroundColor == null
+            val minH = if (isPlainLabel) 32.dpToPx(root.context) else 64.dpToPx(root.context)
+            val vertPad = if (isPlainLabel) 4.dpToPx(root.context) else 8.dpToPx(root.context)
+            innerLayout.minimumHeight = minH
+            innerLayout.setPadding(innerLayout.paddingLeft, vertPad, innerLayout.paddingRight, vertPad)
         }
 
         fun CardView.applyBackground(hex: String?): Int? {

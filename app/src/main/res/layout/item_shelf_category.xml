@@ -10,6 +10,7 @@
     app:cardBackgroundColor="@color/amoled_fg_semi">
 
     <LinearLayout
+        android:id="@+id/innerLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:baselineAligned="false"
