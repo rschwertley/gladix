@@ -63,8 +63,10 @@ class CategoryViewHolder(
             val isPlainLabel = category.image == null && category.backgroundColor == null
             val minH = if (isPlainLabel) 32.dpToPx(root.context) else 64.dpToPx(root.context)
             val vertPad = if (isPlainLabel) 4.dpToPx(root.context) else 8.dpToPx(root.context)
-            innerLayout.minimumHeight = minH
-            innerLayout.setPadding(innerLayout.paddingLeft, vertPad, innerLayout.paddingRight, vertPad)
+            innerLayout?.let {
+                it.minimumHeight = minH
+                it.setPadding(it.paddingLeft, vertPad, it.paddingRight, vertPad)
+            }
         }
 
         fun CardView.applyBackground(hex: String?): Int? {
