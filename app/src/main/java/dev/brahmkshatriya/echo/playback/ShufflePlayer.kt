@@ -63,7 +63,7 @@ class ShufflePlayer(
         val currentMediaItem = list.first { it.mediaId == currentMediaItem?.mediaId }
         val index = list.indexOf(currentMediaItem)
         val before = if (freshPlay) emptyList() else list.take(index) - currentMediaItem
-        val after = list.takeLast(list.size - index) - currentMediaItem
+        val after = if (freshPlay) list - currentMediaItem else list.takeLast(list.size - index) - currentMediaItem
         isRearranging = true
         try {
             // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
