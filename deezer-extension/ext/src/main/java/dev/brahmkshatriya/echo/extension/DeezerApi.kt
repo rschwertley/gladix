@@ -233,22 +233,19 @@ class DeezerApi(private val session: DeezerSession) {
                 }
             }
 
-            @Suppress("KotlinConstantConditions")
-            when(result["error"]) {
-                is JsonObject -> {
-                    if (result["error"]?.jsonObject["VALID_TOKEN_REQUIRED"]?.jsonPrimitive?.content?.contains("Invalid CSRF token") == true) {
-                        if (email.isEmpty() && pass.isEmpty()) {
-                            session.isArlExpired(true)
-                            throw Exception("Please re-login (Best use User + Pass method)")
-                        } else {
-                            session.isArlExpired(false)
-                            val userList = DeezerExtension().onLogin("userPass", mapOf(Pair("email", email), Pair("pass", pass)))
-                            DeezerExtension().setLoginUser(userList.first())
-                            return@withContext callApi(method, paramsBuilder, gatewayInput)
-                        }
+            val errorObj = result["error"] as? JsonObject
+            if (errorObj != null) {
+                if (errorObj["VALID_TOKEN_REQUIRED"]?.jsonPrimitive?.content?.contains("Invalid CSRF token") == true) {
+                    if (email.isEmpty() && pass.isEmpty()) {
+                        session.isArlExpired(true)
+                        throw Exception("Please re-login (Best use User + Pass method)")
+                    } else {
+                        session.isArlExpired(false)
+                        val userList = DeezerExtension().onLogin("userPass", mapOf(Pair("email", email), Pair("pass", pass)))
+                        DeezerExtension().setLoginUser(userList.first())
+                        return@withContext callApi(method, paramsBuilder, gatewayInput)
                     }
                 }
-                else -> {}
             }
             result
         }

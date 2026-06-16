@@ -60,9 +60,9 @@ class CategoryViewHolder(
                     ?: ResourcesCompat.getColor(resources, R.color.amoled_fg_semi, null)
                 setCardBackgroundColor(color)
             }
-            val isPlainLabel = category.image == null && category.backgroundColor == null
-            val minH = if (isPlainLabel) 32.dpToPx(root.context) else 64.dpToPx(root.context)
-            val vertPad = if (isPlainLabel) 4.dpToPx(root.context) else 8.dpToPx(root.context)
+            val isPlainLabel = category.image == null && category.backgroundColor == null && category.feed == null
+            val minH = if (isPlainLabel) 32.dpToPx(root.context) else 52.dpToPx(root.context)
+            val vertPad = if (isPlainLabel) 4.dpToPx(root.context) else 6.dpToPx(root.context)
             innerLayout?.let {
                 it.minimumHeight = minH
                 it.setPadding(it.paddingLeft, vertPad, it.paddingRight, vertPad)

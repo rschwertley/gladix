@@ -52,8 +52,10 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.MediaState
+import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
@@ -144,9 +146,15 @@ class PlayerCallback(
     }
 
     private fun getImage(player: Player) = scope.future {
-        val item = player.with { currentMediaItem }
-            ?: context.recoverPlaylist(app, downloadFlow.value).run { first.getOrNull(second) }
-            ?: return@future SessionResult(SessionError.ERROR_UNKNOWN)
+        val item = player.with { currentMediaItem } ?: run {
+            // Read-only fallback: widget image fetch should never trigger clearQueue().
+            val tracks = context.recoverTracks()
+                ?: return@future SessionResult(SessionError.ERROR_UNKNOWN)
+            val rawIndex = context.recoverIndex() ?: 0
+            val (state, ctx) = tracks.getOrNull(rawIndex) ?: tracks.firstOrNull()
+                ?: return@future SessionResult(SessionError.ERROR_UNKNOWN)
+            MediaItemUtils.build(app, downloadFlow.value, state, ctx)
+        }
         val image = item.track.cover.loadDrawable(context)?.toScaledBitmap(720)
         SessionResult(RESULT_SUCCESS, Bundle().apply { putParcelable("image", image) })
     }
@@ -505,10 +513,15 @@ class PlayerCallback(
         if (!isForPlayback) {
             // System UI metadata-only request (e.g. lock-screen notification after reboot).
             // Media3 will not call play() — return a single stub item, no queue restore needed.
-            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
-            val item = items.getOrNull(index) ?: items.firstOrNull()
+            // Read-only: recoverTracks() skips the orphaned-session clearQueue() side effect that
+            // would destroy queue files before the isForPlayback=true full restore fires.
+            val tracks = context.recoverTracks()
                 ?: throw UnsupportedOperationException("No saved queue")
-            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, pos)
+            val rawIndex = context.recoverIndex() ?: 0
+            val (state, ctx) = tracks.getOrNull(rawIndex) ?: tracks.firstOrNull()
+                ?: throw UnsupportedOperationException("No saved queue")
+            val item = MediaItemUtils.build(app, downloadFlow.value, state, ctx)
+            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0L)
         }
         if (!userQueueSet.compareAndSet(false, true)) {
             Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet already claimed")

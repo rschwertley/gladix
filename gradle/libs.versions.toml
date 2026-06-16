@@ -2,35 +2,35 @@
 agp = "8.12.2"
 kotlin = "2.2.10"
 
-car-app = "1.4.0"
+car-app = "1.7.0"
 androidx-paging = "3.3.6"
 room = "2.7.2"
 firebase-bom = "33.14.0"
-koinAndroid = "4.1.0"
+koinAndroid = "4.2.2"
 media3 = "1.10.1"
 coil = "3.3.0"
 
 [libraries]
-okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.1.0" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.4.0" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version = "1.9.0" }
-kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.10.2" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 
 androidx-car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
 androidx-core-google-shortcuts = { module = "androidx.core:core-google-shortcuts", version = "1.1.0" }
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.17.0" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.19.0" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.7.1" }
-androidx-activity = { group = "androidx.activity", name = "activity", version = "1.10.1" }
+androidx-activity = { group = "androidx.activity", name = "activity", version = "1.13.0" }
 
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version = "4.32.0" }
 recyclerview = { module = "androidx.recyclerview:recyclerview", version = "1.4.0" }
-swiperefresh = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version = "1.1.0" }
+swiperefresh = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version = "1.2.0" }
 
 fragment = { module = "androidx.fragment:fragment-ktx", version = "1.8.9" }
 
-splashscreen = { module = "androidx.core:core-splashscreen", version = "1.0.1" }
+splashscreen = { module = "androidx.core:core-splashscreen", version = "1.2.0" }
 palette = { module = "androidx.palette:palette-ktx", version = "1.0.0" }
-material = { group = "com.google.android.material", name = "material", version = "1.14.0-alpha04" }
+material = { group = "com.google.android.material", name = "material", version = "1.14.0" }
 
 preference = { module = "androidx.preference:preference-ktx", version = "1.2.1" }
 
@@ -58,7 +58,7 @@ coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
-zxing-core = { module = "com.google.zxing:core", version = "3.5.3" }
+zxing-core = { module = "com.google.zxing:core", version = "3.5.4" }
 
 pikolo = { module = "com.github.madrapps:pikolo", version = "2.0.2" }
 fadingedgelayout = { module = "com.github.bosphere.android-fadingedgelayout:fadingedgelayout", version = "1.0.0" }

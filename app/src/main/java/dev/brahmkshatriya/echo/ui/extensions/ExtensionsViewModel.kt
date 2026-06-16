@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
-import android.util.Log
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -85,15 +84,10 @@ class ExtensionsViewModel(
     private val updateTime = 1000 * 60 * 60 * 24 // Check every 24hrs
     private fun shouldCheckForExtensionUpdates(): Boolean {
         val check = app.settings.getBoolean("check_for_updates", true)
-        if (!check) {
-            Log.d("GladixUpdate", "shouldCheck: disabled by setting")
-            return false
-        }
+        if (!check) return false
         val lastUpdateCheck = app.context.getFromCache<Long>("last_update_check") ?: 0
         val elapsed = System.currentTimeMillis() - lastUpdateCheck
-        val should = elapsed > updateTime
-        Log.d("GladixUpdate", "shouldCheck: elapsed=${elapsed}ms threshold=${updateTime}ms result=$should")
-        return should
+        return elapsed > updateTime
     }
 
     private suspend fun message(msg: String) {
@@ -101,20 +95,14 @@ class ExtensionsViewModel(
     }
 
     fun update(activity: FragmentActivity, force: Boolean) = viewModelScope.launch {
-        Log.i("GladixUpdate", "update() called: force=$force extensions=${extensionLoader.all.value.size}")
         if (!force) extensionLoader.isLoaded.first { it }
-        if (!force && !shouldCheckForExtensionUpdates()) {
-            Log.d("GladixUpdate", "update: skipped (force=$force)")
-            return@launch
-        }
-        Log.d("GladixUpdate", "update: running (force=$force extensions=${extensionLoader.all.value.size})")
+        if (!force && !shouldCheckForExtensionUpdates()) return@launch
         app.context.saveToCache("last_update_check", System.currentTimeMillis())
         activity.cleanupTempApks()
         message(app.context.getString(R.string.checking_for_extension_updates))
         val appApk = updateApp(app)
         runCatching {
             if (appApk != null) {
-                Log.d("GladixUpdate", "update: app update found, prompting install")
                 app.context.saveToCache("last_update_check", 0)
                 awaitInstallation(appApk).getOrThrow()
             } else {
@@ -157,18 +145,11 @@ class ExtensionsViewModel(
     }
 
     private suspend fun updateExt(ext: Extension<*>, show: Boolean = false): Boolean {
-        Log.d("GladixUpdate", "updateExt: checking ${ext.name} (${ext.id}) version=${ext.version}")
-        val file = getExtensionUpdate(ext, show) ?: run {
-            Log.d("GladixUpdate", "updateExt: no update for ${ext.id}")
-            return false
-        }
-        Log.d("GladixUpdate", "updateExt: update found for ${ext.name}, file=${file.name}")
+        val file = getExtensionUpdate(ext, show) ?: return false
         val type = ext.metadata.importType
         if (type == ImportType.File) {
-            Log.d("GladixUpdate", "updateExt: emitting installPromptFlow for ${ext.id}")
             installPromptFlow.emit(file)
             val result = promptResultFlow.first { it.file == file }
-            Log.d("GladixUpdate", "updateExt: prompt result accepted=${result.accepted} for ${ext.id}")
             if (!result.accepted) return true
         }
         install(ext.id, type, file).onFailure {
@@ -245,11 +226,7 @@ class ExtensionsViewModel(
         show: Boolean = false
     ): File? {
         val currentVersion = extension.version
-        val updateUrl = extension.metadata.updateUrl ?: run {
-            Log.d("GladixUpdate", "getExtensionUpdate: ${extension.id} has no updateUrl, skipping")
-            return null
-        }
-        Log.d("GladixUpdate", "getExtensionUpdate: ${extension.id} v$currentVersion checking $updateUrl")
+        val updateUrl = extension.metadata.updateUrl ?: return null
         val url = runCatching {
             getUpdateFileUrl(currentVersion, updateUrl, client).getOrThrow()
         }.getOrElse {
@@ -257,13 +234,11 @@ class ExtensionsViewModel(
             return null
         }
         if (url == null) {
-            Log.d("GladixUpdate", "getExtensionUpdate: ${extension.id} is up to date")
             if (show) message(
                 app.context.getString(R.string.no_update_available_for_x, extension.name)
             )
             return null
         }
-        Log.d("GladixUpdate", "getExtensionUpdate: ${extension.id} update available at $url")
         message(app.context.getString(R.string.downloading_update_for_x, extension.name))
         val file = runCatching {
             downloadUpdate(app.context, url, client).getOrThrow()
@@ -271,7 +246,6 @@ class ExtensionsViewModel(
             app.throwFlow.emit(it)
             return null
         } ?: return null
-        Log.d("GladixUpdate", "getExtensionUpdate: ${extension.id} downloaded to ${file.name}")
         return file
     }
 
