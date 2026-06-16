@@ -3,7 +3,6 @@ package dev.brahmkshatriya.echo.ui.playlist.edit
 import android.content.Context
 import android.os.Bundle
 import android.view.View
-import androidx.core.os.bundleOf
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Playlist
@@ -65,7 +64,7 @@ class EditPlaylistBottomSheet : BottomSheetDialogFragment(R.layout.item_loading)
             binding.textView.text = save.toText(playlist, requireContext())
             val save = save as? EditPlaylistViewModel.SaveState.Saved ?: return@observe
             if (save.result.isSuccess) parentFragmentManager.setFragmentResult(
-                "reload", bundleOf("id" to playlist.id)
+                "reload", Bundle().apply { putString("id", playlist.id) }
             )
             dismiss()
         }

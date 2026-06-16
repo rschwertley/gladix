@@ -6,7 +6,6 @@ import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
@@ -102,7 +101,7 @@ class FeedSortBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         fun newInstance(id: String) = FeedSortBottomSheet().apply {
-            arguments = bundleOf("id" to id)
+            arguments = Bundle().apply { putString("id", id) }
         }
     }
 }

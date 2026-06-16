@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -22,7 +21,7 @@ import org.koin.android.ext.android.inject
 class TvPairingFragment : Fragment() {
 
     companion object {
-        fun getBundle(code: String) = bundleOf("code" to code)
+        fun getBundle(code: String) = Bundle().apply { putString("code", code) }
     }
 
     private var binding by autoCleared<FragmentTvPairingBinding>()

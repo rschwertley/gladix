@@ -3,7 +3,6 @@ package dev.brahmkshatriya.echo.ui.playlist.delete
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AlertDialog
-import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentActivity
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -67,7 +66,7 @@ class DeletePlaylistBottomSheet : BottomSheetDialogFragment(R.layout.item_loadin
                     if (state.result.isSuccess) {
                         createSnack(getString(R.string.deleted_x, playlist?.title))
                         parentFragmentManager.setFragmentResult(
-                            "deleted", bundleOf("id" to playlist?.id)
+                            "deleted", Bundle().apply { putString("id", playlist?.id) }
                         )
                         parentFragmentManager.setFragmentResult("reloadLibrary", Bundle.EMPTY)
                     }

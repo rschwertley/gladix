@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.ConcatAdapter
@@ -135,7 +134,7 @@ class EditPlaylistFragment : Fragment() {
 
             val save = save as? EditPlaylistViewModel.SaveState.Saved ?: return@observe
             if (save.result.isSuccess) parentFragmentManager.setFragmentResult(
-                "reload", bundleOf("id" to playlist.id)
+                "reload", Bundle().apply { putString("id", playlist.id) }
             )
             parentFragmentManager.popBackStack()
         }

@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.CoroutineContext
-import kotlin.experimental.ExperimentalTypeInference
 
 object CoroutineUtils {
     fun setDebug() {
@@ -32,19 +31,18 @@ object CoroutineUtils {
         delay(delayMillis)
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class, ExperimentalTypeInference::class)
+    @OptIn(ExperimentalCoroutinesApi::class)
     inline fun <reified T, R> combineTransformLatest(
         vararg flows: Flow<T>,
-        @BuilderInference noinline transform: suspend FlowCollector<R>.(Array<T>) -> Unit
+        noinline transform: suspend FlowCollector<R>.(Array<T>) -> Unit
     ): Flow<R> {
         return combine(*flows) { it }
             .transformLatest(transform)
     }
 
-    @OptIn(ExperimentalTypeInference::class)
     fun <T1, T2, R> Flow<T1>.combineTransformLatest(
         flow2: Flow<T2>,
-        @BuilderInference transform: suspend FlowCollector<R>.(T1, T2) -> Unit
+        transform: suspend FlowCollector<R>.(T1, T2) -> Unit
     ): Flow<R> {
         return combineTransformLatest(this, flow2) { args ->
             @Suppress("UNCHECKED_CAST")

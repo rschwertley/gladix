@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.os.Bundle
 import androidx.annotation.OptIn
-import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -195,7 +194,7 @@ class PlayerViewModel(
     }
 
     fun setSleepTimer(timer: Long) {
-        withBrowser { it.sendCustomCommand(sleepTimer, bundleOf("ms" to timer)) }
+        withBrowser { it.sendCustomCommand(sleepTimer, Bundle().apply { putLong("ms", timer) }) }
     }
 
     fun changeTrackSelection(trackGroup: TrackGroup, index: Int) {

@@ -15,7 +15,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.getSystemService
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
@@ -59,11 +58,11 @@ import org.koin.core.parameter.parametersOf
 
 class LoginFragment : Fragment() {
     companion object {
-        fun getBundle(extId: String, extName: String, extensionType: ExtensionType) = bundleOf(
-            "extId" to extId,
-            "extName" to extName,
-            "extensionType" to extensionType.name,
-        )
+        fun getBundle(extId: String, extName: String, extensionType: ExtensionType) = Bundle().apply {
+            putString("extId", extId)
+            putString("extName", extName)
+            putString("extensionType", extensionType.name)
+        }
 
         fun getBundle(error: AppException.LoginRequired) =
             getBundle(error.extension.id, error.extension.name, error.extension.type)

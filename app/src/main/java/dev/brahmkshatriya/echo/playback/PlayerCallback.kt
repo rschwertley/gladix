@@ -9,7 +9,6 @@ import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
-import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Rating
@@ -501,7 +500,7 @@ class PlayerCallback(
             session.player.with {
                 replaceMediaItem(currentMediaItemIndex, newItem)
             }
-            SessionResult(RESULT_SUCCESS, bundleOf("liked" to liked))
+            SessionResult(RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
         }
     }
 
