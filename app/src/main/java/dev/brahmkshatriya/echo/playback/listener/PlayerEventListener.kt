@@ -108,6 +108,9 @@ class PlayerEventListener(
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                 bufferingWatchdog?.cancel()
                 bufferingWatchdog = null
+                if (player.playbackState == Player.STATE_BUFFERING && player.playWhenReady) {
+                    armBufferingWatchdog()
+                }
             }
         }
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -138,60 +141,7 @@ class PlayerEventListener(
         Log.d("GladixPlayback", "onPlaybackStateChanged: state=$playbackState")
         updateCurrentFlow()
         if (playbackState == Player.STATE_BUFFERING) {
-            Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
-            bufferingWatchdog?.cancel()
-            bufferingWatchdog = scope.launch {
-                delay(BUFFERING_WATCHDOG_MS)
-                withContext(Dispatchers.Main) {
-                    if (player.playbackState != Player.STATE_BUFFERING) return@withContext
-                    val currentMediaId = player.currentMediaItem?.mediaId
-                    if (retriedMediaId != currentMediaId) {
-                        retriedMediaId = currentMediaId
-                        retriedWatchdogCount = 1
-                        Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt 1/$maxWatchdogRetries)")
-                        val savedIndex = player.currentMediaItemIndex
-                        val savedPosition = player.currentPosition
-                        player.stop()
-                        player.seekTo(savedIndex, savedPosition)
-                        player.prepare()
-                        player.play()
-                        requestAudioFocus()
-                    } else if (retriedWatchdogCount < maxWatchdogRetries) {
-                        retriedWatchdogCount++
-                        Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
-                        val savedIndex = player.currentMediaItemIndex
-                        val savedPosition = player.currentPosition
-                        player.stop()
-                        player.seekTo(savedIndex, savedPosition)
-                        player.prepare()
-                        player.play()
-                        requestAudioFocus()
-                    } else {
-                        retriedMediaId = null
-                        retriedWatchdogCount = 0
-                        Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
-                        consecutiveUnavailableSkips++
-                        if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                            reportAndResetConsecutiveSkips(player.currentMediaItem?.extensionId)
-                            player.pause()
-                            return@withContext
-                        }
-                        val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
-                        if (!hasMore) {
-                            player.pause()
-                            return@withContext
-                        }
-                        if (isAndroidAutoConnected()) {
-                            player.pause()
-                            delay(50)
-                        }
-                        player.seekTo(player.currentMediaItemIndex, 0)
-                        player.seekToNextMediaItem()
-                        player.prepare()
-                        player.play()
-                    }
-                }
-            }
+            armBufferingWatchdog()
         } else {
             bufferingWatchdog?.cancel()
             bufferingWatchdog = null
@@ -200,6 +150,63 @@ class PlayerEventListener(
             consecutiveUnavailableSkips = 0
             retried404MediaId = null
             retriedSocketMediaId = null
+        }
+    }
+
+    private fun armBufferingWatchdog() {
+        Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
+        bufferingWatchdog?.cancel()
+        bufferingWatchdog = scope.launch {
+            delay(BUFFERING_WATCHDOG_MS)
+            withContext(Dispatchers.Main) {
+                if (player.playbackState != Player.STATE_BUFFERING) return@withContext
+                val currentMediaId = player.currentMediaItem?.mediaId
+                if (retriedMediaId != currentMediaId) {
+                    retriedMediaId = currentMediaId
+                    retriedWatchdogCount = 1
+                    Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt 1/$maxWatchdogRetries)")
+                    val savedIndex = player.currentMediaItemIndex
+                    val savedPosition = player.currentPosition
+                    player.stop()
+                    player.seekTo(savedIndex, savedPosition)
+                    player.prepare()
+                    player.play()
+                    requestAudioFocus()
+                } else if (retriedWatchdogCount < maxWatchdogRetries) {
+                    retriedWatchdogCount++
+                    Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
+                    val savedIndex = player.currentMediaItemIndex
+                    val savedPosition = player.currentPosition
+                    player.stop()
+                    player.seekTo(savedIndex, savedPosition)
+                    player.prepare()
+                    player.play()
+                    requestAudioFocus()
+                } else {
+                    retriedMediaId = null
+                    retriedWatchdogCount = 0
+                    Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
+                    consecutiveUnavailableSkips++
+                    if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                        reportAndResetConsecutiveSkips(player.currentMediaItem?.extensionId)
+                        player.pause()
+                        return@withContext
+                    }
+                    val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                    if (!hasMore) {
+                        player.pause()
+                        return@withContext
+                    }
+                    if (isAndroidAutoConnected()) {
+                        player.pause()
+                        delay(50)
+                    }
+                    player.seekTo(player.currentMediaItemIndex, 0)
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                    player.play()
+                }
+            }
         }
     }
 

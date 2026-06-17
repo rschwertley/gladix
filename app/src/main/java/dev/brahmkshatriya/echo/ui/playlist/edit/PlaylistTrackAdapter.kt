@@ -21,6 +21,9 @@ import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 class PlaylistTrackAdapter(
     private val listener: Listener,
 ) : ScrollAnimListAdapter<Track, PlaylistTrackAdapter.ViewHolder>(DiffCallback) {
+    var isDragging = false
+    var pendingList: List<Track>? = null
+
     object DiffCallback : DiffUtil.ItemCallback<Track>() {
         override fun areItemsTheSame(oldItem: Track, newItem: Track) = oldItem.id == newItem.id
         override fun areContentsTheSame(oldItem: Track, newItem: Track) = oldItem == newItem
@@ -72,11 +75,33 @@ class PlaylistTrackAdapter(
 
     companion object {
         fun getTouchHelperAndListener(
-            viewModel: EditPlaylistViewModel
+            viewModel: EditPlaylistViewModel,
+            adapterProvider: () -> PlaylistTrackAdapter
         ): Pair<Listener, ItemTouchHelper> {
             val callback = object : ItemTouchHelper.SimpleCallback(
                 ItemTouchHelper.UP or ItemTouchHelper.DOWN, ItemTouchHelper.START
             ) {
+                override fun onSelectedChanged(
+                    viewHolder: RecyclerView.ViewHolder?, actionState: Int
+                ) {
+                    super.onSelectedChanged(viewHolder, actionState)
+                    if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+                        adapterProvider().isDragging = true
+                    }
+                }
+
+                override fun clearView(
+                    recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder
+                ) {
+                    super.clearView(recyclerView, viewHolder)
+                    val adapter = adapterProvider()
+                    adapter.isDragging = false
+                    adapter.pendingList?.let {
+                        adapter.pendingList = null
+                        adapter.submitList(it)
+                    }
+                }
+
                 override fun getMovementFlags(
                     recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder
                 ): Int {
@@ -93,12 +118,14 @@ class PlaylistTrackAdapter(
 
                     val fromPos = viewHolder.bindingAdapterPosition
                     val toPos = target.bindingAdapterPosition
+                    if (fromPos == RecyclerView.NO_POSITION || toPos == RecyclerView.NO_POSITION) return false
                     viewModel.edit(EditPlaylistViewModel.Action.Move(fromPos, toPos))
                     return true
                 }
 
                 override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                     val pos = viewHolder.bindingAdapterPosition
+                    if (pos == RecyclerView.NO_POSITION) return
                     viewModel.edit(EditPlaylistViewModel.Action.Remove(listOf(pos)))
                 }
             }
