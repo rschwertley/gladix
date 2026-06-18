@@ -12,6 +12,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
@@ -398,7 +399,6 @@ class PlayerEventListener(
                     || rootCause.message?.contains("HTTP 403") == true))
         val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
         val isTimeout = rootCause is TimeoutCancellationException
-
         if (is401) {
             val currentMediaId = mediaItem?.mediaId
             if (retriedMediaId != currentMediaId) {
@@ -419,6 +419,10 @@ class PlayerEventListener(
             Log.d("GladixPlayback", "onPlayerError: 401 retry exhausted for $currentMediaId, skipping")
             // fall through to silent skip below
         }
+
+        val isSimpleCacheError = rootCause is IllegalStateException &&
+            rootCause.stackTrace.any { it.className == SimpleCache::class.java.name }
+        if (isSimpleCacheError) return
 
         if (isMissingFile || is401 || isMalformedContent || isTimeout) {
             consecutiveUnavailableSkips++
