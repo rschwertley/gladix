@@ -87,6 +87,9 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
         return browseSections.mapNotNull { section ->
             val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
+            // TEMP DEBUG — remove after capturing one dump via `adb logcat -s GladixDebug` (or System.out)
+            val title = section.jsonObject["title"]?.jsonPrimitive?.content
+            println("GladixDebug: browseFeed section: module_id=$id title=$title")
             when (id) {
                 EXPLORE_MODULE_ID -> {
                     parser.run {
