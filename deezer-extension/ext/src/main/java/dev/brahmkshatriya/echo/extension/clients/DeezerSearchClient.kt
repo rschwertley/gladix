@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension.clients
 
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
@@ -13,8 +14,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -80,47 +79,46 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         }
     }
 
-    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
-
     private suspend fun browseFeed(shelf: String): List<Shelf> {
         deezerExtension.handleArlExpiration()
         api.updateCountry()
-        val jsonObject = api.page("channels")
-        val results = jsonObject["results"]?.jsonObject ?: return emptyList()
-        val sections = results["sections"]?.jsonArray ?: JsonArray(emptyList())
-
-        val listType = if ("grid" in shelf) Shelf.Lists.Type.Grid else Shelf.Lists.Type.Linear
-
-        return sections.mapNotNull { section ->
-            val sectionObj = section.jsonObject
-            val sectionTitle = sectionObj.str("TITLE") ?: return@mapNotNull null
-            val items = sectionObj["ITEMS"]?.jsonArray ?: JsonArray(emptyList())
-
-            val categories = items.mapNotNull { item ->
-                val obj = item.jsonObject
-                val id = obj.str("TARGET_ID") ?: return@mapNotNull null
-                val title = obj.str("TITLE") ?: return@mapNotNull null
-                val md5 = obj.str("PICTURE_MD5")
-                val picType = obj.str("TYPE")
-                val backgroundColor = obj.str("BACKGROUND_COLOR")
-                parser.run {
-                    Shelf.Category(
-                        id = id,
-                        title = title,
-                        image = getCover(md5, picType),
-                        backgroundColor = backgroundColor,
-                        feed = Feed(emptyList()) { deezerExtension.channelFeed(id).toFeedData() }
-                    )
+        val jsonObject = api.page("channels/explore/explore-tab")
+        println("GladixDeezer: $jsonObject")
+        val browsePageResults = jsonObject["results"]!!.jsonObject
+        val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
+        return browseSections.mapNotNull { section ->
+            val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
+            when (id) {
+                EXPLORE_MODULE_ID -> {
+                    parser.run {
+                        section.toShelfCategoryList(section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty(), shelf) { target ->
+                           deezerExtension.channelFeed(target)
+                        }
+                    }
                 }
-            }
-            categories.takeIf { it.isNotEmpty() }?.let {
-                Shelf.Lists.Categories(
-                    id = sectionTitle,
-                    title = sectionTitle,
-                    list = it,
-                    type = listType,
-                    more = it.toFeed()
-                )
+
+                !in SKIP_MODULES_IDS -> {
+                    parser.run {
+                        val secShelf =
+                            section.toShelfItemsList(section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()) as? Shelf.Lists.Items
+                                ?: return@run null
+                        val list = secShelf.list
+                        Shelf.Lists.Items(
+                            id = secShelf.id,
+                            title = secShelf.title,
+                            subtitle = secShelf.subtitle,
+                            type = Shelf.Lists.Type.Linear,
+                            more = PagedData.Single<Shelf> {
+                                list.map {
+                                    it.toShelf()
+                                }
+                            }.toFeed(),
+                            list = list
+                        )
+                    }
+                }
+
+                else -> null
             }
         }
     }
@@ -162,5 +160,10 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     companion object {
         private val SKIP_TAB_IDS =
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")
+
+        private val SKIP_MODULES_IDS =
+            setOf("6550abfd-15e4-47de-a5e8-a60e27fa152a", "c8b406d4-5293-4f59-a0f4-562eba496a0b")
+
+        private const val EXPLORE_MODULE_ID = "8b2c6465-874d-4752-a978-1637ca0227b5"
     }
 }
