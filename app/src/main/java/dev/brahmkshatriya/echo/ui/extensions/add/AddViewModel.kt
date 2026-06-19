@@ -1,3 +1,5 @@
+@file:Suppress("UNREACHABLE_CODE")
+
 package dev.brahmkshatriya.echo.ui.extensions.add
 
 import androidx.lifecycle.ViewModel

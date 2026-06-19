@@ -1,3 +1,5 @@
+@file:Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+
 package dev.brahmkshatriya.echo.utils.ui
 
 import android.view.View

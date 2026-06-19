@@ -1,3 +1,5 @@
+@file:Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+
 package dev.brahmkshatriya.echo.ui.player.more.lyrics
 
 import android.content.Context

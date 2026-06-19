@@ -1,3 +1,5 @@
+@file:Suppress("UNREACHABLE_CODE")
+
 package dev.brahmkshatriya.echo.utils
 
 import android.content.Context
@@ -16,7 +18,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okio.use
 import java.io.File
 import java.util.zip.ZipFile
 
