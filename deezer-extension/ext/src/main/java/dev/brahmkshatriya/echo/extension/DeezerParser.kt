@@ -301,7 +301,7 @@ class DeezerParser(private val session: DeezerSession) {
         )
     }
 
-    private fun getCover(md5: String?, type: String?): ImageHolder? {
+    internal fun getCover(md5: String?, type: String?): ImageHolder? {
         if (md5.isNullOrEmpty() || type.isNullOrEmpty()) return null
         val size = session.settings?.getInt("image_quality") ?: 240
         val url = "https://cdn-images.dzcdn.net/images/$type/$md5/${size}x${size}-000000-80-0-0.jpg"
