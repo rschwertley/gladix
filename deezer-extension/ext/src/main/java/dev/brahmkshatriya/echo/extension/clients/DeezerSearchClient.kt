@@ -86,22 +86,22 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         deezerExtension.handleArlExpiration()
         api.updateCountry()
         val jsonObject = api.page("channels")
-        val data = jsonObject["results"]?.jsonObject?.get("DATA")?.jsonObject ?: return emptyList()
-        val modules = data["MODULES"]?.jsonArray ?: JsonArray(emptyList())
+        val results = jsonObject["results"]?.jsonObject ?: return emptyList()
+        val sections = results["sections"]?.jsonArray ?: JsonArray(emptyList())
 
         val listType = if ("grid" in shelf) Shelf.Lists.Type.Grid else Shelf.Lists.Type.Linear
 
-        return modules.mapNotNull { module ->
-            val moduleObj = module.jsonObject
-            val moduleTitle = moduleObj.str("TITLE") ?: return@mapNotNull null
-            val items = moduleObj["ITEMS"]?.jsonArray ?: JsonArray(emptyList())
+        return sections.mapNotNull { section ->
+            val sectionObj = section.jsonObject
+            val sectionTitle = sectionObj.str("TITLE") ?: return@mapNotNull null
+            val items = sectionObj["ITEMS"]?.jsonArray ?: JsonArray(emptyList())
 
             val categories = items.mapNotNull { item ->
                 val obj = item.jsonObject
                 val id = obj.str("TARGET_ID") ?: return@mapNotNull null
                 val title = obj.str("TITLE") ?: return@mapNotNull null
                 val md5 = obj.str("PICTURE_MD5")
-                val picType = obj.str("PICTURE_TYPE")
+                val picType = obj.str("TYPE")
                 val backgroundColor = obj.str("BACKGROUND_COLOR")
                 parser.run {
                     Shelf.Category(
@@ -115,8 +115,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             }
             categories.takeIf { it.isNotEmpty() }?.let {
                 Shelf.Lists.Categories(
-                    id = moduleTitle,
-                    title = moduleTitle,
+                    id = sectionTitle,
+                    title = sectionTitle,
                     list = it,
                     type = listType,
                     more = it.toFeed()
