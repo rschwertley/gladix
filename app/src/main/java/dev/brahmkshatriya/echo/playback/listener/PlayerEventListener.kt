@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import kotlin.reflect.KClass
 
 @OptIn(UnstableApi::class)
@@ -398,7 +399,7 @@ class PlayerEventListener(
                 && (rootCause.message?.contains("HTTP 401") == true
                     || rootCause.message?.contains("HTTP 403") == true))
         val isMalformedContent = rootCause is ParserException && rootCause.contentIsMalformed
-        val isTimeout = rootCause is TimeoutCancellationException
+        val isTimeout = rootCause is TimeoutCancellationException || rootCause is SocketTimeoutException
         if (is401) {
             val currentMediaId = mediaItem?.mediaId
             if (retriedMediaId != currentMediaId) {

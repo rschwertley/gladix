@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Buttons.Companion.EMPTY
 import dev.brahmkshatriya.echo.common.models.QuickSearchItem
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.FragmentSearchBinding
@@ -105,7 +106,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 tracks: List<Track>?, pos: Int
             ): Boolean {
                 val track = tracks?.getOrNull(pos)
-                return super.onTracksClicked(view, extensionId, null, track?.let { listOf(it) }, 0)
+                val placeholderRadio = track?.let {
+                    Radio(id = it.id, title = "${it.title} Radio", cover = it.cover, extras = mapOf("radio" to "track"))
+                }
+                return super.onTracksClicked(view, extensionId, placeholderRadio, track?.let { listOf(it) }, 0)
             }
         }
     }

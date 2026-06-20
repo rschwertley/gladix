@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -26,7 +27,15 @@ class DeezerHomeFeedClient(
 
     fun loadHomeFeed(shelf: String): Feed<Shelf> = PagedData.Single {
         deezerExtension.handleArlExpiration()
-        val homePageResults = api.page("home")["results"]?.jsonObject ?: JsonObject(emptyMap())
+        val jsonObject = api.page("home")
+        jsonObject.toString().chunked(3000).forEach { println("GladixDeezer PAGE[home] $it") }
+
+        runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
+            .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
+            .getOrNull()?.toString()?.chunked(3000)
+            ?.forEach { println("GladixDeezer PAGE[channels/home-pipe] $it") }
+
+        val homePageResults = jsonObject["results"]?.jsonObject ?: JsonObject(emptyMap())
         val homeSections = homePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
 
         supervisorScope {

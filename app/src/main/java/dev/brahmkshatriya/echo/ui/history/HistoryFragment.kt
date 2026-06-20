@@ -31,7 +31,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         val track = item.track ?: return@HistoryAdapter
         val context = item.context
         if (context is EchoMediaItem.Lists) {
-            playerViewModel.setQueue(item.extensionId, listOf(track), 0, null)
+            playerViewModel.setQueue(item.extensionId, listOf(track), 0, context)
             playerViewModel.backfillQueue(item.extensionId, context, false, track.id)
             playerViewModel.setPlaying(true)
         } else {

@@ -100,7 +100,16 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
                 track.copy(extras = track.extras + mapOf("NEXT" to nextId) + addlExtras)
             }.filterNotNull().let { tracks ->
-                if (kind == RadioKind.TRACK) tracks.filter { it.id != radio.id } else tracks
+                if (kind == RadioKind.TRACK) {
+                    val seedArtist = radio.extras["seed_artist_name"].orEmpty()
+                    val seedTitle = radio.extras["seed_title"].orEmpty().stripVersionSuffix()
+                    tracks.filter {
+                        it.id != radio.id && !(
+                            it.artists.firstOrNull()?.name.orEmpty().equals(seedArtist, ignoreCase = true) &&
+                            it.title.stripVersionSuffix().equals(seedTitle, ignoreCase = true)
+                        )
+                    }
+                } else tracks
             }
         }
     }.toFeed()
@@ -224,7 +233,11 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
         id = id,
         title = title + " Radio",
         cover = cover,
-        extras = mapOf("radio" to "track")
+        extras = mapOf(
+            "radio" to "track",
+            "seed_artist_name" to artists.firstOrNull()?.name.orEmpty(),
+            "seed_title" to title
+        )
     )
 
     private fun Track.asCollectionTrackRadio(tag: String) = Radio(
@@ -236,6 +249,13 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             "artist" to artists.firstOrNull()?.id.orEmpty()
         )
     )
+
+    private val versionSuffixRegex = Regex(
+        """\s*\(.*\)\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun String.stripVersionSuffix() = replace(versionSuffixRegex, "").trim()
 
     private fun JsonObject.resultsArray(key: String): JsonArray? =
         this["results"]?.jsonObject?.get(key)?.jsonArray
