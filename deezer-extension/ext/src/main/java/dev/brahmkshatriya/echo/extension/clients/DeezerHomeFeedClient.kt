@@ -15,6 +15,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,15 +27,13 @@ class DeezerHomeFeedClient(
 ) {
 
     fun loadHomeFeed(shelf: String): Feed<Shelf> = PagedData.Single {
-        println("GladixDeezer Home: starting loadHomeFeed")
         deezerExtension.handleArlExpiration()
         val jsonObject = api.page("home")
-        jsonObject.toString().chunked(3000).forEach { println("GladixDeezer PAGE[home] $it") }
+        logSections("home", jsonObject)
 
         runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
+            .onSuccess { logSections("channels/home-pipe", it) }
             .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
-            .getOrNull()?.toString()?.chunked(3000)
-            ?.forEach { println("GladixDeezer PAGE[channels/home-pipe] $it") }
 
         val homePageResults = jsonObject["results"]?.jsonObject ?: JsonObject(emptyMap())
         val homeSections = homePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
@@ -46,13 +45,6 @@ class DeezerHomeFeedClient(
                 val title = obj.optString("title") ?: return@mapNotNull null
 
                 when (id) {
-                    in ITEM_MODULE_IDS -> async(dispatcher) {
-                        runCatching {
-                            parser.run {
-                                section.toShelfItemsList(title)
-                            }
-                        }.getOrNull()
-                    }
                     in CATEGORY_MODULE_ID -> async(dispatcher) {
                         runCatching {
                             parser.run {
@@ -62,7 +54,13 @@ class DeezerHomeFeedClient(
                             }
                         }.getOrNull()
                     }
-                    else -> null
+                    else -> async(dispatcher) {
+                        runCatching {
+                            parser.run {
+                                section.toShelfItemsList(title)
+                            }
+                        }.getOrNull()
+                    }
                 }
             }.awaitAll().filterNotNull()
         }
@@ -74,19 +72,18 @@ class DeezerHomeFeedClient(
         runCatching { this[key]?.jsonPrimitive?.content }.getOrNull()
 
     companion object {
+        private fun logSections(label: String, page: JsonObject) {
+            val sections = page["results"]?.jsonObject?.get("sections")?.jsonArray ?: JsonArray(emptyList())
+            val summary = sections.joinToString(", ") { section ->
+                val obj = section.jsonObject
+                val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"
+                val layout = obj["layout"]?.jsonPrimitive?.contentOrNull ?: "?"
+                "$title/$layout"
+            }
+            println("GladixDeezer PAGE[$label] sections: $summary")
+        }
+
         private val dispatcher = Dispatchers.Default
-        private val ITEM_MODULE_IDS = setOf(
-            // Free Users
-            "b21892d3-7e9c-4b06-aff6-2c3be3266f68", "348128f5-bed6-4ccb-9a37-8e5f5ed08a62",
-            "8d10a320-f130-4dcb-a610-38baf0c57896", "2a7e897f-9bcf-4563-8e11-b93a601766e1",
-            "7a65f4ed-71e1-4b6e-97ba-4de792e4af62", "25f9200f-1ce0-45eb-abdc-02aecf7604b2",
-            "c320c7ad-95f5-4021-8de1-cef16b053b6d", "b2e8249f-8541-479e-ab90-cf4cf5896cbc",
-            "927121fd-ef7b-428e-8214-ae859435e51c",
-            // Premium Users
-            "b184d536-761e-40fb-b0cc-55d6c81b4d45", "19ebda68-51fd-4de6-af40-6da6a76c85ba",
-            "8e59d00d-63a7-4aff-8d47-d19293f738b2", "9f425321-7757-4db4-9a2a-76892684fdc0",
-            "33d3a14c-5716-4343-87e1-4ec3ac4fd49b", "f7577bb4-5406-4aef-9db7-ed7418eb2827"
-        )
 
         private val CATEGORY_MODULE_ID = setOf(
             // Free Users

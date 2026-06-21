@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -81,7 +82,6 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     }
 
     private suspend fun browseFeed(shelf: String): List<Shelf> {
-        println("GladixDeezer Search: starting browseFeed")
         try {
             deezerExtension.handleArlExpiration()
             api.updateCountry()
@@ -90,16 +90,16 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             throw e
         }
         val jsonObject = api.page("channels/explore/explore-tab")
-        jsonObject.toString().chunked(3000).forEach { println("GladixDeezer PAGE[channels/explore/explore-tab] $it") }
+        logSections("explore-tab", jsonObject)
 
         runCatching { withTimeout(5000) { api.page("channels") } }
-            .onSuccess { println("GladixDeezer PAGE[channels] SUCCESS: ${it.toString().take(200)}") }
+            .onSuccess { logSections("channels", it) }
             .onFailure { println("GladixDeezer PAGE[channels] ERROR: ${it.message}") }
         runCatching { withTimeout(5000) { api.page("channels/search-home-pipe") } }
-            .onSuccess { println("GladixDeezer PAGE[channels/search-home-pipe] SUCCESS: ${it.toString().take(200)}") }
+            .onSuccess { logSections("search-home-pipe", it) }
             .onFailure { println("GladixDeezer PAGE[channels/search-home-pipe] ERROR: ${it.message}") }
         runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
-            .onSuccess { println("GladixDeezer PAGE[channels/home-pipe] SUCCESS: ${it.toString().take(200)}") }
+            .onSuccess { logSections("home-pipe", it) }
             .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
 
         val browsePageResults = jsonObject["results"]!!.jsonObject
@@ -176,6 +176,17 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     }
 
     companion object {
+        private fun logSections(label: String, page: JsonObject) {
+            val sections = page["results"]?.jsonObject?.get("sections")?.jsonArray ?: JsonArray(emptyList())
+            val summary = sections.joinToString(", ") { section ->
+                val obj = section.jsonObject
+                val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"
+                val layout = obj["layout"]?.jsonPrimitive?.contentOrNull ?: "?"
+                "$title/$layout"
+            }
+            println("GladixDeezer PAGE[$label] sections: $summary")
+        }
+
         private val SKIP_TAB_IDS =
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")
 

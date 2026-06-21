@@ -27,6 +27,7 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.withResumed
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import androidx.core.view.doOnLayout
@@ -66,6 +67,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLiked
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.showBackground
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.unloadedCover
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyHorizontalInsets
@@ -82,8 +84,9 @@ import dev.brahmkshatriya.echo.ui.player.quality.QualitySelectionBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.emit
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.getCachedDrawable
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadBlurred
-import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadWithThumb
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animateVisibility
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoClearedNullable
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
@@ -379,13 +382,13 @@ class PlayerFragment : Fragment() {
             val capturedIndex = (viewModel.playerState.current.value?.index ?: -1).takeIf { it != -1 }
             adapter.submitList(viewModel.queue) {
                 val index = capturedIndex ?: return@submitList
-                val current = binding?.viewPager?.currentItem ?: 0
+                val viewPager = binding?.viewPager ?: return@submitList
+                val current = viewPager.currentItem
                 val smooth = !isInitialLoad && abs(index - current) <= 1
                 adapter.onCurrentChanged(index)
                 isInitialLoad = false
-                binding?.viewPager?.post {
-                    binding?.viewPager?.setCurrentItem(index, smooth)
-                }
+                if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
+                else viewPager.post { binding?.viewPager?.setCurrentItem(index, smooth) }
             }
         }
 
@@ -672,7 +675,13 @@ class PlayerFragment : Fragment() {
         playerCollapsedContainer.run {
             collapsedTrackTitle.text = track.title
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
-            track.cover.loadInto(collapsedTrackCover, R.drawable.ic_music)
+            val thumb = collapsedTrackCover.drawable
+                ?: item.unloadedCover?.getCachedDrawable(requireContext())
+            track.cover.loadWithThumb(collapsedTrackCover, thumb) {
+                setImageDrawable(
+                    it ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
+                )
+            }
         }
         playerControls.run {
             trackTitle.text = track.title
