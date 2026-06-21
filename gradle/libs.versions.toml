@@ -4,7 +4,7 @@ kotlin = "2.2.21"
 
 car-app = "1.7.0"
 androidx-paging = "3.5.0"
-room = "2.8.4"
+room = "3.0.0-rc01"
 firebase-bom = "34.15.0"
 koinAndroid = "4.2.2"
 media3 = "1.10.1"
@@ -39,9 +39,8 @@ paging-runtime = { module = "androidx.paging:paging-runtime-ktx", version.ref = 
 
 filekache = { module = "com.mayakapps.kache:file-kache", version = "2.1.1" }
 
-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
-room-ktx = { module = "androidx.room:room-ktx" }
-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room" }
+room-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room" }
 
 koin-androidx-startup = { module = "io.insert-koin:koin-androidx-startup", version.ref = "koinAndroid" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koinAndroid" }
@@ -79,7 +78,7 @@ androidx = [
     "androidx-core-google-shortcuts"
 ]
 paging = ["paging-common", "paging-runtime"]
-room = ["room-runtime", "room-ktx"]
+room = ["room-runtime"]
 koin = ["koin-androidx-startup", "koin-android", "koin-androidx-workmanager"]
 media3 = ["media3-exoplayer", "media3-session", "media3-ui", "media3-dash", "media3-hls"]
 coil = ["coil", "coil-gif", "coil-svg", "coil-network-okhttp"]

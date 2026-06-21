@@ -1,9 +1,9 @@
 package dev.brahmkshatriya.echo.extensions.db
 
 import android.app.Application
-import androidx.room.Database
-import androidx.room.Room
-import androidx.room.RoomDatabase
+import androidx.room3.Database
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
 import dev.brahmkshatriya.echo.extensions.db.models.ExtensionEntity

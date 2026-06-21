@@ -1,7 +1,7 @@
 package dev.brahmkshatriya.echo.download.db.models
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils
 import dev.brahmkshatriya.echo.utils.Serializer.toData

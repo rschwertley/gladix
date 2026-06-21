@@ -26,6 +26,7 @@ class DeezerHomeFeedClient(
 ) {
 
     fun loadHomeFeed(shelf: String): Feed<Shelf> = PagedData.Single {
+        println("GladixDeezer Home: starting loadHomeFeed")
         deezerExtension.handleArlExpiration()
         val jsonObject = api.page("home")
         jsonObject.toString().chunked(3000).forEach { println("GladixDeezer PAGE[home] $it") }

@@ -81,23 +81,26 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     }
 
     private suspend fun browseFeed(shelf: String): List<Shelf> {
-        deezerExtension.handleArlExpiration()
-        api.updateCountry()
+        println("GladixDeezer Search: starting browseFeed")
+        try {
+            deezerExtension.handleArlExpiration()
+            api.updateCountry()
+        } catch (e: Exception) {
+            println("GladixDeezer Search ERROR: ${e.message}")
+            throw e
+        }
         val jsonObject = api.page("channels/explore/explore-tab")
         jsonObject.toString().chunked(3000).forEach { println("GladixDeezer PAGE[channels/explore/explore-tab] $it") }
 
         runCatching { withTimeout(5000) { api.page("channels") } }
+            .onSuccess { println("GladixDeezer PAGE[channels] SUCCESS: ${it.toString().take(200)}") }
             .onFailure { println("GladixDeezer PAGE[channels] ERROR: ${it.message}") }
-            .getOrNull()?.toString()?.chunked(3000)
-            ?.forEach { println("GladixDeezer PAGE[channels] $it") }
         runCatching { withTimeout(5000) { api.page("channels/search-home-pipe") } }
+            .onSuccess { println("GladixDeezer PAGE[channels/search-home-pipe] SUCCESS: ${it.toString().take(200)}") }
             .onFailure { println("GladixDeezer PAGE[channels/search-home-pipe] ERROR: ${it.message}") }
-            .getOrNull()?.toString()?.chunked(3000)
-            ?.forEach { println("GladixDeezer PAGE[channels/search-home-pipe] $it") }
         runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
+            .onSuccess { println("GladixDeezer PAGE[channels/home-pipe] SUCCESS: ${it.toString().take(200)}") }
             .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
-            .getOrNull()?.toString()?.chunked(3000)
-            ?.forEach { println("GladixDeezer PAGE[channels/home-pipe] $it") }
 
         val browsePageResults = jsonObject["results"]!!.jsonObject
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
