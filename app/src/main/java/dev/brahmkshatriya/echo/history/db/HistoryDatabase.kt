@@ -6,6 +6,7 @@ import androidx.room3.Room
 import androidx.room3.RoomDatabase
 import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.async.executeSQL
 
 @Database(
     entities = [HistoryEntity::class],
@@ -18,13 +19,13 @@ abstract class HistoryDatabase : RoomDatabase() {
     companion object {
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override suspend fun migrate(connection: SQLiteConnection) {
-                connection.execSQL("ALTER TABLE HistoryEntity ADD COLUMN contextData TEXT")
+                connection.executeSQL("ALTER TABLE HistoryEntity ADD COLUMN contextData TEXT")
             }
         }
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override suspend fun migrate(connection: SQLiteConnection) {
-                connection.execSQL("""
+                connection.executeSQL("""
                     CREATE TABLE HistoryEntity_new (
                         trackId TEXT NOT NULL,
                         extensionId TEXT NOT NULL,
@@ -34,12 +35,12 @@ abstract class HistoryDatabase : RoomDatabase() {
                         PRIMARY KEY (trackId, extensionId)
                     )
                 """.trimIndent())
-                connection.execSQL("""
+                connection.executeSQL("""
                     INSERT OR IGNORE INTO HistoryEntity_new
                     SELECT trackId, extensionId, playedAt, trackData, contextData FROM HistoryEntity
                 """.trimIndent())
-                connection.execSQL("DROP TABLE HistoryEntity")
-                connection.execSQL("ALTER TABLE HistoryEntity_new RENAME TO HistoryEntity")
+                connection.executeSQL("DROP TABLE HistoryEntity")
+                connection.executeSQL("ALTER TABLE HistoryEntity_new RENAME TO HistoryEntity")
             }
         }
 
