@@ -82,6 +82,7 @@ dependencies {
     implementation(libs.bundles.paging)
     implementation(libs.filekache)
     implementation(libs.bundles.room)
+    implementation(libs.sqlite.async)
     ksp(libs.room.compiler)
     implementation(libs.bundles.koin)
     implementation(libs.androidx.car.app)

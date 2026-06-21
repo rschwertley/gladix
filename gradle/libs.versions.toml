@@ -5,6 +5,7 @@ kotlin = "2.2.21"
 car-app = "1.7.0"
 androidx-paging = "3.5.0"
 room = "3.0.0-rc01"
+sqlite = "2.7.0-rc01"
 firebase-bom = "34.15.0"
 koinAndroid = "4.2.2"
 media3 = "1.10.1"
@@ -41,6 +42,7 @@ filekache = { module = "com.mayakapps.kache:file-kache", version = "2.1.1" }
 
 room-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room" }
+sqlite-async = { module = "androidx.sqlite:sqlite-async", version.ref = "sqlite" }
 
 koin-androidx-startup = { module = "io.insert-koin:koin-androidx-startup", version.ref = "koinAndroid" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koinAndroid" }
