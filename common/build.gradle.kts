@@ -1,4 +1,4 @@
-import com.android.build.api.dsl.androidLibrary
+import com.android.build.api.dsl.android
 
 plugins {
     alias(libs.plugins.android.kmp.library)
@@ -17,7 +17,7 @@ kotlin {
     jvmToolchain(17)
 
     @Suppress("UnstableApiUsage")
-    androidLibrary {
+    android {
         namespace = "echo.common"
         compileSdk = 36
         minSdk = 24
