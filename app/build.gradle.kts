@@ -38,7 +38,6 @@ android {
         create("nightly") {
             initWith(getByName("release"))
             applicationIdSuffix = ".nightly"
-            resValue("string", "app_name", "Echo Nightly")
             matchingFallbacks += "release"
         }
         create("stable") {

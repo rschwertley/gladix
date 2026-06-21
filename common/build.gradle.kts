@@ -1,5 +1,3 @@
-import com.android.build.api.dsl.android
-
 plugins {
     alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.kotlin.multiplatform)
