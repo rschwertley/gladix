@@ -106,6 +106,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
         return browseSections.mapNotNull { section ->
             val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
+            if (id == GO_BEYOND_STREAMING_MODULE_ID) return@mapNotNull null
             val layout = section.jsonObject["layout"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val title = section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()
             when {
@@ -193,5 +194,6 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")
 
         private const val EXPLORE_MODULE_ID = "8b2c6465-874d-4752-a978-1637ca0227b5"
+        private const val GO_BEYOND_STREAMING_MODULE_ID = "20748fc9-bf55-41e6-a50f-2b26c0c8da48"
     }
 }
