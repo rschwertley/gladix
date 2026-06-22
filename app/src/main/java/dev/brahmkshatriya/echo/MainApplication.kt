@@ -12,15 +12,9 @@ import androidx.core.os.LocaleListCompat
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
-import coil3.annotation.ExperimentalCoilApi
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
-import coil3.network.CacheStrategy
-import coil3.network.NetworkRequest
-import coil3.network.NetworkResponse
-import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.Options
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import dev.brahmkshatriya.echo.di.DI
@@ -36,23 +30,6 @@ import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.androix.startup.KoinStartup
 import org.koin.core.annotation.KoinExperimentalAPI
 import org.koin.dsl.koinConfiguration
-
-@OptIn(ExperimentalCoilApi::class)
-private class NoErrorCacheStrategy(
-    private val delegate: CacheStrategy = CacheStrategy.DEFAULT
-) : CacheStrategy {
-    override suspend fun read(
-        cacheResponse: NetworkResponse, networkRequest: NetworkRequest, options: Options
-    ) = delegate.read(cacheResponse, networkRequest, options)
-
-    override suspend fun write(
-        cacheResponse: NetworkResponse?, networkRequest: NetworkRequest,
-        networkResponse: NetworkResponse, options: Options
-    ): CacheStrategy.WriteResult {
-        if (networkResponse.code !in 200..299) return CacheStrategy.WriteResult.DISABLED
-        return delegate.write(cacheResponse, networkRequest, networkResponse, options)
-    }
-}
 
 @OptIn(KoinExperimentalAPI::class)
 class MainApplication : Application(), KoinStartup, SingletonImageLoader.Factory {
@@ -73,12 +50,8 @@ class MainApplication : Application(), KoinStartup, SingletonImageLoader.Factory
         CoroutineScope(Dispatchers.IO).launch { configureAppShortcuts(extensionLoader) }
     }
 
-    @OptIn(ExperimentalCoilApi::class)
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
-            .components {
-                add(OkHttpNetworkFetcherFactory(cacheStrategy = { NoErrorCacheStrategy() }))
-            }
             .memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(context, 0.25)

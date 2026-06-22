@@ -78,11 +78,8 @@ class EffectsListener(
         }
         val skipForAlbum = mediaItem?.context is Album &&
             context.getSettings().getBoolean(SKIP_FADE_ON_ALBUMS, true)
-        if (skipForAlbum) {
-            audioEffectsProcessor.cancelFades()
-        } else {
-            scheduleFadeOut()
-        }
+        audioEffectsProcessor.skipFade = skipForAlbum
+        if (!skipForAlbum) scheduleFadeOut()
     }
 
     private fun applyGain(mediaItem: MediaItem?) {

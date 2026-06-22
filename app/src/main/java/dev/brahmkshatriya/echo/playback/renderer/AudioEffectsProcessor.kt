@@ -23,6 +23,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     @Volatile var crossfadeEnabled = false
     @Volatile var normalizationEnabled = false
     @Volatile var crossfadeDurationMs = 5000
+    @Volatile var skipFade = false
 
     private val fadeInFramesRemaining = AtomicLong(0)
     private val fadeOutFramesRemaining = AtomicLong(0)
@@ -106,7 +107,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     }
 
     override fun onQueueEndOfStream() {
-        if (crossfadeEnabled) isPendingFadeIn = true
+        if (crossfadeEnabled && !skipFade) isPendingFadeIn = true
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
