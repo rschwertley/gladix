@@ -59,11 +59,11 @@ tasks.named("preBuild") {
 
 android {
     namespace = "dev.brahmkshatriya.echo.extension"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "dev.brahmkshatriya.echo.extension.$extId"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
 
         manifestPlaceholders.apply {
             put("type", "dev.brahmkshatriya.echo.${extType}")

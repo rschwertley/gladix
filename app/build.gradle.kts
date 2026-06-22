@@ -15,12 +15,12 @@ val version = "3.0.$gitCount"
 
 android {
     namespace = "dev.brahmkshatriya.echo"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.rschwertley.gladix.auto"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         // Note: versionCode only increments on git commits. 
         // For local development, consider committing frequently to update the version.
         versionCode = gitCount

@@ -106,10 +106,12 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
         return browseSections.mapNotNull { section ->
             val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
-            when (id) {
-                EXPLORE_MODULE_ID -> {
+            val layout = section.jsonObject["layout"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val title = section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()
+            when {
+                id == EXPLORE_MODULE_ID || "grid" in layout -> {
                     parser.run {
-                        section.toShelfCategoryList(section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty(), shelf) { target ->
+                        section.toShelfCategoryList(title, shelf) { target ->
                            deezerExtension.channelFeed(target)
                         }
                     }
@@ -118,7 +120,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                 else -> {
                     parser.run {
                         val secShelf =
-                            section.toShelfItemsList(section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()) as? Shelf.Lists.Items
+                            section.toShelfItemsList(title) as? Shelf.Lists.Items
                                 ?: return@run null
                         val list = secShelf.list
                         Shelf.Lists.Items(
@@ -180,7 +182,9 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                 val obj = section.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"
                 val layout = obj["layout"]?.jsonPrimitive?.contentOrNull ?: "?"
-                "$title/$layout"
+                val moduleId = obj["module_id"]?.jsonPrimitive?.contentOrNull ?: "?"
+                val target = obj["target"]?.jsonPrimitive?.contentOrNull ?: "?"
+                "$title/$layout/$moduleId/$target"
             }
             println("GladixDeezer PAGE[$label] sections: $summary")
         }

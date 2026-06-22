@@ -17,7 +17,7 @@ kotlin {
     @Suppress("UnstableApiUsage")
     android {
         namespace = "echo.common"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 24
     }
     jvm()
