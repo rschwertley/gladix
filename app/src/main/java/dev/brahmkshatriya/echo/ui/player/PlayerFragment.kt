@@ -51,6 +51,7 @@ import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+import coil3.request.Disposable
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
@@ -369,6 +370,7 @@ class PlayerFragment : Fragment() {
     }
 
     private var isInitialLoad = true
+    private var pendingPageScroll: Runnable? = null
     private fun configurePlayerControls() {
         val viewPager = binding!!.viewPager
         viewPager.adapter = adapter
@@ -388,7 +390,15 @@ class PlayerFragment : Fragment() {
                 adapter.onCurrentChanged(index)
                 isInitialLoad = false
                 if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
-                else viewPager.post { binding?.viewPager?.setCurrentItem(index, smooth) }
+                else {
+                    pendingPageScroll?.let { viewPager.removeCallbacks(it) }
+                    val runnable = Runnable {
+                        val liveIndex = viewModel.playerState.current.value?.index ?: index
+                        binding?.viewPager?.setCurrentItem(liveIndex, smooth)
+                    }
+                    pendingPageScroll = runnable
+                    viewPager.post(runnable)
+                }
             }
         }
 
@@ -567,6 +577,7 @@ class PlayerFragment : Fragment() {
     }
 
     private val likeListener = CheckBoxListener { viewModel.likeCurrent(it) }
+    private var collapsedCoverRequest: Disposable? = null
 
     private fun configureColors() {
         observe(viewModel.playerState.current) { adapter.onCurrentUpdated() }
@@ -677,7 +688,8 @@ class PlayerFragment : Fragment() {
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
             val thumb = collapsedTrackCover.drawable
                 ?: item.unloadedCover?.getCachedDrawable(requireContext())
-            track.cover.loadWithThumb(collapsedTrackCover, thumb) {
+            collapsedCoverRequest?.dispose()
+            collapsedCoverRequest = track.cover.loadWithThumb(collapsedTrackCover, thumb) {
                 setImageDrawable(
                     it ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
                 )

@@ -89,15 +89,15 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             println("GladixDeezer Search ERROR: ${e.message}")
             throw e
         }
-        val jsonObject = api.page("channels/explore/explore-tab")
-        logSections("explore-tab", jsonObject)
+        val jsonObject = api.page("channels/search-home-pipe")
+        logSections("search-home-pipe", jsonObject)
 
+        runCatching { withTimeout(5000) { api.page("channels/explore/explore-tab") } }
+            .onSuccess { logSections("explore-tab", it) }
+            .onFailure { println("GladixDeezer PAGE[channels/explore/explore-tab] ERROR: ${it.message}") }
         runCatching { withTimeout(5000) { api.page("channels") } }
             .onSuccess { logSections("channels", it) }
             .onFailure { println("GladixDeezer PAGE[channels] ERROR: ${it.message}") }
-        runCatching { withTimeout(5000) { api.page("channels/search-home-pipe") } }
-            .onSuccess { logSections("search-home-pipe", it) }
-            .onFailure { println("GladixDeezer PAGE[channels/search-home-pipe] ERROR: ${it.message}") }
         runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
             .onSuccess { logSections("home-pipe", it) }
             .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
@@ -115,7 +115,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                     }
                 }
 
-                !in SKIP_MODULES_IDS -> {
+                else -> {
                     parser.run {
                         val secShelf =
                             section.toShelfItemsList(section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()) as? Shelf.Lists.Items
@@ -135,8 +135,6 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                         )
                     }
                 }
-
-                else -> null
             }
         }
     }
@@ -189,9 +187,6 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
 
         private val SKIP_TAB_IDS =
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")
-
-        private val SKIP_MODULES_IDS =
-            setOf("6550abfd-15e4-47de-a5e8-a60e27fa152a", "c8b406d4-5293-4f59-a0f4-562eba496a0b")
 
         private const val EXPLORE_MODULE_ID = "8b2c6465-874d-4752-a978-1637ca0227b5"
     }

@@ -141,7 +141,6 @@ class PlayerEventListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         Log.d("GladixPlayback", "onPlaybackStateChanged: state=$playbackState")
-        updateCurrentFlow()
         if (playbackState == Player.STATE_BUFFERING) {
             armBufferingWatchdog()
         } else {

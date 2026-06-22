@@ -1,6 +1,6 @@
 [versions]
 agp = "9.1.1"
-kotlin = "2.2.21"
+kotlin = "2.4.0"
 
 car-app = "1.7.0"
 androidx-paging = "3.5.0"

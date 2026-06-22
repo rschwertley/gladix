@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import coil3.request.Disposable
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.ItemClickPanelsBinding
@@ -141,6 +142,7 @@ class PlayerTrackAdapter(
 
         private var coverDrawable: Drawable? = null
         private var lastBoundMediaId: String? = null
+        private var coverRequest: Disposable? = null
         fun applyDrawable() {
             val index = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return
             val item = getItem(index) ?: return
@@ -153,7 +155,8 @@ class PlayerTrackAdapter(
         fun retryLoad(item: MediaItem?) {
             if (coverDrawable != null) return
             val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
-            item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+            coverRequest?.dispose()
+            coverRequest = item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
                 val image = it
                     ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                 setImageDrawable(image)
@@ -171,7 +174,8 @@ class PlayerTrackAdapter(
                 lastBoundMediaId = item?.mediaId
                 coverDrawable = null
                 val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
-                item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+                coverRequest?.dispose()
+                coverRequest = item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
                     val image = it
                         ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                     setImageDrawable(image)

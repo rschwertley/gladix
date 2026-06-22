@@ -12,7 +12,7 @@ import dev.brahmkshatriya.echo.databinding.ItemDownloadBinding
 import dev.brahmkshatriya.echo.databinding.ItemDownloadTaskBinding
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.download.db.models.ContextEntity
-import dev.brahmkshatriya.echo.download.db.models.DownloadEntity
+import dev.brahmkshatriya.echo.download.db.models.DownloadSummary
 import dev.brahmkshatriya.echo.download.db.models.TaskType
 import dev.brahmkshatriya.echo.download.tasks.BaseTask.Companion.getTitle
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils
@@ -30,7 +30,7 @@ class DownloadsAdapter(
         override fun areItemsTheSame(oldItem: Item, newItem: Item): Boolean {
             return when (oldItem) {
                 is Download -> if (newItem !is Download) false
-                else oldItem.downloadEntity.id == newItem.downloadEntity.id
+                else oldItem.downloadSummary.id == newItem.downloadSummary.id
 
                 is Task -> if (newItem !is Task) false
                 else oldItem.id == newItem.id
@@ -59,7 +59,7 @@ class DownloadsAdapter(
         }
 
         fun bind(item: Download) {
-            val entity = item.downloadEntity
+            val entity = item.downloadSummary
             binding.apply {
                 val track = entity.track.getOrNull()
                 title.text = track?.title
@@ -113,7 +113,7 @@ class DownloadsAdapter(
     sealed interface Item
     data class Download(
         val context: ContextEntity?,
-        val downloadEntity: DownloadEntity,
+        val downloadSummary: DownloadSummary,
         val extension: Extension<*>?,
     ) : Item
 

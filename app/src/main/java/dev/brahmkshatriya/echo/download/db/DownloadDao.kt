@@ -7,6 +7,7 @@ import androidx.room3.OnConflictStrategy.Companion.REPLACE
 import androidx.room3.Query
 import dev.brahmkshatriya.echo.download.db.models.ContextEntity
 import dev.brahmkshatriya.echo.download.db.models.DownloadEntity
+import dev.brahmkshatriya.echo.download.db.models.DownloadSummary
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -23,14 +24,20 @@ interface DownloadDao {
     @Query("SELECT * FROM ContextEntity WHERE id = :contextId")
     suspend fun getContextEntity(contextId: Long?): ContextEntity?
 
-    @Query("SELECT * FROM DownloadEntity")
-    fun getDownloadsFlow(): Flow<List<DownloadEntity>>
+    @Query(
+        "SELECT id, extensionId, trackId, contextId, data, exceptionFile, finalFile, fullyDownloaded " +
+            "FROM DownloadEntity"
+    )
+    fun getDownloadsFlow(): Flow<List<DownloadSummary>>
 
     @Query("SELECT * FROM ContextEntity")
     fun getContextFlow(): Flow<List<ContextEntity>>
 
     @Delete
     fun deleteDownloadEntity(download: DownloadEntity)
+
+    @Query("DELETE FROM DownloadEntity WHERE id = :id")
+    fun deleteDownloadEntityById(id: Long)
 
     @Delete
     fun deleteContextEntity(context: ContextEntity)

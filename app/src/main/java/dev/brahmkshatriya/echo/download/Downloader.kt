@@ -14,6 +14,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.db.DownloadDatabase
 import dev.brahmkshatriya.echo.download.db.models.ContextEntity
 import dev.brahmkshatriya.echo.download.db.models.DownloadEntity
+import dev.brahmkshatriya.echo.download.db.models.DownloadSummary
 import dev.brahmkshatriya.echo.download.db.models.TaskType
 import dev.brahmkshatriya.echo.download.exceptions.DownloaderExtensionNotFoundException
 import dev.brahmkshatriya.echo.download.tasks.TaskManager
@@ -162,7 +163,7 @@ class Downloader(
         scope.launch {
             val downloads = downloadFlow.first().filter { it.finalFile == null }
             downloads.forEach { download ->
-                dao.deleteDownloadEntity(download)
+                dao.deleteDownloadEntityById(download.id)
                 servers.remove(download.id.toString())
                 mutexes.remove(download.id.toString())
             }
@@ -173,7 +174,7 @@ class Downloader(
         scope.launch {
             val downloads = downloadFlow.first().filter { it.trackId == id }
             downloads.forEach { download ->
-                dao.deleteDownloadEntity(download)
+                dao.deleteDownloadEntityById(download.id)
             }
         }
     }
@@ -187,14 +188,14 @@ class Downloader(
                     it.contextId == context.id
                 }
                 downloads.forEach { download ->
-                    dao.deleteDownloadEntity(download)
+                    dao.deleteDownloadEntityById(download.id)
                 }
             }
         }
     }
 
     data class Info(
-        val download: DownloadEntity,
+        val download: DownloadSummary,
         val context: ContextEntity?,
         val workers: List<Pair<TaskType, Progress>>
     )
