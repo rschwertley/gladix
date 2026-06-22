@@ -393,7 +393,7 @@ class PlayerEventListener(
                 || rootCause is FileNotFoundException
                 || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
         val is401 = (rootCause is HttpDataSource.InvalidResponseCodeException
-                && (rootCause as HttpDataSource.InvalidResponseCodeException).responseCode in listOf(401, 403))
+                && rootCause.responseCode in listOf(401, 403))
                 || (rootCause is IllegalStateException
                 && (rootCause.message?.contains("HTTP 401") == true
                     || rootCause.message?.contains("HTTP 403") == true))
@@ -468,10 +468,10 @@ class PlayerEventListener(
         if (currentRetries >= maxRetries) {
             currentRetries = 0
             last = null
-            Log.d("GladixPlayback", "onPlayerError: maxRetries exhausted for ${mediaItem?.mediaId}, skipping")
+            Log.d("GladixPlayback", "onPlayerError: maxRetries exhausted for ${mediaItem.mediaId}, skipping")
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                reportAndResetConsecutiveSkips(mediaItem?.extensionId)
+                reportAndResetConsecutiveSkips(mediaItem.extensionId)
                 player.stop()
                 return
             }

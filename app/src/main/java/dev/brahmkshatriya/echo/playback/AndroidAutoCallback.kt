@@ -786,7 +786,6 @@ abstract class AndroidAutoCallback(
                     is Radio -> RADIO to MediaMetadata.MEDIA_TYPE_MIXED
                     is Album -> ALBUM to MediaMetadata.MEDIA_TYPE_ALBUM
                     is Playlist -> PLAYLIST to MediaMetadata.MEDIA_TYPE_PLAYLIST
-                    else -> throw IllegalStateException("Invalid type")
                 }
                 browsableItem(
                     "$ROOT/$extId/$page/$id",

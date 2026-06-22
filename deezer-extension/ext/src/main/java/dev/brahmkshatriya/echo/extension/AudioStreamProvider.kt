@@ -59,7 +59,7 @@ object AudioStreamProvider {
             throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
         }
 
-        val rawStream = response.body!!.byteStream()
+        val rawStream = response.body.byteStream()
 
         BufferedInputStream(object : FilterInputStream(rawStream) {
             private var blockCounter = alignedStart / blockSize

@@ -12,12 +12,12 @@ data class Date(
 ) : Comparable<Date> {
 
     val calendar by lazy {
-        Calendar.getInstance()!!.apply {
+        Calendar.getInstance().apply {
             timeInMillis = epochTimeMs
         }
     }
 
-    val date by lazy { calendar.time!! }
+    val date by lazy { calendar.time }
 
     constructor(
         year: Int,

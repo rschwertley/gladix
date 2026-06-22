@@ -245,7 +245,7 @@ class ExtensionsViewModel(
         }.getOrElse {
             app.throwFlow.emit(it)
             return null
-        } ?: return null
+        }
         return file
     }
 

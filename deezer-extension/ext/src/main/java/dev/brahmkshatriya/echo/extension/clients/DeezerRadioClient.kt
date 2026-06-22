@@ -83,8 +83,8 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                 RadioKind.TRACK -> api.mix(radio.id).resultsArray("data")
                 RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data")
                 RadioKind.FLOW -> api.flow(radio.id).resultsArray("data")
-                else -> null
-            } ?: JsonArray(emptyList())
+                RadioKind.PLAYLIST, RadioKind.ALBUM -> JsonArray(emptyList())
+            }
 
             dataArray.mapIndexed { index, song ->
                 val track = song.safeObj()?.toTrack(parser) ?: return@mapIndexed null
@@ -95,7 +95,7 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                     RadioKind.TRACK -> mapOf("artist_id" to track.artists.firstOrNull()?.id.orEmpty())
                     RadioKind.ARTIST -> mapOf("artist_id" to radio.id)
                     RadioKind.FLOW -> mapOf("user_id" to "0")
-                    else -> emptyMap()
+                    RadioKind.PLAYLIST, RadioKind.ALBUM -> emptyMap()
                 }
 
                 track.copy(extras = track.extras + mapOf("NEXT" to nextId) + addlExtras)

@@ -356,7 +356,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             else -> null
         },
         when {
-            state?.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable) -> button(
+            state?.isSaved != null && !(state.item is Playlist && state.item.isEditable) -> button(
                 "save_to_library",
                 if (state.isSaved) R.string.remove_from_library else R.string.save_to_library,
                 if (state.isSaved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark_outline,
@@ -364,7 +364,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             ) {
                 if (state.isSaved && state.item is Playlist) {
                     MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(getString(R.string.remove_from_library_confirm, (state.item as Playlist).title))
+                        .setMessage(getString(R.string.remove_from_library_confirm, state.item.title))
                         .setNegativeButton(R.string.cancel, null)
                         .setPositiveButton(R.string.remove) { _, _ -> vm.saveToLibrary(false) }
                         .show()

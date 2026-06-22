@@ -192,7 +192,7 @@ class MediaHeaderAdapter(
                 if (state.isFollowed == true) R.string.unfollow else R.string.follow
             )
 
-            savedButton.isVisible = state.isSaved != null && !(state.item is Playlist && (state.item as Playlist).isEditable) && !fromPlayer
+            savedButton.isVisible = state.isSaved != null && !(state.item is Playlist && state.item.isEditable) && !fromPlayer
             savedButton.isChecked = state.isSaved ?: false
             savedButton.contentDescription = root.context.getString(
                 if (state.isSaved == true) R.string.unsave else R.string.save

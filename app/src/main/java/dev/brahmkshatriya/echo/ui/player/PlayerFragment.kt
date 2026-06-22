@@ -299,15 +299,15 @@ class PlayerFragment : Fragment() {
             if (it == STATE_HIDDEN) {
                 if (seenNonHidden) {
                     viewModel.clearQueue()
-                    binding?.bgImage?.stop()
+                    binding.bgImage.stop()
                 }
             } else {
                 seenNonHidden = true
                 if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
             }
             when (it) {
-                STATE_EXPANDED -> binding?.bgImage?.resume()
-                else -> binding?.bgImage?.pause()
+                STATE_EXPANDED -> binding.bgImage.resume()
+                else -> binding.bgImage.pause()
             }
         }
 
@@ -342,7 +342,7 @@ class PlayerFragment : Fragment() {
     }
 
     private val adapterListener = object : PlayerTrackAdapter.Listener {
-        override fun onClick() = uiViewModel.run {
+        override fun onClick(): Unit = uiViewModel.run {
             if (playerSheetState.value != STATE_EXPANDED) changePlayerState(STATE_EXPANDED)
             else {
                 if (moreSheetState.value == STATE_EXPANDED) {
@@ -797,7 +797,7 @@ class PlayerFragment : Fragment() {
         private fun Context.showBackground() = getSettings().showBackground()
         const val DYNAMIC_PLAYER = "dynamic_player"
         const val PLAYER_COLOR = "player_app_color"
-        fun Context.isDynamic() =
+        fun Context.isDynamic(): Boolean =
             getSettings().getBoolean(DYNAMIC_PLAYER, true)
 
         private fun Context.isPlayerColor() =
