@@ -80,9 +80,9 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
             }
         } else {
             val dataArray: JsonArray = when (kind) {
-                RadioKind.TRACK -> api.mix(radio.id).resultsArray("data")
-                RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data")
-                RadioKind.FLOW -> api.flow(radio.id).resultsArray("data")
+                RadioKind.TRACK -> api.mix(radio.id).resultsArray("data") ?: JsonArray(emptyList())
+                RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data") ?: JsonArray(emptyList())
+                RadioKind.FLOW -> api.flow(radio.id).resultsArray("data") ?: JsonArray(emptyList())
                 RadioKind.PLAYLIST, RadioKind.ALBUM -> JsonArray(emptyList())
             }
 
