@@ -491,6 +491,7 @@ class PlayerService : MediaLibraryService() {
         const val LOUDNESS_NORMALIZATION = "loudness_normalization"
         const val CROSSFADE_ENABLED = "crossfade_enabled"
         const val CROSSFADE_DURATION = "crossfade_duration"
+        const val SKIP_FADE_ON_ALBUMS = "skip_fade_on_albums"
 
         const val CACHE_SIZE = "cache_size"
 

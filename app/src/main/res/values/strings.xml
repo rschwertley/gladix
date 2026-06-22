@@ -136,6 +136,8 @@
     <string name="crossfade_summary">Fade audio out at the end of each track and in at the start of the next</string>
     <string name="crossfade_duration">Fade Duration</string>
     <string name="crossfade_duration_summary">Duration in seconds (1–12)</string>
+    <string name="skip_fade_on_albums">Skip Fade on Albums</string>
+    <string name="skip_fade_on_albums_summary">Don\'t fade between tracks on the same album</string>
 
     <string name="history">History</string>
     <string name="clear_history">Clear History</string>

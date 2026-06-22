@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CLOSE_PLAYER
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.MORE_BRAIN_CAPACITY
+import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_SILENCE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.UNMETERED_STREAM_QUALITY
@@ -126,6 +127,15 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     addPreference(this)
                 }
 
+                val skipFadeOnAlbums = SwitchPreferenceCompat(context).apply {
+                    key = SKIP_FADE_ON_ALBUMS
+                    title = getString(R.string.skip_fade_on_albums)
+                    summary = getString(R.string.skip_fade_on_albums_summary)
+                    layoutResource = R.layout.preference_switch
+                    isIconSpaceReserved = false
+                    setDefaultValue(true)
+                }
+
                 SwitchPreferenceCompat(context).apply {
                     key = CROSSFADE_ENABLED
                     title = getString(R.string.crossfade)
@@ -133,6 +143,10 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
                     setDefaultValue(false)
+                    setOnPreferenceChangeListener { _, newValue ->
+                        skipFadeOnAlbums.isVisible = newValue as Boolean
+                        true
+                    }
                     addPreference(this)
                 }
 
@@ -144,6 +158,10 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     setDefaultValue(5)
                     addPreference(this)
                 }
+
+                skipFadeOnAlbums.isVisible =
+                    preferenceManager.sharedPreferences?.getBoolean(CROSSFADE_ENABLED, false) == true
+                addPreference(skipFadeOnAlbums)
 
                 SwitchPreferenceCompat(context).apply {
                     key = MORE_BRAIN_CAPACITY

@@ -17,9 +17,13 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.PlayerMessage
+import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.copyTo
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
+import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -72,7 +76,13 @@ class EffectsListener(
         ) {
             audioEffectsProcessor.cancelFades()
         }
-        scheduleFadeOut()
+        val skipForAlbum = mediaItem?.context is Album &&
+            context.getSettings().getBoolean(SKIP_FADE_ON_ALBUMS, true)
+        if (skipForAlbum) {
+            audioEffectsProcessor.cancelFades()
+        } else {
+            scheduleFadeOut()
+        }
     }
 
     private fun applyGain(mediaItem: MediaItem?) {

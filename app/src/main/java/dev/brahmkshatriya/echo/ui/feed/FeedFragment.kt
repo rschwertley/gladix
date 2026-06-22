@@ -9,6 +9,7 @@ import androidx.fragment.app.commit
 import androidx.fragment.app.replace
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.ViewModel
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Shelf
@@ -103,6 +104,12 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         private val feedAdapter by lazy {
             getFeedAdapter(feedData, listener)
         }
+        private var swipeRefresh: SwipeRefreshLayout? = null
+
+        override fun onHiddenChanged(hidden: Boolean) {
+            super.onHiddenChanged(hidden)
+            if (hidden) swipeRefresh?.isRefreshing = false
+        }
 
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             val binding = FragmentRecyclerWithRefreshBinding.bind(view)
@@ -120,11 +127,14 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             (recyclerView as? TvAwareRecyclerView)?.navRailView =
                 requireActivity().findViewById(R.id.navRailContainer)
             getTouchHelper(listener).attachToRecyclerView(recyclerView)
+            swipeRefresh = binding.swipeRefresh
             binding.swipeRefresh.run {
                 configure()
                 setOnRefreshListener { feedData.refresh() }
+                var hasEverLoaded = false
                 observe(feedData.isRefreshingFlow) {
-                    isRefreshing = it
+                    if (!it) hasEverLoaded = true
+                    isRefreshing = hasEverLoaded && it
                 }
             }
         }

@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.main
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.HomeFeedClient
@@ -53,6 +54,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
     private val listener by lazy { getFeedListener(requireParentFragment()) }
     private val feedAdapter by lazy { getFeedAdapter(feedData, listener) }
+    private var swipeRefresh: SwipeRefreshLayout? = null
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (hidden) swipeRefresh?.isRefreshing = false
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentHomeBinding.bind(view)
@@ -81,10 +88,13 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         )
         (recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)
+        swipeRefresh = binding.swipeRefresh
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
+            var hasEverLoaded = false
             observe(feedData.isRefreshingFlow) {
-                isRefreshing = it
+                if (!it) hasEverLoaded = true
+                isRefreshing = hasEverLoaded && it
             }
         }
     }
