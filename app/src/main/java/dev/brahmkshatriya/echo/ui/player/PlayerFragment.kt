@@ -100,6 +100,7 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.marquee
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.registerOnUserPageChangeCallback
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.supportBottomSheetBehavior
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import kotlin.math.abs
@@ -404,18 +405,25 @@ class PlayerFragment : Fragment() {
 
         val binding = binding!!
         binding.playerControls.trackHeart.addOnCheckedStateChangedListener(likeListener)
-        observe(viewModel.playerState.current) {
-            uiViewModel.run {
-                if (it == null) return@run changePlayerState(STATE_HIDDEN)
-                if (!isFinalState(playerSheetState.value)) return@run
-                changePlayerState(
-                    if (playerSheetState.value != STATE_EXPANDED) STATE_COLLAPSED
-                    else STATE_EXPANDED
-                )
+        // Deliberately not using observe()/flowWithLifecycle here: that restarts collection
+        // (and redelivers the StateFlow's current value) on every STARTED re-entry, which can
+        // fire multiple times in quick succession during Activity recreation. This must collect
+        // exactly once per Fragment instance since it drives non-idempotent side effects
+        // (image load/dispose, page scroll).
+        lifecycleScope.launch {
+            viewModel.playerState.current.collectLatest {
+                uiViewModel.run {
+                    if (it == null) return@run changePlayerState(STATE_HIDDEN)
+                    if (!isFinalState(playerSheetState.value)) return@run
+                    changePlayerState(
+                        if (playerSheetState.value != STATE_EXPANDED) STATE_COLLAPSED
+                        else STATE_EXPANDED
+                    )
+                }
+                submit()
+                it?.mediaItem ?: return@collectLatest
+                binding.applyCurrent(it.mediaItem)
             }
-            submit()
-            it?.mediaItem ?: return@observe
-            binding.applyCurrent(it.mediaItem)
         }
 
         observe(viewModel.queueFlow) { submit() }

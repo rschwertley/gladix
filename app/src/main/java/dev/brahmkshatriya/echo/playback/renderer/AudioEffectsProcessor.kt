@@ -113,7 +113,14 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
 
-        if (isPendingFadeIn) {
+        if (skipFade) {
+            // Force full volume for album transitions, regardless of whether isPendingFadeIn
+            // raced ahead of the skipFade flag being set (onQueueEndOfStream runs on the audio
+            // thread, skipFade is set from the main thread — no ordering guarantee between them).
+            isPendingFadeIn = false
+            fadeInFramesRemaining.set(0)
+            fadeOutFramesRemaining.set(0)
+        } else if (isPendingFadeIn) {
             fadeInFramesRemaining.set(crossfadeFrames())
             isPendingFadeIn = false
         }

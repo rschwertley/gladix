@@ -256,6 +256,50 @@
             android:valueFrom="1"
             android:valueTo="12" />
 
+        <LinearLayout
+            android:id="@+id/skipFadeOnAlbums"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?selectableItemBackground"
+            android:baselineAligned="false"
+            android:orientation="horizontal"
+            android:paddingVertical="20dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="24dp"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:minHeight="44sp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/skip_fade_on_albums"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:alpha="0.66"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:text="@string/skip_fade_on_albums_summary" />
+
+            </LinearLayout>
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/skipFadeOnAlbumsSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="24dp"
+                android:clickable="false" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 

@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
+import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.BASS_BOOST
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CHANGE_PITCH
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
@@ -126,16 +127,25 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             val durationValue = appSettings.getInt(CROSSFADE_DURATION, 5).coerceIn(1, 12)
             crossfadeDurationSlider.value = durationValue.toFloat()
             crossfadeDurationValue.text = "${durationValue}s"
+            skipFadeOnAlbums.isVisible = crossfadeSwitch.isChecked
+            skipFadeOnAlbumsSwitch.isChecked = appSettings.getBoolean(SKIP_FADE_ON_ALBUMS, true)
             crossfade.setOnClickListener {
                 crossfadeSwitch.isChecked = !crossfadeSwitch.isChecked
             }
             crossfadeSwitch.setOnCheckedChangeListener { _, isChecked ->
                 appSettings.edit { putBoolean(CROSSFADE_ENABLED, isChecked) }
                 crossfadeDurationSlider.isEnabled = isChecked
+                skipFadeOnAlbums.isVisible = isChecked
             }
             crossfadeDurationSlider.addOnChangeListener { _, value, _ ->
                 appSettings.edit { putInt(CROSSFADE_DURATION, value.toInt()) }
                 crossfadeDurationValue.text = "${value.toInt()}s"
+            }
+            skipFadeOnAlbums.setOnClickListener {
+                skipFadeOnAlbumsSwitch.isChecked = !skipFadeOnAlbumsSwitch.isChecked
+            }
+            skipFadeOnAlbumsSwitch.setOnCheckedChangeListener { _, isChecked ->
+                appSettings.edit { putBoolean(SKIP_FADE_ON_ALBUMS, isChecked) }
             }
         }
 
