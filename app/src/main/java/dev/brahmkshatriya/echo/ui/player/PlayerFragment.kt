@@ -694,7 +694,7 @@ class PlayerFragment : Fragment() {
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
             val cachedCover = lastLoadedCollapsedCovers[item.mediaId]
             if (cachedCover != null) {
-                setImageDrawable(cachedCover)
+                collapsedTrackCover.setImageDrawable(cachedCover)
             } else {
                 val thumb = collapsedTrackCover.drawable
                     ?: item.unloadedCover?.getCachedDrawable(requireContext())
