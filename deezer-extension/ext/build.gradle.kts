@@ -2,7 +2,7 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
     id("maven-publish")
-    id("com.gradleup.shadow") version "9.0.2"
+    id("com.gradleup.shadow") version "9.4.2"
 }
 
 java {
@@ -16,7 +16,7 @@ kotlin {
 
 dependencies {
     implementation(project(":common"))
-    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}")
     compileOnly(libs.okhttp)
 }
 

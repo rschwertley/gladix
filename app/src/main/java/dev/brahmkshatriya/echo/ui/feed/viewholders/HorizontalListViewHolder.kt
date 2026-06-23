@@ -1,12 +1,15 @@
 package dev.brahmkshatriya.echo.ui.feed.viewholders
 
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePaddingRelative
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
@@ -35,13 +38,30 @@ class HorizontalListViewHolder(
         binding.root.layoutManager = layoutManager
     }
 
+    private fun resolvedItemCoverSizePx(): Int {
+        val typedValue = TypedValue()
+        binding.root.context.theme.resolveAttribute(R.attr.itemCoverSize, typedValue, true)
+        return TypedValue.complexToDimensionPixelSize(
+            typedValue.data, binding.root.context.resources.displayMetrics
+        )
+    }
+
+    private fun fixedRowHeightPx(shelf: Shelf.Lists<*>): Int = binding.root.context.run {
+        when (shelf) {
+            is Shelf.Lists.Items -> resolvedItemCoverSizePx() +
+                resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height)
+            is Shelf.Lists.Categories -> resources.getDimensionPixelSize(R.dimen.shelf_category_row_height)
+            is Shelf.Lists.Tracks -> resources.getDimensionPixelSize(R.dimen.shelf_three_tracks_row_height)
+        }
+    }
+
     override fun bind(feed: FeedType.HorizontalList) {
         val endPadding = if (feed.shelf is Shelf.Lists.Tracks) 8 else 20
         binding.root.updatePaddingRelative(end = endPadding.dpToPx(binding.root.context))
+        binding.root.updateLayoutParams { height = fixedRowHeightPx(feed.shelf) }
         adapter.tracks = feed.shelf.list.filterIsInstance<Track>()
-        adapter.submitList(feed.shelf.toShelfType(feed.extensionId, feed.context, feed.tabId)) {
-            binding.root.adapter = adapter
-        }
+        binding.root.adapter = adapter
+        adapter.submitList(feed.shelf.toShelfType(feed.extensionId, feed.context, feed.tabId))
     }
 
     override fun onCurrentChanged(current: PlayerState.Current?) {

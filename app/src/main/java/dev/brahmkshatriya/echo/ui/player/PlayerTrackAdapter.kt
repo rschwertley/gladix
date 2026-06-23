@@ -13,7 +13,6 @@ import androidx.media3.common.MediaItem
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil3.request.Disposable
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.ItemClickPanelsBinding
@@ -142,7 +141,6 @@ class PlayerTrackAdapter(
 
         private var coverDrawable: Drawable? = null
         private var lastBoundMediaId: String? = null
-        private var coverRequest: Disposable? = null
         fun applyDrawable() {
             val index = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return
             val item = getItem(index) ?: return
@@ -154,13 +152,21 @@ class PlayerTrackAdapter(
 
         fun retryLoad(item: MediaItem?) {
             if (coverDrawable != null) return
+            val mediaId = item?.mediaId
+            val cached = mediaId?.let { lastLoadedCovers[it] }
+            if (cached != null) {
+                coverDrawable = cached
+                binding.playerTrackCover.setImageDrawable(cached)
+                applyDrawable()
+                return
+            }
             val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
-            coverRequest?.dispose()
-            coverRequest = item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+            item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
                 val image = it
                     ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                 setImageDrawable(image)
                 coverDrawable = it
+                if (it != null && mediaId != null) cacheCover(mediaId, it)
                 applyDrawable()
             }
         }
@@ -173,14 +179,22 @@ class PlayerTrackAdapter(
             if (item?.mediaId != lastBoundMediaId) {
                 lastBoundMediaId = item?.mediaId
                 coverDrawable = null
-                val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
-                coverRequest?.dispose()
-                coverRequest = item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
-                    val image = it
-                        ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
-                    setImageDrawable(image)
-                    coverDrawable = it
+                val mediaId = item?.mediaId
+                val cached = mediaId?.let { lastLoadedCovers[it] }
+                if (cached != null) {
+                    coverDrawable = cached
+                    binding.playerTrackCover.setImageDrawable(cached)
                     applyDrawable()
+                } else {
+                    val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
+                    item?.track?.cover.loadWithThumb(binding.playerTrackCover, old) {
+                        val image = it
+                            ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
+                        setImageDrawable(image)
+                        coverDrawable = it
+                        if (it != null && mediaId != null) cacheCover(mediaId, it)
+                        applyDrawable()
+                    }
                 }
             }
             updateInsets()
@@ -266,6 +280,22 @@ class PlayerTrackAdapter(
     var currentDrawableListener: ((Drawable?) -> Unit)? = null
 
     companion object {
+        // Process-lifetime cache of the last successfully resolved cover per mediaId.
+        // Survives Activity/Fragment recreation (rotation) since it's held by the companion
+        // object, not the adapter instance — letting bind() apply an already-loaded cover
+        // synchronously instead of re-issuing a Coil request for art that's already known.
+        private const val MAX_CACHED_COVERS = 20
+        private val lastLoadedCovers = LinkedHashMap<String, Drawable>()
+
+        private fun cacheCover(mediaId: String, drawable: Drawable) {
+            lastLoadedCovers.remove(mediaId)
+            lastLoadedCovers[mediaId] = drawable
+            while (lastLoadedCovers.size > MAX_CACHED_COVERS) {
+                val oldest = lastLoadedCovers.keys.firstOrNull() ?: break
+                lastLoadedCovers.remove(oldest)
+            }
+        }
+
         fun ItemClickPanelsBinding.configureClicking(listener: Listener, uiViewModel: UiViewModel) {
             start.handleGestures(object : GestureListener {
                 override val onClick = listener::onClick

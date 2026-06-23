@@ -11,6 +11,8 @@ import dev.brahmkshatriya.echo.extension.DeezerApi
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
@@ -81,28 +83,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         }
     }
 
-    private suspend fun browseFeed(shelf: String): List<Shelf> {
-        try {
-            deezerExtension.handleArlExpiration()
-            api.updateCountry()
-        } catch (e: Exception) {
-            println("GladixDeezer Search ERROR: ${e.message}")
-            throw e
-        }
-        val jsonObject = api.page("channels/search-home-pipe")
-        logSections("search-home-pipe", jsonObject)
-
-        runCatching { withTimeout(5000) { api.page("channels/explore/explore-tab") } }
-            .onSuccess { logSections("explore-tab", it) }
-            .onFailure { println("GladixDeezer PAGE[channels/explore/explore-tab] ERROR: ${it.message}") }
-        runCatching { withTimeout(5000) { api.page("channels") } }
-            .onSuccess { logSections("channels", it) }
-            .onFailure { println("GladixDeezer PAGE[channels] ERROR: ${it.message}") }
-        runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
-            .onSuccess { logSections("home-pipe", it) }
-            .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
-
-        val browsePageResults = jsonObject["results"]!!.jsonObject
+    private fun JsonObject.toBrowseShelves(shelf: String): List<Shelf> {
+        val browsePageResults = this["results"]!!.jsonObject
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
         return browseSections.mapNotNull { section ->
             val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
@@ -140,6 +122,41 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                 }
             }
         }
+    }
+
+    private suspend fun browseFeed(shelf: String): List<Shelf> {
+        try {
+            deezerExtension.handleArlExpiration()
+            api.updateCountry()
+        } catch (e: Exception) {
+            println("GladixDeezer Search ERROR: ${e.message}")
+            throw e
+        }
+
+        val (searchHomePipeShelves, exploreTabShelves) = coroutineScope {
+            val searchHomePipe = async {
+                runCatching { withTimeout(5000) { api.page("channels/search-home-pipe") } }
+                    .onSuccess { logSections("search-home-pipe", it) }
+                    .onFailure { println("GladixDeezer PAGE[channels/search-home-pipe] ERROR: ${it.message}") }
+                    .getOrNull()?.toBrowseShelves(shelf) ?: emptyList()
+            }
+            val exploreTab = async {
+                runCatching { withTimeout(5000) { api.page("channels/explore/explore-tab") } }
+                    .onSuccess { logSections("explore-tab", it) }
+                    .onFailure { println("GladixDeezer PAGE[channels/explore/explore-tab] ERROR: ${it.message}") }
+                    .getOrNull()?.toBrowseShelves(shelf) ?: emptyList()
+            }
+            searchHomePipe.await() to exploreTab.await()
+        }
+
+        runCatching { withTimeout(5000) { api.page("channels") } }
+            .onSuccess { logSections("channels", it) }
+            .onFailure { println("GladixDeezer PAGE[channels] ERROR: ${it.message}") }
+        runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
+            .onSuccess { logSections("home-pipe", it) }
+            .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
+
+        return searchHomePipeShelves + exploreTabShelves
     }
 
     suspend fun loadSearchFeedTabs(query: String): List<Tab> {

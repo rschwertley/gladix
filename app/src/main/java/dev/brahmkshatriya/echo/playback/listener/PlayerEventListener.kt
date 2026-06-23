@@ -12,7 +12,6 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
@@ -421,7 +420,7 @@ class PlayerEventListener(
         }
 
         val isSimpleCacheError = rootCause is IllegalStateException &&
-            rootCause.stackTrace.any { it.className == SimpleCache::class.java.name }
+            rootCause.stackTrace.any { it.className.contains("SimpleCache") }
         if (isSimpleCacheError) return
 
         if (isMissingFile || is401 || isMalformedContent || isTimeout) {
