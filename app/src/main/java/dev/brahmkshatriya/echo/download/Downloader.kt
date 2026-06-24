@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.models.DownloadContext
 import dev.brahmkshatriya.echo.common.models.Progress
 import dev.brahmkshatriya.echo.common.models.Streamable
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.db.DownloadDatabase
 import dev.brahmkshatriya.echo.download.db.models.ContextEntity
@@ -24,6 +25,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.withExtensionId
+import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -100,6 +102,11 @@ class Downloader(
             .build()
         workManager.enqueueUniqueWork(TAG, ExistingWorkPolicy.KEEP, request)
     }
+
+    private val trackCache = ConcurrentHashMap<Long, Track>()
+    fun getCachedTrack(id: Long): Track? = trackCache[id]
+    suspend fun getTrackData(id: Long): Track? = trackCache[id] ?: dao.getDownloadData(id)
+        ?.toData<Track>()?.getOrNull()?.also { trackCache[id] = it }
 
     private val servers = ConcurrentHashMap<String, Streamable.Media.Server>()
     private val mutexes = ConcurrentHashMap<String, Mutex>()
@@ -214,7 +221,7 @@ class Downloader(
                     it.context?.id
                 }.flatMap { (id, infos) ->
                     if (id == null) infos.mapNotNull {
-                        it.download.track.getOrNull()
+                        getTrackData(it.download.id)
                             ?.withExtensionId(it.download.extensionId, false)
                     }
                     else listOfNotNull(infos.first().runCatching {

@@ -66,9 +66,17 @@ class DeezerParser(private val session: DeezerSession) {
         val type = data.str("__TYPE__") ?: return null
         return when {
             "channel" in type -> toChannel(block)
-            else -> null
+            else -> toEchoMediaItem()?.toMediaCategory()
         }
     }
+
+    fun EchoMediaItem.toMediaCategory(): Shelf.Category = Shelf.Category(
+        id = id,
+        title = title,
+        feed = Feed(emptyList()) { listOf(toShelf()).toFeedData() },
+        subtitle = subtitle,
+        image = cover,
+    )
 
     inline fun JsonObject.toChannel(
         crossinline block: suspend (String) -> List<Shelf>

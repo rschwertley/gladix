@@ -388,8 +388,10 @@ class PlayerFragment : Fragment() {
                 val current = viewPager.currentItem
                 val smooth = !isInitialLoad && abs(index - current) <= 1
                 adapter.onCurrentChanged(index)
-                isInitialLoad = false
-                if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
+                if (isInitialLoad) {
+                    isInitialLoad = false
+                    viewPager.setCurrentItem(index, smooth)
+                } else if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
                 else {
                     pendingPageScroll?.let { viewPager.removeCallbacks(it) }
                     val runnable = Runnable {

@@ -25,10 +25,13 @@ interface DownloadDao {
     suspend fun getContextEntity(contextId: Long?): ContextEntity?
 
     @Query(
-        "SELECT id, extensionId, trackId, contextId, data, exceptionFile, finalFile, fullyDownloaded " +
+        "SELECT id, extensionId, trackId, contextId, exceptionFile, finalFile, fullyDownloaded " +
             "FROM DownloadEntity"
     )
     fun getDownloadsFlow(): Flow<List<DownloadSummary>>
+
+    @Query("SELECT data FROM DownloadEntity WHERE id = :id")
+    suspend fun getDownloadData(id: Long): String?
 
     @Query("SELECT * FROM ContextEntity")
     fun getContextFlow(): Flow<List<ContextEntity>>

@@ -78,7 +78,9 @@ class DeezerHomeFeedClient(
                 val obj = section.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"
                 val layout = obj["layout"]?.jsonPrimitive?.contentOrNull ?: "?"
-                "$title/$layout"
+                val moduleId = obj["module_id"]?.jsonPrimitive?.contentOrNull ?: "?"
+                val itemCount = obj["items"]?.jsonArray?.size ?: 0
+                "$title/$layout/$moduleId/items=$itemCount"
             }
             println("GladixDeezer PAGE[$label] sections: $summary")
         }

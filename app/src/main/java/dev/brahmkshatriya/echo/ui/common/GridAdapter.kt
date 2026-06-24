@@ -4,6 +4,8 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Rect
+import android.view.View
 import androidx.core.util.toKotlinPair
 import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.ConcatAdapter
@@ -34,6 +36,16 @@ interface GridAdapter {
         }
     }
 
+    class VerticalSpacingItemDecoration(private val spacingPx: Int) : RecyclerView.ItemDecoration() {
+        override fun getItemOffsets(
+            outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State
+        ) {
+            val position = parent.getChildAdapterPosition(view)
+            if (position == RecyclerView.NO_POSITION) return
+            if (position != state.itemCount - 1) outRect.bottom = spacingPx
+        }
+    }
+
     companion object {
         fun configureGridLayout(
             recycler: RecyclerView, gridAdapter: GridAdapter, even: Boolean = true
@@ -45,6 +57,7 @@ interface GridAdapter {
             val layoutManager = GridLayoutManager(context, 1)
             recycler.adapter = gridAdapter.adapter
             recycler.layoutManager = layoutManager
+            recycler.addItemDecoration(VerticalSpacingItemDecoration(8.dpToPx(context)))
             recycler.doOnLayout { view ->
                 val itemWidth = if (isTV) {
                     val screenHeight = context.resources.displayMetrics.heightPixels

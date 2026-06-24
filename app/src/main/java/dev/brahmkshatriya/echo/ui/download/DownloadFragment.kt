@@ -36,7 +36,7 @@ class DownloadFragment : Fragment(R.layout.fragment_download) {
 
     private val vm by viewModel<DownloadViewModel>()
     private val downloadsAdapter by lazy {
-        DownloadsAdapter(object : DownloadsAdapter.Listener {
+        DownloadsAdapter(vm.downloader, object : DownloadsAdapter.Listener {
             override fun onCancel(trackId: Long) = vm.cancel(trackId)
             override fun onRestart(trackId: Long) = vm.restart(trackId)
             override fun onExceptionClicked(data: ExceptionUtils.Data) = requireActivity()

@@ -9,6 +9,5 @@
     android:clipToPadding="false"
     android:orientation="horizontal"
     android:paddingHorizontal="20dp"
-    android:paddingBottom="4dp"
     app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
     tools:listitem="@layout/item_shelf_lists_media" />

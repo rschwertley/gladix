@@ -11,8 +11,7 @@
     android:clipToPadding="false"
     android:gravity="center"
     android:orientation="horizontal"
-    android:paddingHorizontal="24dp"
-    android:paddingVertical="4dp">
+    android:paddingHorizontal="24dp">
 
     <include
         android:id="@+id/coverContainer"
