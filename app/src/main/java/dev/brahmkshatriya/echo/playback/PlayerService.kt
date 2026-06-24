@@ -72,6 +72,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -120,6 +121,7 @@ class PlayerService : MediaLibraryService() {
     private val app by inject<App>()
     private val healthMonitor by inject<HealthMonitor>()
     private val state by inject<PlayerState>()
+    private val fullQueueFlow by inject<MutableStateFlow<List<MediaItem>>>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("PlayerService"))
 
     private val audioEffectsProcessor by lazy {
@@ -191,6 +193,7 @@ class PlayerService : MediaLibraryService() {
 
         player.addListener(
             PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow,
+                fullQueueFlow = fullQueueFlow,
                 isAndroidAutoConnected = { isAndroidAutoConnected },
                 requestAudioFocus = { audioFocusListener.requestFocus() },
                 healthMonitor = healthMonitor,

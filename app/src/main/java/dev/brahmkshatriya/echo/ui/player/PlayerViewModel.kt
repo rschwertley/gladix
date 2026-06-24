@@ -63,6 +63,7 @@ class PlayerViewModel(
     val extensions: ExtensionLoader,
     val historyRepository: HistoryRepository,
     downloader: Downloader,
+    fullQueueFlow: MutableStateFlow<List<MediaItem>>,
 ) : ViewModel() {
     private val downloadFlow = downloader.flow
 
@@ -92,6 +93,15 @@ class PlayerViewModel(
                     }
                 }
                 if (browser.value != null) return@collect
+            }
+        }
+        viewModelScope.launch {
+            fullQueueFlow.collect { items ->
+                val showingPlaceholder = playerState.current.value?.isPlaceholder == true && items.isEmpty()
+                if (items.isNotEmpty() || !showingPlaceholder) {
+                    queue = items
+                    queueFlow.emit(Unit)
+                }
             }
         }
     }

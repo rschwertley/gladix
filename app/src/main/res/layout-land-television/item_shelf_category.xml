@@ -5,7 +5,7 @@
     android:id="@+id/titleCard"
     style="@style/Selectable"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="72dp"
     android:layout_margin="4dp"
     android:focusable="true"
     android:foreground="@drawable/tv_focused_list_item"
@@ -13,11 +13,10 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:baselineAligned="false"
         android:clipToPadding="false"
         android:gravity="center"
-        android:minHeight="64dp"
         android:orientation="horizontal"
         android:padding="8dp">
 

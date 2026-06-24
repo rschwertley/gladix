@@ -2,23 +2,17 @@ package dev.brahmkshatriya.echo.ui.player
 
 import android.os.Handler
 import android.os.Looper
-import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C.TIME_UNSET
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class PlayerUiListener(
     private val player: Player,
     private val viewModel: PlayerViewModel
 ) : Player.Listener {
-
-    private var pendingQueueUpdate: Job? = null
 
     init {
         updateList()
@@ -30,22 +24,10 @@ class PlayerUiListener(
             shuffleMode.value = player.shuffleModeEnabled
             repeatMode.value = player.repeatMode
         }
-        updateNavigation()
     }
 
-    private fun updateList() = viewModel.run {
+    private fun updateList() {
         updateNavigation()
-        val newQueue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
-        val showingPlaceholder = playerState.current.value?.isPlaceholder == true && player.mediaItemCount == 0
-
-        if (player.mediaItemCount > 0 || !showingPlaceholder) {
-            queue = newQueue
-            pendingQueueUpdate?.cancel()
-            pendingQueueUpdate = viewModelScope.launch {
-                delay(50)
-                queueFlow.emit(Unit)
-            }
-        }
     }
 
     private fun updateNavigation() {

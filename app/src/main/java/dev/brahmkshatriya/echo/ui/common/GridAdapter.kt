@@ -57,7 +57,7 @@ interface GridAdapter {
         ) {
             val position = parent.getChildAdapterPosition(view)
             if (position == RecyclerView.NO_POSITION) return
-            if (position == state.itemCount - 1) return
+            if (position + 1 >= state.itemCount) return
             if (gridAdapter.isSectionHeader(position + 1)) {
                 outRect.bottom = HEADER_PRE_SPACING_DP.dpToPx(parent.context)
                 return

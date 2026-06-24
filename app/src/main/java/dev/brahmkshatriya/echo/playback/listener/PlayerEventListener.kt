@@ -56,12 +56,22 @@ class PlayerEventListener(
     private val currentFlow: MutableStateFlow<PlayerState.Current?>,
     private val extensions: ExtensionLoader,
     private val throwableFlow: MutableSharedFlow<Throwable>,
+    private val fullQueueFlow: MutableStateFlow<List<MediaItem>>,
     private val isAndroidAutoConnected: () -> Boolean = { false },
     private val requestAudioFocus: () -> Unit = {},
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
     private val player get() = session.player
+
+    private var pendingFullQueueUpdate: Job? = null
+    private fun emitFullQueue() {
+        pendingFullQueueUpdate?.cancel()
+        pendingFullQueueUpdate = scope.launch(Dispatchers.Main) {
+            delay(50)
+            fullQueueFlow.value = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        }
+    }
 
     private fun updateCustomLayout() = scope.launch(Dispatchers.Main) {
         val item = player.currentMediaItem ?: return@launch
@@ -104,6 +114,7 @@ class PlayerEventListener(
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+        emitFullQueue()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scope.launch { ResumptionUtils.saveQueue(context, player) }
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -130,12 +141,14 @@ class PlayerEventListener(
     override fun onRepeatModeChanged(repeatMode: Int) {
         updateCustomLayout()
         ResumptionUtils.saveRepeat(context, repeatMode)
+        emitFullQueue()
     }
 
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         updateCustomLayout()
         ResumptionUtils.saveShuffle(context, shuffleModeEnabled)
         scope.launch { ResumptionUtils.saveQueue(context, player) }
+        emitFullQueue()
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {

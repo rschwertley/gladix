@@ -251,8 +251,6 @@ class PlayerTrackAdapter(
         if (current.value == null) currentDrawableListener?.invoke(null)
     }
 
-    fun onCurrentChanged(index: Int) = notifyItemChanged(index)
-
     private var isPlayerVisible = false
     fun updatePlayerVisibility(visible: Boolean) {
         isPlayerVisible = visible

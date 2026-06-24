@@ -15,6 +15,7 @@
          adapter is still populating. Estimated from each item layout's content; tune visually
          if a type looks clipped or has excess empty space. -->
     <dimen name="shelf_media_text_block_height">80dp</dimen>
+    <dimen name="shelf_media_text_block_height_radio">45dp</dimen>
     <dimen name="shelf_category_row_height">68dp</dimen>
     <dimen name="shelf_three_tracks_row_height">216dp</dimen>
 </resources>

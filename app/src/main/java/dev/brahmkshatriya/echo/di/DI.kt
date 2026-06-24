@@ -6,8 +6,10 @@ import dev.brahmkshatriya.echo.download.db.DownloadDatabase
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryDatabase
+import androidx.media3.common.MediaItem
 import dev.brahmkshatriya.echo.playback.PlayerService
 import dev.brahmkshatriya.echo.playback.PlayerState
+import kotlinx.coroutines.flow.MutableStateFlow
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.download.DownloadViewModel
@@ -65,6 +67,7 @@ object DI {
         includes(extensionModule)
         singleOf(PlayerService::getCache)
         single { PlayerState() }
+        single { MutableStateFlow<List<MediaItem>>(emptyList()) }
     }
 
     private val uiModules = module {

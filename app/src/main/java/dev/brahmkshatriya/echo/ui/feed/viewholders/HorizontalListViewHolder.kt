@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemShelfListsBinding
@@ -47,11 +48,17 @@ class HorizontalListViewHolder(
     }
 
     private fun fixedRowHeightPx(shelf: Shelf.Lists<*>): Int = binding.root.context.run {
-        when (shelf) {
-            is Shelf.Lists.Items -> resolvedItemCoverSizePx() +
-                resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height)
-            is Shelf.Lists.Categories -> resources.getDimensionPixelSize(R.dimen.shelf_category_row_height)
-            is Shelf.Lists.Tracks -> resources.getDimensionPixelSize(R.dimen.shelf_three_tracks_row_height)
+        when {
+            shelf is Shelf.Lists.Items && shelf.list.all { it is Radio } ->
+                resolvedItemCoverSizePx() +
+                    resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height_radio)
+            shelf is Shelf.Lists.Items ->
+                resolvedItemCoverSizePx() +
+                    resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height)
+            shelf is Shelf.Lists.Categories ->
+                resources.getDimensionPixelSize(R.dimen.shelf_category_row_height)
+            else ->
+                resources.getDimensionPixelSize(R.dimen.shelf_three_tracks_row_height)
         }
     }
 

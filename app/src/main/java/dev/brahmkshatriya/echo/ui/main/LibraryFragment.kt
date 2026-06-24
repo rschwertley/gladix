@@ -83,7 +83,7 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
             if (curr != 2) return@observe
             uiViewModel.currentNavBackground.value = bg
         }
-        applyInsets(recyclerView, binding.appBarOutline, 72) {
+        applyInsets(recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)
         }
         applyBackPressCallback()
