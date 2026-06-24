@@ -20,12 +20,19 @@ interface GridAdapter {
     val adapter: RecyclerView.Adapter<*>
     fun getSpanSize(position: Int, width: Int, count: Int): Int
 
+    // Lets VerticalSpacingItemDecoration skip adding a gap before items that already provide
+    // their own visual separation (e.g. section headers), avoiding doubled spacing.
+    fun isSectionHeader(position: Int): Boolean = false
+
     class Concat(
         vararg adapters: GridAdapter
     ) : GridAdapter {
         override val adapter = ConcatAdapter(adapters.map { it.adapter })
         private val getSpanSizeMap = adapters.mapIndexed { index, gridAdapter ->
             gridAdapter.adapter to gridAdapter::getSpanSize
+        }.toMap()
+        private val isSectionHeaderMap = adapters.mapIndexed { index, gridAdapter ->
+            gridAdapter.adapter to gridAdapter::isSectionHeader
         }.toMap()
 
         override fun getSpanSize(position: Int, width: Int, count: Int): Int {
@@ -34,15 +41,35 @@ interface GridAdapter {
                 ?: throw IllegalStateException("No span size function found for adapter: ${adapter.javaClass.name}")
             return getSpanSize(pos, width, count)
         }
+
+        override fun isSectionHeader(position: Int): Boolean {
+            val (adapter, pos) = adapter.getWrappedAdapterAndPosition(position).toKotlinPair()
+            val isSectionHeader = isSectionHeaderMap[adapter] ?: return false
+            return isSectionHeader(pos)
+        }
     }
 
-    class VerticalSpacingItemDecoration(private val spacingPx: Int) : RecyclerView.ItemDecoration() {
+    class VerticalSpacingItemDecoration(
+        private val spacingPx: Int, private val gridAdapter: GridAdapter
+    ) : RecyclerView.ItemDecoration() {
         override fun getItemOffsets(
             outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State
         ) {
             val position = parent.getChildAdapterPosition(view)
             if (position == RecyclerView.NO_POSITION) return
-            if (position != state.itemCount - 1) outRect.bottom = spacingPx
+            if (position == state.itemCount - 1) return
+            if (gridAdapter.isSectionHeader(position + 1)) {
+                outRect.bottom = HEADER_PRE_SPACING_DP.dpToPx(parent.context)
+                return
+            }
+            outRect.bottom = spacingPx
+        }
+
+        companion object {
+            // Extra space before a section header, on top of the header's own internal
+            // padding. 0 by default since the header's own padding was deemed sufficient;
+            // bump this if Home/Search read as under-spaced after removing the doubled gap.
+            private const val HEADER_PRE_SPACING_DP = 0
         }
     }
 
@@ -57,7 +84,7 @@ interface GridAdapter {
             val layoutManager = GridLayoutManager(context, 1)
             recycler.adapter = gridAdapter.adapter
             recycler.layoutManager = layoutManager
-            recycler.addItemDecoration(VerticalSpacingItemDecoration(8.dpToPx(context)))
+            recycler.addItemDecoration(VerticalSpacingItemDecoration(8.dpToPx(context), gridAdapter))
             recycler.doOnLayout { view ->
                 val itemWidth = if (isTV) {
                     val screenHeight = context.resources.displayMetrics.heightPixels

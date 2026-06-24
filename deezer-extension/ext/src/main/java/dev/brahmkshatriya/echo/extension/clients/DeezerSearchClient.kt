@@ -93,7 +93,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             val title = section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()
             if (title.isBlank() || title == "?") return@mapNotNull null
             when {
-                id == EXPLORE_MODULE_ID || "grid" in layout -> {
+                id == EXPLORE_MODULE_ID || layout == "grid" -> {
                     parser.run {
                         section.toShelfCategoryList(title, shelf) { target ->
                            deezerExtension.channelFeed(target)

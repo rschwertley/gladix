@@ -219,6 +219,9 @@ class FeedAdapter(
             CategoryGrid, MediaGrid, VideoHorizontal -> 1
         }
 
+    override fun isSectionHeader(position: Int) =
+        runCatching { getItem(position) }.getOrNull()?.type == Header
+
     private fun clearState() {
         viewModel.layoutManagerStates.clear()
         viewModel.visibleScrollableViews.clear()

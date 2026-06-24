@@ -271,6 +271,23 @@ class ShufflePlayer(
         return player.currentPeriodIndex - periodStart
     }
 
+    // Inverse of getCurrentMediaItemIndex(): callers (UI queue taps, error-retry logic in
+    // PlayerEventListener) read currentMediaItemIndex, which is windowed once the queue exceeds
+    // QUEUE_WINDOW_SIZE. Without this override, seekTo() would forward that windowed index
+    // straight to the real player as if it were a full-timeline index, landing on the wrong
+    // track for any queue position outside the window's first QUEUE_WINDOW_SIZE entries.
+    override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+        val full = super.getCurrentTimeline()
+        val count = full.windowCount
+        if (count <= QUEUE_WINDOW_SIZE) {
+            super.seekTo(mediaItemIndex, positionMs)
+            return
+        }
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        val start = windowStart(count, fullIndex)
+        super.seekTo(mediaItemIndex + start, positionMs)
+    }
+
     private class WindowedTimeline(
         private val delegate: Timeline,
         private val windowStart: Int,
