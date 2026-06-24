@@ -59,6 +59,7 @@ class HorizontalListViewHolder(
         val endPadding = if (feed.shelf is Shelf.Lists.Tracks) 8 else 20
         binding.root.updatePaddingRelative(end = endPadding.dpToPx(binding.root.context))
         binding.root.updateLayoutParams { height = fixedRowHeightPx(feed.shelf) }
+        adapter.resetScroll()
         adapter.tracks = feed.shelf.list.filterIsInstance<Track>()
         binding.root.adapter = adapter
         adapter.submitList(feed.shelf.toShelfType(feed.extensionId, feed.context, feed.tabId))
@@ -152,6 +153,15 @@ class HorizontalListViewHolder(
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 scrollAmountX = dx
             }
+        }
+
+        // A recycled HorizontalListViewHolder's Adapter instance retains scrollAmountX from
+        // whatever row it previously displayed. Without resetting it on rebind, cards in a
+        // freshly bound row that was never actually scrolled inherit a stale nonzero value,
+        // triggering applyTranslationAndScaleAnimation's entrance shrink-from-50% animation
+        // incorrectly.
+        fun resetScroll() {
+            scrollAmountX = 0
         }
 
         var recyclerView: RecyclerView? = null

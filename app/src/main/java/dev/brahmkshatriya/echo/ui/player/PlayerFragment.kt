@@ -388,10 +388,8 @@ class PlayerFragment : Fragment() {
                 val current = viewPager.currentItem
                 val smooth = !isInitialLoad && abs(index - current) <= 1
                 adapter.onCurrentChanged(index)
-                if (isInitialLoad) {
-                    isInitialLoad = false
-                    viewPager.setCurrentItem(index, smooth)
-                } else if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
+                isInitialLoad = false
+                if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
                 else {
                     pendingPageScroll?.let { viewPager.removeCallbacks(it) }
                     val runnable = Runnable {
@@ -694,18 +692,12 @@ class PlayerFragment : Fragment() {
         playerCollapsedContainer.run {
             collapsedTrackTitle.text = track.title
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
-            val cachedCover = lastLoadedCollapsedCovers[item.mediaId]
-            if (cachedCover != null) {
-                collapsedTrackCover.setImageDrawable(cachedCover)
-            } else {
-                val thumb = collapsedTrackCover.drawable
-                    ?: item.unloadedCover?.getCachedDrawable(requireContext())
-                track.cover.loadWithThumb(collapsedTrackCover, thumb) {
-                    val image = it
-                        ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
-                    setImageDrawable(image)
-                    if (it != null) cacheCollapsedCover(item.mediaId, it)
-                }
+            val thumb = collapsedTrackCover.drawable
+                ?: item.unloadedCover?.getCachedDrawable(requireContext())
+            track.cover.loadWithThumb(collapsedTrackCover, thumb) {
+                val image = it
+                    ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
+                setImageDrawable(image)
             }
         }
         playerControls.run {
@@ -807,22 +799,6 @@ class PlayerFragment : Fragment() {
     }
 
     companion object {
-        // Process-lifetime cache of the last successfully resolved mini-player cover per
-        // mediaId, mirroring PlayerTrackAdapter's lastLoadedCovers. Survives Fragment
-        // recreation (rotation), letting applyCurrent() apply an already-loaded cover
-        // synchronously instead of re-issuing a Coil request for art that's already known.
-        private const val MAX_CACHED_COLLAPSED_COVERS = 20
-        private val lastLoadedCollapsedCovers = LinkedHashMap<String, Drawable>()
-
-        private fun cacheCollapsedCover(mediaId: String, drawable: Drawable) {
-            lastLoadedCollapsedCovers.remove(mediaId)
-            lastLoadedCollapsedCovers[mediaId] = drawable
-            while (lastLoadedCollapsedCovers.size > MAX_CACHED_COLLAPSED_COVERS) {
-                val oldest = lastLoadedCollapsedCovers.keys.firstOrNull() ?: break
-                lastLoadedCollapsedCovers.remove(oldest)
-            }
-        }
-
         private fun Context.showBackground() = getSettings().showBackground()
         const val DYNAMIC_PLAYER = "dynamic_player"
         const val PLAYER_COLOR = "player_app_color"

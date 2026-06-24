@@ -43,9 +43,10 @@ class DeezerHomeFeedClient(
                 val obj = section.asObjectOrNull() ?: return@mapNotNull null
                 val id = obj.optString("module_id") ?: return@mapNotNull null
                 val title = obj.optString("title") ?: return@mapNotNull null
+                val layout = obj.optString("layout").orEmpty()
 
-                when (id) {
-                    in CATEGORY_MODULE_ID -> async(dispatcher) {
+                when {
+                    id in CATEGORY_MODULE_ID || "grid" in layout -> async(dispatcher) {
                         runCatching {
                             parser.run {
                                 section.toShelfCategoryList(title, shelf) { target ->

@@ -20,6 +20,13 @@ class PlayerUiListener(
 
     private var pendingQueueUpdate: Job? = null
 
+    // MediaController reconnection (e.g. after rotation) can deliver the session's timeline
+    // progressively, firing onTimelineChanged multiple times with a still-settling
+    // mediaItemCount. Tracking the count across calls lets us skip applying a queue update
+    // until two consecutive calls agree, avoiding queue[current.index] briefly pointing at
+    // the wrong track while the timeline is mid-sync.
+    private var lastSeenMediaItemCount: Int? = null
+
     init {
         updateList()
         with(viewModel) {
@@ -35,10 +42,17 @@ class PlayerUiListener(
 
     private fun updateList() = viewModel.run {
         updateNavigation()
-        val newQueue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
-        val showingPlaceholder = playerState.current.value?.isPlaceholder == true && player.mediaItemCount == 0
+        val mediaItemCount = player.mediaItemCount
+        val previousCount = lastSeenMediaItemCount
+        lastSeenMediaItemCount = mediaItemCount
+        if (previousCount != null && previousCount != 0 && mediaItemCount != 0 &&
+            previousCount != mediaItemCount
+        ) return@run
 
-        if (player.mediaItemCount > 0 || !showingPlaceholder) {
+        val newQueue = (0 until mediaItemCount).map { player.getMediaItemAt(it) }
+        val showingPlaceholder = playerState.current.value?.isPlaceholder == true && mediaItemCount == 0
+
+        if (mediaItemCount > 0 || !showingPlaceholder) {
             queue = newQueue
             pendingQueueUpdate?.cancel()
             pendingQueueUpdate = viewModelScope.launch {
