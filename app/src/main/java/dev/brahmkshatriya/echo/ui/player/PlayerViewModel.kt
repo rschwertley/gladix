@@ -69,6 +69,9 @@ class PlayerViewModel(
 
     val browser = MutableStateFlow<MediaController?>(null)
 
+    var queue: List<MediaItem> = emptyList()
+    val queueFlow = MutableSharedFlow<Unit>()
+
     init {
         viewModelScope.launch {
             historyRepository.getLatest().collect { entity ->
@@ -113,8 +116,6 @@ class PlayerViewModel(
         }
     }
 
-    var queue: List<MediaItem> = emptyList()
-    val queueFlow = MutableSharedFlow<Unit>()
     private val context = app.context
     val controllerFutureRelease = getController(context) { player ->
         browser.value = player
