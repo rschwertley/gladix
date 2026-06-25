@@ -132,15 +132,23 @@ class PlayerViewModel(
         controllerFutureRelease()
     }
 
+    private fun toWindowedIndex(fullIndex: Int): Int {
+        val curr = playerState.current.value ?: return fullIndex
+        val fullCurrentIndex = queue.indexOfFirst { it.mediaId == curr.mediaItem.mediaId }
+        if (fullCurrentIndex == -1) return fullIndex
+        val windowStart = fullCurrentIndex - curr.index
+        return fullIndex - windowStart
+    }
+
     fun play(position: Int) {
         withBrowser {
-            it.seekTo(position, 0)
+            it.seekTo(toWindowedIndex(position), 0)
             it.playWhenReady = true
         }
     }
 
     fun seek(position: Int) {
-        withBrowser { it.seekTo(position, 0) }
+        withBrowser { it.seekTo(toWindowedIndex(position), 0) }
     }
 
     fun removeQueueItem(position: Int) {
