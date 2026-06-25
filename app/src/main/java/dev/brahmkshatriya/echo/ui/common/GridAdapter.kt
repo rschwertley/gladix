@@ -59,15 +59,20 @@ interface GridAdapter {
             if (position == RecyclerView.NO_POSITION || state.itemCount == 0) return
             val lm = parent.layoutManager as? GridLayoutManager
             val spanCount = lm?.spanCount ?: 1
-            val inLastRow = if (lm != null) {
-                val lookup = lm.spanSizeLookup
-                val lastGroup = lookup.getSpanGroupIndex(state.itemCount - 1, spanCount)
-                lookup.getSpanGroupIndex(position, spanCount) >= lastGroup
-            } else {
-                position >= state.itemCount - 1
-            }
-            if (inLastRow) return
-            if (runCatching { gridAdapter.isSectionHeader(position + 1) }.getOrDefault(false)) {
+            val lookup = lm?.spanSizeLookup
+            val itemGroup = lookup?.getSpanGroupIndex(position, spanCount) ?: position
+            // Find the rightmost adapter position in the same visual row. With caching
+            // enabled this is O(1) per step; for spanCount=2 it checks at most 1 extra item.
+            val lastInRow = runCatching {
+                if (lookup != null) {
+                    var last = position
+                    while (last + 1 < state.itemCount &&
+                        lookup.getSpanGroupIndex(last + 1, spanCount) == itemGroup) last++
+                    last
+                } else position
+            }.getOrDefault(position)
+            if (lastInRow >= state.itemCount - 1) return
+            if (runCatching { gridAdapter.isSectionHeader(lastInRow + 1) }.getOrDefault(false)) {
                 outRect.bottom = HEADER_PRE_SPACING_DP.dpToPx(parent.context)
                 return
             }
