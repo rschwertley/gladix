@@ -5,11 +5,12 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
-
+import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
+import java.util.concurrent.CopyOnWriteArrayList
 
 @Suppress("unused")
 @OptIn(UnstableApi::class)
@@ -27,6 +28,19 @@ class ShufflePlayer(
     private var original = getQueue()
     private var isFreshShuffle = false
     internal var isRearranging = false
+
+    private val extraListeners = CopyOnWriteArrayList<Player.Listener>()
+    private var lastWindowStart = -1
+
+    override fun addListener(listener: Player.Listener) {
+        extraListeners.add(listener)
+        super.addListener(listener)
+    }
+
+    override fun removeListener(listener: Player.Listener) {
+        extraListeners.remove(listener)
+        super.removeListener(listener)
+    }
 
     // Called by playItem() before setting shuffleModeEnabled=true so changeQueue() knows to
     // place the starting track at physical index 0 with no "before" predecessors. Must be called
@@ -228,6 +242,24 @@ class ShufflePlayer(
     private fun windowStart(fullCount: Int, fullIndex: Int): Int {
         val half = QUEUE_WINDOW_SIZE / 2
         return (fullIndex - half).coerceIn(0, fullCount - QUEUE_WINDOW_SIZE)
+    }
+
+    // Called from PlayerEventListener.onMediaItemTransition (SEEK and AUTO reasons) to notify
+    // all session listeners that the windowed timeline has shifted. ExoPlayer does not fire
+    // EVENT_TIMELINE_CHANGED on a seek, so MediaSessionLegacyStub.updateQueue() would never
+    // run without this explicit notification — leaving Android Auto's queue stale.
+    fun notifyWindowedTimelineChanged() {
+        val full = super.getCurrentTimeline()
+        val count = full.windowCount
+        if (count <= QUEUE_WINDOW_SIZE) return
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        val newWindowStart = windowStart(count, fullIndex)
+        if (newWindowStart == lastWindowStart) return
+        lastWindowStart = newWindowStart
+        val timeline = getCurrentTimeline()
+        for (l in extraListeners) {
+            l.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
+        }
     }
 
     // Limit the timeline exposed to the media session (and thus Bluetooth/AVRCP) to a sliding

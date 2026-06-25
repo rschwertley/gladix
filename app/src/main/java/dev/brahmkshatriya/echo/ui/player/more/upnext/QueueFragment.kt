@@ -89,21 +89,25 @@ class QueueFragment : Fragment() {
 
         fun submit() {
             val current = viewModel.playerState.current.value
-            val currentIndex = current?.index
+            val fullCurrentIndex = current?.let { c ->
+                viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }
+            } ?: -1
             val it = viewModel.queue.mapIndexed { index, mediaItem ->
-                if (currentIndex == index) current.isPlaying to current.mediaItem
+                if (fullCurrentIndex == index) current!!.isPlaying to current.mediaItem
                 else null to mediaItem
             }
             queueAdapter.submitList(it) {
-                currentIndex ?: return@submitList
-                binding?.root?.scrollToPosition(currentIndex)
+                if (fullCurrentIndex < 0) return@submitList
+                binding?.root?.scrollToPosition(fullCurrentIndex)
             }
         }
 
         observe(viewModel.playerState.current) { submit() }
         observe(viewModel.queueFlow) { submit() }
 
-        val index = viewModel.playerState.current.value?.index ?: return
+        val currentForScroll = viewModel.playerState.current.value ?: return
+        val index = viewModel.queue.indexOfFirst { it.mediaId == currentForScroll.mediaItem.mediaId }
+        if (index < 0) return
         manager.scrollToPositionWithOffset(index + 1, screenHeight)
     }
 }

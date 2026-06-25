@@ -107,6 +107,12 @@ class PlayerEventListener(
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
         retriedWatchdogCount = 0
+        // PLAYLIST_CHANGED fires when changeQueue() rearranges items; ExoPlayer emits
+        // onTimelineChanged naturally in that case. For SEEK and AUTO, no onTimelineChanged
+        // fires, so the AA queue would never update after a window shift without this call.
+        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+            (session.player as? ShufflePlayer)?.notifyWindowedTimelineChanged()
+        }
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {

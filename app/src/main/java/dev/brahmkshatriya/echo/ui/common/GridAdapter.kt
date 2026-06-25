@@ -56,10 +56,17 @@ interface GridAdapter {
             outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State
         ) {
             val position = parent.getChildAdapterPosition(view)
-            if (position == RecyclerView.NO_POSITION) return
-            val spanCount = (parent.layoutManager as? GridLayoutManager)?.spanCount ?: 1
-            val lastRowStart = state.itemCount - ((state.itemCount - 1) % spanCount + 1)
-            if (position >= lastRowStart) return
+            if (position == RecyclerView.NO_POSITION || state.itemCount == 0) return
+            val lm = parent.layoutManager as? GridLayoutManager
+            val spanCount = lm?.spanCount ?: 1
+            val inLastRow = if (lm != null) {
+                val lookup = lm.spanSizeLookup
+                val lastGroup = lookup.getSpanGroupIndex(state.itemCount - 1, spanCount)
+                lookup.getSpanGroupIndex(position, spanCount) >= lastGroup
+            } else {
+                position >= state.itemCount - 1
+            }
+            if (inLastRow) return
             if (runCatching { gridAdapter.isSectionHeader(position + 1) }.getOrDefault(false)) {
                 outRect.bottom = HEADER_PRE_SPACING_DP.dpToPx(parent.context)
                 return

@@ -376,12 +376,16 @@ class PlayerFragment : Fragment() {
         viewPager.adapter = adapter
         (viewPager.getChildAt(0) as? RecyclerView)?.itemAnimator = null
         viewPager.registerOnUserPageChangeCallback { pos, isUser ->
-            val index = viewModel.playerState.current.value?.index
+            val curr = viewModel.playerState.current.value
+            val index = curr?.let { c -> viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId } } ?: -1
             if (index != pos && isUser) viewModel.seek(pos)
         }
 
         fun submit() {
-            val capturedIndex = (viewModel.playerState.current.value?.index ?: -1).takeIf { it != -1 }
+            val capturedCurrent = viewModel.playerState.current.value
+            val capturedIndex = capturedCurrent?.let { c ->
+                viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }.takeIf { it != -1 }
+            }
             adapter.submitList(viewModel.queue) {
                 val index = capturedIndex ?: return@submitList
                 val viewPager = binding?.viewPager ?: return@submitList
@@ -392,7 +396,10 @@ class PlayerFragment : Fragment() {
                 else {
                     pendingPageScroll?.let { viewPager.removeCallbacks(it) }
                     val runnable = Runnable {
-                        val liveIndex = viewModel.playerState.current.value?.index ?: index
+                        val liveCurrent = viewModel.playerState.current.value
+                        val liveIndex = liveCurrent?.let { c ->
+                            viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }.takeIf { it != -1 }
+                        } ?: index
                         binding?.viewPager?.setCurrentItem(liveIndex, smooth)
                     }
                     pendingPageScroll = runnable
