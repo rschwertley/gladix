@@ -46,7 +46,7 @@ class DeezerHomeFeedClient(
                 val layout = obj.optString("layout").orEmpty()
 
                 when {
-                    id in CATEGORY_MODULE_ID || layout == "grid" -> async(dispatcher) {
+                    id in CATEGORY_MODULE_ID || layout == "grid" || layout == "horizontal-grid" -> async(dispatcher) {
                         runCatching {
                             parser.run {
                                 section.toShelfCategoryList(title, shelf) { target ->
