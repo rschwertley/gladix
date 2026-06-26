@@ -46,7 +46,7 @@ class DeezerHomeFeedClient(
                 val layout = obj.optString("layout").orEmpty()
 
                 when {
-                    id in CATEGORY_MODULE_ID || layout == "grid" || layout == "horizontal-grid" -> async(dispatcher) {
+                    id in CATEGORY_MODULE_ID || layout in CATEGORY_LAYOUTS -> async(dispatcher) {
                         runCatching {
                             parser.run {
                                 section.toShelfCategoryList(title, shelf) { target ->
@@ -87,6 +87,16 @@ class DeezerHomeFeedClient(
         }
 
         private val dispatcher = Dispatchers.Default
+
+        // Layouts whose SUPPORT manifest (DeezerApi.page request) includes the navigational
+        // "channel"/"flow" types. These are category tiles that open another feed, not flat
+        // playable media, so they must go through toShelfCategoryList — toShelfItemsList drops
+        // channels (no toEchoMediaItem branch) and miscasts flows into playable Radios.
+        private val CATEGORY_LAYOUTS = setOf(
+            "grid",
+            "horizontal-grid",
+            "long-card-horizontal-grid"
+        )
 
         private val CATEGORY_MODULE_ID = setOf(
             // Free Users

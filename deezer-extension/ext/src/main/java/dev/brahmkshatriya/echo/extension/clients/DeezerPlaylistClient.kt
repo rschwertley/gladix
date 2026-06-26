@@ -14,20 +14,11 @@ import kotlinx.serialization.json.jsonObject
 
 class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val parser: DeezerParser) {
 
-    fun getShelves(playlist: Playlist): Feed<Shelf> = PagedData.Single {
-        /*DeezerExtension().handleArlExpiration()
-        val jsonObject = api.playlist(playlist)
-        val resultsObject = jsonObject["results"]!!.jsonObject
-        val songsObject = resultsObject["SONGS"]!!.jsonObject
-        val dataArray = songsObject["data"]?.jsonArray ?: JsonArray(emptyList())
-        val data = dataArray.mapNotNull { song ->
-            parser.run {
-                song.jsonObject.toShelfItemsList(name = "")
-            }
-        }
-        //data*/
-        emptyList<Shelf>()
-    }.toFeed()
+    // Deezer has no related-content shelves for playlists. Return null (not an empty Feed) so
+    // the feed pipeline treats it as "no section" and renders nothing. An empty but non-null
+    // Feed is interpreted as "a section that loaded empty" and engages the empty-state
+    // placeholder (EmptyAdapter), which shows a spinner/illustration we don't want here.
+    fun getShelves(playlist: Playlist): Feed<Shelf>? = null
 
     suspend fun loadPlaylist(playlist: Playlist): Playlist {
         deezerExtension.handleArlExpiration()

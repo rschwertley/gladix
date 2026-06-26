@@ -431,7 +431,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     private val deezerPlaylistClient by lazy { DeezerPlaylistClient(this, api, parser) }
 
-    override suspend fun loadFeed(playlist: Playlist): Feed<Shelf> = deezerPlaylistClient.getShelves(playlist)
+    override suspend fun loadFeed(playlist: Playlist): Feed<Shelf>? = deezerPlaylistClient.getShelves(playlist)
 
     override suspend fun loadPlaylist(playlist: Playlist): Playlist = deezerPlaylistClient.loadPlaylist(playlist)
 

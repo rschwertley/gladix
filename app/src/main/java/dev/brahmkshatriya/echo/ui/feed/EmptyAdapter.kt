@@ -3,33 +3,30 @@ package dev.brahmkshatriya.echo.ui.feed
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.isVisible
-import androidx.lifecycle.findViewTreeLifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
 import dev.brahmkshatriya.echo.databinding.ItemShelfEmptyBinding
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimLoadStateAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class EmptyAdapter : ScrollAnimLoadStateAdapter<EmptyAdapter.ViewHolder>(), GridAdapter {
     class ViewHolder(val binding: ItemShelfEmptyBinding) : ScrollAnimViewHolder(binding.root) {
-        private var showEmptyJob: Job? = null
+        // Use View.postDelayed instead of a view-tree lifecycle scope: bind() runs during
+        // onBindViewHolder, before the view is attached, so findViewTreeLifecycleOwner() is
+        // often null and the launch silently no-ops — leaving the spinner up forever.
+        private val showEmptyRunnable = Runnable {
+            if (binding.loadingIndicator.isVisible) {
+                binding.loadingIndicator.isVisible = false
+                binding.emptyLayout.isVisible = true
+            }
+        }
 
         fun bind(loadState: LoadState) {
-            showEmptyJob?.cancel()
+            itemView.removeCallbacks(showEmptyRunnable)
             if (loadState is LoadState.Loading) {
                 binding.emptyLayout.isVisible = false
                 binding.loadingIndicator.isVisible = true
-                showEmptyJob = itemView.findViewTreeLifecycleOwner()?.lifecycleScope?.launch {
-                    delay(3000)
-                    if (binding.loadingIndicator.isVisible) {
-                        binding.loadingIndicator.isVisible = false
-                        binding.emptyLayout.isVisible = true
-                    }
-                }
+                itemView.postDelayed(showEmptyRunnable, 3000)
             } else {
                 binding.emptyLayout.isVisible = false
                 binding.loadingIndicator.isVisible = false

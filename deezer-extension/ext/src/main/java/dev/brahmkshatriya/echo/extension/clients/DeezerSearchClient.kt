@@ -93,7 +93,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             val title = section.jsonObject["title"]?.jsonPrimitive?.content.orEmpty()
             if (title.isBlank() || title == "?") return@mapNotNull null
             when {
-                id == EXPLORE_MODULE_ID || layout == "grid" -> {
+                id == EXPLORE_MODULE_ID || layout in CATEGORY_LAYOUTS -> {
                     parser.run {
                         section.toShelfCategoryList(title, shelf) { target ->
                            deezerExtension.channelFeed(target)
@@ -213,5 +213,16 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
 
         private const val EXPLORE_MODULE_ID = "8b2c6465-874d-4752-a978-1637ca0227b5"
         private const val GO_BEYOND_STREAMING_MODULE_ID = "20748fc9-bf55-41e6-a50f-2b26c0c8da48"
+
+        // Layouts whose shared SUPPORT manifest (DeezerApi.page) includes navigational
+        // "channel"/"flow" types — category tiles that open another feed, not flat playable
+        // media. Must route to toShelfCategoryList; toShelfItemsList drops channels and
+        // miscasts flows into Radios. Kept in sync with DeezerHomeFeedClient.CATEGORY_LAYOUTS;
+        // filterable-grid is deliberately excluded (Flow carousel, renders via toShelfItemsList).
+        private val CATEGORY_LAYOUTS = setOf(
+            "grid",
+            "horizontal-grid",
+            "long-card-horizontal-grid"
+        )
     }
 }
