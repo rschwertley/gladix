@@ -1,13 +1,12 @@
 package dev.brahmkshatriya.echo.ui.feed.viewholders
 
+import android.annotation.SuppressLint
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePaddingRelative
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -69,7 +68,7 @@ class HorizontalListViewHolder(
         adapter.resetScroll()
         adapter.tracks = feed.shelf.list.filterIsInstance<Track>()
         binding.root.adapter = adapter
-        adapter.submitList(feed.shelf.toShelfType(feed.extensionId, feed.context, feed.tabId))
+        adapter.setItems(feed.shelf.toShelfType(feed.extensionId, feed.context, feed.tabId))
     }
 
     override fun onCurrentChanged(current: PlayerState.Current?) {
@@ -96,24 +95,24 @@ class HorizontalListViewHolder(
         }
     }
 
-    object DiffCallback : DiffUtil.ItemCallback<ShelfType>() {
-        override fun areItemsTheSame(oldItem: ShelfType, newItem: ShelfType): Boolean {
-            if (oldItem.extensionId != newItem.extensionId) return false
-            if (oldItem.type != newItem.type) return false
-            if (oldItem.id != newItem.id) return false
-            return true
-        }
-
-        override fun areContentsTheSame(oldItem: ShelfType, newItem: ShelfType): Boolean {
-            return oldItem == newItem
-        }
-    }
-
     class Adapter(
         private val listener: FeedClickListener
-    ) : ListAdapter<ShelfType, ShelfViewHolder<*>>(DiffCallback) {
+    ) : RecyclerView.Adapter<ShelfViewHolder<*>>() {
         var tracks: List<Track> = emptyList()
-        override fun getItemViewType(position: Int) = currentList[position].type.ordinal
+        private var items: List<ShelfType> = emptyList()
+
+        // Synchronous list swap. The carousel is rebound wholesale on every section bind;
+        // notifyDataSetChanged updates content within the same layout pass (no AsyncListDiffer
+        // window) and, since this adapter has no stable IDs, flushes the item-view cache too —
+        // so a recycled carousel can't keep showing the previously-bound section's leading items.
+        @SuppressLint("NotifyDataSetChanged")
+        fun setItems(list: List<ShelfType>) {
+            items = list
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount() = items.size
+        override fun getItemViewType(position: Int) = items[position].type.ordinal
         override fun onCreateViewHolder(
             parent: ViewGroup, viewType: Int
         ) = when (ShelfType.Enum.entries[viewType]) {
@@ -132,15 +131,15 @@ class HorizontalListViewHolder(
             when (holder) {
                 is ShelfViewHolder.Category -> holder.bind(
                     position,
-                    currentList.map { it as ShelfType.Category })
+                    items.map { it as ShelfType.Category })
 
                 is ShelfViewHolder.Media -> holder.bind(
                     position,
-                    currentList.map { it as ShelfType.Media })
+                    items.map { it as ShelfType.Media })
 
                 is ShelfViewHolder.ThreeTracks -> holder.bind(
                     position,
-                    currentList.map { it as ShelfType.ThreeTracks })
+                    items.map { it as ShelfType.ThreeTracks })
             }
             holder.onCurrentChanged(current)
         }
