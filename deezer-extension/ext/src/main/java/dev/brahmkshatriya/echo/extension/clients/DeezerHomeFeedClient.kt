@@ -46,10 +46,19 @@ class DeezerHomeFeedClient(
                 val layout = obj.optString("layout").orEmpty()
 
                 when {
-                    id in CATEGORY_MODULE_ID || layout in CATEGORY_LAYOUTS -> async(dispatcher) {
+                    id in CATEGORY_MODULE_ID || layout == "grid" -> async(dispatcher) {
                         runCatching {
                             parser.run {
                                 section.toShelfCategoryList(title, shelf) { target ->
+                                    deezerExtension.channelFeed(target)
+                                }
+                            }
+                        }.getOrNull()
+                    }
+                    layout in CAROUSEL_CATEGORY_LAYOUTS -> async(dispatcher) {
+                        runCatching {
+                            parser.run {
+                                section.toShelfCategoryList(title, shelf, linear = true) { target ->
                                     deezerExtension.channelFeed(target)
                                 }
                             }
@@ -88,12 +97,10 @@ class DeezerHomeFeedClient(
 
         private val dispatcher = Dispatchers.Default
 
-        // Layouts whose SUPPORT manifest (DeezerApi.page request) includes the navigational
-        // "channel"/"flow" types. These are category tiles that open another feed, not flat
-        // playable media, so they must go through toShelfCategoryList — toShelfItemsList drops
-        // channels (no toEchoMediaItem branch) and miscasts flows into playable Radios.
-        private val CATEGORY_LAYOUTS = setOf(
-            "grid",
+        // Layouts whose category sections should render as a horizontal carousel (Type.Linear)
+        // rather than a vertical card grid, while still being parsed via toShelfCategoryList so
+        // channel/flow navigational tiles are handled correctly (toShelfItemsList would jumble them).
+        private val CAROUSEL_CATEGORY_LAYOUTS = setOf(
             "horizontal-grid",
             "long-card-horizontal-grid"
         )
