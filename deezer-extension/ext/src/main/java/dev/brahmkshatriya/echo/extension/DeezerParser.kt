@@ -45,24 +45,17 @@ class DeezerParser(private val session: DeezerSession) {
     inline fun JsonElement.toShelfCategoryList(
         name: String = "Unknown",
         shelf: String,
-        linear: Boolean = false,
         crossinline block: suspend (String) -> List<Shelf>
     ): Shelf.Lists.Categories {
         val arr = obj()["items"]?.jsonArray ?: return Shelf.Lists.Categories(name, name, emptyList())
-        // linear forces a horizontal carousel (e.g. horizontal-grid layouts), so the content is
-        // still parsed as categories (channels/flows handled correctly) but renders as a carousel
-        // instead of a card grid. Otherwise the global "shelf" display setting decides.
-        val listType =
-            if (linear) Shelf.Lists.Type.Linear
-            else if ("grid" in shelf) Shelf.Lists.Type.Grid
-            else Shelf.Lists.Type.Linear
+        val listType = if ("grid" in shelf) Shelf.Lists.Type.Grid else Shelf.Lists.Type.Linear
         val cats = arr.mapNotNull { it.jsonObject.toShelfCategory(block) }
         return Shelf.Lists.Categories(
             id = name,
             title = name,
-            // The take(6) cap is for the vertical card grid preview; a horizontal carousel
-            // scrolls, so linear sections show all items (Home carousels previously had 12+).
-            list = if (linear) cats else cats.take(6),
+            // Cap only the vertical card-grid preview; scrollable carousels (Linear) show all
+            // items, matching the original uncapped toShelfItemsList behavior (12+).
+            list = if (listType == Shelf.Lists.Type.Grid) cats.take(6) else cats,
             type = listType,
             more = cats.toFeed()
         )
