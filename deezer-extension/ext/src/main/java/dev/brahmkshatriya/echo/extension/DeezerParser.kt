@@ -72,6 +72,14 @@ class DeezerParser(private val session: DeezerSession) {
         }
     }
 
+    // Routes a Home section to the category path when its items are genuine channels
+    // (genre/hub tiles). Mirrors the "channel" in __TYPE__ test used by toShelfCategory
+    // so routing and per-item handling stay consistent.
+    fun JsonObject.hasChannelItems(): Boolean =
+        this["items"]?.jsonArray?.any {
+            "channel" in ((it as? JsonObject)?.unwrap()?.str("__TYPE__").orEmpty())
+        } ?: false
+
     fun EchoMediaItem.toMediaCategory(): Shelf.Category = Shelf.Category(
         id = id,
         title = title,

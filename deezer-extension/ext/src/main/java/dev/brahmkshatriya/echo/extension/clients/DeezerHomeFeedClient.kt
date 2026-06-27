@@ -29,10 +29,10 @@ class DeezerHomeFeedClient(
     fun loadHomeFeed(shelf: String): Feed<Shelf> = PagedData.Single {
         deezerExtension.handleArlExpiration()
         val jsonObject = api.page("home")
-        logSections("home", jsonObject)
+        logSections("home", jsonObject, parser)
 
         runCatching { withTimeout(5000) { api.page("channels/home-pipe") } }
-            .onSuccess { logSections("channels/home-pipe", it) }
+            .onSuccess { logSections("channels/home-pipe", it, parser) }
             .onFailure { println("GladixDeezer PAGE[channels/home-pipe] ERROR: ${it.message}") }
 
         val homePageResults = jsonObject["results"]?.jsonObject ?: JsonObject(emptyMap())
@@ -43,10 +43,10 @@ class DeezerHomeFeedClient(
                 val obj = section.asObjectOrNull() ?: return@mapNotNull null
                 val id = obj.optString("module_id") ?: return@mapNotNull null
                 val title = obj.optString("title") ?: return@mapNotNull null
-                val layout = obj.optString("layout").orEmpty()
+                val hasChannelItems = parser.run { obj.hasChannelItems() }
 
                 when {
-                    id in CATEGORY_MODULE_ID || ("grid" in layout && layout != "filterable-grid") -> async(dispatcher) {
+                    id in CATEGORY_MODULE_ID || hasChannelItems -> async(dispatcher) {
                         runCatching {
                             parser.run {
                                 section.toShelfCategoryList(title, shelf) { target ->
@@ -73,15 +73,22 @@ class DeezerHomeFeedClient(
         runCatching { this[key]?.jsonPrimitive?.content }.getOrNull()
 
     companion object {
-        private fun logSections(label: String, page: JsonObject) {
+        private fun logSections(label: String, page: JsonObject, parser: DeezerParser) {
             val sections = page["results"]?.jsonObject?.get("sections")?.jsonArray ?: JsonArray(emptyList())
             val summary = sections.joinToString(", ") { section ->
                 val obj = section.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"
                 val layout = obj["layout"]?.jsonPrimitive?.contentOrNull ?: "?"
                 val moduleId = obj["module_id"]?.jsonPrimitive?.contentOrNull ?: "?"
-                val itemCount = obj["items"]?.jsonArray?.size ?: 0
-                "$title/$layout/$moduleId/items=$itemCount"
+                val items = obj["items"]?.jsonArray ?: JsonArray(emptyList())
+                // Same __TYPE__ extraction as DeezerParser.hasChannelItems() so the logged
+                // breakdown reflects exactly the field that drives Home routing.
+                val typeCounts = parser.run {
+                    items.mapNotNull { (it as? JsonObject)?.unwrap()?.str("__TYPE__") }
+                        .groupingBy { it }.eachCount()
+                }
+                val types = typeCounts.entries.joinToString(", ") { "${it.key}:${it.value}" }
+                "$title/$layout/$moduleId/items=${items.size}/types={$types}"
             }
             println("GladixDeezer PAGE[$label] sections: $summary")
         }
