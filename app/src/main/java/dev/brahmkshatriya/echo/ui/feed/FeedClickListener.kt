@@ -155,8 +155,30 @@ open class FeedClickListener(
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
         if (tracks.isNullOrEmpty()) return notFoundSnack(R.string.tracks)
+
+        // A single track tapped with no surrounding context (a carousel/feed tile) would otherwise
+        // queue with a null context: the first track shows no header while the auto-radio's
+        // continuation tracks (2nd onward) do. Give that first track the same placeholder radio
+        // context the continuation carries, so the header is consistent from the start. Videos are
+        // excluded — a "<title> Radio" label doesn't fit video content. Built identically to
+        // SearchFragment's onTracksClicked override so that override can later be removed safely.
+        val single = tracks.getOrNull(pos)?.takeIf {
+            context == null && tracks.size == 1 &&
+                it.type != Track.Type.Video && it.type != Track.Type.HorizontalVideo
+        }
+        val playContext = single?.let {
+            Radio(
+                id = it.id,
+                title = "${it.title} Radio",
+                cover = it.cover,
+                extras = mapOf("radio" to "track")
+            )
+        } ?: context
+        val playTracks = single?.let { listOf(it) } ?: tracks
+        val playPos = if (single != null) 0 else pos
+
         val vm by fragment.activityViewModels<PlayerViewModel>()
-        vm.setQueue(extensionId, tracks, pos, context)
+        vm.setQueue(extensionId, playTracks, playPos, playContext)
         vm.setPlaying(true)
         return true
     }
