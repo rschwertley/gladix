@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phones (smallest-width < 600dp, incl. large phones and foldable outer screens) show
+         feed list items (Media/Category/Video) full-width: one column. Overridden to false for
+         sw>=600dp tablets in values-sw600dp, where list items keep their multi-column packing.
+         Does not affect grid tiles (CategoryGrid/MediaGrid) or TV. -->
+    <bool name="feed_phone_single_column">true</bool>
+</resources>

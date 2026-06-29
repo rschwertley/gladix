@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tablets (smallestWidth >= 600dp, incl. 10"): feed list items keep today's multi-column
+         packing (2.coerceAtMost(count)). -->
+    <bool name="feed_phone_single_column">false</bool>
+</resources>

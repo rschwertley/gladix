@@ -3,7 +3,9 @@ package dev.brahmkshatriya.echo.ui.feed.viewholders
 import android.annotation.SuppressLint
 import android.util.TypedValue
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePaddingRelative
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,6 +16,7 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemShelfListsBinding
+import dev.brahmkshatriya.echo.databinding.ItemShelfListsMediaBinding
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
@@ -33,6 +36,13 @@ class HorizontalListViewHolder(
     val adapter = Adapter(listener)
     val layoutManager = LinearLayoutManager(parent.context, RecyclerView.HORIZONTAL, false)
 
+    // Scratch copy of the media card layout, inflated once and never attached to a parent.
+    // Used only to measure label text height when sizing the radio row (see contentRowHeightPx).
+    // Inflating per measure would reintroduce per-bind work on these carousels — keep it cached.
+    private val measureBinding = ItemShelfListsMediaBinding.inflate(
+        LayoutInflater.from(parent.context)
+    )
+
     init {
         binding.root.setRecycledViewPool(pool)
         binding.root.layoutManager = layoutManager
@@ -46,11 +56,46 @@ class HorizontalListViewHolder(
         )
     }
 
+    // Natural height of a view at a fixed width with height unconstrained. Respects the XML's
+    // maxLines/padding/textSize at the current density and font scale — so a label that wraps
+    // to two lines on a dense or large-font device reports its real height here.
+    private fun View.naturalHeightPx(widthPx: Int): Int {
+        measure(
+            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        return measuredHeight
+    }
+
+    // Generic row height = deterministic cover/card geometry (baseHeightPx) + the tallest measured
+    // label block across the shelf's items. Only the labels are measured (they bind synchronously);
+    // the cover is async-loaded and would under-measure, so its height stays analytic in baseHeightPx.
+    private fun <T> contentRowHeightPx(
+        items: List<T>,
+        baseHeightPx: Int,
+        textWidthPx: Int,
+        bindLabels: (T) -> List<TextView>,
+    ): Int = baseHeightPx + (items.maxOfOrNull { item ->
+        bindLabels(item).sumOf { it.naturalHeightPx(textWidthPx) }
+    } ?: 0)
+
     private fun fixedRowHeightPx(shelf: Shelf.Lists<*>): Int = binding.root.context.run {
         when {
-            shelf is Shelf.Lists.Items && shelf.list.all { it is Radio } ->
-                resolvedItemCoverSizePx() +
-                    resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height_radio)
+            shelf is Shelf.Lists.Items && shelf.list.all { it is Radio } -> {
+                val coverSize = resolvedItemCoverSizePx()
+                // Vertical chrome around the cover in item_shelf_lists_media + item_shelf_media_cover_big:
+                // root paddingVertical 8dp + cover container paddingVertical 8dp - cover container
+                // topMargin 4dp = 12dp. Density-scaled, font-scale-independent (it holds no text).
+                val coverChrome = 12.dpToPx(this)
+                contentRowHeightPx(
+                    items = shelf.list,
+                    baseHeightPx = coverSize + coverChrome,
+                    textWidthPx = coverSize,
+                ) { media ->
+                    measureBinding.title.text = media.title
+                    listOf(measureBinding.title)
+                }
+            }
             shelf is Shelf.Lists.Items ->
                 resolvedItemCoverSizePx() +
                     resources.getDimensionPixelSize(R.dimen.shelf_media_text_block_height)

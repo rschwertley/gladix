@@ -1,7 +1,11 @@
 package dev.brahmkshatriya.echo.ui.feed
 
 import android.app.Activity
+import android.app.UiModeManager
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.speech.RecognizerIntent
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -12,6 +16,7 @@ import androidx.paging.LoadState
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemLoadingBinding
@@ -47,6 +52,9 @@ class FeedAdapter(
     private val viewModel: FeedData,
     private val listener: FeedClickListener,
     private val takeFullScreen: Boolean = false,
+    // Resolved once at construction (see getFeedAdapter), never per getSpanSize call.
+    private val isTV: Boolean = false,
+    private val phoneSingleColumn: Boolean = false,
 ) : ScrollAnimPagingAdapter<FeedType, FeedViewHolder<*>>(DiffCallback), GridAdapter {
 
     object DiffCallback : DiffUtil.ItemCallback<FeedType>() {
@@ -215,9 +223,32 @@ class FeedAdapter(
     override fun getSpanSize(position: Int, width: Int, count: Int) =
         when (FeedType.Enum.entries[getItemViewType(position)]) {
             Header, HorizontalList -> count
-            Category, Media, Video -> if (takeFullScreen) count else 2.coerceAtMost(count)
-            CategoryGrid, MediaGrid, VideoHorizontal -> 1
+            Category, Media, Video -> when {
+                takeFullScreen -> count                  // checked first: full width on phone AND TV
+                isTV -> 2.coerceAtMost(count)            // TV: unchanged
+                phoneSingleColumn -> count               // sw<600dp: full width -> 1 column
+                else -> 2.coerceAtMost(count)            // sw>=600dp tablet: today's behavior verbatim
+            }
+            CategoryGrid -> categoryGridSpan(position, count)
+            MediaGrid, VideoHorizontal -> 1
         }
+
+    // Fills the trailing partial row of a contiguous CategoryGrid run so it spans the full width
+    // (no ragged white space), regardless of device column count. Runs are Header-delimited in the
+    // data model, so scanning by viewType reliably bounds THIS run; the last tile is the only one
+    // ever widened. Pure function of (snapshot viewTypes, count) -> stable across GridLayoutManager
+    // re-queries. Sparse runs (runLength < count) stretch-fill: the lone trailing tile spans the row.
+    private fun categoryGridSpan(position: Int, count: Int): Int {
+        val target = CategoryGrid.ordinal
+        var runStart = position
+        while (runStart - 1 >= 0 && getItemViewType(runStart - 1) == target) runStart--
+        var runEnd = position
+        while (runEnd + 1 < itemCount && getItemViewType(runEnd + 1) == target) runEnd++
+        val runLength = runEnd - runStart + 1
+        val r = runLength % count
+        val indexInRun = position - runStart
+        return if (r != 0 && indexInRun == runLength - 1) count - (r - 1) else 1
+    }
 
     override fun isSectionHeader(position: Int) =
         runCatching { getItem(position) }.getOrNull()?.type == Header
@@ -262,7 +293,14 @@ class FeedAdapter(
             takeFullScreen: Boolean = false,
         ): FeedAdapter {
             val playerViewModel by activityViewModel<PlayerViewModel>()
-            val adapter = FeedAdapter(viewModel, listener, takeFullScreen)
+            val context = requireContext()
+            val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
+                .currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+            val phoneSingleColumn = context.resources.getBoolean(R.bool.feed_phone_single_column)
+            val adapter = FeedAdapter(
+                viewModel, listener, takeFullScreen, isTV, phoneSingleColumn
+            )
             observe(viewModel.pagingFlow) {
                 adapter.saveState()
                 adapter.submitData(it)
