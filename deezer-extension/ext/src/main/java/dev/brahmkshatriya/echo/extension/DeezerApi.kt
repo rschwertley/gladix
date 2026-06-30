@@ -39,7 +39,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.InputStream
+import java.io.IOException
+import okio.BufferedSource
 import java.math.BigInteger
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -220,10 +221,14 @@ class DeezerApi(private val session: DeezerSession) {
         val clientB = if (np) clientNP else client
 
         clientB.newCall(request).await().use { response ->
+            // Status gate BEFORE decode: an HTTP error with an empty/garbage body now surfaces as a
+            // clean status error instead of a JsonDecodingException. The CSRF/errorObj/ARL-refresh
+            // path below is unchanged - those errors are HTTP 200 with an error object, so they pass
+            // this gate exactly as before.
+            if (!response.isSuccessful) throw Exception("API call failed with status ${response.code}")
             val result = response.body.source().let {
-                decodeJsonStream(it.inputStream())
+                decodeJsonStream(it, response.code)
             }
-            if (!response.isSuccessful) throw Exception("API call failed with status ${response.code}: $result")
 
             if (method == "deezer.getUserData") {
                 response.headers.forEach {
@@ -257,7 +262,7 @@ class DeezerApi(private val session: DeezerSession) {
             .get()
             .build()
         clientNP.newCall(request).await().use { response ->
-            response.body.source().let { decodeJsonStream(it.inputStream()) }
+            response.body.source().let { decodeJsonStream(it, response.code) }
         }
     }
 
@@ -284,7 +289,7 @@ class DeezerApi(private val session: DeezerSession) {
 
         clientNP.newCall(request).await().use { response ->
             response.body.source().let {
-                decodeJsonStream(it.inputStream())
+                decodeJsonStream(it, response.code)
             }
         }
     }
@@ -578,11 +583,17 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun log(track: Track) = deezerUtil.log(track, userId)
 
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun decodeJsonStream(stream: InputStream) = withContext(Dispatchers.Default) {
-        json.decodeFromStream<JsonObject>(stream)
+    private suspend fun decodeJsonStream(source: BufferedSource, code: Int) = withContext(Dispatchers.Default) {
+        // Empty/truncated body (transient: dropped connection, 5xx with no body, WAF/rate-limit) ->
+        // fail with a clear retryable IOException instead of a raw JsonDecodingException
+        // "Expected start of the object '{', but had 'EOF'". exhausted() is robust for chunked
+        // responses where contentLength() is -1.
+        if (source.exhausted()) throw IOException("Empty response body from Deezer (HTTP $code)")
+        json.decodeFromStream<JsonObject>(source.inputStream())
     }
 
     suspend fun decodeJson(raw: String): JsonObject = withContext(Dispatchers.IO) {
+        if (raw.isBlank()) throw IOException("Empty response body from Deezer")
         json.decodeFromString<JsonObject>(raw)
     }
 

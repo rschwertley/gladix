@@ -196,6 +196,7 @@ class PlayerService : MediaLibraryService() {
                 fullQueueFlow = fullQueueFlow,
                 isAndroidAutoConnected = { isAndroidAutoConnected },
                 requestAudioFocus = { audioFocusListener.requestFocus() },
+                activeLoadCount = { state.activeLoadCount.get() },
                 healthMonitor = healthMonitor,
             )
         )

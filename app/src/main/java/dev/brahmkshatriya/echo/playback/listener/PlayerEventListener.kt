@@ -59,6 +59,9 @@ class PlayerEventListener(
     private val fullQueueFlow: MutableStateFlow<List<MediaItem>>,
     private val isAndroidAutoConnected: () -> Boolean = { false },
     private val requestAudioFocus: () -> Unit = {},
+    // Live PlayerState.activeLoadCount (>0 ⇒ a stream resolution is in flight). Wired from
+    // PlayerService where PlayerState is in scope; this listener is not given PlayerState directly.
+    private val activeLoadCount: () -> Int = { 0 },
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
@@ -174,33 +177,60 @@ class PlayerEventListener(
 
     private fun armBufferingWatchdog() {
         Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
+        // Start (or keep) the cold-resolution grace timer for the current item.
+        val coldMediaId = player.currentMediaItem?.mediaId
+        if (coldMediaId != coldBufferingMediaId) {
+            coldBufferingMediaId = coldMediaId
+            coldBufferingStart = System.currentTimeMillis()
+        }
         bufferingWatchdog?.cancel()
         bufferingWatchdog = scope.launch {
             delay(BUFFERING_WATCHDOG_MS)
             withContext(Dispatchers.Main) {
                 if (player.playbackState != Player.STATE_BUFFERING) return@withContext
+                // COLD-START SUPPRESSION: a first-time stream resolution is actively in flight
+                // (current item not loaded AND a load running) and we're still inside the grace
+                // window → the buffering is expected, not stuck. Re-arm and wait WITHOUT touching the
+                // player: stop()+re-prepare() would cancel the running loadJob and restart the
+                // resolution clock, skipping valid-but-slow cold tracks (the AA cold-connect bug).
+                if (player.currentMediaItem?.isLoaded == false
+                    && activeLoadCount() > 0
+                    && System.currentTimeMillis() - coldBufferingStart < COLD_GRACE_MS
+                ) {
+                    Log.d("GladixPlayback", "Buffering watchdog: cold resolution in flight, re-arming")
+                    armBufferingWatchdog()
+                    return@withContext
+                }
+                // Preserve the pre-retry intent: a paused, still-loading restore (playWhenReady=
+                // false) must re-prepare WITHOUT resuming, else the watchdog converts a paused
+                // cold-start restore into active playback. Captured before stop()/pause() below.
+                val wasPlaying = player.playWhenReady
                 val currentMediaId = player.currentMediaItem?.mediaId
                 if (retriedMediaId != currentMediaId) {
                     retriedMediaId = currentMediaId
                     retriedWatchdogCount = 1
                     Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt 1/$maxWatchdogRetries)")
-                    val savedIndex = player.currentMediaItemIndex
+                    // Position-only seek: stop() keeps the current item, so re-selecting it by index
+                    // isn't needed — avoids the windowed(getCurrentMediaItemIndex)/full round-trip.
                     val savedPosition = player.currentPosition
                     player.stop()
-                    player.seekTo(savedIndex, savedPosition)
+                    player.seekTo(savedPosition)
                     player.prepare()
-                    player.play()
-                    requestAudioFocus()
+                    if (wasPlaying) {
+                        player.play()
+                        requestAudioFocus()
+                    }
                 } else if (retriedWatchdogCount < maxWatchdogRetries) {
                     retriedWatchdogCount++
                     Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
-                    val savedIndex = player.currentMediaItemIndex
                     val savedPosition = player.currentPosition
                     player.stop()
-                    player.seekTo(savedIndex, savedPosition)
+                    player.seekTo(savedPosition)
                     player.prepare()
-                    player.play()
-                    requestAudioFocus()
+                    if (wasPlaying) {
+                        player.play()
+                        requestAudioFocus()
+                    }
                 } else {
                     retriedMediaId = null
                     retriedWatchdogCount = 0
@@ -211,8 +241,10 @@ class PlayerEventListener(
                         player.pause()
                         return@withContext
                     }
-                    val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
-                    if (!hasMore) {
+                    // hasNextMediaItem() is overridden in ShufflePlayer against the inner FULL index;
+                    // the old `currentMediaItemIndex < mediaItemCount - 1` mixed a WINDOWED index with
+                    // the FULL count (always true on >50) → broken end-of-queue guard.
+                    if (!player.hasNextMediaItem()) {
                         player.pause()
                         return@withContext
                     }
@@ -220,10 +252,10 @@ class PlayerEventListener(
                         player.pause()
                         delay(50)
                     }
-                    player.seekTo(player.currentMediaItemIndex, 0)
+                    player.seekTo(0)
                     player.seekToNextMediaItem()
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
             }
         }
@@ -256,6 +288,9 @@ class PlayerEventListener(
 
     companion object {
         private const val BUFFERING_WATCHDOG_MS = 5_000L
+        // ≥ Deezer stream-resolution ceiling: DeezerApi clientNP connect 15s + read 10s;
+        // getContentLength 10s. If clientNP ever gains a callTimeout, anchor to that instead.
+        private const val COLD_GRACE_MS = 25_000L
     }
 
     private val maxRetries = 3
@@ -267,6 +302,12 @@ class PlayerEventListener(
     private var consecutiveUnavailableSkips = 0
 
     private var bufferingWatchdog: Job? = null
+    // Cold-resolution grace timer, keyed to the current item: restarts when the current mediaId
+    // changes (a new buffering episode) and persists across watchdog re-arms of the same item.
+    // Keyed by mediaId rather than reset via player callbacks, so it survives the
+    // onMediaItemTransition / PLAYLIST_CHANGED events that fire as part of the cold-restore setMediaItems.
+    private var coldBufferingStart = 0L
+    private var coldBufferingMediaId: String? = null
     private var retriedMediaId: String? = null
     private var retriedWatchdogCount = 0
     private val maxWatchdogRetries = 1

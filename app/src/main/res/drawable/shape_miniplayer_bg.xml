@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square-cornered background for the full-width collapsed mini-player bar (bg_collapsed +
+     controls container). Mirrors shape_rounded_item_corner (no solid fill, so backgroundTint
+     still colors it) but with 0dp corners. Dedicated to the mini-player so the global
+     ?itemCorner / shape_rounded_item_corner stay untouched. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="0dp" />
+</shape>

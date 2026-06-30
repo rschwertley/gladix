@@ -229,26 +229,12 @@ class FeedAdapter(
                 phoneSingleColumn -> count               // sw<600dp: full width -> 1 column
                 else -> 2.coerceAtMost(count)            // sw>=600dp tablet: today's behavior verbatim
             }
-            CategoryGrid -> categoryGridSpan(position, count)
+            // Pin category-grid previews to 2 columns regardless of device width: span = count/2
+            // yields exactly 2 tiles per row for any even count (Home/Search use even=true), so the
+            // 6-card preview is always 3 rows of 2 on every device. coerceAtLeast(1) guards count==1.
+            CategoryGrid -> (count / 2).coerceAtLeast(1)
             MediaGrid, VideoHorizontal -> 1
         }
-
-    // Fills the trailing partial row of a contiguous CategoryGrid run so it spans the full width
-    // (no ragged white space), regardless of device column count. Runs are Header-delimited in the
-    // data model, so scanning by viewType reliably bounds THIS run; the last tile is the only one
-    // ever widened. Pure function of (snapshot viewTypes, count) -> stable across GridLayoutManager
-    // re-queries. Sparse runs (runLength < count) stretch-fill: the lone trailing tile spans the row.
-    private fun categoryGridSpan(position: Int, count: Int): Int {
-        val target = CategoryGrid.ordinal
-        var runStart = position
-        while (runStart - 1 >= 0 && getItemViewType(runStart - 1) == target) runStart--
-        var runEnd = position
-        while (runEnd + 1 < itemCount && getItemViewType(runEnd + 1) == target) runEnd++
-        val runLength = runEnd - runStart + 1
-        val r = runLength % count
-        val indexInRun = position - runStart
-        return if (r != 0 && indexInRun == runLength - 1) count - (r - 1) else 1
-    }
 
     override fun isSectionHeader(position: Int) =
         runCatching { getItem(position) }.getOrNull()?.type == Header

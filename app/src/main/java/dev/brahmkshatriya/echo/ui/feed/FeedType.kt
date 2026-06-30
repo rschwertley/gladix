@@ -163,9 +163,14 @@ sealed interface FeedType {
                     HorizontalList(feedId, extId, context, tabId, shelf)
                 )
                 else when (shelf) {
-                    is Shelf.Lists.Categories -> shelf.list.map {
-                        Category(feedId, extId, context, tabId, it, Enum.CategoryGrid)
-                    }
+                    // Cap the on-tab grid PREVIEW to 6 (3 rows of 2). shelf.more != null means
+                    // there's an expand target, i.e. this is a preview; the expanded view is a
+                    // separate feed of individual Shelf.Category items (Enum.Category, different
+                    // branch, more == null) and is never capped here.
+                    is Shelf.Lists.Categories ->
+                        (if (shelf.more != null) shelf.list.take(6) else shelf.list).map {
+                            Category(feedId, extId, context, tabId, it, Enum.CategoryGrid)
+                        }
 
                     is Shelf.Lists.Items -> shelf.list.map {
                         MediaGrid(feedId, extId, context, tabId, it)
