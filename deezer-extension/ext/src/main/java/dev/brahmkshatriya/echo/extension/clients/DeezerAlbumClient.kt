@@ -27,8 +27,10 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
         deezerExtension.handleArlExpiration()
         val resultsObject = results(album)
         if (album.type == Album.Type.Show) {
-            val dataArray = resultsObject["EPISODES"]!!.jsonObject["data"]!!.jsonArray
-            val bookmarkMap = api.getBookmarkedEpisodes()["results"]!!.jsonObject["data"]!!.jsonArray.associate { ep ->
+            // Same guard as the album branch: a show with no episodes, or no bookmarked episodes,
+            // returns a results object without EPISODES.data — yield empty rather than NPE on !!.
+            val dataArray = resultsObject["EPISODES"]?.jsonObject?.get("data")?.jsonArray.orEmpty()
+            val bookmarkMap = api.getBookmarkedEpisodes()["results"]?.jsonObject?.get("data")?.jsonArray.orEmpty().associate { ep ->
                 ep.jsonObject["EPISODE_ID"]?.jsonPrimitive?.content to
                         ep.jsonObject["OFFSET"]?.jsonPrimitive?.content?.toLongOrNull()
             }
@@ -37,7 +39,10 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
                 parser.run { episode.jsonObject.toEpisode(bookmarkMap) }
             }.reversed()
         } else {
-            val dataArray = resultsObject["SONGS"]!!.jsonObject["data"]!!.jsonArray
+            // Some albums (region-restricted / unavailable / placeholder) return a valid results
+            // object with no SONGS (or SONGS without data). Guard the chain instead of !! so those
+            // just yield an empty track list rather than crashing album load with an NPE.
+            val dataArray = resultsObject["SONGS"]?.jsonObject?.get("data")?.jsonArray.orEmpty()
             dataArray.mapIndexed { index, song ->
                 val currentTrack = parser.run { song.jsonObject.toTrack() }
                 val nextTrack = parser.run { dataArray.getOrNull(index + 1)?.jsonObject?.toTrack() }

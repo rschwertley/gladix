@@ -171,17 +171,18 @@ class PlayerFragment : Fragment() {
             val inv = 1 - offset
             view.elevation = maxElevation * inv
             currHeight = collapseHeight + ((view.height - collapseHeight) * offset).toInt()
-            // Full-width collapsed mini-bar: reach both screen edges throughout the drag. Corner
-            // radius (currRound) is intentionally left untouched, so the rounded-card look and the
-            // predictive-back rounding are byte-for-byte unchanged.
-            currLeft = 0
-            currRight = view.width
+            // Full-width collapsed mini-bar minus the 8dp card inset, but still respecting the
+            // start/end insets — flush to the screen edge in portrait, and flush to the nav-rail's
+            // right edge in landscape (combined.start carries the rail width). Corner radius
+            // (currRound) is intentionally left untouched.
+            currLeft = (leftPadding * inv).toInt()
+            currRight = view.width - (rightPadding * inv).toInt()
             currRound = max(padding * inv, padding * uiViewModel.playerBackProgress.value * 2)
             view.invalidateOutline()
         }
         observe(uiViewModel.combined) {
-            leftPadding = (if (view.context.isRTL()) it.end else it.start) + padding
-            rightPadding = (if (view.context.isRTL()) it.start else it.end) + padding
+            leftPadding = if (view.context.isRTL()) it.end else it.start
+            rightPadding = if (view.context.isRTL()) it.start else it.end
             updateOutline()
         }
         observe(uiViewModel.playerBackProgress) { updateOutline() }

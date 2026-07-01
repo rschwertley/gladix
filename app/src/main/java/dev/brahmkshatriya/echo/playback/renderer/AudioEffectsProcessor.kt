@@ -117,6 +117,14 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     override fun onQueueEndOfStream() {
         FadeTrace.rec(FadeTrace.QES, if (isPendingFadeIn) 1L else 0L, fadeInFramesRemaining.get(), fadeOutFramesRemaining.get(), if (crossfadeEnabled) 1L else 0L, if (skipFade) 1L else 0L) // FADEDBG
+        // Clear the previous track's fade-out at the track boundary so its dying envelope doesn't
+        // bleed into — and silence the opening of — the NEW track. The old track already received
+        // its full fade-out on its own buffers before this point (the envelope is applied in
+        // queueInput, and no old-stream input buffers remain once end-of-stream fires), so this only
+        // stops the leftover countdown from multiplying the next track's first ~1s. No-op on albums
+        // (fade-out is never scheduled there) and when crossfade is off (never armed) — introduces
+        // no fade where there should be none.
+        fadeOutFramesRemaining.set(0)
         if (crossfadeEnabled && !skipFade) isPendingFadeIn = true
     }
 

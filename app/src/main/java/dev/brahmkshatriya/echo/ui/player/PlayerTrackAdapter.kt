@@ -76,7 +76,10 @@ class PlayerTrackAdapter(
         private val isLandscape = context.isLandscape()
         fun updateCollapsed() = uiViewModel.run {
             val insets = if (!isLandscape) systemInsets.value else getCombined()
-            val targetPosX = collapsedPadding + if (context.isRTL()) insets.end else insets.start
+            // Full-width mini-bar: land the morphed cover flush at insets.start (matching the overlay
+            // collapsedTrackCover), NOT collapsedPadding+insets.start — otherwise the two covers sit
+            // 8dp apart and the duplicate shows. Both now stack at the same flush position.
+            val targetPosX = if (context.isRTL()) insets.end else insets.start
             val targetPosY = if (playerSheetState.value != STATE_EXPANDED) 0
             else collapsedPadding + systemInsets.value.top
             targetX = targetPosX - cover.left
