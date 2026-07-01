@@ -19,6 +19,13 @@ class HealthMonitor(application: Application) {
     class OrphanedSessionException(savedTrackCount: Int, firstTrackId: String) :
         Exception("savedTrackCount=$savedTrackCount firstTrackId=$firstTrackId")
 
+    // Benign teardown race: a media3 datasource close()/read() raised an IllegalStateException
+    // (checkState lifecycle assertion) because the player/cache was released while a load was
+    // still closing. Suppressed at the player layer; reported rate-limited so we retain frequency
+    // telemetry. The original ISE is the cause, so its (retraceable) close-cascade stack is kept.
+    class DataSourceTeardownRaceException(cause: Throwable) :
+        Exception("IllegalStateException during media3 datasource close/teardown", cause)
+
     private val prefs = application.getSharedPreferences("gladix_health_monitor", Context.MODE_PRIVATE)
     private val memoryTimestamps = ConcurrentHashMap<String, Long>()
 

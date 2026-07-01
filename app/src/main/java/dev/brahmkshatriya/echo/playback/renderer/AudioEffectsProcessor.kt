@@ -87,10 +87,12 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     }
 
     fun onFadeOutStart() {
+        FadeTrace.rec(FadeTrace.FOS, crossfadeFrames()) // FADEDBG
         if (crossfadeEnabled) fadeOutFramesRemaining.set(crossfadeFrames())
     }
 
     fun cancelFades() {
+        FadeTrace.rec(FadeTrace.CANCEL, fadeInFramesRemaining.get(), fadeOutFramesRemaining.get()) // FADEDBG
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
     }
@@ -103,17 +105,37 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         configuredFormat = inputAudioFormat
+        FadeTrace.firstBufferPending = true // FADEDBG
+        FadeTrace.rec(FadeTrace.CFG, inputAudioFormat.encoding.toLong(), inputAudioFormat.sampleRate.toLong(), crossfadeFrames()) // FADEDBG
         return inputAudioFormat
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION") // FADEDBG: purely observational — base onFlush() is a no-op
+    override fun onFlush() {
+        FadeTrace.rec(FadeTrace.FLUSH)
+    }
+
     override fun onQueueEndOfStream() {
+        FadeTrace.rec(FadeTrace.QES, if (isPendingFadeIn) 1L else 0L, fadeInFramesRemaining.get(), fadeOutFramesRemaining.get(), if (crossfadeEnabled) 1L else 0L, if (skipFade) 1L else 0L) // FADEDBG
         if (crossfadeEnabled && !skipFade) isPendingFadeIn = true
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
 
+        // FADEDBG: pre-arm snapshot of this buffer; first=1 marks the first buffer after a reconfigure
+        FadeTrace.rec(
+            FadeTrace.QIN,
+            if (FadeTrace.firstBufferPending) 1L else 0L,
+            fadeInFramesRemaining.get(),
+            fadeOutFramesRemaining.get(),
+            (if (isPendingFadeIn) 1L else 0L) or (if (skipFade) 2L else 0L),
+            crossfadeFrames()
+        )
+        FadeTrace.firstBufferPending = false // FADEDBG
+
         if (skipFade) {
+            FadeTrace.rec(FadeTrace.SKIPBLK) // FADEDBG
             // Force full volume for album transitions, regardless of whether isPendingFadeIn
             // raced ahead of the skipFade flag being set (onQueueEndOfStream runs on the audio
             // thread, skipFade is set from the main thread — no ordering guarantee between them).
@@ -121,6 +143,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             fadeInFramesRemaining.set(0)
             fadeOutFramesRemaining.set(0)
         } else if (isPendingFadeIn) {
+            FadeTrace.rec(FadeTrace.ARM, crossfadeFrames()) // FADEDBG
             fadeInFramesRemaining.set(crossfadeFrames())
             isPendingFadeIn = false
         }

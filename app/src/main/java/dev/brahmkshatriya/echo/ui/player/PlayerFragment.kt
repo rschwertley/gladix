@@ -171,8 +171,11 @@ class PlayerFragment : Fragment() {
             val inv = 1 - offset
             view.elevation = maxElevation * inv
             currHeight = collapseHeight + ((view.height - collapseHeight) * offset).toInt()
-            currLeft = (leftPadding * inv).toInt()
-            currRight = view.width - (rightPadding * inv).toInt()
+            // Full-width collapsed mini-bar: reach both screen edges throughout the drag. Corner
+            // radius (currRound) is intentionally left untouched, so the rounded-card look and the
+            // predictive-back rounding are byte-for-byte unchanged.
+            currLeft = 0
+            currRight = view.width
             currRound = max(padding * inv, padding * uiViewModel.playerBackProgress.value * 2)
             view.invalidateOutline()
         }
