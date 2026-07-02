@@ -15,7 +15,6 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
-import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -31,6 +30,8 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils
 import dev.brahmkshatriya.echo.playback.ShufflePlayer
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
+import dev.brahmkshatriya.echo.ui.common.ErrorCategory
+import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import kotlinx.coroutines.CancellationException
@@ -46,6 +47,8 @@ import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
 import kotlin.reflect.KClass
 
 @OptIn(UnstableApi::class)
@@ -172,6 +175,7 @@ class PlayerEventListener(
             consecutiveUnavailableSkips = 0
             retried404MediaId = null
             retriedSocketMediaId = null
+            retriedNetworkMediaId = null
         }
     }
 
@@ -313,6 +317,7 @@ class PlayerEventListener(
     private val maxWatchdogRetries = 1
     private var retried404MediaId: String? = null
     private var retriedSocketMediaId: String? = null
+    private var retriedNetworkMediaId: String? = null
 
     private fun reportAndResetConsecutiveSkips(extensionId: String?) {
         healthMonitor?.report(
@@ -332,8 +337,16 @@ class PlayerEventListener(
             return
         }
 
-        if (rootCause is ClientException.LoginRequired) {
+        // Login-required is non-transient: every queued track fails identically, so letting it fall
+        // through to the generic tail cascades retries/skips across the whole queue. classify() chain-
+        // walks the wrapped form the extension actually produces (ExoPlaybackException -> IOException ->
+        // AppException.LoginRequired, which has no cause so a rootCause type-check misses it). Emit once
+        // and stop cleanly on the failing track: stop() preserves getPlayerError() -> the phone "Login"
+        // snackbar (getMessage.rootCause) and the Lever B "Sign in" AA tile both show once, and the queue
+        // is kept so play() after logging in re-resolves this same track.
+        if (classify(error) == ErrorCategory.LoginOrAuth) {
             scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+            player.stop()
             return
         }
 
@@ -412,6 +425,37 @@ class PlayerEventListener(
                     player.prepare()
                     player.play()
                 }
+            }
+            return
+        }
+
+        // Network-resolution failure (DNS down / host unresolved) is whole-connection, NOT a
+        // per-track problem — so hold position, never skip. Mirrors the SocketException branch
+        // (retry the SAME track once) but ends in pause() instead of seekToNextMediaItem(). First
+        // occurrence: silent re-prepare (clears the player error, so a transient blip recovers to
+        // clean playback with no message). Second occurrence: the retry also failed → pause and
+        // hold, surface the no_internet message, and let the user / AA-BT resume via play (which
+        // re-prepares and retries). retriedNetworkMediaId is kept on the hold so a failed resume
+        // holds again (one attempt per tap); it resets in the STATE_READY block on recovery and
+        // auto-invalidates when the mediaId changes. Scoped to these two exceptions only, so
+        // genuinely-unavailable tracks still skip via the branches above/below.
+        val isNetworkDown = rootCause is UnknownHostException || rootCause is UnresolvedAddressException
+        if (isNetworkDown) {
+            val currentMediaId = mediaItem?.mediaId
+            if (retriedNetworkMediaId == null || retriedNetworkMediaId != currentMediaId) {
+                retriedNetworkMediaId = currentMediaId
+                Log.d("GladixPlayback", "onPlayerError: network down for $currentMediaId, retrying once")
+                val savedIndex = player.currentMediaItemIndex
+                val savedPosition = player.currentPosition
+                player.stop()
+                player.seekTo(savedIndex, savedPosition)
+                player.prepare()
+                player.play()
+                requestAudioFocus()
+            } else {
+                Log.d("GladixPlayback", "onPlayerError: network down retry failed for $currentMediaId, holding")
+                scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+                player.pause()
             }
             return
         }

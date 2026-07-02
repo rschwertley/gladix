@@ -94,6 +94,8 @@ dependencies {
     implementation(libs.nestedscrollwebview)
     implementation(libs.acsbendi.webview)
 
+    testImplementation("junit:junit:4.13.2")
+
     if (!hasGoogleServices) return@dependencies
     implementation(platform(libs.firebase.bom))
     implementation(libs.bundles.firebase)

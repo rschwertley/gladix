@@ -23,6 +23,7 @@ import androidx.lifecycle.Observer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
@@ -42,6 +43,8 @@ import androidx.media3.session.SessionToken
 import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.ui.common.ErrorCategory
+import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
@@ -171,13 +174,31 @@ class PlayerService : MediaLibraryService() {
 
     @Volatile private var foregroundStartSuppressed = false
 
+    // Lever B: turn the raw player error into a friendly, categorized PlaybackException for the media
+    // session (Android Auto). Category comes from the shared classify() chain-walk so the AA message
+    // and the phone snackbar (ExceptionUtils) never disagree; the message/code are AA-tailored with a
+    // "check your phone" recovery cue. Never returns null (the null case is handled upstream in
+    // ShufflePlayer.getPlayerError before this is called).
+    @OptIn(UnstableApi::class)
+    private fun mapAaError(raw: PlaybackException): PlaybackException {
+        val (code, message) = when (classify(raw)) {
+            ErrorCategory.Network -> PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED to
+                getString(R.string.playback_error_no_connection)
+            ErrorCategory.LoginOrAuth -> PlaybackException.ERROR_CODE_AUTHENTICATION_EXPIRED to
+                getString(R.string.playback_error_login_required)
+            ErrorCategory.Generic -> PlaybackException.ERROR_CODE_UNSPECIFIED to
+                getString(R.string.playback_error_generic)
+        }
+        return PlaybackException(message, raw, code)
+    }
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         startForegroundCompat()
         setListener(MediaSessionServiceListener(this, getPendingIntent(this)))
 
-        val player = ShufflePlayer(exoPlayer)
+        val player = ShufflePlayer(exoPlayer, ::mapAaError)
         scope.launch(Dispatchers.Main) {
             mediaChangeFlow.collect { (o, n) -> player.onMediaItemChanged(o, n) }
         }

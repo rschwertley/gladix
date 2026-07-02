@@ -78,6 +78,9 @@
     <string name="x_login_required">%1$s login required</string>
     <string name="x_is_not_supported_in_x">%1$s is not supported in %2$s</string>
     <string name="account_session_expired_in_x">Account session expired in %1$s</string>
+    <string name="playback_error_no_connection">No connection — check your phone</string>
+    <string name="playback_error_login_required">Sign in on your phone to continue</string>
+    <string name="playback_error_generic">Can\'t play this track</string>
     <string name="error_x">Error: %1$s</string>
     <string name="str_copy">Copy</string>
     <string name="extensions">Extensions</string>

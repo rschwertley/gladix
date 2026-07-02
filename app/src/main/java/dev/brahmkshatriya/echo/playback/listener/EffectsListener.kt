@@ -23,7 +23,6 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
-import dev.brahmkshatriya.echo.playback.renderer.FadeTrace // FADEDBG
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.pow
@@ -79,10 +78,6 @@ class EffectsListener(
         }
         val skipForAlbum = mediaItem?.context is Album &&
             context.getSettings().getBoolean(SKIP_FADE_ON_ALBUMS, true)
-        // FADEDBG
-        FadeTrace.lastContextName = mediaItem?.context?.javaClass?.simpleName ?: "null"
-        FadeTrace.rec(FadeTrace.MIT, reason.toLong(), if (skipForAlbum) 1L else 0L)
-        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) FadeTrace.triggerDumpOnAuto()
         audioEffectsProcessor.skipFade = skipForAlbum
         if (!skipForAlbum) scheduleFadeOut()
     }
@@ -103,7 +98,6 @@ class EffectsListener(
         newPosition: Player.PositionInfo,
         reason: Int,
     ) {
-        FadeTrace.rec(FadeTrace.PDIS, reason.toLong()) // FADEDBG
         if (reason == Player.DISCONTINUITY_REASON_SEEK) {
             audioEffectsProcessor.cancelFades()
             scheduleFadeOut()
@@ -136,7 +130,6 @@ class EffectsListener(
     }
 
     private fun scheduleFadeOut() {
-        FadeTrace.rec(FadeTrace.SFO, exoPlayer.duration, exoPlayer.currentPosition, audioEffectsProcessor.crossfadeDurationMs.toLong()) // FADEDBG
         pendingFadeOutMessage?.cancel()
         pendingFadeOutMessage = null
         if (!audioEffectsProcessor.crossfadeEnabled) return

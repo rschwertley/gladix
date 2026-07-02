@@ -5,6 +5,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
@@ -16,6 +17,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 @OptIn(UnstableApi::class)
 class ShufflePlayer(
     private val player: ExoPlayer,
+    // Lever B: maps the raw player error to a friendly, categorized one for the media session
+    // (Android Auto). Null = passthrough (identity), so existing callers/tests are unaffected.
+    private val errorMapper: ((PlaybackException) -> PlaybackException)? = null,
 ) : ForwardingPlayer(player) {
 
     init {
@@ -197,6 +201,30 @@ class ShufflePlayer(
     override fun clearMediaItems() {
         original = emptyList()
         player.clearMediaItems()
+    }
+
+    // Lever B: re-message the raw player error into a friendly, categorized PlaybackException for
+    // the media session (Android Auto reads getPlayerError() via LegacyConversions to build its
+    // STATE_ERROR tile). The phone snackbar path (throwableFlow / ExceptionUtils) is untouched and
+    // still sees the raw exception. Identity-keyed cache: a stable error maps exactly once, and the
+    // moment the inner error clears to null (e.g. prepare() on tap-to-retry) the cache resets and we
+    // return null — which is what makes the AA error tile disappear cleanly instead of lingering.
+    // Called on the session's application looper thread, same as the other state below; plain vars.
+    private var cachedErrorOriginal: PlaybackException? = null
+    private var cachedErrorMapped: PlaybackException? = null
+    override fun getPlayerError(): PlaybackException? {
+        val inner = super.getPlayerError()
+        if (inner == null) {
+            cachedErrorOriginal = null
+            cachedErrorMapped = null
+            return null
+        }
+        val mapper = errorMapper ?: return inner
+        if (inner !== cachedErrorOriginal) {
+            cachedErrorOriginal = inner
+            cachedErrorMapped = mapper(inner)
+        }
+        return cachedErrorMapped
     }
 
     // Reports STATE_READY when the inner player is STATE_IDLE with a queued but unstarted
