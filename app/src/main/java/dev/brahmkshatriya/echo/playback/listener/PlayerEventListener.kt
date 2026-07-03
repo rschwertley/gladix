@@ -523,31 +523,6 @@ class PlayerEventListener(
             // fall through to silent skip below
         }
 
-        // SimpleCache / CacheDataSink / TeeDataSource / CacheDataSource all raise a *plain*
-        // IllegalStateException from their checkState(!released) lifecycle guards when the
-        // player/cache is torn down while a load is still closing (the stop()+prepare() churn
-        // from the watchdog and skip paths). The throwing frame moves around the close() cascade
-        // — SimpleCache.commitFile one report, TeeDataSource.close the next — so match the whole
-        // family by the datasource package rather than one class name. This cannot swallow a real
-        // playback failure: media3 datasources report genuine I/O as *typed checked* exceptions
-        // (HttpDataSource.*Exception, Cache.CacheException, FileDataSource.FileDataSourceException),
-        // already handled by the branches above; a bare ISE from this package is only ever a
-        // lifecycle/used-after-release assertion (verified across all checkState sites in 1.10.1 —
-        // the only config-level ISEs are constructor/builder-time and never reach here). Our own
-        // and extension ISEs never carry an androidx.media3.datasource frame.
-        val isDataSourceTeardownRace = rootCause is IllegalStateException
-            && rootCause.stackTrace.any { it.className.startsWith("androidx.media3.datasource.") }
-        if (isDataSourceTeardownRace) {
-            // Benign but worth counting: rate-limited HealthMonitor event (not throwFlow, so no
-            // user snackbar) gives the frequency telemetry to decide if a drain-before-release fix
-            // is ever warranted, without spamming Crashlytics on every teardown.
-            healthMonitor?.report(
-                HealthMonitor.DataSourceTeardownRaceException(rootCause),
-                HealthMonitor.Scope.MEMORY_ONLY, 10 * 60 * 1000L
-            )
-            return
-        }
-
         if (isMissingFile || is401 || isMalformedContent || isTimeout) {
             consecutiveUnavailableSkips++
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {

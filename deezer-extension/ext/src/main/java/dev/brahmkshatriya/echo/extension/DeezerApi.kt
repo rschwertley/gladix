@@ -584,7 +584,7 @@ class DeezerApi(private val session: DeezerSession) {
 
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun decodeJsonStream(source: BufferedSource, code: Int) = withContext(Dispatchers.Default) {
-        // Empty/truncated body (transient: dropped connection, 5xx with no body, WAF/rate-limit) ->
+        // Empty/truncated body (transient: dropped connection, 5xx with nobody, WAF/rate-limit) ->
         // fail with a clear retryable IOException instead of a raw JsonDecodingException
         // "Expected start of the object '{', but had 'EOF'". exhausted() is robust for chunked
         // responses where contentLength() is -1.

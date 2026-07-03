@@ -26,6 +26,14 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- Scoped visibility for the Chromium package-name spoof lookup (MainApplication.spoofedPackageName),
+         so that lookup does not depend on QUERY_ALL_PACKAGES. Extension discovery still needs the broad
+         permission above (extensions are matched by <uses-feature>, which <queries> cannot express). -->
+    <queries>
+        <package android:name="com.android.chrome" />
+        <package android:name="com.android.settings" />
+    </queries>
+
     <application
         android:name=".MainApplication"
         android:appCategory="audio"

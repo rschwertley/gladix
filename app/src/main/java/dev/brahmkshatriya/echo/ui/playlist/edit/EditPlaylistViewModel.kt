@@ -166,8 +166,7 @@ class EditPlaylistViewModel(
                     editPlaylistMetadata(playlist, nameFlow.value, descriptionFlow.value)
                 }.getOrThrow()
             }
-            val cover = coverFlow.value
-            when (cover) {
+            when (val cover = coverFlow.value) {
                 CoverState.Initial -> {}
                 CoverState.Removed -> extension.getAs<PlaylistEditCoverClient, Unit> {
                     editPlaylistCover(playlist, null)

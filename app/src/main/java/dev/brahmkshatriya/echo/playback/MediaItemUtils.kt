@@ -108,7 +108,7 @@ object MediaItemUtils {
     private fun buildWithBundle(mediaItem: MediaItem, bundle: Bundle) = run {
         val item = mediaItem.buildUpon()
         val metadata =
-            mediaItem.mediaMetadata.buildUpon().setExtras(bundle).setSubtitle(bundle.indexes())
+            mediaItem.mediaMetadata.buildUpon().setExtras(bundle)
                 .build()
         item.setMediaMetadata(metadata)
         item.build()
@@ -204,15 +204,12 @@ object MediaItemUtils {
                 )
                 putSerialized("downloaded", downloaded)
             })
-            .setSubtitle(bundle.indexes())
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .build()
     }
 
-    private fun Bundle.indexes() =
-        "${getInt("serverIndex")} ${getInt("sourceIndex")} ${getInt("backgroundIndex")} ${getInt("subtitleIndex")}"
 
     private val Bundle?.stateNullable
         get() = this?.getSerialized<MediaState<Track>>("state")?.getOrNull()

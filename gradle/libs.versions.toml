@@ -59,6 +59,8 @@ coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
+junit = { module = "junit:junit", version = "4.13.2" }
+
 zxing-core = { module = "com.google.zxing:core", version = "3.5.4" }
 
 pikolo = { module = "com.github.madrapps:pikolo", version = "2.0.2" }
