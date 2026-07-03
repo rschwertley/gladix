@@ -443,7 +443,6 @@ class PlayerService : MediaLibraryService() {
             player.release()           // player second — main thread, synchronous
             mediaSession = null
         }
-        cache.release()
         scope.cancel()
         super.onDestroy()
     }
