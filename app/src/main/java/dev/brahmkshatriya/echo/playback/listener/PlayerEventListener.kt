@@ -109,7 +109,10 @@ class PlayerEventListener(
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (mediaItem == null) return  // fired on player.release() with index=0; don't overwrite saved position
         updateCustomLayout()
-        ResumptionUtils.saveIndex(context, player.currentMediaItemIndex)
+        // Persist the FULL-timeline index (never the windowed getCurrentMediaItemIndex) so cold-start
+        // restore seeks to the correct track in a >50 queue. mediaItem is the new current item.
+        val fullIndex = (session.player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+        ResumptionUtils.saveIndex(context, fullIndex, mediaItem.mediaId)
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
         retriedWatchdogCount = 0

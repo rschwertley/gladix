@@ -468,6 +468,11 @@ class UiViewModel(
                 else peekHeight
                 val newHeight = viewModel.systemInsets.value.bottom + height
                 behavior.peekHeight = newHeight
+                // Landscape flush (rail → it.bottom == 0): Material only repositions a collapsed sheet
+                // on peek change when it's STATE_COLLAPSED at assignment; the bottom→0 emission can
+                // arrive mid-settle after rotation, so force the layout pass that lands the collapsed
+                // sheet at the new (64-based) collapsedOffset. Portrait (ELSE) never enters this.
+                if (it.bottom == 0) view.requestLayout()
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
                     animateTranslation(view, behavior.peekHeight, newHeight)
             }

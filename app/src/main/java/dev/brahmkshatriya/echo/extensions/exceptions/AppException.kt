@@ -3,6 +3,8 @@ package dev.brahmkshatriya.echo.extensions.exceptions
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Metadata
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlin.coroutines.cancellation.CancellationException
 
 sealed class AppException : Exception() {
 
@@ -37,6 +39,11 @@ sealed class AppException : Exception() {
     companion object {
         fun Throwable.toAppException(extension: Extension<*>) = toAppException(extension.metadata)
         fun Throwable.toAppException(extension: Metadata): AppException = when (this) {
+            // A withTimeout() timeout is a real, reportable failure, so keep wrapping it. Must be
+            // checked before CancellationException (its supertype) below.
+            is TimeoutCancellationException -> Other(this, extension)
+            // Cooperative cancellation must never be reported as an error — propagate it.
+            is CancellationException -> throw this
             is ClientException.Unauthorized -> Unauthorized(extension, userId)
             is ClientException.LoginRequired -> LoginRequired(extension)
             is ClientException.NotSupported -> NotSupported(this, extension, operation)

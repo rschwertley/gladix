@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 object ExtensionUtils {
 
@@ -46,6 +47,9 @@ object ExtensionUtils {
     suspend fun <T> Result<T>.getOrThrow(
         throwableFlow: MutableSharedFlow<Throwable>
     ) = getOrElse {
+        // Cooperative cancellation propagates instead of being reported. runCatching upstream
+        // preserves the CancellationException identity in Result.failure, so this catches it here.
+        if (it is CancellationException) throw it
         throwableFlow.emit(it)
         it.printStackTrace()
         null

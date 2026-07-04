@@ -397,7 +397,10 @@ class PlayerCallback(
         val before = mediaItems.subList(0, correctIndex)
         val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
         withContext(Dispatchers.Main) {
-            val currentIndex = player.currentMediaItemIndex
+            // Full-timeline index (never the windowed getCurrentMediaItemIndex) — drives both the
+            // bounds guard and the physical insert offset, so tracks land at the correct position in
+            // queues > 50. Only the inner-timeline mutation basis; nothing AA-serialized changes.
+            val currentIndex = (player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
             val itemCount = player.mediaItemCount
             // Abort if the timeline changed while tracks were loading on IO
             if (currentIndex !in 0..<itemCount) return@withContext
@@ -463,7 +466,9 @@ class PlayerCallback(
         }
         player.with {
             if (mediaItemCount == 0) playWhenReady = true
-            addMediaItems(currentMediaItemIndex + 1 + next, mediaItems)
+            // Full index so "play next" inserts after the CURRENT track in queues > 50.
+            val fullIndex = (this as? ShufflePlayer)?.fullCurrentIndex ?: currentMediaItemIndex
+            addMediaItems(fullIndex + 1 + next, mediaItems)
             prepare()
         }
         next += mediaItems.size
@@ -498,7 +503,10 @@ class PlayerCallback(
                 )
             }.build()
             session.player.with {
-                replaceMediaItem(currentMediaItemIndex, newItem)
+                // Full index so the like replaces the CURRENT track (not a windowed-index item) in
+                // queues > 50. replaceMediaItem keys the original-list update off this index too.
+                val fullIndex = (this as? ShufflePlayer)?.fullCurrentIndex ?: currentMediaItemIndex
+                replaceMediaItem(fullIndex, newItem)
             }
             SessionResult(RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
         }

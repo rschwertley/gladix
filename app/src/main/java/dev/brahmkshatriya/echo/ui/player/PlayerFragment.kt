@@ -31,6 +31,7 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import androidx.core.view.doOnLayout
+import androidx.core.view.doOnNextLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -277,8 +278,18 @@ class PlayerFragment : Fragment() {
             leftPadding = collapsedTopPadding + left
             val right = if (requireContext().isRTL()) system.start else system.end + extraEndPadding
             rightPadding = collapsedTopPadding + right
-            updateCollapsed()
-            adapter.insetsUpdated()
+            // Landscape/rail: after rotation the viewPager cover isn't settled to its landscape
+            // geometry when this fires, so a synchronous updateCollapsed() would read stale
+            // cover.left/height and land the morph wrong (art/title overlap). Defer to the next
+            // layout so it reads settled geometry. (Gate is isLandscape — NOT it.bottom, because
+            // here `it` is uiViewModel.combined, whose bottom carries playerInsets and is never 0
+            // in landscape.) Portrait keeps the synchronous path unchanged.
+            if (isLandscape) {
+                binding.viewPager.doOnNextLayout { updateCollapsed(); adapter.insetsUpdated() }
+            } else {
+                updateCollapsed()
+                adapter.insetsUpdated()
+            }
         }
 
         observe(uiViewModel.moreSheetOffset) {

@@ -26,6 +26,7 @@ object ResumptionUtils {
     private const val CONTEXTS = "queue_contexts"
     private const val EXTENSIONS = "queue_extensions"
     private const val INDEX = "queue_index"
+    private const val CURRENT_ID = "queue_current_id"
     private const val POSITION = "position"
     private const val SHUFFLE = "shuffle"
     private const val REPEAT = "repeat"
@@ -53,8 +54,9 @@ object ResumptionUtils {
 
     private fun Player.mediaItems() = (0 until mediaItemCount).map { getMediaItemAt(it) }
 
-    fun saveIndex(context: Context, index: Int) {
+    fun saveIndex(context: Context, index: Int, currentId: String?) {
         context.saveToQueue(INDEX, index)
+        context.saveToQueue(CURRENT_ID, currentId)
     }
 
     suspend fun saveQueue(context: Context, player: Player) = withContext(Dispatchers.Main) {
@@ -64,12 +66,17 @@ object ResumptionUtils {
             Log.d("GladixPlayback", "saveQueue: empty — stack: ${Thread.currentThread().stackTrace.take(10).joinToString(" < ") { it.methodName }}")
             return@withContext
         }
-        val currentIndex = player.currentMediaItemIndex
+        // Persist the FULL-timeline index, never ShufflePlayer.getCurrentMediaItemIndex() (which is
+        // windowed for the media session). currentId is the ground-truth current track id for the
+        // restore tripwire; both are read here on the main thread before the IO writes.
+        val currentIndex = (player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+        val currentId = player.currentMediaItem?.mediaId
         withContext(Dispatchers.IO) {
             val extensionIds = list.map { it.extensionId }
             val tracks = list.map { it.track }
             val contexts = list.map { it.context }
             context.saveToQueue(INDEX, currentIndex)
+            context.saveToQueue(CURRENT_ID, currentId)
             context.saveToQueue(EXTENSIONS, extensionIds)
             context.saveToQueue(TRACKS, tracks)
             context.saveToQueue(CONTEXTS, contexts)
@@ -113,6 +120,7 @@ object ResumptionUtils {
     }
 
     fun Context.recoverIndex() = getFromQueue<Int>(INDEX)
+    private fun Context.recoverCurrentId() = getFromQueue<String>(CURRENT_ID)
     private fun Context.recoverPosition() = getFromQueue<Long>(POSITION)
 
     fun Context.recoverShuffle() = getFromQueue<Boolean>(SHUFFLE)
@@ -140,6 +148,17 @@ object ResumptionUtils {
             rawIndex == C.INDEX_UNSET -> 0
             rawIndex < items.size -> rawIndex
             else -> items.size - 1
+        }
+        // Tripwire: the track at the restored index must be the one that was current at save time.
+        // A mismatch means the persisted index and queue disagree (e.g. a future regression saving a
+        // windowed index against the full order). Diagnostic only — restore still proceeds.
+        val savedCurrentId = recoverCurrentId()
+        val actualId = items.getOrNull(index)?.mediaId
+        if (savedCurrentId != null && actualId != null && savedCurrentId != actualId) {
+            healthMonitor?.report(
+                HealthMonitor.ResumeIndexMismatchException(savedCurrentId, actualId, index, items.size),
+                HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
+            )
         }
         val rawPos = recoverPosition() ?: 0L
         val trackDuration = items.getOrNull(index)?.track?.duration

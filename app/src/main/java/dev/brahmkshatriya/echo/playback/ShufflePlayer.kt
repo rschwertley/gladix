@@ -317,6 +317,13 @@ class ShufflePlayer(
         return fullIndex - windowStart(count, fullIndex)
     }
 
+    // The un-windowed current index into the FULL ExoPlayer timeline. getCurrentMediaItemIndex()
+    // above is deliberately WINDOWED for the media session (Media3 asserts it against the windowed
+    // timeline's windowCount), so persistence and any full-timeline logic must read THIS — never
+    // getCurrentMediaItemIndex(). Reads the inner player directly (the same value changeQueue /
+    // windowStart use internally); a pure read that touches no session/AA state.
+    val fullCurrentIndex: Int get() = player.currentMediaItemIndex
+
     // Returns the current period index relative to the windowed timeline so that Media3's
     // PlayerWrapper.createPositionInfo() assertion (periodIndex < timeline.getPeriodCount()) holds.
     // WindowedTimeline.init computes periodStart as the firstPeriodIndex of the window's first
