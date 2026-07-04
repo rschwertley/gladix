@@ -458,12 +458,14 @@ class UiViewModel(
             val combined =
                 viewModel.run { playerNavViewInsets.combine(systemInsets) { nav, _ -> nav } }
             observe(combined) {
-                val bottomPadding = 8.dpToPx(view.context)
-                val collapsedCoverSize =
-                    view.resources.getDimensionPixelSize(R.dimen.collapsed_cover_size) + bottomPadding
                 val peekHeight =
                     view.resources.getDimensionPixelSize(R.dimen.bottom_player_peek_height)
-                val height = if (it.bottom == 0) collapsedCoverSize else peekHeight
+                // Landscape (rail → it.bottom == 0): the collapsed bar sits flush at the bottom, so
+                // the peek is exactly the bar height with no extra below-bar padding. Portrait keeps
+                // the taller peek that reserves space for the bottom nav.
+                val height = if (it.bottom == 0)
+                    view.resources.getDimensionPixelSize(R.dimen.collapsed_cover_size)
+                else peekHeight
                 val newHeight = viewModel.systemInsets.value.bottom + height
                 behavior.peekHeight = newHeight
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
