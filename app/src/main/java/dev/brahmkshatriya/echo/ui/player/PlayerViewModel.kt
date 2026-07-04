@@ -228,8 +228,15 @@ class PlayerViewModel(
 
     private fun changeCurrent(newItem: MediaItem) {
         withBrowser { player ->
+            // player is the MediaController: its currentMediaItemIndex is windowed, but the session
+            // applies replaceMediaItem to the full inner timeline. Resolve the current item's FULL
+            // index by mediaId (same basis as toWindowedIndex's fullCurrentIndex) so we replace the
+            // actual current track, not the wrong one, in queues > 50.
+            val fullIndex =
+                queue.indexOfFirst { it.mediaId == playerState.current.value?.mediaItem?.mediaId }
+            if (fullIndex < 0) return@withBrowser
             val oldPosition = player.currentPosition
-            player.replaceMediaItem(player.currentMediaItemIndex, newItem)
+            player.replaceMediaItem(fullIndex, newItem)
             player.prepare()
             player.seekTo(oldPosition)
         }

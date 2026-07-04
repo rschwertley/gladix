@@ -3,9 +3,6 @@
 
     <style name="EchoCollapsingBar" parent="TopCollapsingBar">
         <item name="layout_scrollFlags">scroll|exitUntilCollapsed</item>
-        <!-- Landscape only: clear the nav rail (nav_width 64dp) so the detail title isn't
-             clipped behind it. Portrait uses values/EchoCollapsingBar and is unaffected. -->
-        <item name="expandedTitleMarginStart">88dp</item>
     </style>
 
     <style name="PlayerTrackCoverContainer" parent="BasePlayerTrackCoverContainer">

@@ -355,6 +355,24 @@ class ShufflePlayer(
         super.seekTo(mediaItemIndex + start, positionMs)
     }
 
+    // Twin of seekTo() above, for Android Auto queue selection. Media3's onSkipToQueueItem routes
+    // to PlayerWrapper.seekToDefaultPosition((int) queueId), where queueId is the index into the
+    // WINDOWED timeline we serialize — bypassing the seekTo() override entirely. Without this, a
+    // deep AA queue selection forwards the windowed index straight to the real player as a
+    // full-timeline index, landing on the wrong track beyond the window's first QUEUE_WINDOW_SIZE
+    // entries. AA-selection-only: the app never calls seekToDefaultPosition() itself.
+    override fun seekToDefaultPosition(mediaItemIndex: Int) {
+        val full = super.getCurrentTimeline()
+        val count = full.windowCount
+        if (count <= QUEUE_WINDOW_SIZE) {
+            super.seekToDefaultPosition(mediaItemIndex)
+            return
+        }
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        val start = windowStart(count, fullIndex)
+        super.seekToDefaultPosition(mediaItemIndex + start)
+    }
+
     private class WindowedTimeline(
         private val delegate: Timeline,
         private val windowStart: Int,

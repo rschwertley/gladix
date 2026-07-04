@@ -458,21 +458,12 @@ class UiViewModel(
             val combined =
                 viewModel.run { playerNavViewInsets.combine(systemInsets) { nav, _ -> nav } }
             observe(combined) {
-                val peekHeight =
+                // Landscape flush is handled by values-land/bottom_player_peek_height (64dp);
+                // portrait uses values/ (136dp). systemInsets.bottom is added at runtime.
+                val height =
                     view.resources.getDimensionPixelSize(R.dimen.bottom_player_peek_height)
-                // Landscape (rail → it.bottom == 0): the collapsed bar sits flush at the bottom, so
-                // the peek is exactly the bar height with no extra below-bar padding. Portrait keeps
-                // the taller peek that reserves space for the bottom nav.
-                val height = if (it.bottom == 0)
-                    view.resources.getDimensionPixelSize(R.dimen.collapsed_cover_size)
-                else peekHeight
                 val newHeight = viewModel.systemInsets.value.bottom + height
                 behavior.peekHeight = newHeight
-                // Landscape flush (rail → it.bottom == 0): Material only repositions a collapsed sheet
-                // on peek change when it's STATE_COLLAPSED at assignment; the bottom→0 emission can
-                // arrive mid-settle after rotation, so force the layout pass that lands the collapsed
-                // sheet at the new (64-based) collapsedOffset. Portrait (ELSE) never enters this.
-                if (it.bottom == 0) view.requestLayout()
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
                     animateTranslation(view, behavior.peekHeight, newHeight)
             }

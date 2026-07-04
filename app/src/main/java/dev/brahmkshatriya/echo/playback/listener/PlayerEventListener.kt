@@ -374,7 +374,7 @@ class PlayerEventListener(
                     player.stop()
                     return
                 }
-                val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                val hasMore = player.hasNextMediaItem()
                 if (!hasMore) {
                     player.stop()
                     return
@@ -408,7 +408,7 @@ class PlayerEventListener(
                     player.stop()
                     return
                 }
-                val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+                val hasMore = player.hasNextMediaItem()
                 if (!hasMore) {
                     player.stop()
                     return
@@ -472,7 +472,7 @@ class PlayerEventListener(
                 if (!isRetryExhausted) scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 return
             }
-            val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+            val hasMore = player.hasNextMediaItem()
             if (!hasMore) {
                 player.stop()
                 return
@@ -533,7 +533,7 @@ class PlayerEventListener(
                 player.stop()
                 return
             }
-            val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+            val hasMore = player.hasNextMediaItem()
             if (!hasMore) {
                 player.stop()
                 return
@@ -564,7 +564,10 @@ class PlayerEventListener(
         else currentRetries = 0
 
         if (mediaItem == null) return
-        val index = player.currentMediaItemIndex
+        // Full-timeline index (never the windowed getCurrentMediaItemIndex): replaceMediaItem below
+        // applies to the inner full timeline, so a windowed index would swap the wrong track and
+        // leave the failing one un-retried in queues > 50.
+        val index = (session.player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
         val retries = mediaItem.retries
 
         if (currentRetries >= maxRetries) {
@@ -577,7 +580,7 @@ class PlayerEventListener(
                 player.stop()
                 return
             }
-            val hasMore = player.currentMediaItemIndex < player.mediaItemCount - 1
+            val hasMore = player.hasNextMediaItem()
             if (!hasMore) {
                 player.stop()
                 return
@@ -602,7 +605,7 @@ class PlayerEventListener(
             return
         }
         if (retries >= maxSingleItemRetries) {
-            val hasMore = index < player.mediaItemCount - 1
+            val hasMore = player.hasNextMediaItem()
             if (!hasMore) {
                 player.stop()
                 return

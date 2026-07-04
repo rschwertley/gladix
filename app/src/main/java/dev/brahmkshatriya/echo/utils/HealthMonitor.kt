@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.core.content.edit
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import dev.brahmkshatriya.echo.BuildConfig
 import java.util.concurrent.ConcurrentHashMap
 
 class HealthMonitor(application: Application) {
@@ -40,6 +41,8 @@ class HealthMonitor(application: Application) {
             Scope.PERSISTENT -> prefs.edit { putLong(signature, now) }
             Scope.MEMORY_ONLY -> memoryTimestamps[signature] = now
         }
-        FirebaseCrashlytics.getInstance().recordException(exception)
+        // BuildConfig.HAS_FIREBASE is a compile-time boolean (no Firebase type referenced), so in
+        // no-json builds this branch is dead and FirebaseCrashlytics is never loaded.
+        if (BuildConfig.HAS_FIREBASE) FirebaseCrashlytics.getInstance().recordException(exception)
     }
 }

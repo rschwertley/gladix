@@ -25,6 +25,9 @@ android {
         // For local development, consider committing frequently to update the version.
         versionCode = gitCount
         versionName = "v${version}_$gitHash${if (isDirty) "-dirty" else ""}($gitCount)"
+        // True only when google-services.json is present. Compile-time constant used to guard
+        // every Firebase call site so no-json builds never load the (compileOnly) Firebase classes.
+        buildConfigField("boolean", "HAS_FIREBASE", "$hasGoogleServices")
     }
 
     buildTypes {
@@ -96,9 +99,15 @@ dependencies {
 
     testImplementation(libs.junit)
 
-    if (!hasGoogleServices) return@dependencies
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.bundles.firebase)
+    // Firebase on the COMPILE classpath in every build so direct references in main source
+    // resolve even without google-services.json (CI / F-Droid). Packaged (runtime) only when
+    // json is present, so Firebase-free builds stay Firebase-free.
+    compileOnly(platform(libs.firebase.bom))
+    compileOnly(libs.bundles.firebase)
+    if (hasGoogleServices) {
+        implementation(platform(libs.firebase.bom))
+        implementation(libs.bundles.firebase)
+    }
 }
 
 if (hasGoogleServices) {

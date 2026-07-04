@@ -207,6 +207,10 @@ object MediaItemUtils {
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setIsPlayable(true)
             .setIsBrowsable(false)
+            // Publish the catalog duration so the session/AA (and lockscreen) can render the
+            // progress bar total before prepare() resolves the stream duration. durationMs is a
+            // metadata field, independent of player.getDuration(); invisible to the resume path.
+            .apply { duration?.let { setDurationMs(it) } }
             .build()
     }
 

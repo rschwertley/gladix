@@ -8,6 +8,7 @@ import android.net.Network
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.mayakapps.kache.FileKache
 import com.mayakapps.kache.KacheStrategy
+import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import kotlinx.coroutines.CoroutineScope
@@ -56,7 +57,9 @@ data class App(
         scope.launch {
             throwFlow.collectLatest {
                 it.printStackTrace()
-                FirebaseCrashlytics.getInstance().apply {
+                // BuildConfig.HAS_FIREBASE is a compile-time boolean (no Firebase type referenced),
+                // so in no-json builds this branch is dead and FirebaseCrashlytics is never loaded.
+                if (BuildConfig.HAS_FIREBASE) FirebaseCrashlytics.getInstance().apply {
                     setCustomKey("extension_id", crashExtensionId)
                     setCustomKey("player_state", crashPlayerState)
                     setCustomKey("is_playing", crashIsPlaying)
