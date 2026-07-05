@@ -34,7 +34,22 @@ class ShufflePlayer(
     internal var isRearranging = false
 
     private val extraListeners = CopyOnWriteArrayList<Player.Listener>()
-    private var lastWindowStart = -1
+
+    // The sliding-window position, kept STATEFUL (recentered only near an edge — see windowStart())
+    // so a >50 AA queue no longer re-serializes on every track. storedWindowStart is the single
+    // source of truth every windowStart() consumer reads; lastSerializedWindowStart tracks the
+    // window AA currently holds, so notifyWindowedTimelineChanged() only re-fires on an actual shift.
+    private var storedWindowStart = -1
+    private var lastSerializedWindowStart = -1
+
+    // A queue REPLACE (setMediaItem(s)/clearMediaItems) invalidates the window: the next
+    // windowStart() read recenters on the new current and notifyWindowedTimelineChanged() re-fires.
+    // Mutates (add/remove/replace/move/changeQueue) deliberately do NOT call this — the window must
+    // persist across normal edits, or the per-edit churn we're removing comes back.
+    private fun resetWindow() {
+        storedWindowStart = -1
+        lastSerializedWindowStart = -1
+    }
 
     override fun addListener(listener: Player.Listener) {
         extraListeners.add(listener)
@@ -161,26 +176,31 @@ class ShufflePlayer(
     }
 
     override fun setMediaItem(mediaItem: MediaItem) {
+        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {
+        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem, resetPosition)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {
+        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem, startPositionMs)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>) {
+        resetWindow()
         original = mediaItems
         player.setMediaItems(mediaItems)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {
+        resetWindow()
         original = mediaItems
         player.setMediaItems(mediaItems, resetPosition)
     }
@@ -190,6 +210,7 @@ class ShufflePlayer(
         startIndex: Int,
         startPositionMs: Long
     ) {
+        resetWindow()
         original = mediaItems
         player.setMediaItems(
             mediaItems,
@@ -199,6 +220,7 @@ class ShufflePlayer(
     }
 
     override fun clearMediaItems() {
+        resetWindow()
         original = emptyList()
         player.clearMediaItems()
     }
@@ -264,12 +286,22 @@ class ShufflePlayer(
         super.setAudioAttributes(audioAttributes, false)
     }
 
-    // Returns the start index into the full ExoPlayer timeline for a QUEUE_WINDOW_SIZE window
-    // centred on fullIndex. Both getCurrentTimeline() and getCurrentMediaItemIndex() must use
-    // this same calculation so that the windowed index is always < windowedTimeline.windowCount.
+    // Single source of truth for the window position, read by ALL consumers (getCurrentTimeline,
+    // getCurrentMediaItemIndex, getCurrentPeriodIndex, notifyWindowedTimelineChanged, and the
+    // seekTo/seekToDefaultPosition overrides). Stateful hysteresis: keep the stored window until
+    // the current comes within EDGE_MARGIN of a MOVABLE edge (or falls outside it / the queue
+    // shrank), then recenter on the current. Recentering here, on read, guarantees the current is
+    // always inside [return, return + QUEUE_WINDOW_SIZE), so every windowed index/period derived
+    // from it stays in-window (both PlayerInfo assertions hold, with no stale-window transient).
     private fun windowStart(fullCount: Int, fullIndex: Int): Int {
-        val half = QUEUE_WINDOW_SIZE / 2
-        return (fullIndex - half).coerceIn(0, fullCount - QUEUE_WINDOW_SIZE)
+        val maxStart = fullCount - QUEUE_WINDOW_SIZE
+        val s = storedWindowStart
+        val recenter = s < 0 || s > maxStart ||
+            fullIndex < s || fullIndex >= s + QUEUE_WINDOW_SIZE ||
+            (fullIndex < s + EDGE_MARGIN && s > 0) ||
+            (fullIndex >= s + QUEUE_WINDOW_SIZE - EDGE_MARGIN && s < maxStart)
+        if (recenter) storedWindowStart = (fullIndex - QUEUE_WINDOW_SIZE / 2).coerceIn(0, maxStart)
+        return storedWindowStart
     }
 
     // Called from PlayerEventListener.onMediaItemTransition (SEEK and AUTO reasons) to notify
@@ -281,9 +313,9 @@ class ShufflePlayer(
         val count = full.windowCount
         if (count <= QUEUE_WINDOW_SIZE) return
         val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        val newWindowStart = windowStart(count, fullIndex)
-        if (newWindowStart == lastWindowStart) return
-        lastWindowStart = newWindowStart
+        windowStart(count, fullIndex) // recenter-on-read; updates storedWindowStart if it shifted
+        if (storedWindowStart == lastSerializedWindowStart) return
+        lastSerializedWindowStart = storedWindowStart
         val timeline = getCurrentTimeline()
         for (l in extraListeners) {
             l.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
@@ -420,6 +452,11 @@ class ShufflePlayer(
 
     companion object {
         private const val QUEUE_WINDOW_SIZE = 50
+
+        // How near a movable window edge the current must come before the window recenters. Larger =
+        // more upcoming-track lookahead but more frequent recenters; smaller = rarer recenters (fewer
+        // AA scroll resets) but less edge lookahead. Recenter cadence ≈ QUEUE_WINDOW_SIZE/2 − EDGE_MARGIN tracks.
+        private const val EDGE_MARGIN = 10
     }
 
 }

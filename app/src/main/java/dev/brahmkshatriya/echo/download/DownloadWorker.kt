@@ -16,6 +16,8 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -27,17 +29,25 @@ class DownloadWorker(
 ) : CoroutineWorker(context, params) {
 
     private val manager = downloader.taskManager
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = coroutineScope {
         setForeground(createNotification(0))
-        val job = manager.scope.launch {
+        // Progress updater runs on the WORKER's coroutine (a child of this coroutineScope), not
+        // manager.scope. It only READS manager.taskFlow, so it's decoupled from manager.scope's
+        // lifecycle. Being structured means a worker stop (WorkManager cancel) propagates cancellation
+        // here, so an in-flight setForeground()'s future is cancelled before the WorkSpec finishes —
+        // otherwise setForegroundAsync() throws "must complete before … returning a Result".
+        val job = launch {
             manager.taskFlow.collectLatest {
                 if (it.isEmpty()) removeNotification()
                 else if (isActive) setForeground(createNotification(it.size))
             }
         }
         manager.awaitCompletion()
-        job.cancel()
-        return Result.success()
+        // cancelAndJoin (not cancel): await the child's unwind so no setForeground() is in flight
+        // when we return Result — the completion-path fix.
+        job.cancelAndJoin()
+        removeNotification()
+        Result.success()
     }
 
     @OptIn(UnstableApi::class)

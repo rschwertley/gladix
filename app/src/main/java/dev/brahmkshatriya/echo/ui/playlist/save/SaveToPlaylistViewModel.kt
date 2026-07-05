@@ -21,6 +21,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -89,6 +90,7 @@ class SaveToPlaylistViewModel(
             app.messageFlow.emit(Message(message))
             true
         }.getOrElse {
+            if (it is CancellationException) throw it
             app.throwFlow.emit(it)
             false
         }

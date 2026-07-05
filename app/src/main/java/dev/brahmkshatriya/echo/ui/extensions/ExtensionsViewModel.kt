@@ -63,6 +63,7 @@ class ExtensionsViewModel(
                 val ext = extensionLoader.music.getExtensionOrThrow(id)
                 extensionLoader.setupMusicExtension(ext, true)
             }.getOrElse {
+                if (it is CancellationException) throw it
                 app.throwFlow.emit(it)
             }
         }
@@ -111,7 +112,7 @@ class ExtensionsViewModel(
                 if (!anyUpdateFound)
                     message(app.context.getString(R.string.all_extensions_up_to_date))
             }
-        }.getOrElse { app.throwFlow.emit(it) }
+        }.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
     }
 
     data class PromptResult(
@@ -153,6 +154,7 @@ class ExtensionsViewModel(
             if (!result.accepted) return true
         }
         install(ext.id, type, file).onFailure {
+            if (it is CancellationException) throw it
             app.throwFlow.emit(it)
             return true
         }
@@ -168,6 +170,7 @@ class ExtensionsViewModel(
             val result = promptResultFlow.first { it.file == file }
             if (!result.accepted) return@forEach
             install(result.id, result.type, result.file).onFailure {
+                if (it is CancellationException) throw it
                 app.throwFlow.emit(it)
                 return@forEach
             }
@@ -186,6 +189,7 @@ class ExtensionsViewModel(
         }.exceptionOrNull()
         val result = if (extension.metadata.importType == ImportType.App) appResult else fileResult
         if (result == null) message(app.context.getString(R.string.extension_uninstalled_successfully))
+        else if (result is CancellationException) throw result
         else app.throwFlow.emit(result)
     }
 
@@ -230,6 +234,7 @@ class ExtensionsViewModel(
         val url = runCatching {
             getUpdateFileUrl(currentVersion, updateUrl, client).getOrThrow()
         }.getOrElse {
+            if (it is CancellationException) throw it
             app.throwFlow.emit(it)
             return null
         }
@@ -243,6 +248,7 @@ class ExtensionsViewModel(
         val file = runCatching {
             downloadUpdate(app.context, url, client).getOrThrow()
         }.getOrElse {
+            if (it is CancellationException) throw it
             app.throwFlow.emit(it)
             return null
         }

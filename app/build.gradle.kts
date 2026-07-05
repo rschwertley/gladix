@@ -7,7 +7,13 @@ plugins {
     alias(libs.plugins.crashlytics) apply false
 }
 
-val hasGoogleServices = file("google-services.json").exists()
+// True only when a PARSEABLE google-services.json is present. CI (nightly/stable) writes this file
+// by base64-decoding the GOOGLE_SERVICES_B64 secret; an empty/misconfigured secret yields an empty
+// or malformed file that would otherwise pass a bare exists() and hard-fail processGoogleServices.
+// Parsing here degrades a bad/absent json to the Firebase-free (compileOnly) path instead.
+val hasGoogleServices = file("google-services.json").let { f ->
+    f.exists() && runCatching { groovy.json.JsonSlurper().parse(f); true }.getOrDefault(false)
+}
 val gitHash = runCatching { execute("git", "rev-parse", "HEAD").take(7) }.getOrDefault("dev")
 val gitCount = runCatching { execute("git", "rev-list", "--count", "HEAD").toInt() }.getOrDefault(1)
 val isDirty = runCatching { execute("git", "status", "--porcelain", "-uno").isNotEmpty() }.getOrDefault(false)

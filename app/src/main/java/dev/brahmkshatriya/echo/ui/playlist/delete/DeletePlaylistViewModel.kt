@@ -7,6 +7,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted.Companion.Eagerly
@@ -46,7 +47,7 @@ class DeletePlaylistViewModel(
             val playlist = playlistFlow.value!!.getOrThrow()
             extension.getAs<PlaylistEditClient, Unit> { deletePlaylist(playlist) }.getOrThrow()
         }
-        result.getOrElse { app.throwFlow.emit(it) }
+        result.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
         emit(DeleteState.Deleted(result))
     }.stateIn(viewModelScope, Eagerly, DeleteState.Initial)
 

@@ -12,6 +12,7 @@ import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
 import dev.brahmkshatriya.echo.utils.AppUpdater.downloadUpdate
 import dev.brahmkshatriya.echo.utils.AppUpdater.getUpdateFileUrl
 import dev.brahmkshatriya.echo.utils.Serializer.toData
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -87,6 +88,7 @@ class AddViewModel(
         }
 
         val list = runCatching { getExtensionList(actualLink, client) }.getOrElse {
+            if (it is CancellationException) throw it
             app.throwFlow.emit(it)
             null
         }
@@ -110,10 +112,12 @@ class AddViewModel(
         val files = selected.mapNotNull { item ->
             addingFlow.value = AddState.Downloading(item)
             val url = getUpdateFileUrl("", item.updateUrl, client).getOrElse {
+                if (it is CancellationException) throw it
                 app.throwFlow.emit(it)
                 null
             } ?: return@mapNotNull null
             downloadUpdate(app.context, url, client).getOrElse {
+                if (it is CancellationException) throw it
                 app.throwFlow.emit(it)
                 null
             }

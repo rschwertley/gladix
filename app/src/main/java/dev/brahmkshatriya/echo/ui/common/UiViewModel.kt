@@ -458,11 +458,14 @@ class UiViewModel(
             val combined =
                 viewModel.run { playerNavViewInsets.combine(systemInsets) { nav, _ -> nav } }
             observe(combined) {
-                // Landscape flush is handled by values-land/bottom_player_peek_height (64dp);
-                // portrait uses values/ (136dp). systemInsets.bottom is added at runtime.
+                // Landscape (rail) sits the mini-player flush to the screen bottom: peek is just the
+                // bar height (values-land 64dp), WITHOUT the bottom system inset — the gesture bar is
+                // at the bottom in landscape, and adding it floated the pill up by that inset.
+                // Portrait keeps values/ (136dp) + systemInsets.bottom to clear the bottom nav.
                 val height =
                     view.resources.getDimensionPixelSize(R.dimen.bottom_player_peek_height)
-                val newHeight = viewModel.systemInsets.value.bottom + height
+                val newHeight = height +
+                    if (viewModel.isRail) 0 else viewModel.systemInsets.value.bottom
                 behavior.peekHeight = newHeight
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
                     animateTranslation(view, behavior.peekHeight, newHeight)

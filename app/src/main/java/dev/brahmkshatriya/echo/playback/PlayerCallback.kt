@@ -65,6 +65,7 @@ import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.futureCatching
 import dev.brahmkshatriya.echo.utils.Serializer.getSerialized
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadDrawable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -307,6 +308,7 @@ class PlayerCallback(
 
             else -> {
                 val tracks = listTracks(extension, item, loaded).getOrElse {
+                    if (it is CancellationException) throw it
                     throwableFlow.emit(it)
                     return@future error
                 }
@@ -316,6 +318,7 @@ class PlayerCallback(
                     val (list, continuation) = extension.get { tracks.loadPage(null) }.getOrThrow()
                     if (continuation != null) scope.launch {
                         val all = extension.get { tracks.loadAll() }.getOrElse {
+                            if (it is CancellationException) throw it
                             throwableFlow.emit(it)
                             return@launch
                         }.drop(list.size).map {
@@ -328,6 +331,7 @@ class PlayerCallback(
                     list
                 }
                 val list = result.getOrElse {
+                    if (it is CancellationException) throw it
                     throwableFlow.emit(it)
                     return@future error
                 }
@@ -383,10 +387,12 @@ class PlayerCallback(
         val startTrackId = args.getString("startTrackId") ?: return@future error
         val extension = extensions.music.getExtension(extId) ?: return@future error
         val tracks = listTracks(extension, item, loaded).getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }
         val (list, _) = extension.get { tracks.loadPage(null) }.getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }
@@ -417,9 +423,11 @@ class PlayerCallback(
         val loaded = args.getBoolean("loaded", false)
         val extension = extensions.music.getExtension(extId) ?: return@future error
         val tracks = listTracks(extension, item, loaded).getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }.load().getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }
@@ -449,9 +457,11 @@ class PlayerCallback(
         val extension = extensions.music.getExtension(extId) ?: return@future error
         nextJob?.cancel()
         val tracks = listTracks(extension, item, loaded).getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }.load().getOrElse {
+            if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
         }
@@ -493,6 +503,7 @@ class PlayerCallback(
                     likeItem(track, rating.isThumbsUp)
                 }
             }.getOrElse {
+                if (it is CancellationException) throw it
                 throwableFlow.emit(PlayerException(item, it))
                 return@future SessionResult(SessionError.ERROR_UNKNOWN)
             }
@@ -551,7 +562,7 @@ class PlayerCallback(
             MediaItemsWithStartPosition(items.map { withUnloaded(it) }, index, pos)
         } catch (e: Exception) {
             userQueueSet.set(false)
-            if (e !is UnsupportedOperationException) throwableFlow.emit(e)
+            if (e !is UnsupportedOperationException && e !is CancellationException) throwableFlow.emit(e)
             throw e
         }
     }
