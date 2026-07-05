@@ -210,6 +210,14 @@ class PlayerService : MediaLibraryService() {
         val session = MediaLibrarySession.Builder(this, player, callback)
             .setBitmapLoader(PlayerBitmapLoader(this, scope))
             .setSessionActivity(getPendingIntent(this))
+            // Disable Media3's ~1/sec periodic PlaybackState position pushes: recent Android Auto
+            // versions reset the browse/queue scroll on every playback-state change, so the periodic
+            // updates make the AA queue jump to the top every few seconds during playback (androidx/
+            // media #2192, b/400923507). Discrete PlaybackState updates (play/pause/seek/track change)
+            // still fire, and all standard controllers (AA, notification, lockscreen) extrapolate
+            // position between them, so the seek bar is unaffected. Our own UI reads player position
+            // directly on a 500ms ticker (PlayerUiListener), so it's independent of this flag.
+            .setPeriodicPositionUpdateEnabled(false)
             .build()
 
         player.addListener(

@@ -269,7 +269,13 @@ class PlayerFragment : Fragment() {
                 if (playerSheetState.value == STATE_EXPANDED) system
                 else getCombined()
             }
-            binding.playerCollapsedContainer.root.applyHorizontalInsets(insets)
+            // Collapsed mini-player always uses getCombined() (rail included), NOT the STATE_EXPANDED-
+            // gated `insets`: on rotate-while-expanded → collapse, `combined` last emits while EXPANDED
+            // (gate picks rail-less `system`) and collapsing never re-emits it, so the bar kept a zero
+            // rail inset and overlapped the rail. The container is alpha=0 whenever landscape+expanded
+            // (updateCollapsed line ~222), so carrying the rail inset while expanded is inert. The gate
+            // stays for playerControls below (line 273), which needs `system` for its expanded end-inset.
+            binding.playerCollapsedContainer.root.applyHorizontalInsets(uiViewModel.getCombined())
             binding.playerControls.root.applyHorizontalInsets(
                 insets,
                 requireActivity().isLandscape()
