@@ -288,19 +288,23 @@ class ShufflePlayer(
 
     // Single source of truth for the window position, read by ALL consumers (getCurrentTimeline,
     // getCurrentMediaItemIndex, getCurrentPeriodIndex, notifyWindowedTimelineChanged, and the
-    // seekTo/seekToDefaultPosition overrides). Stateful hysteresis: keep the stored window until
-    // the current comes within EDGE_MARGIN of a MOVABLE edge (or falls outside it / the queue
-    // shrank), then recenter on the current. Recentering here, on read, guarantees the current is
-    // always inside [return, return + QUEUE_WINDOW_SIZE), so every windowed index/period derived
-    // from it stays in-window (both PlayerInfo assertions hold, with no stale-window transient).
+    // seekTo/seekToDefaultPosition overrides). The window STARTS at the current (current lands at
+    // windowed index 0), so AA shows the current first and the upcoming queue — past tracks are not
+    // displayed (Design-for-Driving: past is optional; they remain in the real full timeline, still
+    // reachable via Previous). Stateful hysteresis: keep the stored window until the current nears the
+    // END edge (within EDGE_MARGIN, the only MOVABLE edge now) or falls outside it / the queue shrank,
+    // then re-anchor at the current. Backward moves (Previous/seek-back) are caught by the hard
+    // `fullIndex < s` trigger — no start-edge leg needed once the window starts at the current.
+    // Recentering here, on read, guarantees the current is always inside [return, return +
+    // QUEUE_WINDOW_SIZE), so every windowed index/period derived from it stays in-window (both
+    // PlayerInfo assertions hold, with no stale-window transient).
     private fun windowStart(fullCount: Int, fullIndex: Int): Int {
         val maxStart = fullCount - QUEUE_WINDOW_SIZE
         val s = storedWindowStart
         val recenter = s < 0 || s > maxStart ||
             fullIndex < s || fullIndex >= s + QUEUE_WINDOW_SIZE ||
-            (fullIndex < s + EDGE_MARGIN && s > 0) ||
             (fullIndex >= s + QUEUE_WINDOW_SIZE - EDGE_MARGIN && s < maxStart)
-        if (recenter) storedWindowStart = (fullIndex - QUEUE_WINDOW_SIZE / 2).coerceIn(0, maxStart)
+        if (recenter) storedWindowStart = fullIndex.coerceIn(0, maxStart)
         return storedWindowStart
     }
 
@@ -485,9 +489,11 @@ class ShufflePlayer(
     companion object {
         private const val QUEUE_WINDOW_SIZE = 50
 
-        // How near a movable window edge the current must come before the window recenters. Larger =
-        // more upcoming-track lookahead but more frequent recenters; smaller = rarer recenters (fewer
-        // AA scroll resets) but less edge lookahead. Recenter cadence ≈ QUEUE_WINDOW_SIZE/2 − EDGE_MARGIN tracks.
+        // How near the END window edge the current must come before the window re-anchors (the window
+        // starts at the current, so the end is the only movable edge). Larger = more upcoming-track
+        // lookahead kept before a recenter but more frequent recenters; smaller = rarer recenters (fewer
+        // AA re-serializations). With start-at-current, forward recenter cadence ≈ QUEUE_WINDOW_SIZE −
+        // EDGE_MARGIN tracks (≈ 40).
         private const val EDGE_MARGIN = 10
     }
 
