@@ -130,6 +130,11 @@ class PlayerEventListener(
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         emitFullQueue()
+        // Sync the AA queue's serialized-window bookkeeping on the natural re-serialization path (this
+        // event drives Media3's legacy setQueue). Keeps lastSerializedWindowStart honest so the active-id
+        // and the serialized queue don't commit to different windows after a deep phone play. No-op on the
+        // synthetic SOURCE_UPDATE event (already in sync) and for queues <= the window size. AA-only.
+        (session.player as? ShufflePlayer)?.syncSerializedWindow()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scope.launch { ResumptionUtils.saveQueue(context, player) }
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {

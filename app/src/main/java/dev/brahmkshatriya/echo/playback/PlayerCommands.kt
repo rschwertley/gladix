@@ -25,6 +25,7 @@ object PlayerCommands {
     val resumeCommand = SessionCommand("resume", Bundle.EMPTY)
     val imageCommand = SessionCommand("image", Bundle.EMPTY)
     val backfillCommand = SessionCommand("backfill", Bundle.EMPTY)
+    val seekToFullCommand = SessionCommand("seek_to_full", Bundle.EMPTY)
 
     fun getLikeButton(context: Context, item: MediaItem) =
         if (!item.isLiked)

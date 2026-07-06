@@ -112,6 +112,7 @@ class PlayerCallback(
                 .add(radioCommand).add(sleepTimer)
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
                 .add(resumeCommand).add(imageCommand).add(backfillCommand)
+                .add(seekToFullCommand)
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -141,6 +142,14 @@ class PlayerCallback(
             resumeCommand -> resume(player)
             imageCommand -> getImage(player)
             backfillCommand -> backfillQueue(player, args)
+            seekToFullCommand -> run {
+                // Phone queue tap: seek by FULL index directly on the real player, bypassing the
+                // windowed controller seekTo whose out-of-range validation crashed on out-of-window
+                // taps. `play` preserves play()=true / seek()=false. AA's onSkipToQueueItem path
+                // (seekToDefaultPosition) never enters here.
+                (player as? ShufflePlayer)?.seekToFullIndex(args.getInt("index"), args.getBoolean("play"))
+                Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            }
             else -> super.onCustomCommand(session, controller, customCommand, args)
         }
     }

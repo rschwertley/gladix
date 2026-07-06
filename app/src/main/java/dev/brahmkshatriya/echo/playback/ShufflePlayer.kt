@@ -322,6 +322,24 @@ class ShufflePlayer(
         }
     }
 
+    // Keep lastSerializedWindowStart honest on the NATURAL onTimelineChanged path. Media3 re-serializes
+    // the AA/legacy queue from getCurrentTimeline() whenever the real ExoPlayer timeline changes (e.g.
+    // setMediaItems / PLAYLIST_CHANGED), but that path never runs notifyWindowedTimelineChanged(), so
+    // lastSerializedWindowStart would go stale — leaving the gate above to later early-return against a
+    // window AA no longer holds, so the recenter-fresh active-id and the serialized queue commit to
+    // DIFFERENT windows (wrong AA highlight / queue opens at top). Recenter first, then record the window
+    // AA now holds. MUST be called ONLY from PlayerEventListener.onTimelineChanged (the event) — NEVER
+    // from getCurrentTimeline() or any getter: doing so would make lastSerializedWindowStart permanently
+    // equal storedWindowStart, always early-returning the gate and killing the SEEK/AUTO synthetic
+    // republish. Bookkeeping only: no listener notification, no seek, no player mutation.
+    fun syncSerializedWindow() {
+        val count = super.getCurrentTimeline().windowCount
+        if (count <= QUEUE_WINDOW_SIZE) return
+        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        windowStart(count, fullIndex) // recenter-on-read; storedWindowStart now reflects the current window
+        lastSerializedWindowStart = storedWindowStart
+    }
+
     // Limit the timeline exposed to the media session (and thus Bluetooth/AVRCP) to a sliding
     // window around the current item. ExoPlayer's internal timeline is unchanged; only the view
     // the session serializes over Binder is trimmed, preventing BadParcelableException when the
@@ -403,6 +421,20 @@ class ShufflePlayer(
         val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
         val start = windowStart(count, fullIndex)
         super.seekToDefaultPosition(mediaItemIndex + start)
+    }
+
+    // Seek by FULL-timeline index, for phone queue taps that may target items OUTSIDE the serialized
+    // window. The UI (PlayerViewModel) routes taps here via seekToFullCommand instead of the windowed
+    // controller seekTo(), whose controller-side range check crashed on out-of-window indices. We seek
+    // the real player DIRECTLY at the full index — super.seekTo(fullIndex, 0), NOT the windowStart-
+    // adding override and NOT seekToDefaultPosition — so an in-window tap is byte-identical to the old
+    // path (which also bottomed out in super.seekTo(fullIndex, 0)). Out-of-range is a NO-OP (not a
+    // clamp), so a stale/racing index can never crash or jump to the wrong track. `play` preserves the
+    // play()=true / seek()=false distinction. Not used by Android Auto (that path is seekToDefaultPosition).
+    fun seekToFullIndex(fullIndex: Int, play: Boolean) {
+        if (fullIndex < 0 || fullIndex >= super.getCurrentTimeline().windowCount) return
+        super.seekTo(fullIndex, 0)
+        if (play) playWhenReady = true
     }
 
     private class WindowedTimeline(

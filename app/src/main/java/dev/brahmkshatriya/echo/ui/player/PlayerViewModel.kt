@@ -36,6 +36,7 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.backfillCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.resumeCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getController
 import dev.brahmkshatriya.echo.playback.PlayerState
@@ -132,23 +133,27 @@ class PlayerViewModel(
         controllerFutureRelease()
     }
 
-    private fun toWindowedIndex(fullIndex: Int): Int {
-        val curr = playerState.current.value ?: return fullIndex
-        val fullCurrentIndex = queue.indexOfFirst { it.mediaId == curr.mediaItem.mediaId }
-        if (fullCurrentIndex == -1) return fullIndex
-        val windowStart = fullCurrentIndex - curr.index
-        return fullIndex - windowStart
-    }
-
+    // `position` is a FULL-queue index (the tap indexes fullQueueFlow). Seek by full index via a
+    // custom command handled service-side by ShufflePlayer.seekToFullIndex, which seeks the real
+    // player directly — bypassing the windowed controller seekTo() whose range check crashed on
+    // taps outside the serialized window. Do NOT reconstruct a windowed index here (that desync-prone
+    // math was the crash source); the service owns the window.
     fun play(position: Int) {
         withBrowser {
-            it.seekTo(toWindowedIndex(position), 0)
-            it.playWhenReady = true
+            it.sendCustomCommand(seekToFullCommand, Bundle().apply {
+                putInt("index", position)
+                putBoolean("play", true)
+            })
         }
     }
 
     fun seek(position: Int) {
-        withBrowser { it.seekTo(toWindowedIndex(position), 0) }
+        withBrowser {
+            it.sendCustomCommand(seekToFullCommand, Bundle().apply {
+                putInt("index", position)
+                putBoolean("play", false)
+            })
+        }
     }
 
     fun removeQueueItem(position: Int) {
@@ -230,8 +235,7 @@ class PlayerViewModel(
         withBrowser { player ->
             // player is the MediaController: its currentMediaItemIndex is windowed, but the session
             // applies replaceMediaItem to the full inner timeline. Resolve the current item's FULL
-            // index by mediaId (same basis as toWindowedIndex's fullCurrentIndex) so we replace the
-            // actual current track, not the wrong one, in queues > 50.
+            // index by mediaId so we replace the actual current track, not the wrong one, in queues > 50.
             val fullIndex =
                 queue.indexOfFirst { it.mediaId == playerState.current.value?.mediaItem?.mediaId }
             if (fullIndex < 0) return@withBrowser
