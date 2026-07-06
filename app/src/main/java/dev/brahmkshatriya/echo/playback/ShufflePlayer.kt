@@ -2,12 +2,10 @@ package dev.brahmkshatriya.echo.playback
 
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
@@ -34,22 +32,6 @@ class ShufflePlayer(
     internal var isRearranging = false
 
     private val extraListeners = CopyOnWriteArrayList<Player.Listener>()
-
-    // The sliding-window position, kept STATEFUL (recentered only near an edge — see windowStart())
-    // so a >50 AA queue no longer re-serializes on every track. storedWindowStart is the single
-    // source of truth every windowStart() consumer reads; lastSerializedWindowStart tracks the
-    // window AA currently holds, so notifyWindowedTimelineChanged() only re-fires on an actual shift.
-    private var storedWindowStart = -1
-    private var lastSerializedWindowStart = -1
-
-    // A queue REPLACE (setMediaItem(s)/clearMediaItems) invalidates the window: the next
-    // windowStart() read recenters on the new current and notifyWindowedTimelineChanged() re-fires.
-    // Mutates (add/remove/replace/move/changeQueue) deliberately do NOT call this — the window must
-    // persist across normal edits, or the per-edit churn we're removing comes back.
-    private fun resetWindow() {
-        storedWindowStart = -1
-        lastSerializedWindowStart = -1
-    }
 
     override fun addListener(listener: Player.Listener) {
         extraListeners.add(listener)
@@ -81,9 +63,7 @@ class ShufflePlayer(
         return player.currentMediaItemIndex < mediaItemCount - 1
     }
 
-    // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
-    // WindowedTimeline offset. CrossfadePlayer must override setAudioAttributes() to broadcast
-    // to both internal players.
+    // CrossfadePlayer must override setAudioAttributes() to broadcast to both internal players.
     fun peekNextItem(): MediaItem? {
         val nextIndex = player.currentMediaItemIndex + 1
         return if (nextIndex < player.mediaItemCount) player.getMediaItemAt(nextIndex) else null
@@ -99,8 +79,6 @@ class ShufflePlayer(
         val after = if (freshPlay) list - currentMediaItem else list.takeLast(list.size - index) - currentMediaItem
         isRearranging = true
         try {
-            // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
-            // WindowedTimeline offset.
             if (player.currentMediaItemIndex > 0)
                 player.removeMediaItems(0, player.currentMediaItemIndex)
             player.addMediaItems(0, before)
@@ -176,31 +154,26 @@ class ShufflePlayer(
     }
 
     override fun setMediaItem(mediaItem: MediaItem) {
-        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {
-        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem, resetPosition)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {
-        resetWindow()
         original = listOf(mediaItem)
         player.setMediaItem(mediaItem, startPositionMs)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>) {
-        resetWindow()
         original = mediaItems
         player.setMediaItems(mediaItems)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {
-        resetWindow()
         original = mediaItems
         player.setMediaItems(mediaItems, resetPosition)
     }
@@ -210,7 +183,6 @@ class ShufflePlayer(
         startIndex: Int,
         startPositionMs: Long
     ) {
-        resetWindow()
         original = mediaItems
         player.setMediaItems(
             mediaItems,
@@ -220,7 +192,6 @@ class ShufflePlayer(
     }
 
     override fun clearMediaItems() {
-        resetWindow()
         original = emptyList()
         player.clearMediaItems()
     }
@@ -286,215 +257,21 @@ class ShufflePlayer(
         super.setAudioAttributes(audioAttributes, false)
     }
 
-    // Single source of truth for the window position, read by ALL consumers (getCurrentTimeline,
-    // getCurrentMediaItemIndex, getCurrentPeriodIndex, notifyWindowedTimelineChanged, and the
-    // seekTo/seekToDefaultPosition overrides). The window STARTS at the current (current lands at
-    // windowed index 0), so AA shows the current first and the upcoming queue — past tracks are not
-    // displayed (Design-for-Driving: past is optional; they remain in the real full timeline, still
-    // reachable via Previous). Stateful hysteresis: keep the stored window until the current nears the
-    // END edge (within EDGE_MARGIN, the only MOVABLE edge now) or falls outside it / the queue shrank,
-    // then re-anchor at the current. Backward moves (Previous/seek-back) are caught by the hard
-    // `fullIndex < s` trigger — no start-edge leg needed once the window starts at the current.
-    // Recentering here, on read, guarantees the current is always inside [return, return +
-    // QUEUE_WINDOW_SIZE), so every windowed index/period derived from it stays in-window (both
-    // PlayerInfo assertions hold, with no stale-window transient).
-    private fun windowStart(fullCount: Int, fullIndex: Int): Int {
-        val maxStart = fullCount - QUEUE_WINDOW_SIZE
-        val s = storedWindowStart
-        val recenter = s < 0 || s > maxStart ||
-            fullIndex < s || fullIndex >= s + QUEUE_WINDOW_SIZE ||
-            (fullIndex >= s + QUEUE_WINDOW_SIZE - EDGE_MARGIN && s < maxStart)
-        if (recenter) storedWindowStart = fullIndex.coerceIn(0, maxStart)
-        return storedWindowStart
-    }
-
-    // Called from PlayerEventListener.onMediaItemTransition (SEEK and AUTO reasons) to notify
-    // all session listeners that the windowed timeline has shifted. ExoPlayer does not fire
-    // EVENT_TIMELINE_CHANGED on a seek, so MediaSessionLegacyStub.updateQueue() would never
-    // run without this explicit notification — leaving Android Auto's queue stale.
-    fun notifyWindowedTimelineChanged() {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) return
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        windowStart(count, fullIndex) // recenter-on-read; updates storedWindowStart if it shifted
-        if (storedWindowStart == lastSerializedWindowStart) return
-        lastSerializedWindowStart = storedWindowStart
-        val timeline = getCurrentTimeline()
-        for (l in extraListeners) {
-            l.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
-        }
-    }
-
-    // Keep lastSerializedWindowStart honest on the NATURAL onTimelineChanged path. Media3 re-serializes
-    // the AA/legacy queue from getCurrentTimeline() whenever the real ExoPlayer timeline changes (e.g.
-    // setMediaItems / PLAYLIST_CHANGED), but that path never runs notifyWindowedTimelineChanged(), so
-    // lastSerializedWindowStart would go stale — leaving the gate above to later early-return against a
-    // window AA no longer holds, so the recenter-fresh active-id and the serialized queue commit to
-    // DIFFERENT windows (wrong AA highlight / queue opens at top). Recenter first, then record the window
-    // AA now holds. MUST be called ONLY from PlayerEventListener.onTimelineChanged (the event) — NEVER
-    // from getCurrentTimeline() or any getter: doing so would make lastSerializedWindowStart permanently
-    // equal storedWindowStart, always early-returning the gate and killing the SEEK/AUTO synthetic
-    // republish. Bookkeeping only: no listener notification, no seek, no player mutation.
-    fun syncSerializedWindow() {
-        val count = super.getCurrentTimeline().windowCount
-        if (count <= QUEUE_WINDOW_SIZE) return
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        windowStart(count, fullIndex) // recenter-on-read; storedWindowStart now reflects the current window
-        lastSerializedWindowStart = storedWindowStart
-    }
-
-    // Limit the timeline exposed to the media session (and thus Bluetooth/AVRCP) to a sliding
-    // window around the current item. ExoPlayer's internal timeline is unchanged; only the view
-    // the session serializes over Binder is trimmed, preventing BadParcelableException when the
-    // queue is large (tested failure point: 199 items over com.google.android.bluetooth).
-    override fun getCurrentTimeline(): Timeline {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) return full
-        // Use player.currentMediaItemIndex directly — NOT getCurrentMediaItemIndex() — to avoid
-        // a circularity: getCurrentMediaItemIndex() calls windowStart(), which needs the full
-        // index that getCurrentTimeline() is computing here.
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        return WindowedTimeline(full, windowStart(count, fullIndex), QUEUE_WINDOW_SIZE)
-    }
-
-    // Returns the current item index relative to the windowed timeline so that Media3's
-    // PlayerInfo.Builder.build() assertion (mediaItemIndex < timeline.windowCount) holds.
-    // All internal logic that operates on the real ExoPlayer queue (changeQueue, hasNextMediaItem,
-    // getCurrentTimeline's window-start calculation) reads player.currentMediaItemIndex directly.
-    override fun getCurrentMediaItemIndex(): Int {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) return player.currentMediaItemIndex
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        return fullIndex - windowStart(count, fullIndex)
-    }
-
-    // The un-windowed current index into the FULL ExoPlayer timeline. getCurrentMediaItemIndex()
-    // above is deliberately WINDOWED for the media session (Media3 asserts it against the windowed
-    // timeline's windowCount), so persistence and any full-timeline logic must read THIS — never
-    // getCurrentMediaItemIndex(). Reads the inner player directly (the same value changeQueue /
-    // windowStart use internally); a pure read that touches no session/AA state.
+    // The current index into the FULL ExoPlayer timeline. Media3's session/controllers now see the
+    // full, un-windowed timeline (getCurrentMediaItemIndex is inherited from ForwardingPlayer and
+    // returns this same value), so persistence/radio/error-retry read this directly — a pure read
+    // that touches no session/AA state.
     val fullCurrentIndex: Int get() = player.currentMediaItemIndex
 
-    // Returns the current period index relative to the windowed timeline so that Media3's
-    // PlayerWrapper.createPositionInfo() assertion (periodIndex < timeline.getPeriodCount()) holds.
-    // WindowedTimeline.init computes periodStart as the firstPeriodIndex of the window's first
-    // window; we apply the same offset here so the two values are always consistent.
-    override fun getCurrentPeriodIndex(): Int {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) return player.currentPeriodIndex
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        val start = windowStart(count, fullIndex)
-        val periodStart = full.getWindow(start, Timeline.Window()).firstPeriodIndex
-        return player.currentPeriodIndex - periodStart
-    }
-
-    // Inverse of getCurrentMediaItemIndex(): callers (UI queue taps, error-retry logic in
-    // PlayerEventListener) read currentMediaItemIndex, which is windowed once the queue exceeds
-    // QUEUE_WINDOW_SIZE. Without this override, seekTo() would forward that windowed index
-    // straight to the real player as if it were a full-timeline index, landing on the wrong
-    // track for any queue position outside the window's first QUEUE_WINDOW_SIZE entries.
-    override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) {
-            super.seekTo(mediaItemIndex, positionMs)
-            return
-        }
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        val start = windowStart(count, fullIndex)
-        super.seekTo(mediaItemIndex + start, positionMs)
-    }
-
-    // Twin of seekTo() above, for Android Auto queue selection. Media3's onSkipToQueueItem routes
-    // to PlayerWrapper.seekToDefaultPosition((int) queueId), where queueId is the index into the
-    // WINDOWED timeline we serialize — bypassing the seekTo() override entirely. Without this, a
-    // deep AA queue selection forwards the windowed index straight to the real player as a
-    // full-timeline index, landing on the wrong track beyond the window's first QUEUE_WINDOW_SIZE
-    // entries. AA-selection-only: the app never calls seekToDefaultPosition() itself.
-    override fun seekToDefaultPosition(mediaItemIndex: Int) {
-        val full = super.getCurrentTimeline()
-        val count = full.windowCount
-        if (count <= QUEUE_WINDOW_SIZE) {
-            super.seekToDefaultPosition(mediaItemIndex)
-            return
-        }
-        val fullIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        val start = windowStart(count, fullIndex)
-        super.seekToDefaultPosition(mediaItemIndex + start)
-    }
-
-    // Seek by FULL-timeline index, for phone queue taps that may target items OUTSIDE the serialized
-    // window. The UI (PlayerViewModel) routes taps here via seekToFullCommand instead of the windowed
-    // controller seekTo(), whose controller-side range check crashed on out-of-window indices. We seek
-    // the real player DIRECTLY at the full index — super.seekTo(fullIndex, 0), NOT the windowStart-
-    // adding override and NOT seekToDefaultPosition — so an in-window tap is byte-identical to the old
-    // path (which also bottomed out in super.seekTo(fullIndex, 0)). Out-of-range is a NO-OP (not a
-    // clamp), so a stale/racing index can never crash or jump to the wrong track. `play` preserves the
-    // play()=true / seek()=false distinction. Not used by Android Auto (that path is seekToDefaultPosition).
+    // Seek by FULL-timeline index — the play/seek path from the phone queue (PlayerViewModel routes
+    // taps here via seekToFullCommand). Seeks the real player directly, and NO-OPs (not clamp) if the
+    // index is out of range, so a stale/racing tap index can never crash or jump to the wrong track.
+    // (This guard is why we keep the custom command instead of the raw controller seekTo, which would
+    // throw on an out-of-range index.) `play` preserves the play()=true / seek()=false distinction.
     fun seekToFullIndex(fullIndex: Int, play: Boolean) {
         if (fullIndex < 0 || fullIndex >= super.getCurrentTimeline().windowCount) return
         super.seekTo(fullIndex, 0)
         if (play) playWhenReady = true
-    }
-
-    private class WindowedTimeline(
-        private val delegate: Timeline,
-        private val windowStart: Int,
-        private val windowSize: Int,
-    ) : Timeline() {
-
-        private val periodStart: Int
-        private val periodCount: Int
-
-        init {
-            val w1 = Window()
-            val w2 = Window()
-            periodStart = delegate.getWindow(windowStart, w1).firstPeriodIndex
-            delegate.getWindow(windowStart + windowSize - 1, w2)
-            periodCount = w2.lastPeriodIndex - periodStart + 1
-        }
-
-        override fun getWindowCount() = windowSize
-
-        override fun getWindow(windowIndex: Int, window: Window, defaultPositionProjectionUs: Long): Window {
-            delegate.getWindow(windowStart + windowIndex, window, defaultPositionProjectionUs)
-            window.firstPeriodIndex -= periodStart
-            window.lastPeriodIndex -= periodStart
-            return window
-        }
-
-        override fun getPeriodCount() = periodCount
-
-        override fun getPeriod(periodIndex: Int, period: Period, setIds: Boolean): Period {
-            delegate.getPeriod(periodStart + periodIndex, period, setIds)
-            period.windowIndex -= windowStart
-            return period
-        }
-
-        override fun getIndexOfPeriod(uid: Any): Int {
-            val idx = delegate.getIndexOfPeriod(uid)
-            if (idx == C.INDEX_UNSET) return C.INDEX_UNSET
-            val relative = idx - periodStart
-            return if (relative in 0 until periodCount) relative else C.INDEX_UNSET
-        }
-
-        override fun getUidOfPeriod(periodIndex: Int): Any =
-            delegate.getUidOfPeriod(periodStart + periodIndex)
-    }
-
-    companion object {
-        private const val QUEUE_WINDOW_SIZE = 50
-
-        // How near the END window edge the current must come before the window re-anchors (the window
-        // starts at the current, so the end is the only movable edge). Larger = more upcoming-track
-        // lookahead kept before a recenter but more frequent recenters; smaller = rarer recenters (fewer
-        // AA re-serializations). With start-at-current, forward recenter cadence ≈ QUEUE_WINDOW_SIZE −
-        // EDGE_MARGIN tracks (≈ 40).
-        private const val EDGE_MARGIN = 10
     }
 
 }

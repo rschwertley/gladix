@@ -116,12 +116,6 @@ class PlayerEventListener(
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
         retriedWatchdogCount = 0
-        // PLAYLIST_CHANGED fires when changeQueue() rearranges items; ExoPlayer emits
-        // onTimelineChanged naturally in that case. For SEEK and AUTO, no onTimelineChanged
-        // fires, so the AA queue would never update after a window shift without this call.
-        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
-            (session.player as? ShufflePlayer)?.notifyWindowedTimelineChanged()
-        }
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -130,11 +124,6 @@ class PlayerEventListener(
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         emitFullQueue()
-        // Sync the AA queue's serialized-window bookkeeping on the natural re-serialization path (this
-        // event drives Media3's legacy setQueue). Keeps lastSerializedWindowStart honest so the active-id
-        // and the serialized queue don't commit to different windows after a deep phone play. No-op on the
-        // synthetic SOURCE_UPDATE event (already in sync) and for queues <= the window size. AA-only.
-        (session.player as? ShufflePlayer)?.syncSerializedWindow()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scope.launch { ResumptionUtils.saveQueue(context, player) }
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -253,9 +242,8 @@ class PlayerEventListener(
                         player.pause()
                         return@withContext
                     }
-                    // hasNextMediaItem() is overridden in ShufflePlayer against the inner FULL index;
-                    // the old `currentMediaItemIndex < mediaItemCount - 1` mixed a WINDOWED index with
-                    // the FULL count (always true on >50) → broken end-of-queue guard.
+                    // hasNextMediaItem() compares the inner full index against the full count — a
+                    // correct end-of-queue guard.
                     if (!player.hasNextMediaItem()) {
                         player.pause()
                         return@withContext
