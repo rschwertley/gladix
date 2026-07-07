@@ -143,10 +143,10 @@ class PlayerCallback(
             imageCommand -> getImage(player)
             backfillCommand -> backfillQueue(player, args)
             seekToFullCommand -> run {
-                // Phone queue tap: seek by FULL index directly on the real player, bypassing the
-                // windowed controller seekTo whose out-of-range validation crashed on out-of-window
-                // taps. `play` preserves play()=true / seek()=false. AA's onSkipToQueueItem path
-                // (seekToDefaultPosition) never enters here.
+                // Phone queue tap: seek by FULL index on the real player. seekToFullIndex no-ops on an
+                // out-of-range (stale/racing) index, which the raw controller seekTo can't — that guard
+                // is why this stays a custom command. `play` preserves play()=true / seek()=false. AA's
+                // onSkipToQueueItem path (seekToDefaultPosition) never enters here.
                 (player as? ShufflePlayer)?.seekToFullIndex(args.getInt("index"), args.getBoolean("play"))
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
@@ -412,10 +412,9 @@ class PlayerCallback(
         val before = mediaItems.subList(0, correctIndex)
         val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
         withContext(Dispatchers.Main) {
-            // Full-timeline index (never the windowed getCurrentMediaItemIndex) — drives both the
-            // bounds guard and the physical insert offset, so tracks land at the correct position in
-            // queues > 50. Only the inner-timeline mutation basis; nothing AA-serialized changes.
-            val currentIndex = (player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+            // Current index into the full timeline — drives both the bounds guard and the physical
+            // insert offset so tracks land at the correct position.
+            val currentIndex = player.currentMediaItemIndex
             val itemCount = player.mediaItemCount
             // Abort if the timeline changed while tracks were loading on IO
             if (currentIndex !in 0..<itemCount) return@withContext
@@ -485,8 +484,8 @@ class PlayerCallback(
         }
         player.with {
             if (mediaItemCount == 0) playWhenReady = true
-            // Full index so "play next" inserts after the CURRENT track in queues > 50.
-            val fullIndex = (this as? ShufflePlayer)?.fullCurrentIndex ?: currentMediaItemIndex
+            // Current index so "play next" inserts right after the CURRENT track.
+            val fullIndex = currentMediaItemIndex
             addMediaItems(fullIndex + 1 + next, mediaItems)
             prepare()
         }
@@ -523,9 +522,9 @@ class PlayerCallback(
                 )
             }.build()
             session.player.with {
-                // Full index so the like replaces the CURRENT track (not a windowed-index item) in
-                // queues > 50. replaceMediaItem keys the original-list update off this index too.
-                val fullIndex = (this as? ShufflePlayer)?.fullCurrentIndex ?: currentMediaItemIndex
+                // Current index so the like replaces the CURRENT track. replaceMediaItem keys the
+                // original-list update off this index too.
+                val fullIndex = currentMediaItemIndex
                 replaceMediaItem(fullIndex, newItem)
             }
             SessionResult(RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })

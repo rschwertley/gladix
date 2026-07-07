@@ -22,7 +22,6 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerState
-import dev.brahmkshatriya.echo.playback.ShufflePlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -111,10 +110,8 @@ class PlayerRadio(
         if (!radioQueueActive) return
         if (stateFlow.value is PlayerState.Radio.Loading) return
         val remaining = withContext(Dispatchers.Main) {
-            // player is the session ShufflePlayer: currentMediaItemIndex is windowed while
-            // mediaItemCount stays full, so use the full current index for an accurate remaining
-            // count — otherwise a queue > 50 over-counts and radio prefetch fires too late.
-            val fullIndex = (player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+            // Remaining upcoming tracks = full count minus the current index; drives radio prefetch.
+            val fullIndex = player.currentMediaItemIndex
             player.mediaItemCount - fullIndex - 1
         }
         if (remaining > RADIO_PREFETCH_THRESHOLD) return

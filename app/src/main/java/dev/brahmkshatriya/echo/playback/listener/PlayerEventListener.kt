@@ -109,9 +109,9 @@ class PlayerEventListener(
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (mediaItem == null) return  // fired on player.release() with index=0; don't overwrite saved position
         updateCustomLayout()
-        // Persist the FULL-timeline index (never the windowed getCurrentMediaItemIndex) so cold-start
-        // restore seeks to the correct track in a >50 queue. mediaItem is the new current item.
-        val fullIndex = (session.player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+        // Persist the current index so cold-start restore seeks to the correct track. mediaItem is the
+        // new current item.
+        val fullIndex = player.currentMediaItemIndex
         ResumptionUtils.saveIndex(context, fullIndex, mediaItem.mediaId)
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
@@ -212,7 +212,7 @@ class PlayerEventListener(
                     retriedWatchdogCount = 1
                     Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt 1/$maxWatchdogRetries)")
                     // Position-only seek: stop() keeps the current item, so re-selecting it by index
-                    // isn't needed — avoids the windowed(getCurrentMediaItemIndex)/full round-trip.
+                    // isn't needed.
                     val savedPosition = player.currentPosition
                     player.stop()
                     player.seekTo(savedPosition)
@@ -557,10 +557,9 @@ class PlayerEventListener(
         else currentRetries = 0
 
         if (mediaItem == null) return
-        // Full-timeline index (never the windowed getCurrentMediaItemIndex): replaceMediaItem below
-        // applies to the inner full timeline, so a windowed index would swap the wrong track and
-        // leave the failing one un-retried in queues > 50.
-        val index = (session.player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+        // Current index: replaceMediaItem below applies to the full timeline, so this must be the
+        // current track's real index or the retry would swap the wrong track.
+        val index = player.currentMediaItemIndex
         val retries = mediaItem.retries
 
         if (currentRetries >= maxRetries) {

@@ -9,7 +9,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
-import java.util.concurrent.CopyOnWriteArrayList
 
 @Suppress("unused")
 @OptIn(UnstableApi::class)
@@ -22,6 +21,14 @@ class ShufflePlayer(
 
     init {
         player.shuffleOrder = ShuffleOrder.UnshuffledShuffleOrder(0)
+        // Auto-advance (track ended → next plays itself) has no public entry point to intercept,
+        // so it is the ONE forward-advance source handled via a callback. Registered on the inner
+        // player because that is where ForwardingPlayer routes all real Player.Listener callbacks.
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                onInnerMediaItemTransition(mediaItem, reason)
+            }
+        })
     }
 
     private fun getQueue() = (0 until mediaItemCount).map { player.getMediaItemAt(it) }
@@ -31,16 +38,22 @@ class ShufflePlayer(
     private var isFreshShuffle = false
     internal var isRearranging = false
 
-    private val extraListeners = CopyOnWriteArrayList<Player.Listener>()
+    // ── Session-only Previous prototype (in-memory play-history back-stack) ─────────────────
+    // Ordered play-history of tracks advanced PAST (via Next or auto-advance) and removed from the
+    // live timeline. Newest at the end (top). Session-only: NOT persisted — lost on process death,
+    // after which Previous falls back to restart-current. Capped to bound memory.
+    private val backStack = ArrayDeque<MediaItem>()
+    // The item that was current before the latest transition. An auto-advance callback reports only
+    // the NEW item, so this is how we know which item departed and must be pushed + removed.
+    private var lastCurrentItem: MediaItem? = player.currentMediaItem
+    // Re-entrancy guard: true while WE mutate the timeline for a Next/Previous navigation, so a
+    // transition callback synchronously triggered by that mutation cannot recursively re-process it.
+    // Push and pop are each done synchronously on the application looper; this bounds their atomicity.
+    private var isNavigating = false
 
-    override fun addListener(listener: Player.Listener) {
-        extraListeners.add(listener)
-        super.addListener(listener)
-    }
-
-    override fun removeListener(listener: Player.Listener) {
-        extraListeners.remove(listener)
-        super.removeListener(listener)
+    private companion object {
+        const val BACK_STACK_CAP = 100
+        const val PREVIOUS_RESTART_THRESHOLD_MS = 3000L
     }
 
     // Called by playItem() before setting shuffleModeEnabled=true so changeQueue() knows to
@@ -57,10 +70,6 @@ class ShufflePlayer(
         isShuffled = enabled
         changeQueue(if (enabled) original.shuffled() else original)
         player.shuffleModeEnabled = enabled
-    }
-
-    override fun hasNextMediaItem(): Boolean {
-        return player.currentMediaItemIndex < mediaItemCount - 1
     }
 
     // CrossfadePlayer must override setAudioAttributes() to broadcast to both internal players.
@@ -257,12 +266,6 @@ class ShufflePlayer(
         super.setAudioAttributes(audioAttributes, false)
     }
 
-    // The current index into the FULL ExoPlayer timeline. Media3's session/controllers now see the
-    // full, un-windowed timeline (getCurrentMediaItemIndex is inherited from ForwardingPlayer and
-    // returns this same value), so persistence/radio/error-retry read this directly — a pure read
-    // that touches no session/AA state.
-    val fullCurrentIndex: Int get() = player.currentMediaItemIndex
-
     // Seek by FULL-timeline index — the play/seek path from the phone queue (PlayerViewModel routes
     // taps here via seekToFullCommand). Seeks the real player directly, and NO-OPs (not clamp) if the
     // index is out of range, so a stale/racing tap index can never crash or jump to the wrong track.
@@ -272,6 +275,93 @@ class ShufflePlayer(
         if (fullIndex < 0 || fullIndex >= super.getCurrentTimeline().windowCount) return
         super.seekTo(fullIndex, 0)
         if (play) playWhenReady = true
+    }
+
+    // ── Session-only Previous state machine ─────────────────────────────────────────────────
+    // Handles ONLY the AUTO transition (a track ended and the next one started by itself). Every
+    // user-driven Next flows through seekToNext()/seekToNextMediaItem() and is handled there,
+    // synchronously. A SEEK transition (Next, Previous, or a queue tap) is deliberately ignored here
+    // so each forward-advance source pushes in exactly one place and the two halves never double-fire.
+    // A queue tap (SEEK, not routed through Next) correctly does NOT push — only sequential advance does.
+    private fun onInnerMediaItemTransition(newItem: MediaItem?, reason: Int) {
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !isNavigating && !isRearranging) {
+            val departing = lastCurrentItem
+            if (departing != null && departing.mediaId != newItem?.mediaId) {
+                isNavigating = true
+                try {
+                    pushAndRemove(departing)
+                } finally {
+                    isNavigating = false
+                }
+            }
+        }
+        lastCurrentItem = newItem
+    }
+
+    // Genuine forward advance (Next button / COMMAND_SEEK_TO_NEXT[_MEDIA_ITEM]). Captures the
+    // departing item BEFORE delegating, advances the inner player, then pushes it to the back-stack
+    // and removes it from the live timeline — all synchronously, so rapid Next-mashing can neither
+    // lose nor duplicate a departing item (each press owns exactly one). Guarded so a synchronously-
+    // delivered transition callback from the removal cannot re-enter.
+    override fun seekToNextMediaItem() = advanceForward { player.seekToNextMediaItem() }
+    override fun seekToNext() = advanceForward { player.seekToNext() }
+
+    private fun advanceForward(doSeek: () -> Unit) {
+        if (isNavigating) {
+            doSeek()
+            return
+        }
+        val departing = player.currentMediaItem
+        isNavigating = true
+        try {
+            doSeek()
+            val nowCurrent = player.currentMediaItem
+            if (departing != null && nowCurrent?.mediaId != departing.mediaId) {
+                pushAndRemove(departing)
+            }
+            lastCurrentItem = player.currentMediaItem
+        } finally {
+            isNavigating = false
+        }
+    }
+
+    // Apple-Music Previous: within the first 3s of the current track, restart it; otherwise pop the
+    // most-recently-played track off the back-stack, re-insert it at the front of the live timeline
+    // (the addMediaItem override also re-adds it to `original`), and make it current from the start.
+    // Empty stack (nothing played yet, or lost to a restart) → restart current. Previous never pushes:
+    // the track we leave stays in the timeline as the immediate up-next, so a following Next returns to it.
+    override fun seekToPreviousMediaItem() = handlePrevious()
+    override fun seekToPrevious() = handlePrevious()
+
+    private fun handlePrevious() {
+        if (player.currentPosition > PREVIOUS_RESTART_THRESHOLD_MS) {
+            player.seekToDefaultPosition()
+            return
+        }
+        val item = backStack.removeLastOrNull() ?: run {
+            player.seekToDefaultPosition()
+            return
+        }
+        isNavigating = true
+        try {
+            addMediaItem(0, item)          // override: re-adds to `original` + inserts at timeline index 0
+            player.seekToDefaultPosition(0)
+            lastCurrentItem = item
+        } finally {
+            isNavigating = false
+        }
+    }
+
+    // Push the departed item to the back-stack (capped, dropping the oldest) and remove it from the
+    // live timeline by mediaId. Removal goes through the removeMediaItem override so `original` stays
+    // in sync. The departed item is never the current one, so its removal emits no media-item
+    // transition — only a timeline change — which is why push↔remove cannot re-trigger a push.
+    private fun pushAndRemove(item: MediaItem) {
+        backStack.addLast(item)
+        while (backStack.size > BACK_STACK_CAP) backStack.removeFirst()
+        val idx = (0 until mediaItemCount)
+            .firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
+        if (idx != null) removeMediaItem(idx)
     }
 
 }

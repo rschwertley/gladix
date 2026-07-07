@@ -12,6 +12,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.forEach
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
@@ -213,8 +214,43 @@ class UiViewModel(
     }
 
     private var playerBehaviour = WeakReference<BottomSheetBehavior<View>>(null)
+    // Sheet view, stashed in setupPlayerBehavior, so changePlayerState can check isLaidOut / defer via
+    // doOnLayout. Needed because the WeakReference<BottomSheetBehavior> alone exposes no view handle.
+    private var playerSheetViewRef = WeakReference<View>(null)
+    // Latest requested state awaiting a layout-safe apply. Single field → coalesces multiple pre-layout
+    // calls to the last one; both the immediate-apply path and the deferred runnable clear/guard on it
+    // so a stale earlier deferral can never land after a newer request.
+    private var pendingPlayerState: Int? = null
+
     fun changePlayerState(state: Int) {
         val behavior = playerBehaviour.get() ?: return
+        // (iii) Flow write is synchronous on EVERY call, so playerSheetState is the honest coordination
+        // variable: it suppresses/orders later callers whose guards read it (the notification and the
+        // MainActivity current-observer both branch on STATE_HIDDEN), and a same-state physical no-op
+        // can never leave the flow stale (which was what pinned updateCollapsed to top-origin geometry).
+        playerSheetState.value = state
+        // (ii) The physical apply must never race first measurement: setting behavior.state before the
+        // sheet is laid out computes the collapsed offset against parentHeight≈0 and lands it at screen
+        // top. Once laid out, parentHeight is known and the offset is correct regardless of peekHeight
+        // (a still-pending inset-corrected peekHeight only shifts it by ~systemInsets.bottom, which
+        // BottomSheetBehavior.setPeekHeight re-settles on its own) — so layout is the ONLY gate needed.
+        val view = playerSheetViewRef.get()
+        if (view == null || view.isLaidOut) {
+            pendingPlayerState = null
+            applyPlayerBehaviorState(behavior, state)
+            return
+        }
+        val alreadyPending = pendingPlayerState != null
+        pendingPlayerState = state
+        if (alreadyPending) return
+        view.doOnLayout {
+            val pending = pendingPlayerState ?: return@doOnLayout
+            pendingPlayerState = null
+            playerBehaviour.get()?.let { applyPlayerBehaviorState(it, pending) }
+        }
+    }
+
+    private fun applyPlayerBehaviorState(behavior: BottomSheetBehavior<View>, state: Int) {
         if (state == STATE_HIDDEN) behavior.isHideable = true
         behavior.state = state
     }
@@ -450,6 +486,7 @@ class UiViewModel(
         fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false, navRailContainer: ViewGroup? = null) {
             val behavior = BottomSheetBehavior.from(view)
             viewModel.playerBehaviour = WeakReference(behavior)
+            viewModel.playerSheetViewRef = WeakReference(view)
             observe(viewModel.moreSheetState) { behavior.isDraggable = it == STATE_COLLAPSED }
             viewModel.playerBackPressCallback = behavior.backPressCallback {
                 viewModel.playerBackProgress.value = it

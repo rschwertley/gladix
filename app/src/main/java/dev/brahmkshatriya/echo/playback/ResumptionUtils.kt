@@ -66,10 +66,9 @@ object ResumptionUtils {
             Log.d("GladixPlayback", "saveQueue: empty — stack: ${Thread.currentThread().stackTrace.take(10).joinToString(" < ") { it.methodName }}")
             return@withContext
         }
-        // Persist the FULL-timeline index, never ShufflePlayer.getCurrentMediaItemIndex() (which is
-        // windowed for the media session). currentId is the ground-truth current track id for the
-        // restore tripwire; both are read here on the main thread before the IO writes.
-        val currentIndex = (player as? ShufflePlayer)?.fullCurrentIndex ?: player.currentMediaItemIndex
+        // Persist the current index. currentId is the ground-truth current track id for the restore
+        // tripwire; both are read here on the main thread before the IO writes.
+        val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId
         withContext(Dispatchers.IO) {
             val extensionIds = list.map { it.extensionId }
