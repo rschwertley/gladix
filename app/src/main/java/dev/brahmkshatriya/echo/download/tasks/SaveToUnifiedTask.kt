@@ -36,7 +36,9 @@ class SaveToUnifiedTask(
         val unifiedExtension =
             downloader.extensionLoader.music.getExtensionOrThrow(UnifiedExtension.metadata.id)
 
-        if (context != null) unifiedExtension.getAs<PlaylistEditClient, Unit> {
+        // Any? (not Unit): the result is discarded; an extension whose add/removeTracksFromPlaylist
+        // drifted to return a value would otherwise crash with "X cannot be cast to Unit".
+        if (context != null) unifiedExtension.getAs<PlaylistEditClient, Any?> {
             val db = (this as UnifiedExtension).db
             val playlist = db.getOrCreate(app, context)
             val tracks = loadTracks(playlist).loadAll()

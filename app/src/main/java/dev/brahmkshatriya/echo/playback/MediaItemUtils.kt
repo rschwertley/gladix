@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
@@ -31,6 +32,23 @@ import kotlin.io.encoding.Base64
 import kotlin.text.Charsets.UTF_8
 
 object MediaItemUtils {
+
+    // Marker on a seed's context that means "display-only radio label, not a real radio to generate".
+    // PlayerRadio strips a context carrying this before calling extension.radio(), so radio GENERATION
+    // is unchanged (it still receives null exactly as before) — this exists purely so the now-playing
+    // header can read "Playing from <track> Radio" from the first second of a bare-track/Radio-History
+    // seed, instead of only once the real auto-radio kicks in on the next track.
+    const val LABEL_ONLY_RADIO = "label_only_radio"
+
+    // A stand-in Radio context whose title matches what the real track-radio shows one track later
+    // (Deezer's asTrackRadio uses "<title> Radio"). Cover mirrors the seed track. Marked LABEL_ONLY_RADIO
+    // so it only ever labels the header and never alters which radio is generated.
+    fun trackRadioPlaceholder(track: Track): Radio = Radio(
+        id = track.id,
+        title = "${track.title} Radio",
+        cover = track.cover,
+        extras = mapOf(LABEL_ONLY_RADIO to "true"),
+    )
 
     fun build(
         app: App,

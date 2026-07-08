@@ -32,6 +32,12 @@
     <queries>
         <package android:name="com.android.chrome" />
         <package android:name="com.android.settings" />
+        <!-- So resolveActivity() can reliably detect the system equalizer under API 30+ package
+             visibility; without this the audio-fx sheet would hide the EQ button on devices that
+             actually have one. Absence of a handler (e.g. some Huawei/Honor tablets) hides it. -->
+        <intent>
+            <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
+        </intent>
     </queries>
 
     <application

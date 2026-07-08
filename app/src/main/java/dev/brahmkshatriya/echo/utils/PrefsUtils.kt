@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.utils
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.edit
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
@@ -58,16 +59,82 @@ fun Context.exportSettings(uri: Uri) {
 }
 
 
-fun Context.importSettings(uri: Uri) {
-    val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
-        BufferedReader(InputStreamReader(inputStream)).readText()
-    } ?: return
+// Returns true on a fully-applied import, false on ANY failure (unreadable file, malformed/
+// incompatible JSON — e.g. a flat extension-settings export where the top-level nested pref-object
+// shape is expected, an unsupported value type, or IO). Never throws: the whole decode+apply path is
+// guarded so a bad imported file can't propagate uncaught through the activity-result delivery and
+// crash the app. Caller surfaces the user-facing error on false. Mirrors our import-guard pattern
+// (invalid-extension-list / Deezer empty-response guards) of rejecting bad input instead of crashing.
+fun Context.importSettings(uri: Uri): Boolean {
+    return try {
+        val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
+            BufferedReader(InputStreamReader(inputStream)).readText()
+        } ?: return false
 
-    val allPrefsJson = Json.decodeFromString<Map<String, JsonObject>>(jsonString)
+        val allPrefsJson = Json.decodeFromString<Map<String, JsonObject>>(jsonString)
 
-    allPrefsJson.forEach { (prefName, prefMap) ->
+        allPrefsJson.forEach { (prefName, prefMap) ->
+            getSharedPreferences(prefName, Context.MODE_PRIVATE).edit {
+                prefMap.forEach { (key, value) ->
+                    when (value) {
+                        is JsonPrimitive if value.booleanOrNull != null -> putBoolean(
+                            key,
+                            value.booleanOrNull!!
+                        )
+
+                        is JsonPrimitive if value.intOrNull != null -> putInt(key, value.intOrNull!!)
+                        is JsonPrimitive if value.longOrNull != null -> putLong(key, value.longOrNull!!)
+                        is JsonPrimitive if value.floatOrNull != null -> putFloat(
+                            key,
+                            value.floatOrNull!!
+                        )
+
+                        is JsonPrimitive if value.isString -> putString(key, value.content)
+                        is JsonArray -> putStringSet(
+                            key,
+                            value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet()
+                        )
+
+                        is JsonNull -> remove(key)
+                        else -> throw IllegalArgumentException("Unsupported type for deserialization: ${value::class.java}")
+                    }
+                }
+            }
+        }
+        true
+    } catch (e: Exception) {
+        Log.e("PrefsUtils", "importSettings failed for $uri", e)
+        false
+    }
+}
+
+
+fun Context.exportExtensionSettings(extensionType: String, extensionId: String, uri: Uri) {
+    val prefName = extensionPrefId(extensionType, extensionId)
+    val settingsPrefs = getSharedPreferences(prefName, Context.MODE_PRIVATE)
+    val settingsJson = settingsPrefs.all.toJsonElementMap()
+
+    contentResolver.openOutputStream(uri, "w")?.use { out ->
+        out.write(Json.encodeToString(settingsJson).toByteArray())
+    }
+}
+
+
+// Same guard as importSettings: returns true on a fully-applied import, false on ANY failure
+// (unreadable file, malformed/incompatible JSON, unsupported value type, IO). Never throws — a bad
+// imported file can't propagate uncaught through the activity-result delivery and crash the app.
+// Caller surfaces the user-facing error on false. Reject-with-error; no dual-shape handling.
+fun Context.importExtensionSettings(extensionType: String, extensionId: String, uri: Uri): Boolean {
+    return try {
+        val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
+            BufferedReader(InputStreamReader(inputStream)).readText()
+        } ?: return false
+
+        val settingsJson = Json.decodeFromString<Map<String, JsonElement>>(jsonString)
+        val prefName = extensionPrefId(extensionType, extensionId)
+
         getSharedPreferences(prefName, Context.MODE_PRIVATE).edit {
-            prefMap.forEach { (key, value) ->
+            settingsJson.forEach { (key, value) ->
                 when (value) {
                     is JsonPrimitive if value.booleanOrNull != null -> putBoolean(
                         key,
@@ -92,53 +159,9 @@ fun Context.importSettings(uri: Uri) {
                 }
             }
         }
-    }
-}
-
-
-fun Context.exportExtensionSettings(extensionType: String, extensionId: String, uri: Uri) {
-    val prefName = extensionPrefId(extensionType, extensionId)
-    val settingsPrefs = getSharedPreferences(prefName, Context.MODE_PRIVATE)
-    val settingsJson = settingsPrefs.all.toJsonElementMap()
-
-    contentResolver.openOutputStream(uri, "w")?.use { out ->
-        out.write(Json.encodeToString(settingsJson).toByteArray())
-    }
-}
-
-
-fun Context.importExtensionSettings(extensionType: String, extensionId: String, uri: Uri) {
-    val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
-        BufferedReader(InputStreamReader(inputStream)).readText()
-    } ?: return
-
-    val settingsJson = Json.decodeFromString<Map<String, JsonElement>>(jsonString)
-    val prefName = extensionPrefId(extensionType, extensionId)
-
-    getSharedPreferences(prefName, Context.MODE_PRIVATE).edit {
-        settingsJson.forEach { (key, value) ->
-            when (value) {
-                is JsonPrimitive if value.booleanOrNull != null -> putBoolean(
-                    key,
-                    value.booleanOrNull!!
-                )
-
-                is JsonPrimitive if value.intOrNull != null -> putInt(key, value.intOrNull!!)
-                is JsonPrimitive if value.longOrNull != null -> putLong(key, value.longOrNull!!)
-                is JsonPrimitive if value.floatOrNull != null -> putFloat(
-                    key,
-                    value.floatOrNull!!
-                )
-
-                is JsonPrimitive if value.isString -> putString(key, value.content)
-                is JsonArray -> putStringSet(
-                    key,
-                    value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet()
-                )
-
-                is JsonNull -> remove(key)
-                else -> throw IllegalArgumentException("Unsupported type for deserialization: ${value::class.java}")
-            }
-        }
+        true
+    } catch (e: Exception) {
+        Log.e("PrefsUtils", "importExtensionSettings failed for $uri", e)
+        false
     }
 }

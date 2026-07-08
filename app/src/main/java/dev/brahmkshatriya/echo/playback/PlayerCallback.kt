@@ -292,6 +292,30 @@ class PlayerCallback(
         is Track -> Result.success(PagedData.Single { listOf(item) })
     }
 
+    // Fresh-resolve for a History/cache-miss tap: load the context's tracks live and return the
+    // current+upcoming media items (fresh tapped track first, then the tracks after it; `before`
+    // dropped for the current+upcoming model). Nothing from a stored track is replayed — only its id
+    // is used to locate the fresh version, so a frozen/stale streamable token can never fail the tap.
+    override suspend fun freshContextUpcoming(
+        extId: String, context: EchoMediaItem, tappedTrackId: String
+    ): List<MediaItem> {
+        val extension = extensions.music.getExtension(extId) ?: return emptyList()
+        val tracks = listTracks(extension, context, false).getOrElse {
+            if (it is CancellationException) throw it
+            throwableFlow.emit(it)
+            return emptyList()
+        }
+        val (list, _) = extension.get { tracks.loadPage(null) }.getOrElse {
+            if (it is CancellationException) throw it
+            throwableFlow.emit(it)
+            return emptyList()
+        }
+        val correctIndex = list.indexOfFirst { it.id == tappedTrackId }.takeIf { it >= 0 } ?: 0
+        return list.subList(correctIndex, list.size).map {
+            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), context)
+        }
+    }
+
 
     private fun playItem(player: Player, args: Bundle) = scope.future {
         userQueueSet.set(true)
@@ -304,8 +328,13 @@ class PlayerCallback(
         val extension = extensions.music.getExtension(extId) ?: return@future error
         when (item) {
             is Track -> {
+                // P1: stamp a display-only "<track> Radio" context (LABEL_ONLY_RADIO) so the header
+                // reads it from the first second instead of staying blank until the auto-radio's 2nd
+                // track — same fix shipped for History bare/Radio. Stripped in PlayerRadio before real
+                // radio generation, so the auto-radio is unchanged.
                 val mediaItem = MediaItemUtils.build(
-                    app, downloadFlow.value, MediaState.Unloaded(extId, item), null
+                    app, downloadFlow.value, MediaState.Unloaded(extId, item),
+                    MediaItemUtils.trackRadioPlaceholder(item)
                 )
                 player.with {
                     setMediaItem(mediaItem)
@@ -335,7 +364,9 @@ class PlayerCallback(
                                 app, downloadFlow.value, MediaState.Unloaded(extId, it), item
                             )
                         }
-                        player.with { addMediaItems(list.size, all) }
+                        // Append remaining pages at the END (robust to the first page having been
+                        // subList-trimmed to the tapped track, and to mid-load advances).
+                        player.with { addMediaItems(all) }
                     }
                     list
                 }
@@ -348,20 +379,32 @@ class PlayerCallback(
                     throwableFlow.emit(Exception(app.context.getString(R.string.list_is_empty)))
                     return@future error
                 }
-                val mediaItems = list.map {
-                    MediaItemUtils.build(
-                        app, downloadFlow.value, MediaState.Unloaded(extId, it), item
-                    )
-                }
                 val startIndex = when {
                     startTrackId != null -> list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
                     shuffle -> list.indices.random()
                     else -> 0
                 }
+                val startPos = list.getOrNull(startIndex)?.playedDuration ?: 0
                 if (shuffle) (player as? ShufflePlayer)?.notifyFreshShuffle()
                 player.with {
-                    setMediaItems(mediaItems, startIndex, list.getOrNull(startIndex)?.playedDuration ?: 0)
-                    shuffleModeEnabled = shuffle
+                    if (shuffle) {
+                        // Shuffle keeps the whole list; enabling shuffle triggers changeQueue, which
+                        // pulls the current track to index 0 and drops the rest above it.
+                        val mediaItems = list.map {
+                            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
+                        }
+                        setMediaItems(mediaItems, startIndex, startPos)
+                        shuffleModeEnabled = true
+                    } else {
+                        // P2 — current+upcoming: drop the tracks BEFORE the tapped one so it lands at
+                        // index 0 (the subList-to-0 pattern freshContextUpcoming/History uses). Prevents
+                        // stranded-above tracks and a non-zero persisted index (which would resume restore
+                        // mid-queue).
+                        val upcoming = list.subList(startIndex, list.size).map {
+                            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
+                        }
+                        setMediaItems(upcoming, 0, startPos)
+                    }
                     if (playbackState == Player.STATE_IDLE) prepare()
                     play()
                 }
@@ -388,37 +431,22 @@ class PlayerCallback(
         list
     }
 
+    // History-tap enqueue (phone). Loads the context FRESH and sets it as the current+upcoming queue,
+    // starting at the tapped track's fresh version — replacing the old setQueue([storedTrack]) fast-start
+    // + insert-after, which replayed the stored track's stale resolution state (dead token → skip). The
+    // set (via the ShufflePlayer override) wipes the previous queue and back-stack. Loses the instant
+    // fast-start (which was broken for stale-token entries anyway) for a correct, always-resolving tap.
     private fun backfillQueue(player: Player, args: Bundle) = scope.future {
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future error
         val item = args.getSerialized<EchoMediaItem>("item")?.getOrNull() ?: return@future error
-        val loaded = args.getBoolean("loaded", false)
         val startTrackId = args.getString("startTrackId") ?: return@future error
-        val extension = extensions.music.getExtension(extId) ?: return@future error
-        val tracks = listTracks(extension, item, loaded).getOrElse {
-            if (it is CancellationException) throw it
-            throwableFlow.emit(it)
-            return@future error
-        }
-        val (list, _) = extension.get { tracks.loadPage(null) }.getOrElse {
-            if (it is CancellationException) throw it
-            throwableFlow.emit(it)
-            return@future error
-        }
-        val correctIndex = list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
-        val mediaItems = list.map {
-            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
-        }
-        val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
+        val upcoming = freshContextUpcoming(extId, item, startTrackId)
+        if (upcoming.isEmpty()) return@future error
         withContext(Dispatchers.Main) {
-            // Current index into the full timeline — drives the bounds guard and the insert offset.
-            val currentIndex = player.currentMediaItemIndex
-            val itemCount = player.mediaItemCount
-            // Abort if the timeline changed while tracks were loading on IO
-            if (currentIndex !in 0..<itemCount) return@withContext
-            // Seam 2/G5: current+upcoming model — do NOT insert the album tracks that precede the
-            // current one (they would strand above current). Keep fast-start + load-upcoming (`after`).
-            if (after.isNotEmpty()) player.addMediaItems(currentIndex + 1, after)
+            player.setMediaItems(upcoming, 0, 0)
+            player.prepare()
+            player.playWhenReady = true
         }
         SessionResult(RESULT_SUCCESS)
     }
@@ -439,12 +467,16 @@ class PlayerCallback(
             return@future error
         }
         if (tracks.isEmpty()) return@future error
+        // P5: give added tracks a source label so they don't show a blank header when reached. A
+        // collection (Album/Playlist/Artist/Radio) is its own source; a lone track gets the display-only
+        // "<track> Radio" placeholder (stripped in PlayerRadio), consistent with a bare-track play.
+        val addedContext = item.takeUnless { it is Track }
         val mediaItems = tracks.map { track ->
             MediaItemUtils.build(
                 app,
                 downloadFlow.value,
                 MediaState.Unloaded(extId, track),
-                null
+                addedContext ?: MediaItemUtils.trackRadioPlaceholder(track)
             )
         }
         player.with {
@@ -473,12 +505,14 @@ class PlayerCallback(
             return@future error
         }
         if (tracks.isEmpty()) return@future error
+        // P5: same source-label treatment as addToQueue — collection context, else track-radio placeholder.
+        val addedContext = item.takeUnless { it is Track }
         val mediaItems = tracks.map { track ->
             MediaItemUtils.build(
                 app,
                 downloadFlow.value,
                 MediaState.Unloaded(extId, track),
-                null
+                addedContext ?: MediaItemUtils.trackRadioPlaceholder(track)
             )
         }
         player.with {
@@ -506,7 +540,9 @@ class PlayerCallback(
             val track = item.track
             runCatching {
                 val extension = extensions.music.getExtensionOrThrow(item.extensionId)
-                extension.getAs<LikeClient, Unit> {
+                // Any? (not Unit): the result is discarded below; an extension whose likeItem drifted to
+                // return a value would otherwise crash with "String cannot be cast to Unit".
+                extension.getAs<LikeClient, Any?> {
                     likeItem(track, rating.isThumbsUp)
                 }
             }.getOrElse {

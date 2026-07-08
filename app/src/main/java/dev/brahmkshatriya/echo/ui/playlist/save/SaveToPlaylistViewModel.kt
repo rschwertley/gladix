@@ -72,7 +72,7 @@ class SaveToPlaylistViewModel(
             if (tracks.isEmpty()) return@runCatching false
 
             playlists.forEach { playlist ->
-                extension.getAs<PlaylistEditClient, Unit> {
+                extension.getAs<PlaylistEditClient, Any?> {
                     saveFlow.value = SaveState.LoadingPlaylist(playlist)
                     val loaded = loadPlaylist(playlist)
                     check(loaded.isEditable)

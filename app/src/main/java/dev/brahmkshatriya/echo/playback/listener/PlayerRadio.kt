@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.pagedDataOfFirst
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.get
@@ -95,7 +96,13 @@ class PlayerRadio(
         val mediaItem = withContext(Dispatchers.Main) { player.currentMediaItem } ?: return
         val extensionId = mediaItem.extensionId
         val item = mediaItem.track
-        val itemContext = mediaItem.context
+        // A LABEL_ONLY_RADIO context is a display-only header stamp (bare-track / Radio-History seed), not
+        // a real radio to generate — strip it so radio() receives null exactly as before, keeping the real
+        // auto-radio identical and extension-agnostic. The MediaItem's context is untouched, so the header
+        // still reads "Playing from <track> Radio".
+        val itemContext = mediaItem.context?.takeUnless {
+            it is Radio && it.extras[MediaItemUtils.LABEL_ONLY_RADIO] == "true"
+        }
         stateFlow.value = PlayerState.Radio.Loading
         val extension = extensionList.getExtension(extensionId) ?: return
         val loaded = start(throwFlow, extension, item, itemContext)

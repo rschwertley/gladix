@@ -2,11 +2,14 @@ package dev.brahmkshatriya.echo.ui.playlist.delete
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
+import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
+import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -45,9 +48,22 @@ class DeletePlaylistViewModel(
         val result = runCatching {
             val extension = extensionFlow.value!!
             val playlist = playlistFlow.value!!.getOrThrow()
-            extension.getAs<PlaylistEditClient, Unit> { deletePlaylist(playlist) }.getOrThrow()
+            // Any? (not Unit): an extension whose deletePlaylist drifted to return a value would crash
+            // with "X cannot be cast to Unit". Trailing Unit keeps the block typed Result<Unit> for
+            // DeleteState.Deleted.
+            extension.getAs<PlaylistEditClient, Any?> { deletePlaylist(playlist) }.getOrThrow()
+            Unit
         }
-        result.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
+        result.getOrElse {
+            if (it is CancellationException) throw it
+            // A NotSupported delete (e.g. Spotify's non-deletable "Liked Songs" pseudo-playlist) would
+            // otherwise render as the confusing "Unsupported playlist type is not supported in Spotify".
+            // Show a clear, extension-agnostic message instead. messageFlow surfaces globally (not tied
+            // to this sheet), so it's seen even though the sheet dismisses on the failed Deleted state.
+            if (it is AppException.NotSupported)
+                app.messageFlow.emit(Message(app.context.getString(R.string.playlist_cant_be_deleted)))
+            else app.throwFlow.emit(it)
+        }
         emit(DeleteState.Deleted(result))
     }.stateIn(viewModelScope, Eagerly, DeleteState.Initial)
 

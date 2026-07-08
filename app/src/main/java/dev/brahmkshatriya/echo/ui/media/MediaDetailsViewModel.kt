@@ -199,7 +199,11 @@ abstract class MediaDetailsViewModel(
                     item.title
                 )
             }
-            val result = extension.getIf<LikeClient, Unit>(app.throwFlow) {
+            // R = Any? (not Unit): the return value is unused (only null-checked for success below), and
+            // an extension whose likeItem was built against a divergent signature can return a non-Unit
+            // value (e.g. a String) at runtime. Constraining R to Unit forced a `checkcast kotlin/Unit`
+            // on that value → fatal "String cannot be cast to Unit". Any? accepts whatever it returns.
+            val result = extension.getIf<LikeClient, Any?>(app.throwFlow) {
                 likeItem(item, like)
             }
             if (result != null) createMessage(app) {
@@ -219,7 +223,8 @@ abstract class MediaDetailsViewModel(
                     item.title
                 )
             }
-            val result = extension.getIf<HideClient, Unit>(app.throwFlow) {
+            // R = Any?, same crash-safety as like(): the result is only null-checked, never used.
+            val result = extension.getIf<HideClient, Any?>(app.throwFlow) {
                 hideItem(item, hide)
             }
             if (result != null) createMessage(app) {
@@ -240,7 +245,8 @@ abstract class MediaDetailsViewModel(
                     item.title
                 )
             }
-            val result = extension.getIf<FollowClient, Unit>(app.throwFlow) {
+            // R = Any?, same crash-safety as like(): the result is only null-checked, never used.
+            val result = extension.getIf<FollowClient, Any?>(app.throwFlow) {
                 followItem(item, follow)
             }
             if (result != null) createMessage(app) {
@@ -261,7 +267,8 @@ abstract class MediaDetailsViewModel(
                     item.title
                 )
             }
-            val result = extension.getIf<SaveClient, Unit>(app.throwFlow) {
+            // R = Any?, same crash-safety as like(): the result is only null-checked, never used.
+            val result = extension.getIf<SaveClient, Any?>(app.throwFlow) {
                 saveToLibrary(item, save)
             }
             if (result != null) createMessage(app) {

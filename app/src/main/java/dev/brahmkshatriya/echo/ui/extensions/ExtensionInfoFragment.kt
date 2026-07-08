@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.preference.Preference
@@ -198,8 +199,13 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                         val contract = ActivityResultContracts.OpenDocument()
                         requireActivity().registerActivityResultLauncher(contract) {
                             it?.let {
-                                context.importExtensionSettings(extensionType, extensionId, it)
-                                requireActivity().recreate()
+                                if (context.importExtensionSettings(extensionType, extensionId, it))
+                                    requireActivity().recreate()
+                                else Toast.makeText(
+                                    context,
+                                    getString(R.string.invalid_settings_file),
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }.launch(arrayOf("application/json"))
                         true

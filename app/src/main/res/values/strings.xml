@@ -106,6 +106,8 @@
     <string name="change_pitch_with_speed_desc">Get that slow-motion sound</string>
     <string name="equalizer">Equalizer</string>
     <string name="equalizer_summary">Open the device equalizer settings</string>
+    <string name="no_system_equalizer">No system equalizer available on this device</string>
+    <string name="some_tracks_couldnt_be_restored">Some tracks couldn\'t be restored — reopen from Library</string>
 
     <string name="stream_quality">Mobile Data Stream Quality</string>
     <string name="stream_quality_summary">Default quality when streaming on mobile data. Can be overridden per extension in extension settings.</string>
@@ -180,6 +182,8 @@
     <string name="extension_installed">%1$s (Installed)</string>
     <string name="add_extensions">Add Extensions</string>
     <string name="invalid_extension_list">Invalid extensions list</string>
+    <string name="invalid_settings_file">Invalid or incompatible settings file</string>
+    <string name="unsupported_update_source_for_x">%1$s uses an unsupported update source</string>
     <string name="checking_for_updates">Checking for updates</string>
     <string name="checking_for_extension_updates">Checking for third-party extension updates</string>
     <string name="all_extensions_up_to_date">All third-party extensions are up to date</string>
@@ -467,6 +471,7 @@
     <string name="album_order_n">Track %1$d</string>
     <string name="confirmation">Confirmation</string>
     <string name="delete_playlist_confirmation">Are you sure you want to delete %1$s?</string>
+    <string name="playlist_cant_be_deleted">This playlist can\'t be deleted</string>
     <string name="confirm">Confirm</string>
     <string name="done">Done</string>
     <string name="big_cover">Bigger Covers</string>

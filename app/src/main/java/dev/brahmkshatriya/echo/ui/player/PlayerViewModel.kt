@@ -272,7 +272,13 @@ class PlayerViewModel(
 
     fun setQueue(id: String, list: List<Track>, index: Int, context: EchoMediaItem?) {
         withBrowser { controller ->
-            val mediaItems = list.map {
+            if (list.isEmpty()) return@withBrowser
+            // P2 — current+upcoming: start at the tapped track (index 0) and drop the tracks before it,
+            // so it lands at index 0 with nothing stranded above and a zero persisted index — matching
+            // playItem and freshContextUpcoming. `index` locates the tapped track within `list`.
+            val start = index.coerceIn(0, list.size - 1)
+            val upcoming = list.subList(start, list.size)
+            val mediaItems = upcoming.map {
                 MediaItemUtils.build(
                     app,
                     downloadFlow.value,
@@ -280,7 +286,7 @@ class PlayerViewModel(
                     context
                 )
             }
-            controller.setMediaItems(mediaItems, index, list[index].playedDuration ?: 0)
+            controller.setMediaItems(mediaItems, 0, upcoming.first().playedDuration ?: 0)
             controller.prepare()
         }
     }

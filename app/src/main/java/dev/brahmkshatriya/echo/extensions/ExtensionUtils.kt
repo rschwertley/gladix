@@ -55,10 +55,14 @@ object ExtensionUtils {
         null
     }
 
+    // The block's return is Any? (not Unit) and discarded — runIf is fire-and-forget. An extension whose
+    // method drifted to return a value (built against a divergent signature) would otherwise force a
+    // `checkcast kotlin/Unit` → fatal "X cannot be cast to Unit". Any? accepts whatever it returns;
+    // callers pass Unit-returning lambdas, which still conform. Fixes every runIf call site at once.
     suspend inline fun <reified C> Extension<*>.runIf(
         throwableFlow: MutableSharedFlow<Throwable>,
-        crossinline block: suspend C.() -> Unit
-    ) { getIf<C, Unit>(block).getOrThrow(throwableFlow) }
+        crossinline block: suspend C.() -> Any?
+    ) { getIf<C, Any?>(block).getOrThrow(throwableFlow) }
 
     suspend inline fun <reified C, R> Extension<*>.getIf(
         throwableFlow: MutableSharedFlow<Throwable>,

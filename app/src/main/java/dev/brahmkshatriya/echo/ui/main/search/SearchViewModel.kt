@@ -37,7 +37,7 @@ class SearchViewModel(
     fun deleteSearch(extensionId: String, item: QuickSearchItem, query: String) {
         viewModelScope.launch {
             val extension = music.getExtension(extensionId)
-            extension?.getIf<QuickSearchClient, Unit>(app.throwFlow) {
+            extension?.getIf<QuickSearchClient, Any?>(app.throwFlow) {
                 deleteQuickSearch(item)
             } ?: defaultDeleteSearch(extension, app.context, item)
             quickSearch(extensionId, query)

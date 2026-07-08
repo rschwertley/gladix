@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.trackRadioPlaceholder
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
 import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
@@ -31,11 +32,17 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         val track = item.track ?: return@HistoryAdapter
         val context = item.context
         if (context is EchoMediaItem.Lists) {
-            playerViewModel.setQueue(item.extensionId, listOf(track), 0, context)
+            // Load the context fresh and play current+upcoming from the tapped track's fresh version
+            // (backfillQueue now sets+plays the whole queue). The stored track is NOT replayed — only
+            // its id locates the fresh one — so a frozen/stale streamable token can't skip the tap.
             playerViewModel.backfillQueue(item.extensionId, context, false, track.id)
-            playerViewModel.setPlaying(true)
         } else {
-            playerViewModel.setQueue(item.extensionId, listOf(track), 0, if (context is Radio) null else context)
+            // Bare-track / Radio seed: stamp a display-only "<track> Radio" context so the header reads
+            // "Playing from <track> Radio" from the first second. It's marked LABEL_ONLY_RADIO, so radio
+            // generation still runs off a null context (unchanged) — this is purely the label.
+            val seedContext =
+                if (context is Radio || context == null) trackRadioPlaceholder(track) else context
+            playerViewModel.setQueue(item.extensionId, listOf(track), 0, seedContext)
             playerViewModel.setPlaying(true)
         }
     }

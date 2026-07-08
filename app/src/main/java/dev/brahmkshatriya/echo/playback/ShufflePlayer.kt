@@ -85,7 +85,9 @@ class ShufflePlayer(
     private fun changeQueue(list: List<MediaItem>) {
         if (list.size <= 1) return
         isFreshShuffle = false
-        val currentItem = list.first { it.mediaId == currentMediaItem?.mediaId }
+        // Degrade to a no-op reorder rather than crash if current isn't in `list` (transient divergence);
+        // the same NoSuchElementException family as the getItemAt tap-to-jump crash.
+        val currentItem = list.firstOrNull { it.mediaId == currentMediaItem?.mediaId } ?: return
         // Current+upcoming model: current stays at index 0 with NOTHING before it; everything else
         // follows as upcoming. (The old before/after split placed ~half the shuffled tracks above
         // current, stranding them — G3.) The removeMediaItems(0, currentIndex) below also heals any
@@ -130,18 +132,33 @@ class ShufflePlayer(
         player.addMediaItems(index, mediaItems)
     }
 
+    // Maps a timeline index to its `original` entry by mediaId. Returns null (not throwing) when the
+    // item isn't in `original`: a transient timeline↔original divergence must degrade, never crash the
+    // caller — jumpForwardTo's span removal walks this across many upcoming items on a common tap.
     private fun getItemAt(index: Int) = player.getMediaItemAt(index).let {
-        original.first { item -> item.mediaId == it.mediaId }
+        original.firstOrNull { item -> item.mediaId == it.mediaId }
     }
 
     override fun removeMediaItem(index: Int) {
-        original = original - getItemAt(index)
+        getItemAt(index)?.let { original = original - it }
         player.removeMediaItem(index)
     }
 
     override fun removeMediaItems(fromIndex: Int, toIndex: Int) {
-        original =
-            original - (fromIndex until toIndex).map { getItemAt(it) }.toSet()
+        // Remove the departing items from `original` by mediaId with correct MULTIPLICITY, and tolerant
+        // of a missing entry (skipped, never throws). The old `original - set.toSet()` collapsed a
+        // duplicate track (radio top-up / re-queue → same track.id) to one set element and deleted BOTH
+        // `original` copies when only one left the timeline, leaving `original` short → the next
+        // getItemAt on the surviving dupe threw NoSuchElementException (the tap-to-jump crash).
+        val removedCounts = (fromIndex until toIndex)
+            .mapNotNull { runCatching { player.getMediaItemAt(it) }.getOrNull()?.mediaId }
+            .groupingBy { it }.eachCount().toMutableMap()
+        if (removedCounts.isNotEmpty()) {
+            original = original.filter { item ->
+                val remaining = removedCounts[item.mediaId] ?: 0
+                if (remaining > 0) { removedCounts[item.mediaId] = remaining - 1; false } else true
+            }
+        }
         player.removeMediaItems(fromIndex, toIndex)
     }
 
@@ -150,8 +167,8 @@ class ShufflePlayer(
     // is the fixed unshuffle reference and a display-order reorder must not rewrite it. The cross-
     // current guard that keeps current at index 0 lives in QueueFragment (movement flags / onMove).
     override fun moveMediaItem(currentIndex: Int, newIndex: Int) {
-        if (!isShuffled) {
-            val item = getItemAt(currentIndex)
+        val item = if (!isShuffled) getItemAt(currentIndex) else null
+        if (item != null) {
             original = original.toMutableList().apply {
                 val from = indexOf(item)
                 if (from != -1) {
@@ -164,9 +181,11 @@ class ShufflePlayer(
     }
 
     override fun replaceMediaItem(index: Int, mediaItem: MediaItem) {
-        original = original.toMutableList().apply {
-            val originalIndex = indexOf(getItemAt(index)).takeIf { it != -1 }!!
-            set(originalIndex, mediaItem)
+        getItemAt(index)?.let { existing ->
+            original = original.toMutableList().apply {
+                val originalIndex = indexOf(existing)
+                if (originalIndex != -1) set(originalIndex, mediaItem)
+            }
         }
         player.replaceMediaItem(index, mediaItem)
     }
@@ -175,11 +194,10 @@ class ShufflePlayer(
         fromIndex: Int, toIndex: Int, mediaItems: MutableList<MediaItem>
     ) {
         original = original.toMutableList().apply {
-            val originalIndexes = (fromIndex until toIndex).map { i ->
-                indexOf(getItemAt(i)).takeIf { it != -1 }!!
-            }
-            originalIndexes.forEachIndexed { i, originalIndex ->
-                set(originalIndex, mediaItems[i])
+            (fromIndex until toIndex).forEachIndexed { offset, i ->
+                val existing = getItemAt(i) ?: return@forEachIndexed
+                val originalIndex = indexOf(existing)
+                if (originalIndex != -1) set(originalIndex, mediaItems[offset])
             }
         }
         player.replaceMediaItems(fromIndex, toIndex, mediaItems)

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -590,17 +591,45 @@ object MediaStoreUtils {
     private fun hasScopedStorage(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
+    @Suppress("DEPRECATION")
     fun Context.createPlaylist(title: String): Long? {
-        val values = ContentValues()
-        values.put(
-            @Suppress("DEPRECATION") MediaStore.Audio.Playlists.NAME,
-            title
-        )
-        return contentResolver.insert(
-            @Suppress("DEPRECATION")
-            MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI,
-            values
-        )?.lastPathSegment?.toLong()
+        val playlistsUri = MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI
+
+        // (2) Reuse an existing MediaStore playlist row with this name, queried DIRECTLY here rather
+        // than via the caller's playlistsFinal (whose backing Playlists query is degraded on Android
+        // 16 and misses the row). This recovers an orphan the list query didn't surface and stops the
+        // re-create loop that accumulates duplicate/orphaned "Liked (N)" entries and eventually
+        // saturates MediaProvider's buildUniqueFile dedupe → the "Failed to build unique file" throw.
+        runCatching {
+            contentResolver.query(
+                playlistsUri,
+                arrayOf(MediaStore.Audio.Playlists._ID),
+                "${MediaStore.Audio.Playlists.NAME} = ?",
+                arrayOf(title),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst())
+                    return cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists._ID))
+            }
+        }.onFailure { Log.e(TAG, "createPlaylist: lookup for existing \"$title\" failed", it) }
+
+        // (3) Complete ContentValues so MediaProvider doesn't have to derive an extensionless
+        // _display_name (a contributing factor to the file-build failure). RELATIVE_PATH is API 29+.
+        val values = ContentValues().apply {
+            put(MediaStore.Audio.Playlists.NAME, title)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$title.m3u")
+            put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpegurl")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
+        }
+
+        // (1) The deprecated Playlists insert can throw (IllegalStateException "Failed to build unique
+        // file" on orphaned/collided state, plus other MediaProvider failures). Catch broadly and
+        // return null so getLikedPlaylist's `id ?: return@run null` degrades gracefully instead of the
+        // throw propagating up through getAllSongs → getLibrary and aborting the whole library load.
+        return runCatching {
+            contentResolver.insert(playlistsUri, values)?.lastPathSegment?.toLong()
+        }.onFailure { Log.e(TAG, "createPlaylist: insert for \"$title\" failed", it) }.getOrNull()
     }
 
     fun Context.editPlaylist(id: Long, title: String) {

@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.settings
 import android.content.Context
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.PreferenceFragmentCompat
 import dev.brahmkshatriya.echo.R
@@ -76,8 +77,12 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                     val contract = ActivityResultContracts.OpenDocument()
                     requireActivity().registerActivityResultLauncher(contract) {
                         it?.let {
-                            context.importSettings(it)
-                            requireActivity().recreate()
+                            if (context.importSettings(it)) requireActivity().recreate()
+                            else Toast.makeText(
+                                context,
+                                getString(R.string.invalid_settings_file),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }.launch(arrayOf("application/json"))
                     true

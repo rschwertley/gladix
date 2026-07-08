@@ -82,6 +82,78 @@ import androidx.appcompat.content.res.AppCompatResources
 import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.utils.Serializer.toData
+import dev.brahmkshatriya.echo.utils.Serializer.toJson
+import kotlinx.serialization.Serializable
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+
+// ── Android Auto self-describing browse id (P4) ──────────────────────────────────────────────────
+// A browsed track's play id round-trips through Android Auto as its mediaId. Legacy form is
+// "auto/<trackId>" (extension + context live ONLY in the durable "auto/" file cache). The new form
+// embeds the extension id + optional context (type/id/title) as base64url(JSON) after "auto/", so a
+// cache miss can still re-resolve the item instead of silently dropping it. parseAutoId reads both.
+@Serializable
+private data class AutoId(
+    val t: String,          // track id — also the durable "auto/" cache key
+    val e: String? = null,  // extension id
+    val ct: String? = null, // context type: album | playlist | radio | artist
+    val ci: String? = null, // context id
+    val cn: String? = null, // context title (labels the header without a re-fetch)
+)
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun encodeAutoId(trackId: String, extId: String, con: EchoMediaItem?): String {
+    val payload = AutoId(
+        t = trackId, e = extId, ct = con?.autoContextType(), ci = con?.id, cn = con?.title,
+    )
+    return "auto/" + Base64.UrlSafe.encode(payload.toJson().encodeToByteArray())
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun parseAutoId(mediaId: String): AutoId? {
+    if (!mediaId.startsWith("auto/")) return null
+    val payload = mediaId.substringAfter("auto/")
+    // New form: base64url(JSON). Legacy "auto/<trackId>": the payload IS the raw track id.
+    return runCatching {
+        Base64.UrlSafe.decode(payload).decodeToString().toData<AutoId>().getOrThrow()
+    }.getOrNull() ?: AutoId(t = payload)
+}
+
+private fun EchoMediaItem.autoContextType(): String? = when (this) {
+    is Album -> "album"
+    is Playlist -> "playlist"
+    is Radio -> "radio"
+    is Artist -> "artist"
+    else -> null // Track / others: no re-fetchable collection context
+}
+
+// Thin context rebuilt from a mediaId on a cache miss — enough for listTracks/loadAlbum to re-fetch
+// fresh (with valid tokens), so #4 recovery matches the History fresh-resolve path.
+private fun AutoId.toThinContext(): EchoMediaItem? {
+    val id = ci ?: return null
+    val title = cn.orEmpty()
+    return when (ct) {
+        "album" -> Album(id = id, title = title)
+        "playlist" -> Playlist(id = id, title = title, isEditable = false)
+        "radio" -> Radio(id = id, title = title)
+        "artist" -> Artist(id = id, name = title)
+        else -> null
+    }
+}
+
+// Thin track rebuilt from the mediaId + the metadata Android Auto round-trips, so a cache-miss item is
+// KEPT in the queue (never silently dropped). It loads on play where loadTrack works by id, and error-
+// skips visibly where the original token is required (e.g. Deezer) instead of vanishing.
+private fun MediaItem.toThinTrack(id: String): Track {
+    val md = mediaMetadata
+    return Track(
+        id = id,
+        title = md.title?.toString() ?: id,
+        artists = md.artist?.toString()?.let { listOf(Artist(id = "", name = it)) } ?: listOf(),
+    )
+}
 
 @UnstableApi
 abstract class AndroidAutoCallback(
@@ -403,6 +475,14 @@ abstract class AndroidAutoCallback(
         return super.onGetItem(session, browser, mediaId)
     }
 
+    // Load the given context's tracks FRESH (via the extension) and return the current+upcoming media
+    // items — the tapped track (fresh, live token) first, then the tracks after it. Overridden by
+    // PlayerCallback (which owns the track-loading); base default is empty. Used to play History taps
+    // and browse-cache-miss taps WITHOUT replaying a stored track's stale resolution state.
+    protected open suspend fun freshContextUpcoming(
+        extId: String, context: EchoMediaItem, tappedTrackId: String
+    ): List<MediaItem> = emptyList()
+
     @OptIn(UnstableApi::class)
     @CallSuper
     override fun onGetSearchResult(
@@ -515,8 +595,10 @@ abstract class AndroidAutoCallback(
 
         // Single-track tap from a playlist/album: expand to full queue at correct position
         if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith("auto/")) {
-            val autoId = mediaItems[0].mediaId.substringAfter("auto/")
-            val cached = context.getFromCache<Triple<Track, String, EchoMediaItem?>>(autoId, "auto")
+            val auto = parseAutoId(mediaItems[0].mediaId)
+            val cached = auto?.let {
+                context.getFromCache<Triple<Track, String, EchoMediaItem?>>(it.t, "auto", durable = true)
+            }
             if (cached != null) {
                 val (track, extId, con) = cached
                 if (con is EchoMediaItem.Lists) {
@@ -527,30 +609,90 @@ abstract class AndroidAutoCallback(
                         val (item, pagedData) = tracksEntry
                         val allTracks = pagedData.loadAll()
                         val tappedIndex = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                        val allItems = allTracks.map {
+                        // P2 — current+upcoming: drop the tracks before the tapped one so it lands at
+                        // index 0 (matches phone playItem + freshContextUpcoming) — no stranded-above,
+                        // zero persisted index.
+                        val upcomingItems = allTracks.subList(tappedIndex, allTracks.size).map {
                             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
                         }
                         return@future super.onSetMediaItems(
-                            mediaSession, controller, allItems.toMutableList(), tappedIndex, startPositionMs
+                            mediaSession, controller, upcomingItems.toMutableList(), 0, startPositionMs
+                        ).await(context)
+                    } else {
+                        // Context not in the browse cache — a HISTORY tap (its context was never browsed)
+                        // or an evicted album. Load it FRESH and play current+upcoming from the tapped
+                        // track, so the cached STALE track is never replayed. Fixes the History-tap skip;
+                        // empty result (context load failed) falls through to the stored-track path below.
+                        val upcoming = freshContextUpcoming(extId, con, track.id)
+                        if (upcoming.isNotEmpty()) {
+                            return@future super.onSetMediaItems(
+                                mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
+                            ).await(context)
+                        }
+                    }
+                }
+            } else if (auto?.e != null) {
+                // #4 — durable cache missed, but the mediaId is self-describing: rebuild a thin context
+                // and re-resolve FRESH (loadAlbum/listTracks → valid tokens), exactly like a History tap.
+                // Full current+upcoming recovery, extension-agnostic. If the context can't be rebuilt or
+                // the load returns nothing, fall through to the generic branch's thin-keep (#3).
+                val thinContext = auto.toThinContext()
+                if (thinContext != null) {
+                    val upcoming = freshContextUpcoming(auto.e, thinContext, auto.t)
+                    if (upcoming.isNotEmpty()) {
+                        return@future super.onSetMediaItems(
+                            mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
                         ).await(context)
                     }
                 }
             }
         }
 
+        // Generic rebuild. On a durable-cache HIT, rebuild from the full cached Triple (best: real
+        // streamables/tokens). On a MISS, #3 keeps the item as a thin track (never silently drop) when
+        // the mediaId carries an extId; only a legacy "auto/<id>" with no recoverable extId is dropped,
+        // and #2 messages the user rather than silently shrinking the queue.
+        var dropped = 0
         val new = mediaItems.mapNotNull {
             if (it.mediaId.startsWith("auto/")) {
-                val id = it.mediaId.substringAfter("auto/")
-                val (track, extId, con) =
-                    context.getFromCache<Triple<Track, String, EchoMediaItem?>>(id, "auto")
-                        ?: return@mapNotNull null
-                MediaItemUtils.build(
-                    app,
-                    downloadFlow.value,
-                    MediaState.Unloaded(extId, track),
-                    con
-                )
+                val auto = parseAutoId(it.mediaId)
+                if (auto == null) { dropped++; return@mapNotNull null }
+                val cached =
+                    context.getFromCache<Triple<Track, String, EchoMediaItem?>>(auto.t, "auto", durable = true)
+                when {
+                    cached != null -> {
+                        val (track, extId, con) = cached
+                        // No context (bare-track / Radio-History seed): stamp a display-only "<track>
+                        // Radio" label. Marked LABEL_ONLY_RADIO, so PlayerRadio still generates off a null
+                        // context — radio generation is unchanged, this is only the label.
+                        val seedContext = con ?: MediaItemUtils.trackRadioPlaceholder(track)
+                        MediaItemUtils.build(
+                            app, downloadFlow.value, MediaState.Unloaded(extId, track), seedContext
+                        )
+                    }
+
+                    auto.e != null -> {
+                        // #3 thin-keep: never silently drop. Rebuild a display track from the mediaId +
+                        // the metadata AA round-trips; it loads on play where loadTrack works by id and
+                        // error-skips visibly (e.g. Deezer, token-less) instead of vanishing.
+                        val thinTrack = it.toThinTrack(auto.t)
+                        val seedContext =
+                            auto.toThinContext() ?: MediaItemUtils.trackRadioPlaceholder(thinTrack)
+                        MediaItemUtils.build(
+                            app, downloadFlow.value, MediaState.Unloaded(auto.e, thinTrack), seedContext
+                        )
+                    }
+
+                    else -> {
+                        // Legacy "auto/<id>" with no recoverable extId — genuinely unresolvable.
+                        dropped++
+                        null
+                    }
+                }
             } else it
+        }
+        if (dropped > 0) scope.launch {
+            app.messageFlow.emit(Message(context.getString(R.string.some_tracks_couldnt_be_restored)))
         }
         val future = super.onSetMediaItems(
             mediaSession, controller, new, startIndex, startPositionMs
@@ -701,9 +843,11 @@ abstract class AndroidAutoCallback(
         private fun Track.toItem(
             context: Context, extensionId: String, con: EchoMediaItem? = null
         ): MediaItem {
-            context.saveToCache(id, Triple(this, extensionId, con), "auto")
+            // #1 durable = true → filesDir, so an OS cacheDir wipe can't evict it. #3/#4 encodeAutoId →
+            // self-describing mediaId carrying extId + context for cache-miss re-resolution.
+            context.saveToCache(id, Triple(this, extensionId, con), "auto", durable = true)
             return MediaItem.Builder()
-                .setMediaId("auto/$id")
+                .setMediaId(encodeAutoId(id, extensionId, con))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setIsPlayable(true)

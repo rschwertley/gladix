@@ -164,12 +164,27 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
 
     private val qualityOptions = listOf("flac", "320", "128")
 
-    suspend fun loadTrack(track: Track): Track {
+    suspend fun loadTrack(original: Track): Track {
         deezerExtension.handleArlExpiration()
 
-        if (track.type == Track.Type.Podcast) {
-            return track
+        if (original.type == Track.Type.Podcast) {
+            return original
         }
+
+        // Self-heal a missing/empty TRACK_TOKEN (e.g. a context-less bare track recovered from an
+        // Android Auto cache-miss, or a stale persisted seed): re-fetch the track fresh by id so its
+        // streamables carry a valid token — and, for a thin recovered track, full metadata too. Gated
+        // on an EMPTY token, so the normal path (token already present) adds no network round-trip. On
+        // any failure we fall back to the original track unchanged — the stream-time token-error
+        // fallback in createStreamableForQuality still applies — never crashing. CancellationException
+        // is rethrown so coroutine cancellation is honoured.
+        val track = if (original.extras["TRACK_TOKEN"].isNullOrEmpty()) {
+            runCatching {
+                api.track(original.id)["results"]?.jsonObject?.let { results ->
+                    parser.run { results.toTrack() }
+                }
+            }.getOrElse { if (it is CancellationException) throw it else null } ?: original
+        } else original
 
         val isMp3Misc = track.extras["FILESIZE_MP3_MISC"]?.let { it != "0" } ?: false
 

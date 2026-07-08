@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.player.audiofx
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.media.audiofx.AudioEffect
@@ -16,6 +17,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.viewModelScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
@@ -118,7 +120,14 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             bassBoostSlider.addOnChangeListener { _, value, _ ->
                 settings.edit { putInt(BASS_BOOST, value.toInt()) }
             }
-            equalizer.setOnClickListener { onEqualizerClicked() }
+            // Hide the equalizer row entirely on devices with no system EQ app — the
+            // DISPLAY_AUDIO_EFFECT_CONTROL_PANEL intent resolves to nothing (e.g. some Huawei/Honor
+            // tablets like the PGT-N19) — so the user never taps a dead button. Reads the cached
+            // resolveActivity result (hasSystemEqualizer); the manifest <queries> entry keeps it
+            // reliable under API 30+ package visibility.
+            val hasEqualizer = hasSystemEqualizer(equalizer.context)
+            equalizer.isVisible = hasEqualizer
+            if (hasEqualizer) equalizer.setOnClickListener { onEqualizerClicked() }
 
             loudnessNormalization.isVisible = false
 
@@ -149,6 +158,15 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             }
         }
 
+        // System-EQ presence is fixed for the process lifetime — only an app install/uninstall could
+        // change it, which is rare and acceptable to ignore — so resolve the intent once and reuse the
+        // cached Boolean for both the bind-time hide and the tap-time backstop. Companion-scoped, so it
+        // survives sheet re-creation within a session and is only re-evaluated on a fresh process.
+        private var systemEqualizerAvailable: Boolean? = null
+        private fun hasSystemEqualizer(context: Context) =
+            systemEqualizerAvailable ?: (Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                .resolveActivity(context.packageManager) != null).also { systemEqualizerAvailable = it }
+
         private fun openEqualizer(activity: ComponentActivity, sessionId: Int) {
             val intent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
                 putExtra(AudioEffect.EXTRA_PACKAGE_NAME, activity.packageName)
@@ -161,10 +179,21 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
 
         fun Fragment.onEqualizerClicked() {
             val viewModel by activityViewModel<PlayerViewModel>()
-            val sessionId = viewModel.playerState.session.value
-            runCatching { openEqualizer(requireActivity(), sessionId) }.getOrElse {
-                viewModel.run { viewModelScope.launch { app.throwFlow.emit(it) } }
+            val activity = requireActivity()
+            val message = getString(R.string.no_system_equalizer)
+            // Defense-in-depth backstop: the button is already hidden at bind time when no EQ resolves,
+            // but resolveActivity can false-positive under package visibility, or the handler can vanish
+            // between check and launch. Show a clear message, never the raw ActivityNotFoundException,
+            // and never let it throw.
+            fun showNoEqualizer() {
+                viewModel.run { viewModelScope.launch { app.messageFlow.emit(Message(message)) } }
             }
+            if (!hasSystemEqualizer(activity)) {
+                showNoEqualizer()
+                return
+            }
+            val sessionId = viewModel.playerState.session.value
+            runCatching { openEqualizer(activity, sessionId) }.getOrElse { showNoEqualizer() }
         }
     }
 }

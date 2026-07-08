@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import java.io.File
 
 object ResumptionUtils {
@@ -30,6 +31,19 @@ object ResumptionUtils {
     private const val POSITION = "position"
     private const val SHUFFLE = "shuffle"
     private const val REPEAT = "repeat"
+
+    // Atomic composite of the three per-track lists (replaces the separate TRACKS/EXTENSIONS/CONTEXTS
+    // files). Bundling track+extensionId+context per entry makes them physically un-desyncable, so a
+    // torn/interleaved save can no longer mispair a track with a neighbour's extensionId, nor leave a
+    // "tracks present, extensions absent" torn state that the orphan guard would wipe.
+    private const val QUEUE_ENTRIES = "queue_entries"
+
+    @Serializable
+    private data class QueueEntry(
+        val track: Track,
+        val extensionId: String,
+        val context: EchoMediaItem? = null,
+    )
 
     private fun queueDir(context: Context) =
         File(context.filesDir, "context/queue").apply { mkdirs() }
@@ -52,6 +66,27 @@ object ResumptionUtils {
         else null
     }
 
+    private fun Context.deleteQueueKey(id: String) {
+        File(queueDir(this), id.hashCode().toString()).delete()
+    }
+
+    private fun Context.hasQueueKey(id: String) =
+        File(queueDir(this), id.hashCode().toString()).exists()
+
+    // Write the per-track lists as ONE atomic file (single temp-then-rename via saveToQueue), so track,
+    // extensionId and context can never desync relative to each other. On a successful write, delete the
+    // legacy split files so a stale copy can never be read later (single source of truth). Best-effort
+    // delete: if it fails the legacy files linger harmlessly — recoverTracks/recoverQueue prefer the
+    // composite and gate the orphan guard on its presence, so a stale split copy can't wipe or mispair.
+    private fun Context.writeQueueEntries(list: List<MediaItem>) {
+        val entries = list.map { QueueEntry(it.track, it.extensionId, it.context) }
+        if (saveToQueue(QUEUE_ENTRIES, entries).isSuccess) {
+            deleteQueueKey(TRACKS)
+            deleteQueueKey(EXTENSIONS)
+            deleteQueueKey(CONTEXTS)
+        }
+    }
+
     private fun Player.mediaItems() = (0 until mediaItemCount).map { getMediaItemAt(it) }
 
     fun saveIndex(context: Context, index: Int, currentId: String?) {
@@ -71,14 +106,9 @@ object ResumptionUtils {
         val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId
         withContext(Dispatchers.IO) {
-            val extensionIds = list.map { it.extensionId }
-            val tracks = list.map { it.track }
-            val contexts = list.map { it.context }
             context.saveToQueue(INDEX, currentIndex)
             context.saveToQueue(CURRENT_ID, currentId)
-            context.saveToQueue(EXTENSIONS, extensionIds)
-            context.saveToQueue(TRACKS, tracks)
-            context.saveToQueue(CONTEXTS, contexts)
+            context.writeQueueEntries(list)
         }
     }
 
@@ -97,19 +127,26 @@ object ResumptionUtils {
         if (list.isEmpty()) return
         context.saveToQueue(INDEX, player.currentMediaItemIndex)
         context.saveToQueue(CURRENT_ID, player.currentMediaItem?.mediaId)
-        context.saveToQueue(EXTENSIONS, list.map { it.extensionId })
-        context.saveToQueue(TRACKS, list.map { it.track })
-        context.saveToQueue(CONTEXTS, list.map { it.context })
+        context.writeQueueEntries(list)
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
-        val tracks = getFromQueue<List<Track>>(TRACKS)
+        // New atomic composite: track+extensionId+context are bundled per entry, so they can never
+        // desync. This is the source of truth for all saves written by this build.
+        getFromQueue<List<QueueEntry>>(QUEUE_ENTRIES)?.let { entries ->
+            return entries.map { MediaState.Unloaded(it.extensionId, it.track) to it.context }
+        }
+        // Legacy fallback (pre-composite installs, one migration restore): three parallel files.
+        // Size-guard EXTENSIONS against TRACKS — a torn/desynced legacy state must NOT mispair a track
+        // with a neighbour's extensionId (the harmful case that routes to the wrong extension), so bail
+        // to no-restore instead of mispairing. CONTEXTS stays best-effort (getOrNull): a misaligned
+        // context only mislabels "playing from" and never affects routing/resolution.
+        val tracks = getFromQueue<List<Track>>(TRACKS) ?: return null
         val extensionIds = getFromQueue<List<String>>(EXTENSIONS)
+        if (extensionIds == null || extensionIds.size != tracks.size) return null
         val contexts = getFromQueue<List<EchoMediaItem>>(CONTEXTS)
-        return tracks?.mapIndexedNotNull { index, track ->
-            val extensionId = extensionIds?.getOrNull(index) ?: return@mapIndexedNotNull null
-            val item = contexts?.getOrNull(index)
-            MediaState.Unloaded(extensionId, track) to item
+        return tracks.mapIndexed { index, track ->
+            MediaState.Unloaded(extensionIds[index], track) to contexts?.getOrNull(index)
         }
     }
 
@@ -118,15 +155,20 @@ object ResumptionUtils {
         downloads: List<Downloader.Info>,
         healthMonitor: HealthMonitor? = null,
     ): List<MediaItem>? {
-        val rawTracks = getFromQueue<List<Track>>(TRACKS)
-        val rawExtensions = getFromQueue<List<String>>(EXTENSIONS)
-        if (rawTracks != null && (rawExtensions == null || rawExtensions.isEmpty())) {
-            clearQueue(this)
-            healthMonitor?.report(
-                HealthMonitor.OrphanedSessionException(rawTracks.size, rawTracks.firstOrNull()?.id ?: "unknown"),
-                HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
-            )
-            return emptyList()
+        // Orphan guard is LEGACY-ONLY: it inspects the old split files, so it must not run when the
+        // composite exists (the composite is authoritative, and a stale legacy file that survived
+        // cleanup must never trigger clearQueue() on a valid composite queue).
+        if (!hasQueueKey(QUEUE_ENTRIES)) {
+            val rawTracks = getFromQueue<List<Track>>(TRACKS)
+            val rawExtensions = getFromQueue<List<String>>(EXTENSIONS)
+            if (rawTracks != null && (rawExtensions == null || rawExtensions.isEmpty())) {
+                clearQueue(this)
+                healthMonitor?.report(
+                    HealthMonitor.OrphanedSessionException(rawTracks.size, rawTracks.firstOrNull()?.id ?: "unknown"),
+                    HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
+                )
+                return emptyList()
+            }
         }
         val tracks = recoverTracks() ?: return null
         return tracks.map { (state, item) ->
@@ -183,6 +225,15 @@ object ResumptionUtils {
             else -> rawPos
         }
         Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index pos=$rawPos safePos=$safePos duration=$trackDuration")
+        // P2 — current+upcoming: the current track must restore at index 0. A queue persisted by an
+        // older build can carry a non-zero index with "before" tracks stranded above current (which,
+        // unlike a fresh play, never clear by advancing); drop them so restore comes back at the saved
+        // track as index 0. Post-fix saves are always index 0, so this is a no-op for queues written by
+        // this build, and it heals both the phone (PlayerService) and AA (resume/onPlaybackResumption)
+        // paths at their single shared source. Naively coercing index to 0 without slicing would resume
+        // the WRONG, earlier track — hence the subList.
+        if (index != C.INDEX_UNSET && index > 0)
+            return Triple(items.subList(index, items.size).toList(), 0, safePos)
         return Triple(items, index, safePos)
     }
 }
