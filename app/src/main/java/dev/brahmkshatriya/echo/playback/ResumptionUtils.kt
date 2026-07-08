@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
@@ -32,17 +33,21 @@ object ResumptionUtils {
     private const val SHUFFLE = "shuffle"
     private const val REPEAT = "repeat"
 
-    // Atomic composite of the three per-track lists (replaces the separate TRACKS/EXTENSIONS/CONTEXTS
-    // files). Bundling track+extensionId+context per entry makes them physically un-desyncable, so a
-    // torn/interleaved save can no longer mispair a track with a neighbour's extensionId, nor leave a
-    // "tracks present, extensions absent" torn state that the orphan guard would wipe.
+    // Atomic composite of the ESSENTIAL per-track pair (track + extensionId). Bundling just these two
+    // keeps them physically un-desyncable — a torn/interleaved save can't mispair a track with a
+    // neighbour's extensionId — while Track being a concrete @Serializable means this file ALWAYS
+    // round-trips. The context is deliberately NOT bundled here: it's a polymorphic EchoMediaItem that
+    // can fail to round-trip and is only cosmetic ("playing from"), so it lives in a separate best-effort
+    // CONTEXTS file (see writeQueueEntries/recoverTracks). A prior build bundled the context into this
+    // entry; one bad context then failed the whole decode and wiped the queue on cold restore. The read
+    // still recovers those older BUNDLED files — ignoreUnknownKeys skips the extra `context` key — so the
+    // essential pair survives regardless of whether that context would parse.
     private const val QUEUE_ENTRIES = "queue_entries"
 
     @Serializable
     private data class QueueEntry(
         val track: Track,
         val extensionId: String,
-        val context: EchoMediaItem? = null,
     )
 
     private fun queueDir(context: Context) =
@@ -50,6 +55,10 @@ object ResumptionUtils {
 
     fun clearQueue(context: Context) {
         queueDir(context).listFiles()?.forEach { it.delete() }
+        // Also wipe the pre-7b3ad34b cacheDir location, so a stale legacy queue there can't resurrect
+        // via the cacheDir fallback in recoverTracks after the user clears the queue (or after the
+        // orphan guard). Best-effort; the dir usually no longer exists.
+        File(context.cacheDir, "context/queue").listFiles()?.forEach { it.delete() }
     }
 
     private inline fun <reified T> Context.saveToQueue(id: String, data: T?) = runCatching {
@@ -73,17 +82,19 @@ object ResumptionUtils {
     private fun Context.hasQueueKey(id: String) =
         File(queueDir(this), id.hashCode().toString()).exists()
 
-    // Write the per-track lists as ONE atomic file (single temp-then-rename via saveToQueue), so track,
-    // extensionId and context can never desync relative to each other. On a successful write, delete the
-    // legacy split files so a stale copy can never be read later (single source of truth). Best-effort
-    // delete: if it fails the legacy files linger harmlessly — recoverTracks/recoverQueue prefer the
-    // composite and gate the orphan guard on its presence, so a stale split copy can't wipe or mispair.
+    // Write the ESSENTIAL pair (track + extensionId) as ONE atomic file — Track is concrete, so this
+    // never fails to serialize, and it alone decides whether the queue survives a cold restore. Only on
+    // its success do we touch anything else: write the context list SEPARATELY and BEST-EFFORT (a context
+    // that won't serialize must never cost us the essential queue — that was the bundled-composite
+    // regression); on a context-write failure drop the key so a stale, mispaired context can't be read
+    // next time. Then retire the legacy essential files (QUEUE_ENTRIES supersedes them); CONTEXTS is
+    // shared with this format, so it is NOT deleted.
     private fun Context.writeQueueEntries(list: List<MediaItem>) {
-        val entries = list.map { QueueEntry(it.track, it.extensionId, it.context) }
+        val entries = list.map { QueueEntry(it.track, it.extensionId) }
         if (saveToQueue(QUEUE_ENTRIES, entries).isSuccess) {
+            if (saveToQueue(CONTEXTS, list.map { it.context }).isFailure) deleteQueueKey(CONTEXTS)
             deleteQueueKey(TRACKS)
             deleteQueueKey(EXTENSIONS)
-            deleteQueueKey(CONTEXTS)
         }
     }
 
@@ -131,20 +142,48 @@ object ResumptionUtils {
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
-        // New atomic composite: track+extensionId+context are bundled per entry, so they can never
-        // desync. This is the source of truth for all saves written by this build.
+        // Essential composite (track + extensionId). This ONE decode handles BOTH the current de-bundled
+        // format AND the older BUNDLED composite: the bundled file also carries a `context` key, which
+        // ignoreUnknownKeys skips, so the essential pair is recovered whether or not that context would
+        // round-trip (this is what un-wipes users migrating off the bundled build). Success is decided by
+        // the essential pair alone. Context is read SEPARATELY and BEST-EFFORT — a context list that won't
+        // parse (or is simply absent, as on a bundled-era file) yields null labels, never an empty queue.
         getFromQueue<List<QueueEntry>>(QUEUE_ENTRIES)?.let { entries ->
-            return entries.map { MediaState.Unloaded(it.extensionId, it.track) to it.context }
+            val contexts = getFromQueue<List<EchoMediaItem?>>(CONTEXTS)
+            return entries.mapIndexed { index, entry ->
+                MediaState.Unloaded(entry.extensionId, entry.track) to contexts?.getOrNull(index)
+            }
         }
-        // Legacy fallback (pre-composite installs, one migration restore): three parallel files.
-        // Size-guard EXTENSIONS against TRACKS — a torn/desynced legacy state must NOT mispair a track
-        // with a neighbour's extensionId (the harmful case that routes to the wrong extension), so bail
-        // to no-restore instead of mispairing. CONTEXTS stays best-effort (getOrNull): a misaligned
-        // context only mislabels "playing from" and never affects routing/resolution.
-        val tracks = getFromQueue<List<Track>>(TRACKS) ?: return null
-        val extensionIds = getFromQueue<List<String>>(EXTENSIONS)
+        // Legacy three-file fallback (pre-composite installs, one migration restore). Try the current
+        // filesDir location first; if nothing valid is there, try the pre-7b3ad34b cacheDir location —
+        // queue storage moved cacheDir→filesDir at 7b3ad34b with no data copy, so a queue saved by an
+        // older build lives in cacheDir/context/queue. Recovers it if the cache survived the update.
+        // The composite check above short-circuits first, so this only runs when no composite exists
+        // (genuine pre-composite state) — a stale cacheDir queue can never override a real composite one.
+        return assembleLegacy(
+            getFromQueue<List<Track>>(TRACKS),
+            getFromQueue<List<String>>(EXTENSIONS),
+            getFromQueue<List<EchoMediaItem?>>(CONTEXTS),
+        ) ?: assembleLegacy(
+            getFromCache<List<Track>>(TRACKS, "queue"),
+            getFromCache<List<String>>(EXTENSIONS, "queue"),
+            getFromCache<List<EchoMediaItem?>>(CONTEXTS, "queue"),
+        )
+    }
+
+    // Pairs the three parallel legacy lists into (track+extensionId, context) entries. Size-guard
+    // EXTENSIONS against TRACKS — a torn/desynced legacy state must NOT mispair a track with a
+    // neighbour's extensionId (the harmful case that routes to the wrong extension), so bail to null
+    // instead of mispairing. CONTEXTS stays best-effort (getOrNull): a misaligned context only mislabels
+    // "playing from" and never affects routing/resolution. Returns null when there's nothing usable, so
+    // recoverTracks can fall through to the next source.
+    private fun assembleLegacy(
+        tracks: List<Track>?,
+        extensionIds: List<String>?,
+        contexts: List<EchoMediaItem?>?,
+    ): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
+        if (tracks == null) return null
         if (extensionIds == null || extensionIds.size != tracks.size) return null
-        val contexts = getFromQueue<List<EchoMediaItem>>(CONTEXTS)
         return tracks.mapIndexed { index, track ->
             MediaState.Unloaded(extensionIds[index], track) to contexts?.getOrNull(index)
         }
