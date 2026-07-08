@@ -446,6 +446,10 @@ class PlayerService : MediaLibraryService() {
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         unregisterReceiver(clearQueueReceiver)
         mediaSession?.run {
+            // Flush the debounced queue save synchronously BEFORE releasing the player and cancelling
+            // the scope (which would drop a pending scheduleSaveQueue). Must run before player.release()
+            // — a released player reports an empty timeline, which saveQueueBlocking no-ops on.
+            ResumptionUtils.saveQueueBlocking(applicationContext, player)
             audioFocusListener.release()
             release()                  // mediaSession first — Media3 requirement
             player.release()           // player second — main thread, synchronous

@@ -70,12 +70,36 @@ class PlayerEventListener(
 
     private val player get() = session.player
 
+    // Every skip in this listener is an INVOLUNTARY auto-skip (a failed/stuck current track). Route
+    // them through here so ShufflePlayer removes the departing track WITHOUT pushing it to the play-
+    // history back-stack (Seam 3) — Previous must never land back on a dead track that would re-fail.
+    private fun skipInvoluntarily() {
+        (player as? ShufflePlayer)?.suppressPushOnNextAdvance = true
+        player.seekToNextMediaItem()
+    }
+
     private var pendingFullQueueUpdate: Job? = null
     private fun emitFullQueue() {
         pendingFullQueueUpdate?.cancel()
         pendingFullQueueUpdate = scope.launch(Dispatchers.Main) {
             delay(50)
             fullQueueFlow.value = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        }
+    }
+
+    // remove-on-advance fires onTimelineChanged (→ this listener) on EVERY advance, so an un-debounced
+    // saveQueue would launch a fresh IO coroutine per track change — under rapid Next-mashing that's an
+    // IO storm plus a read-snapshot-then-write race that can persist a stale index/queue (the cold-
+    // start-wrong-track class). Debounce so a burst of advances coalesces into one save after it
+    // settles. saveIndex (fired synchronously on each transition) keeps the index fresh meanwhile, and
+    // recoverPlaylist's index coerce bounds any crash-in-window gap. isRearranging re-checked at fire.
+    private var pendingSaveQueue: Job? = null
+    private fun scheduleSaveQueue() {
+        pendingSaveQueue?.cancel()
+        pendingSaveQueue = scope.launch {
+            delay(300)
+            if ((session.player as? ShufflePlayer)?.isRearranging == true) return@launch
+            ResumptionUtils.saveQueue(context, player)
         }
     }
 
@@ -125,7 +149,7 @@ class PlayerEventListener(
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         emitFullQueue()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
-            scope.launch { ResumptionUtils.saveQueue(context, player) }
+            scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                 bufferingWatchdog?.cancel()
                 bufferingWatchdog = null
@@ -253,7 +277,7 @@ class PlayerEventListener(
                         delay(50)
                     }
                     player.seekTo(0)
-                    player.seekToNextMediaItem()
+                    skipInvoluntarily()
                     player.prepare()
                     if (wasPlaying) player.play()
                 }
@@ -372,7 +396,7 @@ class PlayerEventListener(
                     player.stop()
                     return
                 }
-                player.seekToNextMediaItem()
+                skipInvoluntarily()
                 player.prepare()
                 player.play()
             }
@@ -411,13 +435,13 @@ class PlayerEventListener(
                         withContext(Dispatchers.Main) {
                             player.pause()
                             delay(50)
-                            player.seekToNextMediaItem()
+                            skipInvoluntarily()
                             player.prepare()
                             player.play()
                         }
                     }
                 } else {
-                    player.seekToNextMediaItem()
+                    skipInvoluntarily()
                     player.prepare()
                     player.play()
                 }
@@ -475,13 +499,13 @@ class PlayerEventListener(
                     withContext(Dispatchers.Main) {
                         player.pause()
                         delay(50)
-                        player.seekToNextMediaItem()
+                        skipInvoluntarily()
                         player.prepare()
                         player.play()
                     }
                 }
             } else {
-                player.seekToNextMediaItem()
+                skipInvoluntarily()
                 player.prepare()
                 player.play()
             }
@@ -536,13 +560,13 @@ class PlayerEventListener(
                     withContext(Dispatchers.Main) {
                         player.pause()
                         delay(50)
-                        player.seekToNextMediaItem()
+                        skipInvoluntarily()
                         player.prepare()
                         player.play()
                     }
                 }
             } else {
-                player.seekToNextMediaItem()
+                skipInvoluntarily()
                 player.prepare()
                 player.play()
             }
@@ -583,14 +607,14 @@ class PlayerEventListener(
                         player.pause()
                         delay(50)
                         player.seekTo(player.currentMediaItemIndex, 0)
-                        player.seekToNextMediaItem()
+                        skipInvoluntarily()
                         player.prepare()
                         player.play()
                     }
                 }
             } else {
                 player.seekTo(player.currentMediaItemIndex, 0)
-                player.seekToNextMediaItem()
+                skipInvoluntarily()
                 player.prepare()
                 player.play()
             }
@@ -602,7 +626,7 @@ class PlayerEventListener(
                 player.stop()
                 return
             }
-            player.seekToNextMediaItem()
+            skipInvoluntarily()
         } else {
             val newItem = MediaItemUtils.withRetry(mediaItem)
             player.replaceMediaItem(index, newItem)

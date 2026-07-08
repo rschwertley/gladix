@@ -50,6 +50,10 @@ class ShufflePlayer(
     // transition callback synchronously triggered by that mutation cannot recursively re-process it.
     // Push and pop are each done synchronously on the application looper; this bounds their atomicity.
     private var isNavigating = false
+    // Seam 3 involuntary-exclusion: set true by an error/watchdog auto-skip immediately before its
+    // seekToNextMediaItem(). advanceForward consumes it and removes the departing track WITHOUT
+    // pushing it to the back-stack, so Previous never replays a dead/skipped-past track.
+    internal var suppressPushOnNextAdvance = false
 
     private companion object {
         const val BACK_STACK_CAP = 100
@@ -80,17 +84,18 @@ class ShufflePlayer(
 
     private fun changeQueue(list: List<MediaItem>) {
         if (list.size <= 1) return
-        val freshPlay = isFreshShuffle
         isFreshShuffle = false
-        val currentMediaItem = list.first { it.mediaId == currentMediaItem?.mediaId }
-        val index = list.indexOf(currentMediaItem)
-        val before = if (freshPlay) emptyList() else list.take(index) - currentMediaItem
-        val after = if (freshPlay) list - currentMediaItem else list.takeLast(list.size - index) - currentMediaItem
+        val currentItem = list.first { it.mediaId == currentMediaItem?.mediaId }
+        // Current+upcoming model: current stays at index 0 with NOTHING before it; everything else
+        // follows as upcoming. (The old before/after split placed ~half the shuffled tracks above
+        // current, stranding them — G3.) The removeMediaItems(0, currentIndex) below also heals any
+        // pre-existing stranded-above state by pulling current back to index 0. Uses the inner
+        // player.* calls (not the overrides), so `original` and `backStack` are left untouched.
+        val after = list - currentItem
         isRearranging = true
         try {
             if (player.currentMediaItemIndex > 0)
                 player.removeMediaItems(0, player.currentMediaItemIndex)
-            player.addMediaItems(0, before)
             player.removeMediaItems(player.currentMediaItemIndex + 1, mediaItemCount)
             player.addMediaItems(player.currentMediaItemIndex + 1, after)
         } finally {
@@ -140,6 +145,24 @@ class ShufflePlayer(
         player.removeMediaItems(fromIndex, toIndex)
     }
 
+    // Reorder (Seam 2/G2). Previously un-overridden, so a drag desynced `original` from the timeline.
+    // Sync `original` ONLY when unshuffled (then original == display order); when shuffled, `original`
+    // is the fixed unshuffle reference and a display-order reorder must not rewrite it. The cross-
+    // current guard that keeps current at index 0 lives in QueueFragment (movement flags / onMove).
+    override fun moveMediaItem(currentIndex: Int, newIndex: Int) {
+        if (!isShuffled) {
+            val item = getItemAt(currentIndex)
+            original = original.toMutableList().apply {
+                val from = indexOf(item)
+                if (from != -1) {
+                    removeAt(from)
+                    add(newIndex.coerceIn(0, size), item)
+                }
+            }
+        }
+        player.moveMediaItem(currentIndex, newIndex)
+    }
+
     override fun replaceMediaItem(index: Int, mediaItem: MediaItem) {
         original = original.toMutableList().apply {
             val originalIndex = indexOf(getItemAt(index)).takeIf { it != -1 }!!
@@ -162,28 +185,37 @@ class ShufflePlayer(
         player.replaceMediaItems(fromIndex, toIndex, mediaItems)
     }
 
+    // Seam 3: setMediaItem(s)/clearMediaItems establish a NEW context (new play, cold-start restore,
+    // clear-queue), so the play-history back-stack must be wiped — otherwise Previous could pop a
+    // track from a prior session's queue. These are the only new-context entry points; advance, jump,
+    // changeQueue, and reconstitution all use add/remove/move, never set/clear.
     override fun setMediaItem(mediaItem: MediaItem) {
         original = listOf(mediaItem)
+        backStack.clear()
         player.setMediaItem(mediaItem)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {
         original = listOf(mediaItem)
+        backStack.clear()
         player.setMediaItem(mediaItem, resetPosition)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {
         original = listOf(mediaItem)
+        backStack.clear()
         player.setMediaItem(mediaItem, startPositionMs)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>) {
         original = mediaItems
+        backStack.clear()
         player.setMediaItems(mediaItems)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {
         original = mediaItems
+        backStack.clear()
         player.setMediaItems(mediaItems, resetPosition)
     }
 
@@ -193,6 +225,7 @@ class ShufflePlayer(
         startPositionMs: Long
     ) {
         original = mediaItems
+        backStack.clear()
         player.setMediaItems(
             mediaItems,
             startIndex.coerceAtMost(mediaItems.size - 1),
@@ -202,6 +235,7 @@ class ShufflePlayer(
 
     override fun clearMediaItems() {
         original = emptyList()
+        backStack.clear()
         player.clearMediaItems()
     }
 
@@ -267,13 +301,43 @@ class ShufflePlayer(
     }
 
     // Seek by FULL-timeline index — the play/seek path from the phone queue (PlayerViewModel routes
-    // taps here via seekToFullCommand). Seeks the real player directly, and NO-OPs (not clamp) if the
-    // index is out of range, so a stale/racing tap index can never crash or jump to the wrong track.
-    // (This guard is why we keep the custom command instead of the raw controller seekTo, which would
-    // throw on an out-of-range index.) `play` preserves the play()=true / seek()=false distinction.
+    // taps here via seekToFullCommand). `play` preserves the play()=true / seek()=false distinction.
+    // Delegates to jumpForwardTo, which NO-OPs on an out-of-range index (stale/racing tap can't crash).
     fun seekToFullIndex(fullIndex: Int, play: Boolean) {
-        if (fullIndex < 0 || fullIndex >= super.getCurrentTimeline().windowCount) return
-        super.seekTo(fullIndex, 0)
+        jumpForwardTo(fullIndex, play)
+    }
+
+    // Android Auto queue-item tap (onSkipToQueueItem → seekToDefaultPosition(index)) — the AA analogue
+    // of the phone's seekToFullIndex, trimmed the same way. seekTo(int, long) is deliberately NOT
+    // overridden: resume and shuffle-changeCurrent use it and must never trim. The no-arg
+    // seekToDefaultPosition() (used by handlePrevious via the inner player) is also untouched.
+    override fun seekToDefaultPosition(mediaItemIndex: Int) {
+        jumpForwardTo(mediaItemIndex, play = true)
+    }
+
+    // Forward-jump trim (Seam 1): push the departing current to the back-stack, then remove the whole
+    // span [current, target) so the tapped track becomes index 0 and onTimelineChanged re-publishes the
+    // AA queue at current. The skipped span is DISCARDED (removed, not pushed) — jumped-over tracks were
+    // never played, consistent with the involuntary-skip exclusion. Command-level only (phone seekToFull
+    // + AA seekToDefaultPosition), never the transition SEEK branch, so resume/radio/scrub don't misfire.
+    private fun jumpForwardTo(targetIndex: Int, play: Boolean) {
+        if (targetIndex < 0 || targetIndex >= mediaItemCount) return   // out of range → no-op (stale tap)
+        val current = player.currentMediaItemIndex
+        if (targetIndex <= current) {                                  // not a forward jump → plain seek
+            super.seekTo(targetIndex, 0)
+            if (play) playWhenReady = true
+            return
+        }
+        val departing = player.currentMediaItem
+        isNavigating = true
+        try {
+            if (departing != null) pushToBackStack(departing)
+            removeMediaItems(current, targetIndex)   // removes current + skipped span; target → index `current`
+            lastCurrentItem = player.currentMediaItem
+            maybeReconstituteForRepeatAll()
+        } finally {
+            isNavigating = false
+        }
         if (play) playWhenReady = true
     }
 
@@ -290,6 +354,7 @@ class ShufflePlayer(
                 isNavigating = true
                 try {
                     pushAndRemove(departing)
+                    maybeReconstituteForRepeatAll()   // Seam 4: refill the loop as we reach the last track
                 } finally {
                     isNavigating = false
                 }
@@ -311,15 +376,19 @@ class ShufflePlayer(
             doSeek()
             return
         }
+        val skipHistory = suppressPushOnNextAdvance   // Seam 3: consume the involuntary-skip flag
+        suppressPushOnNextAdvance = false
         val departing = player.currentMediaItem
         isNavigating = true
         try {
             doSeek()
             val nowCurrent = player.currentMediaItem
             if (departing != null && nowCurrent?.mediaId != departing.mediaId) {
-                pushAndRemove(departing)
+                if (skipHistory) removeByMediaId(departing.mediaId)   // involuntary: remove, don't push
+                else pushAndRemove(departing)
             }
             lastCurrentItem = player.currentMediaItem
+            maybeReconstituteForRepeatAll()   // Seam 4
         } finally {
             isNavigating = false
         }
@@ -352,16 +421,51 @@ class ShufflePlayer(
         }
     }
 
-    // Push the departed item to the back-stack (capped, dropping the oldest) and remove it from the
-    // live timeline by mediaId. Removal goes through the removeMediaItem override so `original` stays
-    // in sync. The departed item is never the current one, so its removal emits no media-item
-    // transition — only a timeline change — which is why push↔remove cannot re-trigger a push.
-    private fun pushAndRemove(item: MediaItem) {
+    // Shared primitives. pushToBackStack: capped play-history push (Seam 1 jump, advance).
+    // removeByMediaId: remove-without-push from the timeline (Seam 1 skipped span, Seam 3 involuntary).
+    // Removal goes through the removeMediaItem override so `original` stays in sync. The removed item
+    // is never the current one, so its removal emits no media-item transition — only a timeline
+    // change — which is why push↔remove cannot re-trigger a push.
+    private fun pushToBackStack(item: MediaItem) {
         backStack.addLast(item)
         while (backStack.size > BACK_STACK_CAP) backStack.removeFirst()
+    }
+
+    private fun removeByMediaId(mediaId: String) {
         val idx = (0 until mediaItemCount)
-            .firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
+            .firstOrNull { player.getMediaItemAt(it).mediaId == mediaId }
         if (idx != null) removeMediaItem(idx)
+    }
+
+    private fun pushAndRemove(item: MediaItem) {
+        pushToBackStack(item)
+        removeByMediaId(item.mediaId)
+    }
+
+    // Seam 4 — REPEAT_ALL reconstitution. maybeReconstituteForRepeatAll fires when we've reached the
+    // last track (no upcoming) under REPEAT_ALL with history to loop; called after every advance/jump
+    // and on setRepeatMode. reconstituteFromBackStack drains the play-history back into the timeline
+    // as upcoming (via the addMediaItems override, which re-syncs `original`), restoring the full set
+    // so it loops. Cap-100 means queues >100 lose their earliest tracks from the loop.
+    private fun maybeReconstituteForRepeatAll() {
+        if (repeatMode == Player.REPEAT_MODE_ALL &&
+            currentMediaItemIndex >= mediaItemCount - 1 &&
+            backStack.isNotEmpty()
+        ) reconstituteFromBackStack()
+    }
+
+    private fun reconstituteFromBackStack() {
+        if (backStack.isEmpty()) return
+        val items = backStack.toMutableList()
+        backStack.clear()
+        addMediaItems(mediaItemCount, items)
+    }
+
+    override fun setRepeatMode(repeatMode: Int) {
+        super.setRepeatMode(repeatMode)
+        // Handles toggling INTO all while already on the last track (loop instead of repeat-one);
+        // mid-queue toggles reconstitute later via the advance-time check.
+        maybeReconstituteForRepeatAll()
     }
 
 }

@@ -86,6 +86,22 @@ object ResumptionUtils {
         context.saveToQueue(POSITION, position)
     }
 
+    // Synchronous teardown flush — called on the main thread from PlayerService.onDestroy BEFORE the
+    // player is released and the service scope is cancelled. scope.cancel() drops any pending debounced
+    // saveQueue (PlayerEventListener.scheduleSaveQueue), so without this a final advance inside the
+    // debounce window would leave a stale TRACKS against a fresh INDEX/CURRENT_ID (saveIndex fires
+    // synchronously on each transition) → wrong-track on restore. Reads the player inline (already on
+    // the main thread) and writes files synchronously; NOT a coroutine, so no Main-dispatch deadlock.
+    fun saveQueueBlocking(context: Context, player: Player) {
+        val list = player.mediaItems()
+        if (list.isEmpty()) return
+        context.saveToQueue(INDEX, player.currentMediaItemIndex)
+        context.saveToQueue(CURRENT_ID, player.currentMediaItem?.mediaId)
+        context.saveToQueue(EXTENSIONS, list.map { it.extensionId })
+        context.saveToQueue(TRACKS, list.map { it.track })
+        context.saveToQueue(CONTEXTS, list.map { it.context })
+    }
+
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
         val tracks = getFromQueue<List<Track>>(TRACKS)
         val extensionIds = getFromQueue<List<String>>(EXTENSIONS)

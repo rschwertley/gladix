@@ -409,17 +409,16 @@ class PlayerCallback(
         val mediaItems = list.map {
             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
         }
-        val before = mediaItems.subList(0, correctIndex)
         val after = mediaItems.subList(correctIndex + 1, mediaItems.size)
         withContext(Dispatchers.Main) {
-            // Current index into the full timeline — drives both the bounds guard and the physical
-            // insert offset so tracks land at the correct position.
+            // Current index into the full timeline — drives the bounds guard and the insert offset.
             val currentIndex = player.currentMediaItemIndex
             val itemCount = player.mediaItemCount
             // Abort if the timeline changed while tracks were loading on IO
             if (currentIndex !in 0..<itemCount) return@withContext
-            if (before.isNotEmpty()) player.addMediaItems(0, before)
-            if (after.isNotEmpty()) player.addMediaItems(currentIndex + before.size + 1, after)
+            // Seam 2/G5: current+upcoming model — do NOT insert the album tracks that precede the
+            // current one (they would strand above current). Keep fast-start + load-upcoming (`after`).
+            if (after.isNotEmpty()) player.addMediaItems(currentIndex + 1, after)
         }
         SessionResult(RESULT_SUCCESS)
     }
