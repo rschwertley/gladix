@@ -61,8 +61,12 @@ class QueueFragment : Fragment() {
                 if (fromPos == RecyclerView.NO_POSITION || toPos == RecyclerView.NO_POSITION)
                     return false
                 // Seam 2/G2: keep current at index 0 — an upcoming track can't be dropped at/above the
-                // current row, so nothing gets stranded above current.
-                val currentPos = queueAdapter.currentList.indexOfFirst { it.first != null }
+                // current row, so nothing gets stranded above current. Current index read from the
+                // viewModel (same source as submit()), NOT queueAdapter — referencing the adapter here
+                // creates a by-lazy ↔ by-lazy type-inference cycle with its touchHelper-using listener.
+                val currentPos = viewModel.playerState.current.value?.let { c ->
+                    viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }
+                } ?: -1
                 if (currentPos != -1 && toPos <= currentPos) return false
                 viewModel.moveQueueItems(fromPos, toPos)
                 return true
@@ -77,10 +81,13 @@ class QueueFragment : Fragment() {
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder
             ): Int {
-                // Seam 2/G2: the current track (row carrying the non-null marker) is pinned — no drag.
+                // Seam 2/G2: the current track is pinned — no drag. Current index read from the
+                // viewModel (same source as submit()), NOT queueAdapter, to avoid the by-lazy cycle.
                 val pos = viewHolder.bindingAdapterPosition
-                val isCurrent = pos != RecyclerView.NO_POSITION &&
-                    queueAdapter.currentList.getOrNull(pos)?.first != null
+                val currentPos = viewModel.playerState.current.value?.let { c ->
+                    viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }
+                } ?: -1
+                val isCurrent = pos != RecyclerView.NO_POSITION && pos == currentPos
                 val dragFlags = if (isCurrent) 0 else ItemTouchHelper.UP or ItemTouchHelper.DOWN
                 return makeMovementFlags(dragFlags, ItemTouchHelper.START)
             }
