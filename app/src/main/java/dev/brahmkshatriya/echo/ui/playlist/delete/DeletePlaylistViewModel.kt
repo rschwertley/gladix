@@ -49,10 +49,9 @@ class DeletePlaylistViewModel(
             val extension = extensionFlow.value!!
             val playlist = playlistFlow.value!!.getOrThrow()
             // Any? (not Unit): an extension whose deletePlaylist drifted to return a value would crash
-            // with "X cannot be cast to Unit". Trailing Unit keeps the block typed Result<Unit> for
-            // DeleteState.Deleted.
-            extension.getAs<PlaylistEditClient, Any?> { deletePlaylist(playlist) }.getOrThrow()
-            Unit
+            // with "X cannot be cast to Unit". .map { } drops the Any? result to Unit so the block stays
+            // typed Result<Unit> for DeleteState.Deleted; the call still runs and throws on failure.
+            extension.getAs<PlaylistEditClient, Any?> { deletePlaylist(playlist) }.map { }.getOrThrow()
         }
         result.getOrElse {
             if (it is CancellationException) throw it

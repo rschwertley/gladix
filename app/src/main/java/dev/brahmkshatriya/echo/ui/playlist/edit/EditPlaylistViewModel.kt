@@ -212,11 +212,11 @@ class EditPlaylistViewModel(
                     }
                 }
             }.getOrThrow()
+            // .map { } drops the Any? result to Unit so the runCatching stays typed Result<Unit> for
+            // SaveState.Saved; the call still runs and still throws on failure (no trailing Unit needed).
             extension.getIf<PlaylistEditorListenerClient, Any?> {
                 onExitPlaylistEditor(playlist, tracks)
-            }.getOrThrow()
-            // Keep the runCatching typed Result<Unit> for SaveState.Saved (the getIf above is now Any?).
-            Unit
+            }.map { }.getOrThrow()
         })
         saved.result.getOrThrow(app.throwFlow)
         emit(saved)
