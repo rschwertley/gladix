@@ -313,23 +313,22 @@ class PlayerFragment : Fragment() {
                 requireActivity().hideSystemUi(true)
         }
 
-        var seenNonHidden = false
         observe(uiViewModel.playerSheetState) {
             updateCollapsed()
             if (isFinalState(it)) adapter.playerSheetStateUpdated()
-            if (it == STATE_HIDDEN) {
-                if (seenNonHidden) {
-                    viewModel.clearQueue()
-                    binding.bgImage.stop()
-                }
-            } else {
-                seenNonHidden = true
-                if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
-            }
+            if (it == STATE_COLLAPSED) emit(uiViewModel.playerBgVisible, false)
             when (it) {
                 STATE_EXPANDED -> binding.bgImage.resume()
                 else -> binding.bgImage.pause()
             }
+        }
+        // clearQueue ONLY on a genuine user dismiss (drag-to-hide or the close button) — NEVER from a
+        // flow-/layout-driven STATE_HIDDEN. This is the fix for the Case-A wipe: a cold-start restore that
+        // settles the sheet to HIDDEN can no longer reach clearQueue(). (The old seenNonHidden guard
+        // couldn't tell a programmatic/layout HIDDEN from a user dismiss, so it wiped restored queues.)
+        observe(uiViewModel.playerDismissed) {
+            viewModel.clearQueue()
+            binding.bgImage.stop()
         }
 
         binding.playerControls.root.doOnLayout {
@@ -356,6 +355,7 @@ class PlayerFragment : Fragment() {
         binding.bgPanel.configureClicking(adapterListener, uiViewModel)
         binding.playerCollapsedContainer.playerClose.setOnClickListener {
             uiViewModel.changePlayerState(STATE_HIDDEN)
+            uiViewModel.playerDismissed.tryEmit(Unit)   // explicit user dismiss → clearQueue
         }
         binding.expandedToolbar.setNavigationOnClickListener {
             uiViewModel.collapsePlayer()

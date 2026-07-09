@@ -26,6 +26,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_DRAGGING
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.color.MaterialColors
@@ -169,6 +170,12 @@ class UiViewModel(
     }
 
     val playerBgVisible = MutableStateFlow(false)
+
+    // Emitted ONLY when the USER actively dismisses the player — drags the sheet down to HIDDEN, or taps
+    // the collapsed-bar close button. clearQueue() keys off THIS, not observe(playerSheetState)==HIDDEN,
+    // so a flow-/layout-driven HIDDEN (e.g. a cold-start sheet settle — the Case-A wipe) can never wipe a
+    // freshly restored queue. A programmatic changePlayerState(HIDDEN) does not emit this on its own.
+    val playerDismissed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private fun getState() =
         if (playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
@@ -507,8 +514,12 @@ class UiViewModel(
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
                     animateTranslation(view, behavior.peekHeight, newHeight)
             }
+            // A user drag emits STATE_DRAGGING before HIDDEN; a programmatic setState / layout settle does
+            // NOT. Tracking it lets clearQueue fire only on a genuine drag-to-dismiss.
+            var draggingSeen = false
             val callback = object : BottomSheetBehavior.BottomSheetCallback() {
                 override fun onStateChanged(bottomSheet: View, newState: Int) {
+                    if (newState == STATE_DRAGGING) draggingSeen = true
                     if (isTV && newState == STATE_COLLAPSED) {
                         behavior.isHideable = true
                         behavior.state = STATE_HIDDEN
@@ -518,6 +529,9 @@ class UiViewModel(
                     val expanded = newState == STATE_EXPANDED
                     behavior.isHideable = !expanded
                     viewModel.playerSheetState.value = newState
+                    // Genuine user dismiss: HIDDEN reached via a drag (not a flow-/layout-driven HIDDEN).
+                    if (newState == STATE_HIDDEN && draggingSeen) viewModel.playerDismissed.tryEmit(Unit)
+                    if (isFinalState(newState)) draggingSeen = false
                     if (!isFinalState(newState)) return
                     if (isTV) {
                         val hidden = newState == STATE_HIDDEN
