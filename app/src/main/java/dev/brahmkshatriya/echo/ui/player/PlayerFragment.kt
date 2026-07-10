@@ -326,8 +326,12 @@ class PlayerFragment : Fragment() {
         // flow-/layout-driven STATE_HIDDEN. This is the fix for the Case-A wipe: a cold-start restore that
         // settles the sheet to HIDDEN can no longer reach clearQueue(). (The old seenNonHidden guard
         // couldn't tell a programmatic/layout HIDDEN from a user dismiss, so it wiped restored queues.)
+        // Dismiss = hide the sheet (the gesture/close already does that) + PAUSE. The queue SURVIVES —
+        // this is not a delete button; reopening or rebooting brings the bar back, and playing something
+        // new replaces the queue via playItem/radio as usual. A swipe must not destroy a long queue with
+        // no undo, so clearQueue() is gone from this path (there is no other clear action in the app).
         observe(uiViewModel.playerDismissed) {
-            viewModel.clearQueue()
+            viewModel.setPlaying(false)
             binding.bgImage.stop()
         }
 
@@ -436,16 +440,24 @@ class PlayerFragment : Fragment() {
         // fire multiple times in quick succession during Activity recreation. This must collect
         // exactly once per Fragment instance since it drives non-idempotent side effects
         // (image load/dispose, page scroll).
+        var hadTrack = false
         lifecycleScope.launch {
             viewModel.playerState.current.collectLatest {
+                val hasTrack = it != null
                 uiViewModel.run {
-                    if (it == null) return@run changePlayerState(STATE_HIDDEN)
-                    if (!isFinalState(playerSheetState.value)) return@run
-                    changePlayerState(
+                    // Hide when the queue empties. Show the bar ONLY on the null->non-null transition (a
+                    // new playback session) — never on every emission. The queue now survives a dismiss, so
+                    // current stays non-null; auto-collapsing on every emission would let the pause's own
+                    // isPlaying emission resurrect the bar we just hid. A dismiss produces no transition, so
+                    // it stays hidden; playing new (playItem/radio clears then sets -> null->non-null) shows
+                    // it again, as does a fresh Fragment on reopen/reboot (hadTrack resets to false).
+                    if (it == null) changePlayerState(STATE_HIDDEN)
+                    else if (!hadTrack && isFinalState(playerSheetState.value)) changePlayerState(
                         if (playerSheetState.value != STATE_EXPANDED) STATE_COLLAPSED
                         else STATE_EXPANDED
                     )
                 }
+                hadTrack = hasTrack
                 submit()
                 it?.mediaItem ?: return@collectLatest
                 binding.applyCurrent(it.mediaItem)

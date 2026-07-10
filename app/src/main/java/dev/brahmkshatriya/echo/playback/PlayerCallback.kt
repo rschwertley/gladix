@@ -38,6 +38,7 @@ import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.pagedDataOfFirst
+import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
@@ -46,6 +47,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
+import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.get
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
@@ -174,35 +176,43 @@ class PlayerCallback(
         bmp.scale(width, height)
     }
 
+    // Consumer of the shared cold-start restore (PlayerState.restoreDeferred). Applies the snapshot ONLY
+    // when the player is cold — empty AND no resumption in flight — and loses cleanly to a concurrent user
+    // play: playItem sets userQueueSet first (its synchronous first line, before its suspend points), so
+    // our compareAndSet then fails and we skip. Main-atomic: the whole gate+apply is one withContext(Main)
+    // block, and resumptionApplying / mediaItemCount are read on the looper they're written on. No
+    // prepare() — same lazy STATE_READY reason as the old onCreate restore.
+    //
+    // KNOWN ORDERING (accepted, not a bug): if this CAS wins the sub-second race — the disk read finished
+    // and applied BEFORE the user's tap registered playItem's set(true) — we apply the full restore and
+    // playItem then replaces it, so BOTH applies fire onTimelineChanged(PLAYLIST_CHANGED),
+    // onMediaItemTransition and scheduleSaveQueue (the exact observer-churn class that cost us a week).
+    // Tolerated deliberately: we do NOT prepare(), so no source prepare / network fetch is started; the two
+    // scheduleSaveQueue calls are debounced last-wins and BOTH non-empty, so disk ends on the user's track
+    // with no empty-save wipe; and the current-observer is hadTrack-gated, so the bar shows once. It is the
+    // "restore finished, then user played new" sequence, not a spurious double-restore.
+    suspend fun applyRestoreIfCold(player: Player) {
+        if (!app.settings.getBoolean(KEEP_QUEUE, true)) return
+        val data = state.restoreDeferred?.await() ?: return
+        withContext(Dispatchers.Main) {
+            if (player.mediaItemCount != 0 || state.resumptionApplying) return@withContext
+            if (!userQueueSet.compareAndSet(false, true)) return@withContext
+            player.shuffleModeEnabled = data.shuffle
+            player.repeatMode = data.repeat
+            player.setMediaItems(data.items.toMutableList(), data.index, data.pos)
+        }
+    }
+
+    // Widget/notification resume — a pure consumer now: ensure the cold-start queue is applied (no
+    // independent recoverPlaylist, so it can't race onCreate's restore), then honor the resume intent by
+    // preparing an idle player so the caller's playWhenReady=true can start it. Warm player:
+    // applyRestoreIfCold no-ops and we prepare/play whatever is already there.
     private fun resume(player: Player) = scope.future {
-        if (!userQueueSet.compareAndSet(false, true)) {
-            Log.d("GladixAuto", "resume: skipping, userQueueSet already claimed")
-            return@future SessionResult(RESULT_SUCCESS)
+        applyRestoreIfCold(player)
+        withContext(Dispatchers.Main) {
+            if (player.mediaItemCount != 0 && player.playbackState == Player.STATE_IDLE) player.prepare()
         }
-        try {
-            if (state.activeLoadCount.get() > 0) {
-                Log.d("GladixAuto", "resume: skipping, activeLoadCount=${state.activeLoadCount.get()}")
-                userQueueSet.set(false)
-                return@future SessionResult(RESULT_SUCCESS)
-            }
-            withContext(Dispatchers.Main) {
-                player.shuffleModeEnabled = context.recoverShuffle() == true
-                player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
-            }
-            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
-            if (items.isEmpty()) {
-                userQueueSet.set(false)
-                return@future SessionResult(RESULT_SUCCESS)
-            }
-            withContext(Dispatchers.Main) {
-                player.setMediaItems(items, index, pos)
-                player.prepare()
-            }
-            SessionResult(RESULT_SUCCESS)
-        } catch (e: Exception) {
-            userQueueSet.set(false)
-            throw e
-        }
+        SessionResult(RESULT_SUCCESS)
     }
 
     private var timerJob: Job? = null
@@ -351,32 +361,49 @@ class PlayerCallback(
                     return@future error
                 }
 
-                val result = if (shuffle) extension.get { tracks.loadAll() }
-                else runCatching {
-                    val (list, continuation) = extension.get { tracks.loadPage(null) }.getOrThrow()
-                    if (continuation != null) scope.launch {
-                        val all = extension.get { tracks.loadAll() }.getOrElse {
-                            if (it is CancellationException) throw it
-                            throwableFlow.emit(it)
-                            return@launch
-                        }.drop(list.size).map {
-                            MediaItemUtils.build(
-                                app, downloadFlow.value, MediaState.Unloaded(extId, it), item
-                            )
+                // Carry `continuation` alongside the list so the empty check below can tell a genuinely
+                // empty collection from an empty FIRST page that has more pages. Shuffle loadAll()s the
+                // whole thing, so its continuation is always null (an empty result there IS genuinely empty).
+                val result: Result<Pair<List<Track>, String?>> =
+                    if (shuffle) extension.get { tracks.loadAll() }.map { it to null as String? }
+                    else runCatching {
+                        val (list, continuation) = extension.get { tracks.loadPage(null) }.getOrThrow()
+                        if (continuation != null) scope.launch {
+                            val all = extension.get { tracks.loadAll() }.getOrElse {
+                                if (it is CancellationException) throw it
+                                throwableFlow.emit(it)
+                                return@launch
+                            }.drop(list.size).map {
+                                MediaItemUtils.build(
+                                    app, downloadFlow.value, MediaState.Unloaded(extId, it), item
+                                )
+                            }
+                            // Append remaining pages at the END (robust to the first page having been
+                            // subList-trimmed to the tapped track, and to mid-load advances).
+                            player.with { addMediaItems(all) }
                         }
-                        // Append remaining pages at the END (robust to the first page having been
-                        // subList-trimmed to the tapped track, and to mid-load advances).
-                        player.with { addMediaItems(all) }
+                        list to continuation
                     }
-                    list
-                }
-                val list = result.getOrElse {
+                val (list, continuation) = result.getOrElse {
                     if (it is CancellationException) throw it
                     throwableFlow.emit(it)
                     return@future error
                 }
                 if (list.isEmpty()) {
-                    throwableFlow.emit(Exception(app.context.getString(R.string.list_is_empty)))
+                    if (continuation == null) {
+                        // Genuinely empty (shuffle's loadAll exhausted, or an empty first page with no more
+                        // pages). Expected user input, NOT a bug — route to messageFlow (user snackbar), NOT
+                        // throwableFlow, which records a Crashlytics non-fatal via App.throwFlow.
+                        app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
+                    } else {
+                        // Empty FIRST page but a continuation exists — a non-empty collection that paginates
+                        // oddly (page 1 fully filtered/region-locked). Rare anomaly, so KEEP the signal: a
+                        // distinct, extension-tagged report (rare → no Crashlytics flood, and not confusable
+                        // with a genuine empty tap).
+                        throwableFlow.emit(
+                            Exception("Collection first page empty with continuation (ext=$extId)")
+                        )
+                    }
                     return@future error
                 }
                 val startIndex = when {
@@ -570,43 +597,52 @@ class PlayerCallback(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
         isForPlayback: Boolean,
-    ) = scope.futureCatching {
-        if (!isForPlayback) {
-            // System UI metadata-only request (e.g. lock-screen notification after reboot).
-            // Media3 will not call play() — return a single stub item, no queue restore needed.
-            // Read-only: recoverTracks() skips the orphaned-session clearQueue() side effect that
-            // would destroy queue files before the isForPlayback=true full restore fires.
-            val tracks = context.recoverTracks()
-                ?: throw UnsupportedOperationException("No saved queue")
-            val rawIndex = context.recoverIndex() ?: 0
-            val (state, ctx) = tracks.getOrNull(rawIndex) ?: tracks.firstOrNull()
-                ?: throw UnsupportedOperationException("No saved queue")
-            val item = MediaItemUtils.build(app, downloadFlow.value, state, ctx)
-            return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0L)
-        }
-        if (!userQueueSet.compareAndSet(false, true)) {
-            Log.d("GladixPlayback", "onPlaybackResumption: skipping, userQueueSet already claimed")
-            throw UnsupportedOperationException("Queue already set")
-        }
-        try {
-            if (state.activeLoadCount.get() > 0) {
-                Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
-                throw UnsupportedOperationException("Load in progress")
+    ): ListenableFuture<MediaItemsWithStartPosition> {
+        // Claim SYNCHRONOUSLY on the application looper (Media3 invokes this callback there) so the
+        // app-open applyRestoreIfCold, on Main, sees the marker and defers — the framework is about to
+        // apply the same queue, and a second setMediaItems would tear down and re-prepare. Only the
+        // isForPlayback path applies; the metadata-only stub below never sets it.
+        if (isForPlayback) state.resumptionApplying = true
+        return scope.futureCatching {
+            if (!isForPlayback) {
+                // System UI metadata-only request (e.g. lock-screen notification after reboot).
+                // Media3 will not call play() — return a single stub item, no queue restore needed.
+                // Read-only: recoverTracks() skips the orphaned-session clearQueue() side effect that
+                // would destroy queue files before the isForPlayback=true full restore fires.
+                val tracks = context.recoverTracks()
+                    ?: throw UnsupportedOperationException("No saved queue")
+                val rawIndex = context.recoverIndex() ?: 0
+                val (s, ctx) = tracks.getOrNull(rawIndex) ?: tracks.firstOrNull()
+                    ?: throw UnsupportedOperationException("No saved queue")
+                val item = MediaItemUtils.build(app, downloadFlow.value, s, ctx)
+                return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0L)
             }
-            withContext(Dispatchers.Main) {
-                mediaSession.player.shuffleModeEnabled = context.recoverShuffle() ?: false
-                mediaSession.player.repeatMode = context.recoverRepeat() ?: Player.REPEAT_MODE_OFF
+            try {
+                if (state.activeLoadCount.get() > 0) {
+                    Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
+                    withContext(Dispatchers.Main) { state.resumptionApplying = false }
+                    throw UnsupportedOperationException("Load in progress")
+                }
+                // Consumer of the shared restore — no independent recoverPlaylist. Return the snapshot to
+                // Media3, which sets it on the player and plays; the timeline listener then clears the
+                // marker. We do NOT claim userQueueSet: the marker + mediaItemCount gate coordinate with
+                // applyRestoreIfCold, and Media3 already gates us on getCurrentMediaItem()==null.
+                val data = state.restoreDeferred?.await()
+                if (data == null) {
+                    withContext(Dispatchers.Main) { state.resumptionApplying = false }
+                    throw UnsupportedOperationException("No saved queue")
+                }
+                withContext(Dispatchers.Main) {
+                    mediaSession.player.shuffleModeEnabled = data.shuffle
+                    mediaSession.player.repeatMode = data.repeat
+                }
+                Log.d("GladixPlayback", "onPlaybackResumption: items=${data.items.size}")
+                MediaItemsWithStartPosition(data.items.map { withUnloaded(it) }, data.index, data.pos)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { state.resumptionApplying = false }
+                if (e !is UnsupportedOperationException && e !is CancellationException) throwableFlow.emit(e)
+                throw e
             }
-            val (items, index, pos) = context.recoverPlaylist(app, downloadFlow.value)
-            Log.d("GladixPlayback", "onPlaybackResumption: items=${items.size} userQueueSet=${userQueueSet.get()}")
-            if (items.isEmpty()) {
-                throw UnsupportedOperationException("No saved queue")
-            }
-            MediaItemsWithStartPosition(items.map { withUnloaded(it) }, index, pos)
-        } catch (e: Exception) {
-            userQueueSet.set(false)
-            if (e !is UnsupportedOperationException && e !is CancellationException) throwableFlow.emit(e)
-            throw e
         }
     }
 

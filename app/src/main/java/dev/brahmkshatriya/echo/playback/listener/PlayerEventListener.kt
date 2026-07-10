@@ -65,6 +65,9 @@ class PlayerEventListener(
     // Live PlayerState.activeLoadCount (>0 ⇒ a stream resolution is in flight). Wired from
     // PlayerService where PlayerState is in scope; this listener is not given PlayerState directly.
     private val activeLoadCount: () -> Int = { 0 },
+    // Invoked when the timeline becomes non-empty (a queue was applied, from any source) — the success
+    // clear for PlayerState.resumptionApplying. Fires on the app looper (Main), preserving that invariant.
+    private val onQueueApplied: () -> Unit = {},
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
@@ -148,6 +151,7 @@ class PlayerEventListener(
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         emitFullQueue()
+        if (timeline.windowCount > 0) onQueueApplied()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {

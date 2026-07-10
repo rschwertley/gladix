@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.utils
 
 import android.content.Context
+import android.util.Log
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import java.io.File
@@ -33,6 +34,10 @@ object CacheUtils {
             size = cacheDir.walk().sumOf { it.length().toInt() }
         }
         file.writeText(data.toJson())
+    }.onFailure {
+        // Write failures (disk full, IO error) were silently swallowed — every caller discards the Result.
+        // Surface folder + key (never the contents) so a lost save is visible in logcat.
+        Log.e("CacheUtils", "saveToCache failed: folder=$folderName key=$id", it)
     }
 
     inline fun <reified T> Context.getFromCache(
@@ -41,8 +46,17 @@ object CacheUtils {
         val fileName = id.hashCode().toString()
         val cacheDir = cacheDir(this, folderName, durable)
         val file = File(cacheDir, fileName)
-        return if (file.exists()) runCatching {
+        if (!file.exists()) return null
+        return runCatching {
             file.readText().toData<T>().getOrThrow()
-        }.getOrNull() else null
+        }.getOrElse {
+            // Present but unreadable → SURFACE it, don't swallow (a swallowed decode failure is how the
+            // queue bug hid for five fixes). NOT deleted: "corrupt" can be a transient software decode
+            // failure (R8 / polymorphic drift) on a VALID file, and getFromCache backs the legacy queue
+            // read (ResumptionUtils "queue") — deleting would turn that into permanent queue loss. Log
+            // folder + key only, never the contents.
+            Log.e("CacheUtils", "getFromCache unreadable: folder=$folderName key=$id", it)
+            null
+        }
     }
 }

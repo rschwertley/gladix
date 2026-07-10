@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,16 +96,23 @@ data class FeedData(
         }
     }
 
+    // stateIn: the combine — and its side effects, including the "sort" disk read — runs ONCE per emission
+    // instead of once per downstream collector (shouldShowEmpty + buttonsFlow + imageFlow = 3x before).
+    // withContext(IO): the read is off the main thread. The read stays INSIDE the combine so feedSortState
+    // is set before the emission propagates; moving it out would let buttonsFlow/feedTypeFlow render the
+    // previous feed's sort for a frame (wrong-sort flash).
     val dataFlow = cachedDataFlow.combine(loadedDataFlow) { cached, loaded ->
         val extensionId = (loaded?.getOrNull() ?: cached?.getOrNull())?.extensionId
         val tabId = selectedTabFlow.value?.id
         searchQuery = null
         searchToggled = false
         val id = "$extensionId-$feedId-$tabId"
-        feedSortState.value = extensionId?.let { app.context.getFromCache(id, "sort") }
+        feedSortState.value = extensionId?.let {
+            withContext(Dispatchers.IO) { app.context.getFromCache(id, "sort") }
+        }
         loadedShelves.value = null
         cached to loaded
-    }
+    }.stateIn(scope, Lazily, null to null)
 
     val shouldShowEmpty = dataFlow.map { (cached, loaded) ->
         val data = loaded?.getOrNull() ?: cached?.getOrNull()
@@ -252,12 +260,18 @@ data class FeedData(
         loadedFeedTypeFlow.value == null
     }.stateIn(scope, Lazily, true)
 
+    private var saveTabJob: Job? = null
     fun selectTab(extensionId: String?, pos: Int) {
         val state = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }
         val tab = state?.feed?.tabs?.getOrNull(pos)
             ?.takeIf { state.extensionId == extensionId }
-        app.context.saveToCache(feedId, tab?.id, "selected_tab")
         selectedTabFlow.value = tab
+        // Off Main + single-flight: cancel any pending save and persist the CURRENT selection (read at
+        // write time), so a fast second tap can't let the first tap's write land last and store a stale tab.
+        saveTabJob?.cancel()
+        saveTabJob = scope.launch(Dispatchers.IO) {
+            app.context.saveToCache(feedId, selectedTabFlow.value?.id, "selected_tab")
+        }
     }
 
     fun refresh() = scope.launch { refreshFlow.emit(Unit) }
@@ -277,7 +291,9 @@ data class FeedData(
             stateFlow.collect { result ->
                 val feed = result.run { second?.getOrNull() ?: first?.getOrNull() }?.feed?.tabs
                 selectedTabFlow.value = if (feed == null) null else {
-                    val last = app.context.getFromCache<String>(feedId, "selected_tab")
+                    val last = withContext(Dispatchers.IO) {
+                        app.context.getFromCache<String>(feedId, "selected_tab")
+                    }
                     feed.find { it.id == last } ?: feed.firstOrNull()
                 }
             }

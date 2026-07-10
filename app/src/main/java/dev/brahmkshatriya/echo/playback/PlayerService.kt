@@ -67,6 +67,8 @@ import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
+import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
+import kotlinx.coroutines.async
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.HealthMonitor
 import kotlinx.coroutines.CoroutineName
@@ -226,6 +228,9 @@ class PlayerService : MediaLibraryService() {
                 isAndroidAutoConnected = { isAndroidAutoConnected },
                 requestAudioFocus = { audioFocusListener.requestFocus() },
                 activeLoadCount = { state.activeLoadCount.get() },
+                // Clears the resumption marker once the queue lands (timeline non-empty) — the success
+                // clear for onPlaybackResumption; on Main, since Player.Listener fires on the app looper.
+                onQueueApplied = { state.resumptionApplying = false },
                 healthMonitor = healthMonitor,
             )
         )
@@ -282,24 +287,26 @@ class PlayerService : MediaLibraryService() {
         // AudioFocusManager's internal state is locked off regardless of any timing race.
         exoPlayer.setAudioAttributes(musicAudioAttributes, false)
 
-        scope.launch {
-            val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, healthMonitor)
-            Log.d("GladixPlayback", "onCreate restore: items=${items.size} userQueueSet=${callback.userQueueSet.get()}")
-            if (items.isEmpty()) return@launch
-            if (!callback.userQueueSet.compareAndSet(false, true)) {
-                Log.d("GladixPlayback", "onCreate restore: skipping, userQueueSet already claimed")
-                return@launch
-            }
-            withContext(Dispatchers.Main) {
-                player.shuffleModeEnabled = recoverShuffle() ?: false
-                player.repeatMode = recoverRepeat() ?: Player.REPEAT_MODE_OFF
-                player.setMediaItems(items.toMutableList(), index, pos)
-                // No prepare() here — ShufflePlayer.getPlaybackState() fakes STATE_READY when
-                // STATE_IDLE + items queued + !playWhenReady, giving AA STATE_PAUSED(2) for the
-                // thumbnail. prepare() is deferred to ShufflePlayer.play()/setPlayWhenReady()
-                // when the user actually initiates playback, eliminating the STATE_ENDED at ~88ms.
+        // Producer: read the saved queue from disk ONCE into the shared Deferred (see PlayerState). Every
+        // consumer awaits THIS — no path runs its own recoverPlaylist, so the cold-start double-restore
+        // race is gone at the root. with(this@PlayerService) supplies the Context receiver the recover*
+        // extensions need inside the coroutine.
+        state.restoreDeferred = scope.async(Dispatchers.IO) {
+            with(this@PlayerService) {
+                val (items, index, pos) = recoverPlaylist(app, downloadFlow.value, healthMonitor)
+                Log.d("GladixPlayback", "restore read: items=${items.size}")
+                if (items.isEmpty()) null
+                else RestoreData(
+                    items, index, pos,
+                    recoverShuffle() ?: false,
+                    recoverRepeat() ?: Player.REPEAT_MODE_OFF
+                )
             }
         }
+        // App-open apply: the sole restorer for a controller-driven cold start. Main-atomic, gated on an
+        // empty player + the resumption marker; KEEP_QUEUE is honored inside applyRestoreIfCold. It does
+        // NOT prepare() — same lazy-STATE_READY reason as before; prepare() waits for play().
+        scope.launch { callback.applyRestoreIfCold(player) }
     }
 
     // Called at the very top of onCreate() to satisfy Android's 5-second startForeground()

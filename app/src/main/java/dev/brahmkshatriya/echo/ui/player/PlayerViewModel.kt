@@ -35,7 +35,6 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.addToQueueCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.backfillCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
-import dev.brahmkshatriya.echo.playback.PlayerCommands.resumeCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getController
@@ -121,11 +120,12 @@ class PlayerViewModel(
     val controllerFutureRelease = getController(context) { player ->
         browser.value = player
         player.addListener(PlayerUiListener(player, this))
-
-        if (player.mediaItemCount != 0) return@getController
-        if (!settings.getBoolean(KEEP_QUEUE, true)) return@getController
-
-        player.sendCustomCommand(resumeCommand, Bundle.EMPTY)
+        // No cold-start resume() here: PlayerService.onCreate is the sole app-open restorer. Sending
+        // resumeCommand on connect raced onCreate's in-flight recoverPlaylist — both compareAndSet
+        // userQueueSet, but onCreate only AFTER its slow disk read, so resume() could claim first and run
+        // a second restore (two recoverPlaylist calls), or claim-then-bail on activeLoadCount leaving
+        // nobody to restore (the bar-flash). KEEP_QUEUE is now honored inside onCreate. (resumeCommand is
+        // still used by the widget/notification resume actions, which are explicit user intents.)
     }
 
     override fun onCleared() {
@@ -162,10 +162,6 @@ class PlayerViewModel(
 
     fun moveQueueItems(fromPos: Int, toPos: Int) {
         withBrowser { it.moveMediaItem(fromPos, toPos) }
-    }
-
-    fun clearQueue() {
-        withBrowser { it.clearMediaItems() }
     }
 
     fun seekTo(pos: Long) {
