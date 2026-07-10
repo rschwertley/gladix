@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.player
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.C.TIME_UNSET
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -42,17 +43,40 @@ class PlayerUiListener(
         it.post(updateProgressRunnable)
     }
 
-    private fun updateProgress() {
-        viewModel.progress.value =
-            player.currentPosition to player.bufferedPosition
-        viewModel.totalDuration.value = player.duration.takeIf { it != TIME_UNSET }
+    // TEMP cold-start diagnostic — remove after capture.
+    private val logStartMs = System.currentTimeMillis()
+
+    private fun updateProgress(caller: String = "poll") {
+        val position = player.currentPosition
+        val buffered = player.bufferedPosition
+        val playerDuration = player.duration
+        val durationSet = playerDuration != TIME_UNSET
+        val totalDuration = playerDuration.takeIf { durationSet }
+        val trackDuration = viewModel.playerState.current.value?.track?.duration
+        val state = player.playbackState
+
+        // TEMP cold-start diagnostic — remove after capture. For the first 5s, log exactly which source wins
+        // for position and duration on each call, tagged by caller. pos is always player.currentPosition (we
+        // never seed it); totalDuration is player.duration or null; track.duration is the fragment's fallback.
+        val elapsed = System.currentTimeMillis() - logStartMs
+        if (elapsed <= 5000L) {
+            Log.d(
+                "GladixProgress",
+                "t=${elapsed}ms [$caller] state=$state pwr=${player.playWhenReady} " +
+                    "pos(player.currentPosition)=$position buf=$buffered " +
+                    "player.duration=$playerDuration set=$durationSet -> totalDuration=$totalDuration " +
+                    "track.duration=$trackDuration"
+            )
+        }
+
+        viewModel.progress.value = position to buffered
+        viewModel.totalDuration.value = totalDuration
 
         handler.removeCallbacks(updateProgressRunnable)
-        val playbackState = player.playbackState
-        if (playbackState != ExoPlayer.STATE_IDLE && playbackState != ExoPlayer.STATE_ENDED) {
+        if (state != ExoPlayer.STATE_IDLE && state != ExoPlayer.STATE_ENDED) {
             var delayMs: Long
-            if (player.playWhenReady && playbackState == ExoPlayer.STATE_READY) {
-                delayMs = delay - player.currentPosition % delay
+            if (player.playWhenReady && state == ExoPlayer.STATE_READY) {
+                delayMs = delay - position % delay
                 if (delayMs < delay * threshold) {
                     delayMs += delay
                 }
@@ -74,7 +98,7 @@ class PlayerUiListener(
 
             else -> Unit
         }
-        updateProgress()
+        updateProgress("stateChanged")
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -90,7 +114,16 @@ class PlayerUiListener(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
         updateNavigation()
-        updateProgress()
+        // TEMP diagnostic — remove after capture. The discontinuity's own target position, which may lead
+        // player.currentPosition on a seek/transition.
+        val elapsed = System.currentTimeMillis() - logStartMs
+        if (elapsed <= 5000L) {
+            Log.d(
+                "GladixProgress",
+                "t=${elapsed}ms DISCONTINUITY reason=$reason old=${oldPosition.positionMs} new=${newPosition.positionMs}"
+            )
+        }
+        updateProgress("discontinuity")
         viewModel.discontinuity.value = newPosition.positionMs
     }
 
@@ -106,7 +139,7 @@ class PlayerUiListener(
         // The connect-time 0 is written by the init updateProgress() and corrected here, so the collapsed
         // mini-bar's progress line may show 0 for the sub-second disk-read window on cold start — known,
         // cosmetic, not worth gating.
-        updateProgress()
+        updateProgress("timeline")
     }
 
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
