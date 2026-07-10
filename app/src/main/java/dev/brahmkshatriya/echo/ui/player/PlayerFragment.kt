@@ -322,19 +322,6 @@ class PlayerFragment : Fragment() {
                 else -> binding.bgImage.pause()
             }
         }
-        // clearQueue ONLY on a genuine user dismiss (drag-to-hide or the close button) — NEVER from a
-        // flow-/layout-driven STATE_HIDDEN. This is the fix for the Case-A wipe: a cold-start restore that
-        // settles the sheet to HIDDEN can no longer reach clearQueue(). (The old seenNonHidden guard
-        // couldn't tell a programmatic/layout HIDDEN from a user dismiss, so it wiped restored queues.)
-        // Dismiss = hide the sheet (the gesture/close already does that) + PAUSE. The queue SURVIVES —
-        // this is not a delete button; reopening or rebooting brings the bar back, and playing something
-        // new replaces the queue via playItem/radio as usual. A swipe must not destroy a long queue with
-        // no undo, so clearQueue() is gone from this path (there is no other clear action in the app).
-        observe(uiViewModel.playerDismissed) {
-            viewModel.setPlaying(false)
-            binding.bgImage.stop()
-        }
-
         binding.playerControls.root.doOnLayout {
             uiViewModel.playerControlsHeight.value = it.height
             adapter.playerControlsHeightUpdated()
@@ -357,10 +344,6 @@ class PlayerFragment : Fragment() {
             }
         }
         binding.bgPanel.configureClicking(adapterListener, uiViewModel)
-        binding.playerCollapsedContainer.playerClose.setOnClickListener {
-            uiViewModel.changePlayerState(STATE_HIDDEN)
-            uiViewModel.playerDismissed.tryEmit(Unit)   // explicit user dismiss → clearQueue
-        }
         binding.expandedToolbar.setNavigationOnClickListener {
             uiViewModel.collapsePlayer()
         }
@@ -440,24 +423,23 @@ class PlayerFragment : Fragment() {
         // fire multiple times in quick succession during Activity recreation. This must collect
         // exactly once per Fragment instance since it drives non-idempotent side effects
         // (image load/dispose, page scroll).
-        var hadTrack = false
+        // PHONE-ONLY sheet-state driver. This is the SOLE sheet show/hide logic on phone (BottomSheet +
+        // PlayerFragment). MainActivity's current-observer does NOT participate here — it is TV-only, gated by
+        // R.id.tvMiniPlayer (see MainActivity.setupTvMiniPlayer). TV uses PlayerTvFragment + tvMiniPlayer;
+        // Android Auto has no Fragment at all. So changes in this block affect phone only.
         lifecycleScope.launch {
             viewModel.playerState.current.collectLatest {
-                val hasTrack = it != null
                 uiViewModel.run {
-                    // Hide when the queue empties. Show the bar ONLY on the null->non-null transition (a
-                    // new playback session) — never on every emission. The queue now survives a dismiss, so
-                    // current stays non-null; auto-collapsing on every emission would let the pause's own
-                    // isPlaying emission resurrect the bar we just hid. A dismiss produces no transition, so
-                    // it stays hidden; playing new (playItem/radio clears then sets -> null->non-null) shows
-                    // it again, as does a fresh Fragment on reopen/reboot (hadTrack resets to false).
+                    // Persistent transport bar (Spotify / YouTube Music / Apple Music model): the mini bar is
+                    // shown whenever there is a current track and hidden ONLY when the queue empties. There is
+                    // no dismiss gesture — the sheet is non-hideable while shown (applyPlayerBehaviorState).
+                    // This is a pure current-STATE rule, not an edge: the first non-null emission shows
+                    // COLLAPSED, so a cold-start restore (current is set before this Fragment subscribes) needs
+                    // no prior null and no dependence on when the sheet settles. playerSheetState is read only
+                    // to preserve a user's EXPANDED and to avoid churn when the bar is already shown.
                     if (it == null) changePlayerState(STATE_HIDDEN)
-                    else if (!hadTrack && isFinalState(playerSheetState.value)) changePlayerState(
-                        if (playerSheetState.value != STATE_EXPANDED) STATE_COLLAPSED
-                        else STATE_EXPANDED
-                    )
+                    else if (playerSheetState.value == STATE_HIDDEN) changePlayerState(STATE_COLLAPSED)
                 }
-                hadTrack = hasTrack
                 submit()
                 it?.mediaItem ?: return@collectLatest
                 binding.applyCurrent(it.mediaItem)

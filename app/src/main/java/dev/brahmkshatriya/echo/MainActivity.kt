@@ -156,6 +156,14 @@ open class MainActivity : AppCompatActivity() {
         observe(playerState.current) { nowPlayingItem.isVisible = it != null }
     }
 
+    // PHONE / TV SWITCH — and the map of who owns the mini player per surface. R.id.tvMiniPlayer exists ONLY
+    // in layout-land-television, so the `?: return` below makes this ENTIRE method TV-only: the
+    // playerState.current observer here (which drives the TV mini bar AND its sheet show/hide, including the
+    // RESUMED gate) never runs on a phone. Three surfaces, three independent mini players / sheet models:
+    //   phone: BottomSheet + PlayerFragment  — dismissable (see PlayerFragment's phone-only sheet-state block)
+    //   TV:    this tvMiniPlayer + PlayerTvFragment — no dismiss
+    //   AA:    Android Auto / gearhead's own UI — NO Fragment at all (nothing PlayerFragment does reaches it)
+    // Nothing else in the code says this; assuming this observer was "general" cost real debugging time.
     private fun setupTvMiniPlayer() {
         val miniPlayer = binding.root.findViewById<LinearLayout>(R.id.tvMiniPlayer) ?: return
         val miniArt = binding.root.findViewById<ImageView>(R.id.miniArt)

@@ -171,11 +171,6 @@ class UiViewModel(
 
     val playerBgVisible = MutableStateFlow(false)
 
-    // Emitted ONLY when the USER actively dismisses the player — drags the sheet down to HIDDEN, or taps
-    // the collapsed-bar close button. clearQueue() keys off THIS, not observe(playerSheetState)==HIDDEN,
-    // so a flow-/layout-driven HIDDEN (e.g. a cold-start sheet settle — the Case-A wipe) can never wipe a
-    // freshly restored queue. A programmatic changePlayerState(HIDDEN) does not emit this on its own.
-    val playerDismissed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private fun getState() =
         if (playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
@@ -242,7 +237,11 @@ class UiViewModel(
         // (a still-pending inset-corrected peekHeight only shifts it by ~systemInsets.bottom, which
         // BottomSheetBehavior.setPeekHeight re-settles on its own) — so layout is the ONLY gate needed.
         val view = playerSheetViewRef.get()
-        if (view == null || view.isLaidOut) {
+        // STATE_HIDDEN parks the sheet fully off-screen; unlike COLLAPSED it has no peek offset to compute
+        // against a not-yet-measured parent, so it is safe to apply BEFORE layout — and must be, so a no-track
+        // cold start parks hidden from the first onLayoutChild instead of drawing a frame of the XML-default
+        // COLLAPSED bar and then sliding down. (COLLAPSED/EXPANDED still defer until laid out.)
+        if (view == null || view.isLaidOut || state == STATE_HIDDEN) {
             pendingPlayerState = null
             applyPlayerBehaviorState(behavior, state)
             return
@@ -257,9 +256,21 @@ class UiViewModel(
         }
     }
 
+    // SOLE owner of behavior.isHideable. Sets it to match the target state SYNCHRONOUSLY with behavior.state,
+    // within this one Main-thread task — never left lagging for the async onStateChanged to correct (that lag
+    // was the drag-dismiss race). A sheet must be hideable to reach HIDDEN, and must NOT be hideable while
+    // shown, or a drag could dismiss it — which this app no longer supports. Going to HIDDEN: enable, then
+    // hide. Going to a shown state: set it (COLLAPSED/EXPANDED are reachable regardless), then disable — so
+    // the instant the bar is draggable, hideable is already false. The only time isHideable stays true is
+    // while genuinely HIDDEN (empty queue), when there is no bar to drag.
     private fun applyPlayerBehaviorState(behavior: BottomSheetBehavior<View>, state: Int) {
-        if (state == STATE_HIDDEN) behavior.isHideable = true
-        behavior.state = state
+        if (state == STATE_HIDDEN) {
+            behavior.isHideable = true
+            behavior.state = STATE_HIDDEN
+        } else {
+            behavior.state = state
+            behavior.isHideable = false
+        }
     }
 
     private var moreBehaviour = WeakReference<BottomSheetBehavior<View>>(null)
@@ -514,24 +525,20 @@ class UiViewModel(
                 if (viewModel.playerSheetState.value != STATE_HIDDEN)
                     animateTranslation(view, behavior.peekHeight, newHeight)
             }
-            // A user drag emits STATE_DRAGGING before HIDDEN; a programmatic setState / layout settle does
-            // NOT. Tracking it lets clearQueue fire only on a genuine drag-to-dismiss.
-            var draggingSeen = false
             val callback = object : BottomSheetBehavior.BottomSheetCallback() {
                 override fun onStateChanged(bottomSheet: View, newState: Int) {
-                    if (newState == STATE_DRAGGING) draggingSeen = true
+                    // TV force-route: TV has no collapsed bar, so a COLLAPSED settle means "minimize" → hide.
+                    // Owns its own isHideable (TV-only, atomic with the hide in this same task); the phone owner
+                    // is applyPlayerBehaviorState. Phone (isTV=false) never enters this branch.
                     if (isTV && newState == STATE_COLLAPSED) {
                         behavior.isHideable = true
                         behavior.state = STATE_HIDDEN
                         viewModel.playerSheetState.value = STATE_HIDDEN
                         return
                     }
-                    val expanded = newState == STATE_EXPANDED
-                    behavior.isHideable = !expanded
+                    // Track the physical state into the flow. isHideable is NOT touched here — the phone has no
+                    // dismiss gesture; hideable is owned end-to-end by applyPlayerBehaviorState.
                     viewModel.playerSheetState.value = newState
-                    // Genuine user dismiss: HIDDEN reached via a drag (not a flow-/layout-driven HIDDEN).
-                    if (newState == STATE_HIDDEN && draggingSeen) viewModel.playerDismissed.tryEmit(Unit)
-                    if (isFinalState(newState)) draggingSeen = false
                     if (!isFinalState(newState)) return
                     if (isTV) {
                         val hidden = newState == STATE_HIDDEN
@@ -564,6 +571,13 @@ class UiViewModel(
             callback.onStateChanged(view, state)
             callback.onSlide(view, if (state == STATE_EXPANDED) 1f else 0f)
             behavior.addBottomSheetCallback(callback)
+            // The seeding above only updates bookkeeping (flow, insets); it does NOT move the sheet, which
+            // still sits at its XML-default COLLAPSED. On phone with no track that is a blank peek-height bar
+            // on screen until the current observer's first (null) emission lands a changePlayerState(HIDDEN) —
+            // a coroutine dispatch, not a frame, away. Drive the physical sheet to the initial state now so it
+            // settles on the first layout pass (HIDDEN applies pre-layout via changePlayerState). TV is excluded
+            // because its isTV branch in onStateChanged already moved the sheet during the seeding above.
+            if (!isTV) viewModel.changePlayerState(state)
         }
 
         fun setupPlayerMoreBehavior(viewModel: UiViewModel, view: View) {

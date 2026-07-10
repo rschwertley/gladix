@@ -151,6 +151,16 @@ class OfflineExtension(
     private suspend fun find(playlist: Playlist) =
         getLibrary().playlistList.find { it.id == playlist.id.toLong() }
 
+    // The MediaStore ids resolved by find() can come from PERSISTED items (restored queue, history, saved
+    // playlists) captured before a library re-scan, so a lookup can legitimately miss (the album/artist/
+    // playlist was removed or re-indexed). UI load paths surface that miss as this readable exception instead
+    // of a bare NPE from find()!!; the radio path (loadTracks(radio)) degrades instead, resolving tracks
+    // null-safely via find(). Signatures are non-null interface overrides, so a miss must throw, not return null.
+    private fun notInLibrary(type: String, id: String): Nothing = throw IllegalStateException(
+        "This $type is no longer in the device's music library (id: $id) — it may have been removed, or the " +
+            "library re-scanned, since it was saved."
+    )
+
     private fun List<EchoMediaItem>.toShelves(buttons: Feed.Buttons? = null): Feed<Shelf> =
         map { it.toShelf() }.toFeed(buttons)
 
@@ -206,10 +216,11 @@ class OfflineExtension(
     override suspend fun loadFeed(track: Track): Feed<Shelf>? = null
 
     override suspend fun loadAlbum(album: Album) =
-        find(album)!!.toAlbum()
+        (find(album) ?: notInLibrary("album", album.id)).toAlbum()
 
     override suspend fun loadTracks(album: Album): Feed<Track> = PagedData.Single {
-        find(album)!!.songList.sortedBy { it.extras["trackNumber"]?.toLongOrNull() }.map { it }
+        (find(album) ?: notInLibrary("album", album.id)).songList
+            .sortedBy { it.extras["trackNumber"]?.toLongOrNull() }.map { it }
     }.toFeed()
 
     override suspend fun loadFeed(album: Album) =
@@ -233,10 +244,10 @@ class OfflineExtension(
     }.flatten().toFeed()
 
     override suspend fun loadArtist(artist: Artist) =
-        find(artist)!!.toArtist()
+        (find(artist) ?: notInLibrary("artist", artist.id)).toArtist()
 
     override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
-        return find(artist)!!.run {
+        return (find(artist) ?: notInLibrary("artist", artist.id)).run {
             val tracks = songList.ifEmpty { null }?.toList()
             val albums = albumList.map { it.toAlbum() }.ifEmpty { null }
             listOfNotNull(
@@ -268,10 +279,11 @@ class OfflineExtension(
     }
 
     override suspend fun loadPlaylist(playlist: Playlist) =
-        if (playlist.id == "cached") playlist else find(playlist)!!.toPlaylist()
+        if (playlist.id == "cached") playlist
+        else (find(playlist) ?: notInLibrary("playlist", playlist.id)).toPlaylist()
 
     override suspend fun loadTracks(playlist: Playlist): Feed<Track> = PagedData.Single {
-        find(playlist)!!.songList.map { it }
+        (find(playlist) ?: notInLibrary("playlist", playlist.id)).songList.map { it }
     }.toFeed()
 
     override suspend fun loadFeed(playlist: Playlist): Feed<Shelf>? = null
@@ -279,13 +291,15 @@ class OfflineExtension(
     override suspend fun loadRadio(radio: Radio) = radio
 
     override suspend fun loadTracks(radio: Radio): Feed<Track> = PagedData.Single {
-        val mediaItem = radio.extras["mediaItem"]!!.toData<EchoMediaItem>().getOrThrow()
+        val mediaItem = requireNotNull(radio.extras["mediaItem"]) {
+            "Offline radio is missing its mediaItem extra (id: ${radio.id})"
+        }.toData<EchoMediaItem>().getOrThrow()
         val library = getLibrary()
         when (mediaItem) {
             is Album -> {
                 val tracks = loadTracks(mediaItem).loadAll().asSequence()
                     .map { it.artists }.flatten().map { artist ->
-                        library.artistMap[artist.id.toLongOrNull()]?.songList?.map { it }!!
+                        library.artistMap[artist.id.toLongOrNull()]?.songList?.map { it } ?: emptyList()
                     }.flatten().filter { it.album?.id != mediaItem.id }.take(25)
 
                 val randomTracks = library.songList.shuffled().take(25).map { it }
@@ -305,7 +319,14 @@ class OfflineExtension(
             }
 
             is Track -> {
-                val albumTracks = mediaItem.album?.let { loadTracks(loadAlbum(it)).loadAll() }
+                // Resolve the seed track's album tracks null-safely (mirrors the artist branch below). A
+                // persisted track can carry an album id that no longer resolves after a library re-scan; the
+                // radio must degrade to artist+random rather than fail. Was loadTracks(loadAlbum(it)), whose
+                // find(album)!! NPE'd on such a dangling id — the reported crash. null here is dropped by the
+                // listOfNotNull below.
+                val albumTracks = mediaItem.album?.let { album ->
+                    find(album)?.songList?.sortedBy { it.extras["trackNumber"]?.toLongOrNull() }
+                }
                 val artistTracks = mediaItem.artists.map { artist ->
                     find(artist)?.songList ?: emptyList()
                 }.flatten().map { it }

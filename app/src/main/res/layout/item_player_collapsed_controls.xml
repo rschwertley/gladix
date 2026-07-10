@@ -48,8 +48,11 @@
 
         </LinearLayout>
 
+        <!-- Reserves the trailing play/pause control's width so the weighted title/artist column above
+             doesn't slide under it. Mirrored in item_player_collapsed.xml (the collapse-animation twin);
+             both use @dimen/collapsed_end_controls_width so they stay in sync. -->
         <View
-            android:layout_width="112dp"
+            android:layout_width="@dimen/collapsed_end_controls_width"
             android:layout_height="@dimen/collapsed_cover_size" />
 
     </LinearLayout>
@@ -86,18 +89,6 @@
 
         </FrameLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/player_close"
-            style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:contentDescription="@string/close"
-            android:padding="8dp"
-            android:background="@drawable/ripple_44dp"
-            app:icon="@drawable/ic_close"
-            app:iconSize="24dp"
-            app:iconTint="@color/button_player"
-            tools:ignore="DuplicateClickableBoundsCheck" />
     </LinearLayout>
 
     <com.google.android.material.progressindicator.LinearProgressIndicator

@@ -101,12 +101,16 @@ private data class AutoId(
     val ct: String? = null, // context type: album | playlist | radio | artist
     val ci: String? = null, // context id
     val cn: String? = null, // context title (labels the header without a re-fetch)
+    val cst: String? = null, // album subtype (Album.Type name) — album-only; preserves Show/Book so a
+                             // type-aware extension's loadAlbum branches correctly on a thin cache-miss item.
+                             // New optional field; ignoreUnknownKeys makes it safe for old builds to drop.
 )
 
 @OptIn(ExperimentalEncodingApi::class)
 private fun encodeAutoId(trackId: String, extId: String, con: EchoMediaItem?): String {
     val payload = AutoId(
         t = trackId, e = extId, ct = con?.autoContextType(), ci = con?.id, cn = con?.title,
+        cst = (con as? Album)?.type?.name,
     )
     return "auto/" + Base64.UrlSafe.encode(payload.toJson().encodeToByteArray())
 }
@@ -135,7 +139,13 @@ private fun AutoId.toThinContext(): EchoMediaItem? {
     val id = ci ?: return null
     val title = cn.orEmpty()
     return when (ct) {
-        "album" -> Album(id = id, title = title)
+        // Carry the album subtype (Show/Book/…) back so a type-aware extension's loadAlbum branches
+        // correctly — otherwise a podcast show is handed back as a plain album and re-fetched via the
+        // album endpoint. Absent name (old-format id) or a future/unknown Type -> null, same as before.
+        "album" -> Album(
+            id = id, title = title,
+            type = cst?.let { runCatching { Album.Type.valueOf(it) }.getOrNull() }
+        )
         "playlist" -> Playlist(id = id, title = title, isEditable = false)
         "radio" -> Radio(id = id, title = title)
         "artist" -> Artist(id = id, name = title)
@@ -357,7 +367,10 @@ abstract class AndroidAutoCallback(
         cacheMutex.withLock { withTimeoutOrNull(15_000L) { when (type) {
             ALBUM -> extension.getList<AlbumClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$ALBUM/").substringBefore("/")
-                val unloaded = itemMap[id] as Album
+                // Soft-fail the node (empty) on a cache miss (eviction) or a wrong-typed item mis-filed under
+                // this mediaId, rather than NPE/CCE the browse future. Deliberately NOT a thin re-fetch: that
+                // would route a mismatched id back into loadAlbum — the mistyped-item bug this guards against.
+                val unloaded = itemMap[id] as? Album ?: return@getList emptyList()
                 val tracks = getTracks(context, id, extId, page) {
                     val album = loadAlbum(unloaded)
                     album to loadTracks(album)
@@ -367,7 +380,7 @@ abstract class AndroidAutoCallback(
 
             PLAYLIST -> extension.getList<PlaylistClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$PLAYLIST/").substringBefore("/")
-                val unloaded = itemMap[id] as Playlist
+                val unloaded = itemMap[id] as? Playlist ?: return@getList emptyList()
                 val tracks = getTracks(context, id, extId, page) {
                     val playlist = loadPlaylist(unloaded)
                     playlist to loadTracks(playlist)
@@ -377,7 +390,7 @@ abstract class AndroidAutoCallback(
 
             RADIO -> extension.getList<RadioClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$RADIO/").substringBefore("/")
-                val radio = itemMap[id] as Radio
+                val radio = itemMap[id] as? Radio ?: return@getList emptyList()
                 getTracks(context, id, extId, page) {
                     radio to loadTracks(radio)
                 }
@@ -385,7 +398,8 @@ abstract class AndroidAutoCallback(
 
             USER -> extension.getList<ArtistClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$USER/").substringBefore("/")
-                val artist = loadArtist(itemMap[id] as Artist)
+                val unloaded = itemMap[id] as? Artist ?: return@getList emptyList()
+                val artist = loadArtist(unloaded)
                 loadFeed(artist).toMediaItems(id, context, extId, page)
             }
 

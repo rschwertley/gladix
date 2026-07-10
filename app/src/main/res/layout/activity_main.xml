@@ -31,7 +31,7 @@
         android:id="@+id/playerFragmentContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:behavior_hideable="true"
+        app:behavior_hideable="false"
         app:behavior_peekHeight="@dimen/bottom_player_peek_height"
         app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
         tools:layout="@layout/fragment_player" />

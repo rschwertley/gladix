@@ -69,7 +69,17 @@ class PlayerRadio(
             loaded: PlayerState.Radio.Loaded
         ) {
             stateFlow.value = PlayerState.Radio.Loading
-            val tracks = loaded.tracks(loaded.cont) ?: return
+            val tracks = loaded.tracks(loaded.cont) ?: run {
+                // Page load failed: extension.get caught the throwable and getOrThrow already reported it to
+                // throwFlow, returning null. Restore the prior Loaded state instead of leaving stateFlow pinned
+                // at Loading — a stuck Loading makes topUpQueue() and startRadio() no-op for the rest of the
+                // context, stranding the WHOLE radio subsystem (not just this fetch). Restoring Loaded lets the
+                // next track transition retry (correct for a transient failure); a genuinely exhausted radio
+                // takes the continuation==null path below and becomes Empty instead. Generic by construction:
+                // null is the universal failure signal here, so this covers any extension whose loadPage throws.
+                stateFlow.value = loaded
+                return
+            }
 
             stateFlow.value = if (tracks.continuation == null) PlayerState.Radio.Empty
             else loaded.copy(cont = tracks.continuation)
@@ -103,8 +113,16 @@ class PlayerRadio(
         val itemContext = mediaItem.context?.takeUnless {
             it is Radio && it.extras[MediaItemUtils.LABEL_ONLY_RADIO] == "true"
         }
+        val prior = stateFlow.value
         stateFlow.value = PlayerState.Radio.Loading
-        val extension = extensionList.getExtension(extensionId) ?: return
+        val extension = extensionList.getExtension(extensionId) ?: run {
+            // Extension gone after Loading was set — restore the prior state rather than strand at Loading.
+            // Same principle as play() restoring its `loaded`: reset to whatever we were before Loading. Here
+            // prior is always Empty (loadPlaylist is only reached from the Empty branches of topUpQueue/
+            // startRadio), so this is Empty today, but capturing it keeps the intent explicit and robust.
+            stateFlow.value = prior
+            return
+        }
         val loaded = start(throwFlow, extension, item, itemContext)
         stateFlow.value = loaded ?: PlayerState.Radio.Empty
         if (loaded != null) {

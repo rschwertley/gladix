@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="collapsed_cover_size">64dp</dimen>
+    <!-- Width reserved at the trailing edge of the collapsed mini-player for the play/pause control
+         (48dp button + 8dp padding each side). Referenced by BOTH item_player_collapsed_controls.xml
+         (the live bar) and item_player_collapsed.xml (the invisible twin measured for the collapse
+         animation): the two title columns must reserve the identical end width, or the title shifts
+         horizontally as the player collapses. Single source of truth so they can't drift. -->
+    <dimen name="collapsed_end_controls_width">64dp</dimen>
     <dimen name="context_menu_cover_size">48dp</dimen>
     <dimen name="max_cover_size">384dp</dimen>
     <dimen name="media_header_cover_size">250dp</dimen>

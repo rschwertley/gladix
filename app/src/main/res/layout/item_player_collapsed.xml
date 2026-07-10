@@ -47,8 +47,11 @@
                 tools:text="@tools:sample/lorem/random" />
         </LinearLayout>
 
+        <!-- Invisible twin of item_player_collapsed_controls.xml's trailing reservation. Must match the live
+             bar's end width (@dimen/collapsed_end_controls_width) so the title lands in the same spot as the
+             player collapses. -->
         <View
-            android:layout_width="112dp"
+            android:layout_width="@dimen/collapsed_end_controls_width"
             android:layout_height="@dimen/collapsed_cover_size" />
     </LinearLayout>
 </FrameLayout>
