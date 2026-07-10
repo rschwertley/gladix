@@ -15,7 +15,9 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
+import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
@@ -143,6 +145,17 @@ class PlayerEventListener(
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
         retriedWatchdogCount = 0
+        // A fresh queue (replace / cold-restore) moves the current item with this reason; queue EDITS that
+        // leave the current item in place (radio top-up append, etc.) and our own skips (SEEK) do not. So
+        // this marks "a new queue that hasn't played anything yet", arming the removed-extension exhaustion
+        // message for the next all-dead run.
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+            resolvedSinceQueueReplace = false
+            // Re-arm the once-per-episode 5xx snackbar too: a new queue is a fresh context, so if the user
+            // swaps queues mid-CDN-outage the new queue's server errors should notify again. (serverErrorNotified
+            // otherwise only re-arms on a successful STATE_READY, i.e. the CDN recovering.)
+            serverErrorNotified = false
+        }
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -198,6 +211,12 @@ class PlayerEventListener(
         }
         if (playbackState == Player.STATE_READY) {
             consecutiveUnavailableSkips = 0
+            // A track resolved successfully — the queue is not all-dead (removed-extension tracks never reach
+            // READY). Suppresses the removed-extension exhaustion message for any queue that played anything.
+            resolvedSinceQueueReplace = true
+            // A track resolved, so any prior run of 5xx server errors has ended — re-arm the one-per-run
+            // server-error snackbar for the next run.
+            serverErrorNotified = false
             retried404MediaId = null
             retriedSocketMediaId = null
             retriedNetworkMediaId = null
@@ -329,6 +348,18 @@ class PlayerEventListener(
     private val maxConsecutiveUnavailableSkips = 3
     private var consecutiveUnavailableSkips = 0
 
+    // True once a track has resolved to STATE_READY since the queue was last set fresh (reset below on a
+    // PLAYLIST_CHANGED media-item transition). Removed-extension tracks fail during resolution and never
+    // reach READY, so this stays false only when the WHOLE queue was unplayable — the sole case where the
+    // removed-extension exhaustion message should fire (so a normal session that merely ends on a couple of
+    // removed tracks stays silent).
+    private var resolvedSinceQueueReplace = false
+
+    // Gates the 5xx "server error" snackbar to once per run of server errors — set on the first skip caused
+    // by a 5xx, reset on the next STATE_READY (a track resolved, so the run ended). Keeps a burst of CDN 5xx
+    // to a single message instead of one per skipped track.
+    private var serverErrorNotified = false
+
     private var bufferingWatchdog: Job? = null
     // Cold-resolution grace timer, keyed to the current item: restarts when the current mediaId
     // changes (a new buffering episode) and persists across watchdog re-arms of the same item.
@@ -404,6 +435,42 @@ class PlayerEventListener(
                 player.prepare()
                 player.play()
             }
+            return
+        }
+
+        // HTTP 5xx (500/502/503/504) = a transient REMOTE server/CDN error — not our bug. Moved off the
+        // generic tail: report to messageFlow (user snackbar, NO Crashlytics non-fatal, same category as the
+        // removed-extension fix) and EXEMPT from consecutiveUnavailableSkips so a CDN wobble can't trip the
+        // circuit breaker and halt an otherwise-good queue. Otherwise this is the generic tail's per-item path
+        // unchanged: ONE immediate retry (replaceMediaItem/withRetry — no backoff; backoff-retry is parked as
+        // its own task), then skip. Bounded by end-of-queue (hasNextMediaItem): a fully-500ing CDN skips
+        // monotonically to the end and stops — no loop, no spin.
+        if (rootCause is HttpDataSource.InvalidResponseCodeException
+            && rootCause.responseCode in 500..599
+        ) {
+            if (mediaItem == null) return
+            val index = player.currentMediaItemIndex
+            if (mediaItem.retries >= maxSingleItemRetries) {
+                // Retry exhausted for this track — skip. Report ONCE per run of server errors (serverErrorNotified,
+                // reset on the next STATE_READY) so a burst of 5xx shows a single snackbar, not one per track.
+                if (!serverErrorNotified) {
+                    serverErrorNotified = true
+                    scope.launch {
+                        extensions.app.messageFlow.emit(
+                            Message(context.getString(R.string.server_error_skipping))
+                        )
+                    }
+                }
+                if (!player.hasNextMediaItem()) {
+                    player.stop()
+                    return
+                }
+                skipInvoluntarily()
+            } else {
+                player.replaceMediaItem(index, MediaItemUtils.withRetry(mediaItem))
+            }
+            player.prepare()
+            player.play()
             return
         }
 
@@ -547,15 +614,36 @@ class PlayerEventListener(
             // fall through to silent skip below
         }
 
-        if (isMissingFile || is401 || isMalformedContent || isTimeout) {
-            consecutiveUnavailableSkips++
-            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
-                reportAndResetConsecutiveSkips(mediaItem?.extensionId)
-                player.stop()
-                return
+        // ExtensionNotFoundException = the track's extension was UNINSTALLED (removed) while queued. Disabled
+        // extensions stay in the music flow and getExtensionOrThrow returns them (they don't throw this), so
+        // this is removed-only. It's a synchronous list.find miss — instant, no network, and no retry can
+        // ever succeed — so it joins the silent-skip family but is EXEMPT from the consecutiveUnavailableSkips
+        // circuit breaker: that cap throttles retry-loop storms (CDN/token), whereas skipping a dead-extension
+        // track is free. Only the end-of-queue bound below applies, so we skip past e.g. 30 removed-Spotify
+        // tracks straight to the live-extension track at 31.
+        val isExtensionRemoved = rootCause is ExtensionNotFoundException
+        if (isMissingFile || is401 || isMalformedContent || isTimeout || isExtensionRemoved) {
+            if (!isExtensionRemoved) {
+                consecutiveUnavailableSkips++
+                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                    reportAndResetConsecutiveSkips(mediaItem?.extensionId)
+                    player.stop()
+                    return
+                }
             }
             val hasMore = player.hasNextMediaItem()
             if (!hasMore) {
+                // Queue exhausted. For a removed-extension run, surface ONE message iff NOTHING resolved to
+                // READY since the queue was last set (resolvedSinceQueueReplace) — i.e. the whole queue was
+                // unplayable — so a normal session that merely ends on a couple of removed tracks stays
+                // silent. messageFlow = user snackbar, no Crashlytics (expected input, not a bug).
+                if (isExtensionRemoved && !resolvedSinceQueueReplace) {
+                    scope.launch {
+                        extensions.app.messageFlow.emit(
+                            Message(context.getString(R.string.removed_extension_playback_stopped))
+                        )
+                    }
+                }
                 player.stop()
                 return
             }

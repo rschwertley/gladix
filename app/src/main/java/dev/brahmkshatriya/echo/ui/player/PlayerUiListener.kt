@@ -96,6 +96,17 @@ class PlayerUiListener(
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         updateList()
+        // Cold-start position lands here. The MediaController connects and snapshots PlayerInfo BEFORE the
+        // awaited restore continuation runs (applyRestoreIfCold's setMediaItems is gated behind the restore
+        // Deferred's disk read), so the snapshot carries position 0. The real position arrives milliseconds
+        // later as a PlayerInfo delta whose only signal is this onTimelineChanged. Nothing else re-reads it:
+        // the delta doesn't change playbackState (the controller's stays IDLE — ShufflePlayer's faked READY
+        // is getter-only and never delivered as a callback), so onPlaybackStateChanged never fires, and the
+        // progress poll already halted on IDLE at init. This line is what picks the position up.
+        // The connect-time 0 is written by the init updateProgress() and corrected here, so the collapsed
+        // mini-bar's progress line may show 0 for the sub-second disk-read window on cold start — known,
+        // cosmetic, not worth gating.
+        updateProgress()
     }
 
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {

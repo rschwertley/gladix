@@ -101,6 +101,7 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.registerOnUserPageChangeCallback
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.supportBottomSheetBehavior
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import kotlin.math.abs
@@ -491,8 +492,16 @@ class PlayerFragment : Fragment() {
             }
         }
 
-        observe(viewModel.totalDuration) {
-            val duration = it ?: viewModel.playerState.current.value?.track?.duration ?: 0
+        // Duration comes from a COMBINE of totalDuration + current, not totalDuration alone. On cold start
+        // player.duration is TIME_UNSET (unprepared) so totalDuration stays null, and its null->null is
+        // conflated to no emission — but the restored track carries a known duration. combine re-fires when
+        // current arrives, so the `?: current.track.duration` fallback actually evaluates instead of being
+        // stranded behind a totalDuration emission that never comes. Precedence stays totalDuration-first.
+        // DELIBERATE MIRROR of PlayerTvFragment's duration observer — keep the two in sync; each writes its
+        // own views (phone: playerControls + collapsed bar; TV: tvSeekBar/tvTotalTime/tvBufferBar).
+        observe(combine(viewModel.totalDuration, viewModel.playerState.current) { total, current ->
+            total ?: current?.track?.duration ?: 0L
+        }) { duration ->
             binding.playerCollapsedContainer.run {
                 collapsedSeekbar.max = duration.toInt()
                 collapsedBuffer.max = duration.toInt()

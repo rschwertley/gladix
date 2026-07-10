@@ -24,6 +24,7 @@ import androidx.media3.common.Player.REPEAT_MODE_ONE
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.slider.Slider
+import kotlinx.coroutines.flow.combine
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerTvBinding
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
@@ -140,9 +141,13 @@ class PlayerTvFragment : Fragment() {
                 binding.tvCurrentTime.text = curr.toTimeString()
             }
         }
-        observe(viewModel.totalDuration) {
-            val duration =
-                it ?: viewModel.playerState.current.value?.track?.duration ?: 0
+        // DELIBERATE MIRROR of PlayerFragment's duration observer (see the rationale there): combine
+        // totalDuration + current so the track-duration fallback re-fires when current arrives, instead of
+        // being stranded behind a totalDuration null->null that never emits. Keep the two in sync; this one
+        // writes the TV views (tvBufferBar / tvSeekBar / tvTotalTime).
+        observe(combine(viewModel.totalDuration, viewModel.playerState.current) { total, current ->
+            total ?: current?.track?.duration ?: 0L
+        }) { duration ->
             binding.tvBufferBar.max = duration.toInt()
             binding.tvSeekBar.apply {
                 value = max(0f, min(value, duration.toFloat()))
