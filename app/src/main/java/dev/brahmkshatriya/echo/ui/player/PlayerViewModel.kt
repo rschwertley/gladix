@@ -120,6 +120,20 @@ class PlayerViewModel(
     val controllerFutureRelease = getController(context) { player ->
         browser.value = player
         player.addListener(PlayerUiListener(player, this))
+        // At-rest position seed (display half of the cold-start position fix). The controller reports
+        // currentPosition=0 before play — the queue isn't applied yet and the masked position is never
+        // surfaced to the controller (proven by GladixProgress). Seed progress from the in-memory
+        // RestoreData.pos (shared PlayerState.restoreDeferred, not disk) so the scrubber shows the saved
+        // position at rest; updateProgress holds it until a real tick or a user seek. Skipped if playback has
+        // already started (currentPosition > 0). Independent of the service re-seek: that fixes PLAYBACK,
+        // this fixes the at-rest DISPLAY, and they share no state.
+        viewModelScope.launch {
+            val data = playerState.restoreDeferred?.await() ?: return@launch
+            if (data.pos > 0 && player.currentPosition <= 0L) {
+                restoreSeedMs = data.pos
+                progress.value = data.pos to 0L
+            }
+        }
         // No cold-start resume() here: PlayerService.onCreate is the sole app-open restorer. Sending
         // resumeCommand on connect raced onCreate's in-flight recoverPlaylist — both compareAndSet
         // userQueueSet, but onCreate only AFTER its slow disk read, so resume() could claim first and run
@@ -370,6 +384,11 @@ class PlayerViewModel(
     }
 
     val progress = MutableStateFlow(0L to 0L)
+
+    // At-rest position seed hold (display half of the cold-start position fix). Non-null = the saved restore
+    // position is being shown while the controller still reports currentPosition=0. PlayerUiListener.updateProgress
+    // emits it in place of 0 and releases it (nulls) on the first real tick; a user seek nulls it too. Main-only.
+    var restoreSeedMs: Long? = null
     val discontinuity = MutableStateFlow(0L)
     val totalDuration = MutableStateFlow<Long?>(null)
 

@@ -70,6 +70,10 @@ class PlayerEventListener(
     // Invoked when the timeline becomes non-empty (a queue was applied, from any source) — the success
     // clear for PlayerState.resumptionApplying. Fires on the app looper (Main), preserving that invariant.
     private val onQueueApplied: () -> Unit = {},
+    // Returns-and-clears PlayerState.pendingRestoreSeek (the cold-start re-seek latch). Wired from
+    // PlayerService like onQueueApplied; this listener is not given PlayerState directly. Returns null once
+    // consumed, so it fires at most once per cold restore.
+    private val consumeRestoreSeek: () -> Pair<String, Long>? = { null },
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
@@ -210,7 +214,7 @@ class PlayerEventListener(
             bufferingWatchdog = null
         }
         if (playbackState == Player.STATE_READY) {
-            consecutiveUnavailableSkips = 0
+            resetConsecutiveSkips()
             // A track resolved successfully — the queue is not all-dead (removed-extension tracks never reach
             // READY). Suppresses the removed-extension exhaustion message for any queue that played anything.
             resolvedSinceQueueReplace = true
@@ -220,6 +224,17 @@ class PlayerEventListener(
             retried404MediaId = null
             retriedSocketMediaId = null
             retriedNetworkMediaId = null
+            // Cold-start re-seek: the saved position was lost when prepare() resolved the deferred source's
+            // placeholder->real timeline to the default (0). The real timeline now exists (STATE_READY), so a
+            // seek sticks. Position-only on the current window (no index form — sidesteps ShufflePlayer's
+            // windowed-index seeks). Guarded so it fires exactly once and loses to a user action: mediaId must
+            // still be the restored track (not one the user tapped mid-buffer), and currentPosition must still
+            // be at the start (a user seek before this READY moves it past the belt and we leave it alone).
+            consumeRestoreSeek()?.let { (id, pos) ->
+                if (player.currentMediaItem?.mediaId == id
+                    && player.currentPosition < RESTORE_SEEK_BELT_MS
+                ) player.seekTo(pos)
+            }
         }
     }
 
@@ -283,7 +298,7 @@ class PlayerEventListener(
                     retriedMediaId = null
                     retriedWatchdogCount = 0
                     Log.d("GladixPlayback", "Buffering watchdog fired: skipping ${player.currentMediaItem?.mediaId}")
-                    consecutiveUnavailableSkips++
+                    recordSkip(null)
                     if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                         reportAndResetConsecutiveSkips(player.currentMediaItem?.extensionId)
                         player.pause()
@@ -330,11 +345,17 @@ class PlayerEventListener(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
         if (player.mediaItemCount == 0) return  // fired during player.release(); position is 0
+        // A user seek before the cold-start re-seek fires must win — disarm the latch. Our own re-seek also
+        // lands here, but it consumed the latch first, so this is a no-op for it.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) consumeRestoreSeek()
         ResumptionUtils.saveCurrentPos(context, player.currentPosition)
     }
 
     companion object {
         private const val BUFFERING_WATCHDOG_MS = 5_000L
+        // Cold-start re-seek belt: only re-apply the saved position if the current position is still at the
+        // start. A user seek before the first STATE_READY moves it past this, and we leave their choice.
+        private const val RESTORE_SEEK_BELT_MS = 1_000L
         // ≥ Deezer stream-resolution ceiling: DeezerApi clientNP connect 15s + read 10s;
         // getContentLength 10s. If clientNP ever gains a callTimeout, anchor to that instead.
         private const val COLD_GRACE_MS = 25_000L
@@ -347,6 +368,11 @@ class PlayerEventListener(
 
     private val maxConsecutiveUnavailableSkips = 3
     private var consecutiveUnavailableSkips = 0
+    // The safeCause() of each skip in the current run, oldest→newest, bounded to maxConsecutiveUnavailableSkips.
+    // Moves in lockstep with consecutiveUnavailableSkips: recordSkip() appends as it increments and
+    // resetConsecutiveSkips() clears as it zeroes — the two are never mutated apart, so a reported run can
+    // never carry a cause from a previous run.
+    private val recentSkipCauses = ArrayDeque<String>()
 
     // True once a track has resolved to STATE_READY since the queue was last set fresh (reset below on a
     // PLAYLIST_CHANGED media-item transition). Removed-extension tracks fail during resolution and never
@@ -374,12 +400,39 @@ class PlayerEventListener(
     private var retriedSocketMediaId: String? = null
     private var retriedNetworkMediaId: String? = null
 
+    // The ONLY way to advance the breaker: increments the counter and records this skip's cause together,
+    // so they cannot drift. Called at every skip site; never at the exempt (5xx / removed-extension) sites,
+    // which do not skip. cause == null for the buffering watchdog (a stuck resolve, no error object).
+    private fun recordSkip(cause: Throwable?) {
+        consecutiveUnavailableSkips++
+        recentSkipCauses.addLast(safeCause(cause))
+        if (recentSkipCauses.size > maxConsecutiveUnavailableSkips) recentSkipCauses.removeFirst()
+    }
+
+    // The ONLY way to clear the breaker: zeroes the counter and the causes together. Both reset points
+    // (STATE_READY and the trip) go through here, so the two fields always reset atomically.
+    private fun resetConsecutiveSkips() {
+        consecutiveUnavailableSkips = 0
+        recentSkipCauses.clear()
+    }
+
+    // Class + a whitelisted safe detail only — never the raw message (Media3 embeds the signed CDN URL with
+    // token/hmac in it). HTTP responseCode is the 401-vs-404-vs-timeout discriminator and carries no secret;
+    // responseMessage/headers are deliberately excluded.
+    private fun safeCause(cause: Throwable?): String {
+        if (cause == null) return "StuckBuffering"
+        val cls = cause::class.simpleName ?: "Unknown"
+        return if (cause is HttpDataSource.InvalidResponseCodeException) "$cls HTTP ${cause.responseCode}" else cls
+    }
+
     private fun reportAndResetConsecutiveSkips(extensionId: String?) {
         healthMonitor?.report(
-            HealthMonitor.ConsecutiveSkipException(consecutiveUnavailableSkips, extensionId ?: "unknown"),
+            HealthMonitor.ConsecutiveSkipException(
+                consecutiveUnavailableSkips, extensionId ?: "unknown", recentSkipCauses.joinToString(",")
+            ),
             HealthMonitor.Scope.MEMORY_ONLY, 10 * 60 * 1000L
         )
-        consecutiveUnavailableSkips = 0
+        resetConsecutiveSkips()
     }
 
     override fun onPlayerError(error: PlaybackException) {
@@ -420,7 +473,7 @@ class PlayerEventListener(
             } else {
                 retried404MediaId = null
                 Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
-                consecutiveUnavailableSkips++
+                recordSkip(rootCause)
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                     player.stop()
@@ -490,7 +543,7 @@ class PlayerEventListener(
             } else {
                 retriedSocketMediaId = null
                 Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
-                consecutiveUnavailableSkips++
+                recordSkip(rootCause)
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                     player.stop()
@@ -552,7 +605,7 @@ class PlayerEventListener(
         }
 
         if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
-            consecutiveUnavailableSkips++
+            recordSkip(rootCause)
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                 player.stop()
@@ -624,7 +677,7 @@ class PlayerEventListener(
         val isExtensionRemoved = rootCause is ExtensionNotFoundException
         if (isMissingFile || is401 || isMalformedContent || isTimeout || isExtensionRemoved) {
             if (!isExtensionRemoved) {
-                consecutiveUnavailableSkips++
+                recordSkip(rootCause)
                 if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId)
                     player.stop()
@@ -682,7 +735,7 @@ class PlayerEventListener(
             currentRetries = 0
             last = null
             Log.d("GladixPlayback", "onPlayerError: maxRetries exhausted for ${mediaItem.mediaId}, skipping")
-            consecutiveUnavailableSkips++
+            recordSkip(rootCause)
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 reportAndResetConsecutiveSkips(mediaItem.extensionId)
                 player.stop()

@@ -45,6 +45,12 @@ class PlayerUiListener(
 
     // TEMP cold-start diagnostic — remove after capture.
     private val logStartMs = System.currentTimeMillis()
+    private var logFirstReadyMs: Long? = null
+    // EVENT gate, not a clock gate: log until the first STATE_READY (the cold-restore track resolving) + 2s,
+    // so the decisive re-seek discontinuity (reason=1) is captured no matter how long the stream takes to
+    // load. Before READY (at rest) it logs unbounded, so the seed/display poll lines are always visible.
+    private fun shouldLog() =
+        logFirstReadyMs.let { it == null || System.currentTimeMillis() - it <= 2_000L }
 
     private fun updateProgress(caller: String = "poll") {
         val position = player.currentPosition
@@ -55,21 +61,29 @@ class PlayerUiListener(
         val trackDuration = viewModel.playerState.current.value?.track?.duration
         val state = player.playbackState
 
-        // TEMP cold-start diagnostic — remove after capture. For the first 5s, log exactly which source wins
-        // for position and duration on each call, tagged by caller. pos is always player.currentPosition (we
-        // never seed it); totalDuration is player.duration or null; track.duration is the fragment's fallback.
+        // At-rest seed hold: while the seed is armed and the controller still reports 0 (queue not applied /
+        // masked position not surfaced), emit the saved restore position instead of 0. Release on the first
+        // real (non-zero) tick — the service re-seek at STATE_READY produces it — so play tracks normally.
+        val seed = viewModel.restoreSeedMs
+        val displayPosition = if (seed != null && position <= 0L) seed else position
+        if (position > 0L && seed != null) viewModel.restoreSeedMs = null
+
+        // TEMP cold-start diagnostic — remove after capture. Logs which source wins for position and duration
+        // on each call, tagged by caller, until the first STATE_READY + 2s (see shouldLog). pos = raw
+        // player.currentPosition; seed/display = the at-rest hold; the re-seek shows up on the controller as
+        // onPositionDiscontinuity reason=1 (SEEK) to the saved position — the falsifiable test.
         val elapsed = System.currentTimeMillis() - logStartMs
-        if (elapsed <= 5000L) {
+        if (shouldLog()) {
             Log.d(
                 "GladixProgress",
                 "t=${elapsed}ms [$caller] state=$state pwr=${player.playWhenReady} " +
-                    "pos(player.currentPosition)=$position buf=$buffered " +
+                    "pos(player.currentPosition)=$position seed=$seed display=$displayPosition buf=$buffered " +
                     "player.duration=$playerDuration set=$durationSet -> totalDuration=$totalDuration " +
                     "track.duration=$trackDuration"
             )
         }
 
-        viewModel.progress.value = position to buffered
+        viewModel.progress.value = displayPosition to buffered
         viewModel.totalDuration.value = totalDuration
 
         handler.removeCallbacks(updateProgressRunnable)
@@ -94,6 +108,8 @@ class PlayerUiListener(
 
             Player.STATE_READY -> {
                 viewModel.buffering.value = false
+                // TEMP: mark the first READY so shouldLog() keeps logging 2s past the re-seek.
+                if (logFirstReadyMs == null) logFirstReadyMs = System.currentTimeMillis()
             }
 
             else -> Unit
@@ -114,10 +130,15 @@ class PlayerUiListener(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
         updateNavigation()
-        // TEMP diagnostic — remove after capture. The discontinuity's own target position, which may lead
-        // player.currentPosition on a seek/transition.
+        // A user seek before the at-rest seed releases must win — null the seed hold. The service re-seek also
+        // lands here as a SEEK, but it carries a real (non-zero) position that releases the hold in
+        // updateProgress anyway, so nulling here is consistent for both.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) viewModel.restoreSeedMs = null
+        // TEMP diagnostic — remove after capture. reason=1 (SEEK) to ~the saved position at first STATE_READY
+        // is the proof the re-seek fired; reason=6 from 0 is the pre-fix failure. Gated on the event (first
+        // READY + 2s), not the clock, so a slow stream load can't push the re-seek past the window.
         val elapsed = System.currentTimeMillis() - logStartMs
-        if (elapsed <= 5000L) {
+        if (shouldLog()) {
             Log.d(
                 "GladixProgress",
                 "t=${elapsed}ms DISCONTINUITY reason=$reason old=${oldPosition.positionMs} new=${newPosition.positionMs}"

@@ -14,8 +14,8 @@ class HealthMonitor(application: Application) {
     class ExtensionResolutionTimeout(extensionId: String, durationMs: Long) :
         Exception("extensionId=$extensionId durationMs=$durationMs")
 
-    class ConsecutiveSkipException(skipCount: Int, lastExtensionId: String) :
-        Exception("skipCount=$skipCount lastExtensionId=$lastExtensionId")
+    class ConsecutiveSkipException(skipCount: Int, lastExtensionId: String, lastCauses: String) :
+        Exception("skipCount=$skipCount lastExtensionId=$lastExtensionId lastCauses=$lastCauses")
 
     class OrphanedSessionException(savedTrackCount: Int, firstTrackId: String) :
         Exception("savedTrackCount=$savedTrackCount firstTrackId=$firstTrackId")

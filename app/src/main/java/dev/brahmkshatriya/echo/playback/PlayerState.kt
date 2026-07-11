@@ -42,6 +42,15 @@ data class PlayerState(
     // invariant breaks and this must become atomic.
     var resumptionApplying = false
 
+    // Cold-start re-seek latch. Media3 loses the restored startPositionMs when prepare() resolves the
+    // deferred StreamableMediaSource's placeholder->real timeline to the default position (0) — traced in
+    // ExoPlayerImplInternal.resolvePositionForPlaylistChange. Armed at the restore-apply sites
+    // (applyRestoreIfCold / onPlaybackResumption) with the restored current item's (mediaId, savedPositionMs),
+    // consumed at the FIRST STATE_READY in PlayerEventListener, which re-seeks now that the real timeline
+    // exists. mediaId-guarded so a track the user plays during the restore's buffering window can't be seeked
+    // to the stale position. Main-only (same application-looper invariant as resumptionApplying above).
+    var pendingRestoreSeek: Pair<String, Long>? = null
+
     data class Current(
         val index: Int,
         val mediaItem: MediaItem,

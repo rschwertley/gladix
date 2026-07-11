@@ -231,6 +231,8 @@ class PlayerService : MediaLibraryService() {
                 // Clears the resumption marker once the queue lands (timeline non-empty) — the success
                 // clear for onPlaybackResumption; on Main, since Player.Listener fires on the app looper.
                 onQueueApplied = { state.resumptionApplying = false },
+                // Returns-and-clears the cold-start re-seek latch (Main; Player.Listener fires on the app looper).
+                consumeRestoreSeek = { state.pendingRestoreSeek.also { state.pendingRestoreSeek = null } },
                 healthMonitor = healthMonitor,
             )
         )

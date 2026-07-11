@@ -131,11 +131,29 @@ object ExceptionUtils {
         throwable.cause?.let { append(getFinalDetails(it)) }
     }
 
-    private fun getStackTrace(throwable: Throwable): String = buildString {
-        appendLine("Version: ${appVersion()}")
-        appendLine(getFinalDetails(throwable))
-        appendLine("---Stack Trace---")
-        appendLine(throwable.stackTraceToString())
+    // ~16K chars. A String parcels at ~2 bytes/char (UTF-16), so this is ~32KB in the instance-state Bundle —
+    // far under the ~1MB TransactionTooLarge budget the un-capped trace was blowing on onSaveInstanceState
+    // (a DecodingException inlines the entire failed-to-decode response via getDetails).
+    private const val TRACE_CHAR_CAP = 16_384
+
+    private fun getStackTrace(throwable: Throwable): String {
+        // Order matters for the head-cap below: FRAMES FIRST (bounded, and their "Caused by: …: Response
+        // code: 401" lines carry the exception types + HTTP responseCode — the key discriminators), then the
+        // UNBOUNDED raw payload LAST (getFinalDetails inlines full toJson() / DecodingException.json, which is
+        // what reaches hundreds of KB). So a head-cap keeps the diagnostics and truncates only the raw tail.
+        val full = buildString {
+            appendLine("Version: ${appVersion()}")
+            appendLine("---Stack Trace---")
+            appendLine(throwable.stackTraceToString())
+            appendLine("---Details---")
+            append(getFinalDetails(throwable))
+        }
+        if (full.length <= TRACE_CHAR_CAP) return full
+        // Cap counts CHARS, and the marker states what was cut so a truncated trace is never mistaken for a
+        // full one (~2 bytes/char → the cut size in KB).
+        val cutKb = (full.length - TRACE_CHAR_CAP) * 2 / 1024
+        return full.take(TRACE_CHAR_CAP) +
+            "\n…[trace truncated: showing first $TRACE_CHAR_CAP of ${full.length} chars, ~${cutKb}KB cut]"
     }
 
     @Serializable

@@ -57,8 +57,10 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.await
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.futureCatching
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.resolveCurrentIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -203,7 +205,11 @@ abstract class AndroidAutoCallback(
     ): ListenableFuture<LibraryResult<MediaItem>> {
         if (params?.isRecent == true) {
             val tracks = context.recoverTracks()
-            val index = context.recoverIndex() ?: 0
+            val rawIndex = context.recoverIndex() ?: 0
+            // Same repair as recoverPlaylist so the AA resume tile shows the true current, not a skewed one.
+            val index = resolveCurrentIndex(tracks ?: emptyList(), rawIndex, context.recoverCurrentId()) {
+                it.first.item.id
+            }
             val track = (tracks?.getOrNull(index) ?: tracks?.firstOrNull())?.first?.item
             return Futures.immediateFuture(
                 LibraryResult.ofItem(
@@ -349,7 +355,10 @@ abstract class AndroidAutoCallback(
                 )
             }
             val tracks = context.recoverTracks()
-            val index = context.recoverIndex() ?: 0
+            val rawIndex = context.recoverIndex() ?: 0
+            val index = resolveCurrentIndex(tracks ?: emptyList(), rawIndex, context.recoverCurrentId()) {
+                it.first.item.id
+            }
             val (state, _) = tracks?.getOrNull(index) ?: tracks?.firstOrNull()
                 ?: return@futureCatching LibraryResult.ofItemList(ImmutableList.of(), null)
             return@futureCatching LibraryResult.ofItemList(
@@ -708,8 +717,20 @@ abstract class AndroidAutoCallback(
         if (dropped > 0) scope.launch {
             app.messageFlow.emit(Message(context.getString(R.string.some_tracks_couldnt_be_restored)))
         }
+        // Enforce super's invariant: the base onAddMediaItems throws UnsupportedOperationException on any
+        // item with localConfiguration == null (Media3 1.10.1). The auto/ items above are built with a URI
+        // (localConfiguration set) and non-auto items that already carry a URI pass through; only genuinely
+        // unresolvable ones — an AA voice "play X" query or a bare mediaId with no URI — are filtered out.
+        // Silent by design (a phone snackbar wouldn't show in the car). An empty result hits super's safe
+        // empty path (same as the shuffle branch above), clearing the queue rather than re-prepping a fine
+        // track. Resolving the query to real results (+ a spoken "couldn't find that" on none) is a separate
+        // feature, not this crash guard.
+        val playable = new.filter { it.localConfiguration != null }
+        // Dropping items can leave startIndex past the end → IllegalSeekPositionException when Media3 applies
+        // it. Clamp to the filtered list (0 when empty).
+        val safeIndex = startIndex.coerceIn(0, (playable.size - 1).coerceAtLeast(0))
         val future = super.onSetMediaItems(
-            mediaSession, controller, new, startIndex, startPositionMs
+            mediaSession, controller, playable.toMutableList(), safeIndex, startPositionMs
         )
         future.await(context)
     }

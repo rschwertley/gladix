@@ -56,8 +56,10 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.resolveCurrentIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
@@ -200,6 +202,9 @@ class PlayerCallback(
             player.shuffleModeEnabled = data.shuffle
             player.repeatMode = data.repeat
             player.setMediaItems(data.items.toMutableList(), data.index, data.pos)
+            // Arm the cold-start re-seek: the startPositionMs above is lost at prepare() (see PlayerState).
+            if (data.pos > 0)
+                state.pendingRestoreSeek = data.items.getOrNull(data.index)?.mediaId?.let { it to data.pos }
         }
     }
 
@@ -612,7 +617,9 @@ class PlayerCallback(
                 val tracks = context.recoverTracks()
                     ?: throw UnsupportedOperationException("No saved queue")
                 val rawIndex = context.recoverIndex() ?: 0
-                val (s, ctx) = tracks.getOrNull(rawIndex) ?: tracks.firstOrNull()
+                // Same repair as recoverPlaylist so the lock-screen metadata tile shows the true current.
+                val index = resolveCurrentIndex(tracks, rawIndex, context.recoverCurrentId()) { it.first.item.id }
+                val (s, ctx) = tracks.getOrNull(index) ?: tracks.firstOrNull()
                     ?: throw UnsupportedOperationException("No saved queue")
                 val item = MediaItemUtils.build(app, downloadFlow.value, s, ctx)
                 return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0L)
@@ -635,6 +642,11 @@ class PlayerCallback(
                 withContext(Dispatchers.Main) {
                     mediaSession.player.shuffleModeEnabled = data.shuffle
                     mediaSession.player.repeatMode = data.repeat
+                    // Arm the cold-start re-seek: Media3 applies startPositionMs below via the same 3-arg
+                    // setMediaItems and loses it at prepare() identically (see PlayerState).
+                    if (data.pos > 0)
+                        state.pendingRestoreSeek =
+                            data.items.getOrNull(data.index)?.mediaId?.let { it to data.pos }
                 }
                 Log.d("GladixPlayback", "onPlaybackResumption: items=${data.items.size}")
                 MediaItemsWithStartPosition(data.items.map { withUnloaded(it) }, data.index, data.pos)

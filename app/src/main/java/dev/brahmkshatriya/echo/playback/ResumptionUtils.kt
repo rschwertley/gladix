@@ -216,7 +216,7 @@ object ResumptionUtils {
     }
 
     fun Context.recoverIndex() = getFromQueue<Int>(INDEX)
-    private fun Context.recoverCurrentId() = getFromQueue<String>(CURRENT_ID)
+    fun Context.recoverCurrentId() = getFromQueue<String>(CURRENT_ID)
     private fun Context.recoverPosition() = getFromQueue<Long>(POSITION)
 
     fun Context.recoverShuffle() = getFromQueue<Boolean>(SHUFFLE)
@@ -229,6 +229,27 @@ object ResumptionUtils {
         context.saveToQueue(REPEAT, repeat)
     }
 
+    // Single resolver for "which item is current on restore", shared by recoverPlaylist and the AA resume
+    // tiles. CURRENT_ID (written synchronously by saveIndex) is ground truth; the saved index can lead the
+    // debounced TRACKS on disk after a hard kill (the auto-advance skew), leaving the PREVIOUS track at
+    // coercedIndex. Relocate to CURRENT_ID via indexOfFirst — the earliest occurrence is at-or-before the
+    // true position, so a subList by the caller always keeps the true current and never trims past it (a
+    // directional at-or-after search could drop it on a backward/Previous skew). Falls back to coercedIndex
+    // (today's behavior) when CURRENT_ID is unsaved or absent from the list (edit/append race). Returns an
+    // INDEX so no caller re-looks-up a mediaId; idOf is passed because the two surfaces hold different
+    // element types (MediaItem here vs recovered Unloaded pairs on the AA tiles).
+    fun <T> resolveCurrentIndex(
+        items: List<T>,
+        coercedIndex: Int,
+        savedCurrentId: String?,
+        idOf: (T) -> String?,
+    ): Int {
+        if (savedCurrentId == null) return coercedIndex
+        if (items.getOrNull(coercedIndex)?.let(idOf) == savedCurrentId) return coercedIndex
+        val found = items.indexOfFirst { idOf(it) == savedCurrentId }
+        return if (found >= 0) found else coercedIndex
+    }
+
     fun Context.recoverPlaylist(
         app: App,
         downloads: List<Downloader.Info>,
@@ -239,20 +260,26 @@ object ResumptionUtils {
         // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
         // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
         val rawIndex = recoverIndex() ?: C.INDEX_UNSET
-        val index = when {
+        val coercedIndex = when {
             items.isEmpty() -> C.INDEX_UNSET
             rawIndex == C.INDEX_UNSET -> 0
             rawIndex < items.size -> rawIndex
             else -> items.size - 1
         }
-        // Tripwire: the track at the restored index must be the one that was current at save time.
-        // A mismatch means the persisted index and queue disagree (e.g. a future regression saving a
-        // windowed index against the full order). Diagnostic only — restore still proceeds.
         val savedCurrentId = recoverCurrentId()
-        val actualId = items.getOrNull(index)?.mediaId
+        // Repair the index against CURRENT_ID (ground truth) BEFORE it drives safePos and the subList: the
+        // debounced TRACKS can lag the synchronous index/current-id on disk after a hard kill (the
+        // auto-advance skew), leaving the previous track at coercedIndex. A wrong index would zero the
+        // position against the wrong track and trim the wrong span. Single resolver — see resolveCurrentIndex.
+        val index = resolveCurrentIndex(items, coercedIndex, savedCurrentId) { it.mediaId }
+        // Telemetry, kept on the repair branch: report when the coerced index disagreed with CURRENT_ID (the
+        // skew we just corrected), whether or not the track was relocatable — so a future regression still
+        // surfaces. Firebase-gated + 24h-deduped, so a local build won't show it; the device check is the
+        // GladixPlayback line below (coerced vs repaired index).
+        val actualId = items.getOrNull(coercedIndex)?.mediaId
         if (savedCurrentId != null && actualId != null && savedCurrentId != actualId) {
             healthMonitor?.report(
-                HealthMonitor.ResumeIndexMismatchException(savedCurrentId, actualId, index, items.size),
+                HealthMonitor.ResumeIndexMismatchException(savedCurrentId, actualId, coercedIndex, items.size),
                 HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
             )
         }
@@ -263,7 +290,7 @@ object ResumptionUtils {
             trackDuration == null && rawPos > 90 * 60_000L -> 0L
             else -> rawPos
         }
-        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index pos=$rawPos safePos=$safePos duration=$trackDuration")
+        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index (raw=$rawIndex coerced=$coercedIndex repaired=${index != coercedIndex} currentId=$savedCurrentId) pos=$rawPos safePos=$safePos duration=$trackDuration")
         // P2 — current+upcoming: the current track must restore at index 0. A queue persisted by an
         // older build can carry a non-zero index with "before" tracks stranded above current (which,
         // unlike a fresh play, never clear by advancing); drop them so restore comes back at the saved
