@@ -220,9 +220,19 @@ object ResumptionUtils {
             }
         }
         val tracks = recoverTracks() ?: return null
-        return tracks.map { (state, item) ->
-            MediaItemUtils.build(app, downloads, state, item)
+        // Skip-and-continue: build each saved item independently so ONE unbuildable entry (a partial/older-
+        // format save, a mistyped item, a null field on a Track) can't throw out of the whole restore and
+        // brick cold start. A dropped item just leaves the list — resolveCurrentIndex in recoverPlaylist
+        // relocates CURRENT_ID by mediaId on the RESULTING list, so dropping a non-current item shifts
+        // positions harmlessly and the current is still found; if the current item itself is unbuildable it
+        // falls back to the coerced index (a neighbour), which ResumeIndexMismatch telemetry surfaces.
+        val built = tracks.mapNotNull { (state, item) ->
+            runCatching { MediaItemUtils.build(app, downloads, state, item) }.getOrNull()
         }
+        val dropped = tracks.size - built.size
+        if (dropped > 0)
+            Log.w("GladixPlayback", "recoverQueue: skipped $dropped/${tracks.size} unbuildable saved item(s)")
+        return built
     }
 
     fun Context.recoverIndex() = getFromQueue<Int>(INDEX)

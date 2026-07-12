@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -81,6 +82,12 @@ class PlayerEventListener(
     // "we restored to a known non-zero position that the placeholder timeline hasn't resolved yet" — exactly
     // the window in which a currentPosition of 0 is spurious and must never overwrite the good saved value.
     private val isRestoreSeekArmed: () -> Boolean = { false },
+    // Arms PlayerState.pendingRestoreSeek to (mediaId, positionMs) — the WRITE counterpart to
+    // consumeRestoreSeek (read+clear) and isRestoreSeekArmed (peek). A user SEEK during the load window sets a
+    // position that reason=4 REMOVE then wipes to 0 before playback starts; arming the latch with it lets the
+    // STATE_READY re-seek re-apply it, so the song starts from where the user scrubbed — the SAME one-shot
+    // latch as cold-start restore, last-write-wins (a scrub overrides a pending restore).
+    private val armRestoreSeek: (String, Long) -> Unit = { _, _ -> },
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
@@ -103,6 +110,25 @@ class PlayerEventListener(
     private inline fun internalSeek(block: () -> Unit) {
         internalSeekInFlight = true
         try { block() } finally { internalSeekInFlight = false }
+    }
+
+    // Durable-position ticker (the SAVE-side half of the mid-song-reboot fix). POSITION is otherwise written
+    // only on discrete events (onPositionDiscontinuity / onIsPlayingChanged), so a song played straight
+    // through never updates it after the AUTO_TRANSITION into it wrote 0 at song start — a reboot / OS memory-
+    // kill / crash (none of which fire an event or reach onDestroy's flush) then resumes at 0. This snapshots
+    // the live position periodically so the on-disk value stays fresh. Runs on the app looper (Main) so its
+    // write SERIALIZES with the event saves — both go through the synchronous, atomic saveCurrentPosGated →
+    // saveToQueue (tmp+rename), so there is never a concurrent POSITION-file write (do NOT move the write to
+    // IO — that would break the serialization). Gated to actual playback via player.isPlaying (skips
+    // buffering / paused / idle / released), and routed through saveCurrentPosGated so the isRestoreSeekArmed
+    // gate still suppresses the placeholder 0 during the restore window. A child of `scope`, so it is
+    // cancelled with the service in onDestroy (scope.cancel), and cannot fire between player.release() and
+    // that cancel because both run synchronously on Main.
+    private val positionSaveTicker = scope.launch(Dispatchers.Main) {
+        while (isActive) {
+            delay(POSITION_SAVE_INTERVAL_MS)
+            if (player.isPlaying) saveCurrentPosGated()
+        }
     }
 
     // Every skip in this listener is an INVOLUNTARY auto-skip (a failed/stuck current track). Route
@@ -257,9 +283,12 @@ class PlayerEventListener(
             // still be the restored track (not one the user tapped mid-buffer), and currentPosition must still
             // be at the start (a user seek before this READY moves it past the belt and we leave it alone).
             consumeRestoreSeek()?.let { (id, pos) ->
+                // internalSeek: this re-seek already consumed the latch above, so wrap its own seekTo to keep
+                // its SEEK discontinuity from RE-ARMING the latch at onPositionDiscontinuity (arm-always).
+                // Without the wrap, the re-seek would re-arm after restore and leave the latch stuck (case A).
                 if (player.currentMediaItem?.mediaId == id
                     && player.currentPosition < RESTORE_SEEK_BELT_MS
-                ) player.seekTo(pos)
+                ) internalSeek { player.seekTo(pos) }
             }
         }
     }
@@ -385,12 +414,19 @@ class PlayerEventListener(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
         if (player.mediaItemCount == 0) return  // fired during player.release(); position is 0
-        // A user seek before the cold-start re-seek fires must win — disarm the latch. Our own re-seek also
-        // lands here, but it consumed the latch first, so this is a no-op for it. EXCLUDE internal
-        // (buffering-watchdog) seeks: Media3 delivers them as DISCONTINUITY_REASON_SEEK too (indistinguishable
-        // by reason), so without the flag the watchdog would steal the latch and the corrective re-seek would
-        // never fire (fix 2).
-        if (reason == Player.DISCONTINUITY_REASON_SEEK && !internalSeekInFlight) consumeRestoreSeek()
+        // A user SEEK is the target the user chose, so ARM the latch with it (newPosition.positionMs) rather
+        // than consume it. If the seek lands DURING the load window (before the real timeline), reason=4
+        // REMOVE wipes it to 0 before playback starts — the STATE_READY re-seek then re-applies the armed
+        // position against the resolved stream, so the song starts from the scrub point. If it lands AFTER the
+        // real timeline, the position already sticks and the re-seek's belt (currentPosition at the target,
+        // past the belt) makes the re-apply a no-op. Same one-shot latch as cold-start restore; last-write-
+        // wins, so a scrub overrides a pending restore. EXCLUDE internal seeks (watchdog/retry/our own
+        // re-seek) via !internalSeekInFlight — Media3 delivers them as DISCONTINUITY_REASON_SEEK too and they
+        // must neither arm nor disarm. NARROW residual (accepted): a within-buffer post-timeline seek to
+        // < belt that re-buffers before playback passes the belt re-applies the sub-belt target (a <1s
+        // backward yank); closing it cleanly would need a position-progress "reached" observer, not worth it.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK && !internalSeekInFlight)
+            player.currentMediaItem?.mediaId?.let { armRestoreSeek(it, newPosition.positionMs) }
         saveCurrentPosGated()
     }
 
@@ -399,6 +435,11 @@ class PlayerEventListener(
         // Cold-start re-seek belt: only re-apply the saved position if the current position is still at the
         // start. A user seek before the first STATE_READY moves it past this, and we leave their choice.
         private const val RESTORE_SEEK_BELT_MS = 1_000L
+        // Durable-position snapshot interval. POSITION is otherwise written only on discrete events
+        // (seek/pause/transition), so a straight-through song never refreshes it after the transition wrote 0
+        // at song start — a reboot/OS-kill/crash then resumes at 0. 5s loses at most ~5s of position and
+        // writes a tiny POSITION-only file at most 12×/min while playing (negligible).
+        private const val POSITION_SAVE_INTERVAL_MS = 5_000L
         // ≥ Deezer stream-resolution ceiling: DeezerApi clientNP connect 15s + read 10s;
         // getContentLength 10s. If clientNP ever gains a callTimeout, anchor to that instead.
         private const val COLD_GRACE_MS = 25_000L
