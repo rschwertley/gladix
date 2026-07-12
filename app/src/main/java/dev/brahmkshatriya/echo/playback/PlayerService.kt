@@ -236,9 +236,6 @@ class PlayerService : MediaLibraryService() {
                 // Non-consuming peek at the same latch — gates the saveCurrentPos 0-write without clearing it
                 // (Main; Player.Listener fires on the app looper).
                 isRestoreSeekArmed = { state.pendingRestoreSeek != null },
-                // Arms the same latch to (mediaId, pos) for a user SEEK during the load window, so the
-                // STATE_READY re-seek re-applies the scrub after reason=4 wipes it (Main; app looper).
-                armRestoreSeek = { id, pos -> state.pendingRestoreSeek = id to pos },
                 healthMonitor = healthMonitor,
             )
         )
