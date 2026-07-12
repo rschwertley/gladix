@@ -73,31 +73,12 @@ class PlayerViewModel(
     val queueFlow = MutableSharedFlow<Unit>()
 
     init {
-        viewModelScope.launch {
-            historyRepository.getLatest().collect { entity ->
-                if (browser.value == null && entity != null) {
-                    val track = entity.track ?: return@collect
-                    val mediaItem = MediaItemUtils.build(
-                        app,
-                        downloadFlow.value,
-                        MediaState.Unloaded(entity.extensionId, track),
-                        null
-                    )
-                    if (playerState.current.value == null) {
-                        playerState.current.value = PlayerState.Current(
-                            index = 0,
-                            mediaItem = mediaItem,
-                            isLoaded = false,
-                            isPlaying = false,
-                            isPlaceholder = true
-                        )
-                        queue = listOf(mediaItem)
-                        queueFlow.emit(Unit)
-                    }
-                }
-                if (browser.value != null) return@collect
-            }
-        }
+        // The cold-start current is seeded ONCE, in the getController callback below, from the shared
+        // restore read (restoreDeferred) with a history fallback — NOT here. The old eager history
+        // placeholder that used to live in this init was the one current source the wrong-track repair never
+        // reconciled (history-latest = last COMPLETED track, not the restored CURRENT_ID), which is what made
+        // the mini bar render a stale/consumed track while the queue-validated full player showed the real
+        // one. See the seed block in getController for the single-writer replacement.
         viewModelScope.launch {
             fullQueueFlow.collect { items ->
                 val showingPlaceholder = playerState.current.value?.isPlaceholder == true && items.isEmpty()
@@ -128,8 +109,54 @@ class PlayerViewModel(
         // already started (currentPosition > 0). Independent of the service re-seek: that fixes PLAYBACK,
         // this fixes the at-rest DISPLAY, and they share no state.
         viewModelScope.launch {
-            val data = playerState.restoreDeferred?.await() ?: return@launch
-            if (data.pos > 0 && player.currentPosition <= 0L) {
+            val data = playerState.restoreDeferred?.await()
+            // SOLE initial-current writer (reuses the ONE restore read above — no second recoverPlaylist).
+            // A restorable queue seeds the CURRENT_ID-aligned current: data.items[data.index] is the SAME
+            // element applyRestoreIfCold applies and updateCurrentFlow later reflects, so the mini bar and the
+            // full player cannot show different tracks. No restorable queue falls back to the last-played
+            // history track (there is no CURRENT_ID to align to, and no queue to diverge from). The
+            // current == null guard yields to updateCurrentFlow if the service already applied the queue;
+            // both orders are correct. current is only ever REPLACED here, never nulled, so the bar cannot
+            // flicker hidden — and updateCurrentFlow's later replacement carries the same mediaId.
+            if (playerState.current.value == null) {
+                if (data != null) {
+                    val item = data.items.getOrNull(data.index) ?: data.items.firstOrNull()
+                    if (item != null) {
+                        playerState.current.value = PlayerState.Current(
+                            index = data.index,
+                            mediaItem = item,
+                            isLoaded = false,
+                            isPlaying = false,
+                            isPlaceholder = true
+                        )
+                        queue = data.items
+                        queueFlow.emit(Unit)
+                    }
+                } else {
+                    val entity = historyRepository.getLatest().first()
+                    val track = entity?.track
+                    if (track != null) {
+                        val mediaItem = MediaItemUtils.build(
+                            app,
+                            downloadFlow.value,
+                            MediaState.Unloaded(entity.extensionId, track),
+                            null
+                        )
+                        playerState.current.value = PlayerState.Current(
+                            index = 0,
+                            mediaItem = mediaItem,
+                            isLoaded = false,
+                            isPlaying = false,
+                            isPlaceholder = true
+                        )
+                        queue = listOf(mediaItem)
+                        queueFlow.emit(Unit)
+                    }
+                }
+            }
+            // At-rest position seed (display half of the cold-start position fix): only meaningful with a
+            // restore, so it stays gated on data != null.
+            if (data != null && data.pos > 0 && player.currentPosition <= 0L) {
                 restoreSeedMs = data.pos
                 progress.value = data.pos to 0L
             }

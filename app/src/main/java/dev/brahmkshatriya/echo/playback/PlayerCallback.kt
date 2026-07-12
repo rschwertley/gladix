@@ -62,6 +62,7 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.resolveCurrentIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
@@ -681,13 +682,16 @@ class PlayerCallback(
 
     class ButtonReceiver : MediaButtonReceiver() {
         override fun shouldStartForegroundService(context: Context, intent: Intent): Boolean {
-            val isEmpty = context.recoverTracks().isNullOrEmpty()
-            if (isEmpty) Toast.makeText(
+            // Existence-only gate: cheap stat() via hasSavedQueue, NOT a full recoverTracks() decode of the
+            // saved queue. shouldStartForegroundService runs synchronously on the main thread (BroadcastReceiver),
+            // so decoding a large queue here ANRs; we only need to know whether a queue exists.
+            val hasQueue = hasSavedQueue(context)
+            if (!hasQueue) Toast.makeText(
                 context,
                 context.getString(R.string.no_last_played_track_found),
                 Toast.LENGTH_SHORT
             ).show()
-            return !isEmpty
+            return hasQueue
         }
     }
 

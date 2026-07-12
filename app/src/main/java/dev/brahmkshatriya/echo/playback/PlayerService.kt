@@ -233,6 +233,9 @@ class PlayerService : MediaLibraryService() {
                 onQueueApplied = { state.resumptionApplying = false },
                 // Returns-and-clears the cold-start re-seek latch (Main; Player.Listener fires on the app looper).
                 consumeRestoreSeek = { state.pendingRestoreSeek.also { state.pendingRestoreSeek = null } },
+                // Non-consuming peek at the same latch — gates the saveCurrentPos 0-write without clearing it
+                // (Main; Player.Listener fires on the app looper).
+                isRestoreSeekArmed = { state.pendingRestoreSeek != null },
                 healthMonitor = healthMonitor,
             )
         )

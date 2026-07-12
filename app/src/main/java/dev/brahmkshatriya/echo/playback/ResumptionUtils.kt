@@ -82,6 +82,16 @@ object ResumptionUtils {
     private fun Context.hasQueueKey(id: String) =
         File(queueDir(this), id.hashCode().toString()).exists()
 
+    // Cheap "is there a restorable queue?" check — a stat() per key, NO deserialization. For the
+    // ButtonReceiver.shouldStartForegroundService main-thread gate, which only needs existence (not the
+    // decoded tracks) and must return a Boolean synchronously, so it can't await the IO restoreDeferred.
+    // QUEUE_ENTRIES is written only for a non-empty queue and clearQueue() deletes it, so its presence
+    // faithfully means "non-empty queue saved and not cleared"; TRACKS covers the pre-composite legacy state
+    // until the first save migrates it to QUEUE_ENTRIES. (The ancient cacheDir-only legacy path is
+    // intentionally not stat'd — a vanishing population, worst case one missed media-button resume.)
+    fun hasSavedQueue(context: Context) =
+        context.hasQueueKey(QUEUE_ENTRIES) || context.hasQueueKey(TRACKS)
+
     // Write the ESSENTIAL pair (track + extensionId) as ONE atomic file — Track is concrete, so this
     // never fails to serialize, and it alone decides whether the queue survives a cold restore. Only on
     // its success do we touch anything else: write the context list SEPARATELY and BEST-EFFORT (a context

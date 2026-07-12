@@ -74,10 +74,36 @@ class PlayerEventListener(
     // PlayerService like onQueueApplied; this listener is not given PlayerState directly. Returns null once
     // consumed, so it fires at most once per cold restore.
     private val consumeRestoreSeek: () -> Pair<String, Long>? = { null },
+    // Non-consuming PEEK at PlayerState.pendingRestoreSeek — true iff the cold-start re-seek latch is armed.
+    // Never clears it (unlike consumeRestoreSeek), so it can gate the saveCurrentPos 0-write below WITHOUT
+    // stealing the latch the STATE_READY re-seek depends on. Wired from PlayerService like the others; fires
+    // on the app looper (Main). A latch is armed only when the restored position was > 0, so "armed" means
+    // "we restored to a known non-zero position that the placeholder timeline hasn't resolved yet" — exactly
+    // the window in which a currentPosition of 0 is spurious and must never overwrite the good saved value.
+    private val isRestoreSeekArmed: () -> Boolean = { false },
     private val healthMonitor: HealthMonitor? = null,
 ) : Player.Listener {
 
     private val player get() = session.player
+
+    // True only while an INTERNAL seek is in flight — a buffering-watchdog re-prepare OR an onPlayerError
+    // retry (both stop→seek→prepare the current track). onPositionDiscontinuity's
+    // latch-disarm reads it to tell such a seek — which Media3 delivers as
+    // DISCONTINUITY_REASON_SEEK, indistinguishable by reason from a user seek (ExoPlayerImpl.seekTo sets
+    // it unconditionally) — from a real user seek, so the watchdog does NOT steal the cold-start re-seek
+    // latch. Plain var (not Atomic): every touch is on the app looper (Main). The watchdog body runs in
+    // withContext(Dispatchers.Main), and the seek's discontinuity is delivered SYNCHRONOUSLY on that same
+    // thread inside player.seekTo (updatePlaybackInfo → ListenerSet.flushEvents runs events inline), so the
+    // set/clear reliably brackets the callback — the same single-thread invariant as resumptionApplying.
+    private var internalSeekInFlight = false
+
+    // Brackets an internal seek (buffering-watchdog re-prepare or onPlayerError retry) with
+    // internalSeekInFlight so the SEEK discontinuity it triggers is not mistaken for a user seek. try/finally
+    // so an unexpected throw can never strand the flag set.
+    private inline fun internalSeek(block: () -> Unit) {
+        internalSeekInFlight = true
+        try { block() } finally { internalSeekInFlight = false }
+    }
 
     // Every skip in this listener is an INVOLUNTARY auto-skip (a failed/stuck current track). Route
     // them through here so ShufflePlayer removes the departing track WITHOUT pushing it to the play-
@@ -277,7 +303,7 @@ class PlayerEventListener(
                     // isn't needed.
                     val savedPosition = player.currentPosition
                     player.stop()
-                    player.seekTo(savedPosition)
+                    internalSeek { player.seekTo(savedPosition) }
                     player.prepare()
                     if (wasPlaying) {
                         player.play()
@@ -288,7 +314,7 @@ class PlayerEventListener(
                     Log.d("GladixPlayback", "Buffering watchdog: retrying $currentMediaId (attempt $retriedWatchdogCount/$maxWatchdogRetries)")
                     val savedPosition = player.currentPosition
                     player.stop()
-                    player.seekTo(savedPosition)
+                    internalSeek { player.seekTo(savedPosition) }
                     player.prepare()
                     if (wasPlaying) {
                         player.play()
@@ -314,7 +340,7 @@ class PlayerEventListener(
                         player.pause()
                         delay(50)
                     }
-                    player.seekTo(0)
+                    internalSeek { player.seekTo(0) }
                     skipInvoluntarily()
                     player.prepare()
                     if (wasPlaying) player.play()
@@ -325,7 +351,21 @@ class PlayerEventListener(
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (player.mediaItemCount == 0) return  // fired during/after player.release(); position is 0
-        ResumptionUtils.saveCurrentPos(context, player.currentPosition)
+        saveCurrentPosGated()
+    }
+
+    // The saveCurrentPos gate (fix 1). NEVER persist a 0 over the good saved position while the cold-start
+    // re-seek latch is armed: a currentPosition of 0 during that window is the unresolved placeholder
+    // timeline, never a real user position (the latch is armed only when the restored position was > 0).
+    // Trigger-independent — it drops BOTH the watchdog's seek-to-0 write and any timeline-resolution
+    // 0-discontinuity, because both land in the same pre-first-STATE_READY window. Legit saves are untouched:
+    // a real pause carries its real P (> 0, ungated); a genuinely-at-0 queue never armed the latch, so its 0
+    // persists normally. Peeks the latch NON-destructively (isRestoreSeekArmed) — reading it via
+    // consumeRestoreSeek would clear it and re-open the very latch theft fix 2 closes.
+    private fun saveCurrentPosGated() {
+        val position = player.currentPosition
+        if (position == 0L && isRestoreSeekArmed()) return
+        ResumptionUtils.saveCurrentPos(context, position)
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
@@ -346,9 +386,12 @@ class PlayerEventListener(
     ) {
         if (player.mediaItemCount == 0) return  // fired during player.release(); position is 0
         // A user seek before the cold-start re-seek fires must win — disarm the latch. Our own re-seek also
-        // lands here, but it consumed the latch first, so this is a no-op for it.
-        if (reason == Player.DISCONTINUITY_REASON_SEEK) consumeRestoreSeek()
-        ResumptionUtils.saveCurrentPos(context, player.currentPosition)
+        // lands here, but it consumed the latch first, so this is a no-op for it. EXCLUDE internal
+        // (buffering-watchdog) seeks: Media3 delivers them as DISCONTINUITY_REASON_SEEK too (indistinguishable
+        // by reason), so without the flag the watchdog would steal the latch and the corrective re-seek would
+        // never fire (fix 2).
+        if (reason == Player.DISCONTINUITY_REASON_SEEK && !internalSeekInFlight) consumeRestoreSeek()
+        saveCurrentPosGated()
     }
 
     companion object {
@@ -466,7 +509,7 @@ class PlayerEventListener(
                 val savedIndex = player.currentMediaItemIndex
                 val savedPosition = player.currentPosition
                 player.stop()
-                player.seekTo(savedIndex, savedPosition)
+                internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
                 player.play()
                 requestAudioFocus()
@@ -536,7 +579,7 @@ class PlayerEventListener(
                 val savedIndex = player.currentMediaItemIndex
                 val savedPosition = player.currentPosition
                 player.stop()
-                player.seekTo(savedIndex, savedPosition)
+                internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
                 player.play()
                 requestAudioFocus()
@@ -592,7 +635,7 @@ class PlayerEventListener(
                 val savedIndex = player.currentMediaItemIndex
                 val savedPosition = player.currentPosition
                 player.stop()
-                player.seekTo(savedIndex, savedPosition)
+                internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
                 player.play()
                 requestAudioFocus()
@@ -655,7 +698,7 @@ class PlayerEventListener(
                 val savedIndex = player.currentMediaItemIndex
                 val savedPosition = player.currentPosition
                 player.stop()
-                player.seekTo(savedIndex, savedPosition)
+                internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
                 player.play()
                 requestAudioFocus()
