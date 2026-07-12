@@ -65,13 +65,30 @@ object Cached {
         fileCache.getData<MediaState.Loaded<T>>(id).getOrThrow()
     }
 
+    // Normalize a media id before the round-trip equality check in loadMedia below. Some extensions return a
+    // CANONICALIZED form of the id they were asked for; comparing normalized forms tolerates that without
+    // weakening the wrong-item guard — two genuinely different ids still differ after normalizing, so
+    // cache-poisoning protection is intact — and it is a NO-OP for ids that round-trip unchanged (e.g.
+    // Deezer), so exact-match behaviour is preserved identically. Structured as "normalize then compare": add
+    // the next known convention as another transform here, not as another guard.
+    // Known conventions:
+    //   - YouTube Music wraps a playlist id in a "VL" browse prefix: loadItem("VLPLaJ…") legitimately returns
+    //     the same playlist with canonical id "PLaJ…". Strip a leading "VL".
+    // @PublishedApi internal so the public inline loadMedia can reference it after inlining.
+    @PublishedApi
+    internal fun canonicalId(id: String) = id.removePrefix("VL")
+
     suspend inline fun <reified T : EchoMediaItem> loadMedia(
         app: App, extension: Extension<*>, state: MediaState<T>,
     ) = coroutineScope {
         runCatching {
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
-                if (new.id != state.item.id) error(
+                // Compare CANONICAL ids, not raw strings: an extension may legitimately return a canonicalized
+                // form of the requested id (see canonicalId — YTM drops its "VL" playlist prefix), and raw
+                // equality would false-positive this guard. A genuinely different item still mismatches. The
+                // message keeps the RAW ids so a real mismatch stays diagnosable.
+                if (canonicalId(new.id) != canonicalId(state.item.id)) error(
                     "loadItem returned wrong item: expected ${state.item.id}, got ${new.id}"
                 )
                 val isSaved = async {
