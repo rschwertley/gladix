@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.playback
 
+import android.os.Handler
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.ForwardingPlayer
@@ -54,6 +55,18 @@ class ShufflePlayer(
     // seekToNextMediaItem(). advanceForward consumes it and removes the departing track WITHOUT
     // pushing it to the back-stack, so Previous never replays a dead/skipped-past track.
     internal var suppressPushOnNextAdvance = false
+
+    // Deferred auto-advance trim (fix for the silent-auto-advance bug). The current+upcoming pushAndRemove
+    // used to run SYNCHRONOUSLY inside the inner AUTO transition callback — a re-entrant timeline mutation
+    // during ExoPlayer's ListenerSet flush that corrupted the gapless crossover (silent next track, wrong
+    // art, stuck advance). Instead we capture the departing item BY IDENTITY here and run the SAME atomic
+    // pushToBackStack+remove one looper cycle later, from a quiescent (non-callback) context via looperHandler.
+    // FIFO so rapid advances trim in order; the backStack XOR timeline invariant is preserved (both halves
+    // still move together, just deferred), so Previous/reconstitution need no rework.
+    private val pendingDepartures = ArrayDeque<MediaItem>()
+    private var drainScheduled = false
+    private val looperHandler = Handler(player.applicationLooper)
+    private val drainRunnable = Runnable { drainScheduled = false; drainPending() }
 
     private companion object {
         const val BACK_STACK_CAP = 100
@@ -205,35 +218,42 @@ class ShufflePlayer(
 
     // Seam 3: setMediaItem(s)/clearMediaItems establish a NEW context (new play, cold-start restore,
     // clear-queue), so the play-history back-stack must be wiped — otherwise Previous could pop a
-    // track from a prior session's queue. These are the only new-context entry points; advance, jump,
-    // changeQueue, and reconstitution all use add/remove/move, never set/clear.
+    // track from a prior session's queue. Pending deferred auto-advance trims are DISCARDED here for the
+    // same reason: their departing items belong to the OLD queue, so running removeByMediaId against the
+    // new one could remove a coincidental same-mediaId track. These are the only new-context entry points;
+    // advance, jump, changeQueue, and reconstitution all use add/remove/move, never set/clear.
     override fun setMediaItem(mediaItem: MediaItem) {
         original = listOf(mediaItem)
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItem(mediaItem)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {
         original = listOf(mediaItem)
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItem(mediaItem, resetPosition)
     }
 
     override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {
         original = listOf(mediaItem)
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItem(mediaItem, startPositionMs)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>) {
         original = mediaItems
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItems(mediaItems)
     }
 
     override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {
         original = mediaItems
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItems(mediaItems, resetPosition)
     }
 
@@ -244,6 +264,7 @@ class ShufflePlayer(
     ) {
         original = mediaItems
         backStack.clear()
+        pendingDepartures.clear()
         player.setMediaItems(
             mediaItems,
             startIndex.coerceAtMost(mediaItems.size - 1),
@@ -254,7 +275,16 @@ class ShufflePlayer(
     override fun clearMediaItems() {
         original = emptyList()
         backStack.clear()
+        pendingDepartures.clear()
         player.clearMediaItems()
+    }
+
+    // Teardown: drop the pending drain so it can never run on a released player or bleed into a cold-start
+    // restore (the deferred trim is the one thing outliving this transition dispatch).
+    override fun release() {
+        looperHandler.removeCallbacks(drainRunnable)
+        pendingDepartures.clear()
+        super.release()
     }
 
     // Lever B: re-message the raw player error into a friendly, categorized PlaybackException for
@@ -369,16 +399,37 @@ class ShufflePlayer(
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !isNavigating && !isRearranging) {
             val departing = lastCurrentItem
             if (departing != null && departing.mediaId != newItem?.mediaId) {
-                isNavigating = true
-                try {
-                    pushAndRemove(departing)
-                    maybeReconstituteForRepeatAll()   // Seam 4: refill the loop as we reach the last track
-                } finally {
-                    isNavigating = false
+                // DEFER the trim off this transition dispatch: mutating the timeline here (re-entrant, mid
+                // ListenerSet flush) corrupts the gapless crossover. Capture the departing BY IDENTITY now;
+                // the posted drain runs the atomic pushAndRemove + reconstitution together, quiescent.
+                pendingDepartures.addLast(departing)
+                if (!drainScheduled) {
+                    drainScheduled = true
+                    looperHandler.post(drainRunnable)
                 }
             }
         }
         lastCurrentItem = newItem
+    }
+
+    // Drains the deferred auto-advance trims from a quiescent context: the SAME atomic pushToBackStack+remove
+    // per departing (FIFO), then one reconstitution pass. Guarded so re-entrant/empty is a no-op — this is
+    // what lets the synchronous drain calls at advanceForward/handlePrevious run without clobbering an
+    // in-progress navigation's isNavigating. Behind-current removals emit only a timeline change (no media
+    // item transition), so this never re-enters onInnerMediaItemTransition.
+    private fun drainPending() {
+        if (isNavigating || pendingDepartures.isEmpty()) return
+        isNavigating = true
+        try {
+            while (pendingDepartures.isNotEmpty()) {
+                val departing = pendingDepartures.removeFirst()
+                pushToBackStack(departing)
+                removeByMediaId(departing.mediaId)
+            }
+            maybeReconstituteForRepeatAll()   // Seam 4: refill the loop as we reach the last track
+        } finally {
+            isNavigating = false
+        }
     }
 
     // Genuine forward advance (Next button / COMMAND_SEEK_TO_NEXT[_MEDIA_ITEM]). Captures the
@@ -390,6 +441,10 @@ class ShufflePlayer(
     override fun seekToNext() = advanceForward { player.seekToNext() }
 
     private fun advanceForward(doSeek: () -> Unit) {
+        // Settle any deferred auto-advance trim FIRST so the backStack order is correct and we act on a
+        // settled queue. Safe (no absolute display index here), and needed for the synchronous involuntary-
+        // skip path (onPlayerError → skipInvoluntarily), which can reach this during the deferral window.
+        drainPending()
         if (isNavigating) {
             doSeek()
             return
@@ -421,6 +476,8 @@ class ShufflePlayer(
     override fun seekToPrevious() = handlePrevious()
 
     private fun handlePrevious() {
+        // Settle deferred trims first so the just-departed track is in the backStack before we pop it.
+        drainPending()
         if (player.currentPosition > PREVIOUS_RESTART_THRESHOLD_MS) {
             player.seekToDefaultPosition()
             return

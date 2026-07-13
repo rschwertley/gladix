@@ -311,13 +311,12 @@ object ResumptionUtils {
             else -> rawPos
         }
         Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index (raw=$rawIndex coerced=$coercedIndex repaired=${index != coercedIndex} currentId=$savedCurrentId) pos=$rawPos safePos=$safePos duration=$trackDuration")
-        // P2 — current+upcoming: the current track must restore at index 0. A queue persisted by an
-        // older build can carry a non-zero index with "before" tracks stranded above current (which,
-        // unlike a fresh play, never clear by advancing); drop them so restore comes back at the saved
-        // track as index 0. Post-fix saves are always index 0, so this is a no-op for queues written by
-        // this build, and it heals both the phone (PlayerService) and AA (resume/onPlaybackResumption)
-        // paths at their single shared source. Naively coercing index to 0 without slicing would resume
-        // the WRONG, earlier track — hence the subList.
+        // P2 — current+upcoming: the current track must restore at index 0. A queue can be persisted with a
+        // non-zero index and "before" tracks stranded above current — an older build, OR (since the deferred
+        // auto-advance trim) a save that lands in the ~1-cycle window before the just-played track is
+        // trimmed. Either way, drop them so restore comes back at the saved track as index 0. This heals both
+        // the phone (PlayerService) and AA (resume/onPlaybackResumption) paths at their single shared source.
+        // Naively coercing index to 0 without slicing would resume the WRONG, earlier track — hence the subList.
         if (index != C.INDEX_UNSET && index > 0)
             return Triple(items.subList(index, items.size).toList(), 0, safePos)
         return Triple(items, index, safePos)
