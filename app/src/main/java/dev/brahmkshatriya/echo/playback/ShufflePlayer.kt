@@ -396,13 +396,19 @@ class ShufflePlayer(
     // so each forward-advance source pushes in exactly one place and the two halves never double-fire.
     // A queue tap (SEEK, not routed through Next) correctly does NOT push — only sequential advance does.
     private fun onInnerMediaItemTransition(newItem: MediaItem?, reason: Int) {
-        // DIAGNOSTIC (one-variable test): remove-on-advance is STRIPPED on natural AUTO transitions.
-        // The played track is NOT removed from the timeline on auto-advance; we only update lastCurrentItem
-        // so manual Next/Previous still identify the departing track. If audio returns on auto-advance, the
-        // removal was the cause. Accepted-and-unfixed side effects for this test: played tracks accumulate in
-        // the queue; Previous falls back to restart-current (backStack is no longer fed on AUTO); REPEAT_ALL
-        // won't loop via auto-advance (reconstitution lived on this path). Manual Next still trims via
-        // advanceForward. The deferral machinery (pendingDepartures/drainPending) is now fed by nothing → inert.
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !isNavigating && !isRearranging) {
+            val departing = lastCurrentItem
+            if (departing != null && departing.mediaId != newItem?.mediaId) {
+                // DEFER the trim off this transition dispatch: mutating the timeline here (re-entrant, mid
+                // ListenerSet flush) corrupts the gapless crossover. Capture the departing BY IDENTITY now;
+                // the posted drain runs the atomic pushAndRemove + reconstitution together, quiescent.
+                pendingDepartures.addLast(departing)
+                if (!drainScheduled) {
+                    drainScheduled = true
+                    looperHandler.post(drainRunnable)
+                }
+            }
+        }
         lastCurrentItem = newItem
     }
 

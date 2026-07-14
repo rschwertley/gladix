@@ -30,6 +30,7 @@ import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.A
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
@@ -510,6 +511,11 @@ class PlayerService : MediaLibraryService() {
                     .build()
                 it.preloadConfiguration = ExoPlayer.PreloadConfiguration(C.TIME_UNSET)
                 it.skipSilenceEnabled = app.settings.getBoolean(SKIP_SILENCE, true)
+                // Read-only diagnostic: logs the full timeline/period/state boundary sequence so a
+                // gapless-advance stall auto-records its root cause. AnalyticsListener is a pure observer —
+                // it cannot touch the pipeline or request a stream. Attached to the inner ExoPlayer
+                // (addAnalyticsListener is ExoPlayer-only, not on the ShufflePlayer wrapper).
+                it.addAnalyticsListener(EventLogger("GladixEvents"))
             }
     }
 
