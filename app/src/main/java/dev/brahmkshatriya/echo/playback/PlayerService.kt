@@ -27,7 +27,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
-import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.util.EventLogger
@@ -479,9 +478,12 @@ class PlayerService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun offloadPreferences(moreBrainCapacity: Boolean) =
         TrackSelectionParameters.AudioOffloadPreferences.Builder()
-            .setAudioOffloadMode(
-                if (moreBrainCapacity) AUDIO_OFFLOAD_MODE_DISABLED else AUDIO_OFFLOAD_MODE_ENABLED
-            ).setIsGaplessSupportRequired(true)
+            // Offload is disabled unconditionally. The Pixel 10 (Tensor G5) gapless-offload
+            // HAL drops audio silently across a natural track boundary; forcing ExoPlayer to
+            // decode on the CPU gives device-agnostic software gapless. moreBrainCapacity is
+            // now vestigial — kept only so the settings listener call sites compile unchanged.
+            .setAudioOffloadMode(AUDIO_OFFLOAD_MODE_DISABLED)
+            .setIsGaplessSupportRequired(true)
             .setIsSpeedChangeSupportRequired(true)
             .build()
 
