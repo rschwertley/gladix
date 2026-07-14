@@ -275,8 +275,6 @@
     <string name="background_gradient_summary">প্রসঙ্গের উপর নির্ভর করে ব্যাকগ্রাউন্ডে একটি গ্রেডিয়েন্ট রঙের ছোঁয়া</string>
     <string name="all">সব</string>
     <string name="edit_playlist">প্লেলিস্ট সম্পাদনা করুন</string>
-    <string name="more_brain_capacity">আরও ব্রেইন ক্যাপাসিটি</string>
-    <string name="more_brain_capacity_summary">এটি সক্রিয় করলে অডিও ল্যাগ ঠিক করতে এবং ব্যাটারি ব্যবহার বাড়াতে সাহায্য করতে পারে (অডিও অফলোডিং নিষ্ক্রিয় করে)।</string>
     <string name="track">ট্র্যাক</string>
     <string name="tracks">ট্র্যাক</string>
     <string name="sort">সাজান</string>

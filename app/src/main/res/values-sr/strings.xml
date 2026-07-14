@@ -252,8 +252,6 @@
     <string name="background_gradient_summary">Gradijent u boji kao pozadina u zavisnosti od sadržaja</string>
     <string name="all">Sve</string>
     <string name="edit_playlist">Izmeni plejlistu</string>
-    <string name="more_brain_capacity">Veći kapacitet \"iteligencije\"</string>
-    <string name="more_brain_capacity_summary">Isključivanje Audio Offloading funkcije ( Uključivanjem ove funkcije može se smanjiti lag audio zapisa, ali se time povećava potrošnja baterije).</string>
     <string name="track">Traka</string>
     <string name="tracks">Trake</string>
     <string name="sort">Sortiraj</string>

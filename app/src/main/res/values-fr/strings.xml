@@ -176,7 +176,6 @@
     <string name="adding_x_to_next">Ajout de %1$s aux suivants</string>
     <string name="all">Tout</string>
     <string name="edit_playlist">Modifier la Playlist</string>
-    <string name="more_brain_capacity">Plus de Capacité Cérébrale</string>
     <string name="x_followers">%1$s Abonnés</string>
     <string name="shuffling_x">Mélange de %1$s</string>
     <string name="copying_the_error">Erreur Copiée</string>
@@ -245,7 +244,6 @@
     <string name="show_background_summary">Vidéo d\'arrière-plan ou illustration floue du morceau dans le lecteur</string>
     <string name="repeat">Répéter</string>
     <string name="unliked_x">%1$s Plus Aimé</string>
-    <string name="more_brain_capacity_summary">L\'activation de cette option peut aider à corriger le décalage audio, mais augmente considérablement l\'utilisation de la batterie (Désactive le déchargement audio).</string>
     <string name="sort">Trier</string>
     <string name="tagging_x">Marquage de %1$s</string>
     <string name="previous">Précédent</string>

@@ -261,9 +261,7 @@
     <string name="adding_x">%1$s जोड़ रहे हैं</string>
     <string name="moving_x">%1$s स्थानांतरित कर रहे हैं</string>
     <string name="removing_x">%1$s निकाल रहे हैं</string>
-    <string name="more_brain_capacity">ज़्यादा प्रोसेसिंग पावर</string>
     <string name="delete">मिटाएँ</string>
-    <string name="more_brain_capacity_summary">इसे सक्षम करने से ऑडियो लैग ठीक हो सकता है और बैटरी खपत बढ़ सकती है (ऑडियो ऑफलोडिंग निष्क्रिय)।</string>
     <string name="x_followers">%1$s फॉलोअर</string>
     <string name="shuffling_x">%1$s को शफ़ल कर रहे हैं</string>
     <string name="copying_the_error">त्रुटि कॉपी कर रहे हैं</string>

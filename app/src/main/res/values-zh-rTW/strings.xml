@@ -226,7 +226,6 @@
     <string name="background_gradient">背景漸變</string>
     <string name="background_gradient_summary">背景中的漸變顏色色調，具體取決於上下文</string>
     <string name="all">都</string>
-    <string name="more_brain_capacity">更多的腦容量</string>
     <string name="x_followers">%1$s 個粉絲</string>
     <string name="shuffling_x">洗牌 %1$s</string>
     <string name="copying_the_error">複製錯誤</string>
@@ -260,7 +259,6 @@
     <string name="adding_x_to_queue">將 %1$s 新增到佇列</string>
     <string name="downloading_update_for_x">正在下載 %1$s 的更新</string>
     <string name="add_song">添加歌曲</string>
-    <string name="more_brain_capacity_summary">啟用此功能可以修復音訊延遲，但會大大增加電池使用量（禁用音訊卸載）。</string>
     <string name="removing_x">正在刪除 %1$s</string>
     <string name="apply">應用</string>
     <string name="deleting_x">正在刪除 %1$s</string>

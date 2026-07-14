@@ -14,7 +14,6 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CACHE_SIZE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CLOSE_PLAYER
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.MORE_BRAIN_CAPACITY
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_SILENCE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
@@ -162,16 +161,6 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                 skipFadeOnAlbums.isVisible =
                     preferenceManager.sharedPreferences?.getBoolean(CROSSFADE_ENABLED, false) == true
                 addPreference(skipFadeOnAlbums)
-
-                SwitchPreferenceCompat(context).apply {
-                    key = MORE_BRAIN_CAPACITY
-                    title = getString(R.string.more_brain_capacity)
-                    summary = getString(R.string.more_brain_capacity_summary)
-                    layoutResource = R.layout.preference_switch
-                    isIconSpaceReserved = false
-                    setDefaultValue(false)
-                    addPreference(this)
-                }
 
                 SwitchPreferenceCompat(context).apply {
                     key = AUTO_START_RADIO

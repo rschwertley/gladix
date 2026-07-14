@@ -7,7 +7,6 @@
     <string name="stop_player_summary">Hentikan musik ketika aplikasi ditutup</string>
     <string name="auto_start_radio">Radio Mulai Otomatis</string>
     <string name="songs">Lagu</string>
-    <string name="more_brain_capacity_summary">Mengaktifkan ini, dapat memperbaiki kelambatan audio, tetapi secara drastis meningkatkan penggunaan baterai (Menonaktifkan pemuatan audio).</string>
     <string name="next">Selanjutnya</string>
     <string name="previous">Sebelumnya</string>
     <string name="x_permission_required">Perizinan %1$s Diperlukan</string>
@@ -169,7 +168,6 @@
     <string name="background_gradient_summary">Warna gradasi latar belakang tergantung konteks</string>
     <string name="sort">Sortir</string>
     <string name="explicit">Eksplisit</string>
-    <string name="more_brain_capacity">Kapasitas Otak Lebih</string>
     <string name="shuffling_x">Acak %1$s</string>
     <string name="filter">Saring</string>
     <string name="reversed">Terbalik</string>

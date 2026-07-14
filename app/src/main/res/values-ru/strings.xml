@@ -232,7 +232,6 @@
     <string name="background_gradient">Градиент фона</string>
     <string name="all">Всё</string>
     <string name="edit_playlist">Редактировать плейлист</string>
-    <string name="more_brain_capacity">Отключить разгрузку</string>
     <string name="sort">Сортировать по</string>
     <string name="x_followers">%1$s подписчиков</string>
     <string name="shuffling_x">Перемешивание %1$s</string>
@@ -269,7 +268,6 @@
     <string name="dynamic_player_summary">Применение цвета к плееру на основе обложки трека</string>
     <string name="misc">Разное</string>
     <string name="animations_summary">Отключите это, если возникают подвисания</string>
-    <string name="more_brain_capacity_summary">Включение этой функции может устранить задержку звука, но увеличит расход батареи (отключает разгрузку аудио).</string>
     <string name="enabled">Включено</string>
     <string name="disabled">Отключено</string>
     <string name="no_user_found">Пользователь не найден</string>

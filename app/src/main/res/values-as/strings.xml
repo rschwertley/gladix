@@ -178,7 +178,6 @@
     <string name="dynamic_player">ডাইনামিক প্লেয়াৰ ৰং</string>
     <string name="background_gradient">বেকগ্ৰাউণ্ড গ্ৰেডিয়েণ্ট</string>
     <string name="all">অল</string>
-    <string name="more_brain_capacity">ম’ৰ ব্ৰেইন কেপাচিটি</string>
     <string name="dynamic_player_summary">গানৰ আৰ্টৱৰ্কৰ ওপৰত ভিত্তি কৰি প্লেয়াৰত ৰং এপ্লাই কৰক</string>
     <string name="show_background">বেকগ্ৰাউণ্ড দেখুৱাওক</string>
     <string name="show_background_summary">প্লেয়াৰত গানৰ বেকগ্ৰাউণ্ড ভিডিঅ’ বা ব্লাৰ কৰা আৰ্টৱৰ্ক</string>
@@ -280,7 +279,6 @@
     <string name="saved_to_x">%1$sত ছেভ কৰা হ’ল</string>
     <string name="removing_x">%1$s আঁতৰোৱা হৈছে</string>
     <string name="tagging_x">%1$s টেগ কৰা হৈছে</string>
-    <string name="more_brain_capacity_summary">ইয়াক এনেবল কৰিলে অডিঅ’ লেগ ফিক্স কৰাত হেল্প কৰিব পাৰে আৰু বেটাৰীৰ ইউজ বঢ়াব পাৰে (অডিঅ’ অফলোডিং ডিজেবল কৰে)।</string>
     <string name="downloading_update_for_x">%1$s বাবে আপডেট ডাউনলোড হৈ আছে</string>
     <string name="delete_download">ডাউনলোড ডিলিট কৰক</string>
     <string name="removed_x_from_downloads">ডাউনলোডৰ পৰা %1$s আঁতৰোৱা হ’ল</string>

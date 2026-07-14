@@ -264,8 +264,6 @@
     <string name="background_gradient_summary">Градыентнае каляровае адценне фону ў залежнасці ад кантэксту</string>
     <string name="all">Усё</string>
     <string name="edit_playlist">Редагаваць плэйліст</string>
-    <string name="more_brain_capacity">Больш магчымасцяў мозгу</string>
-    <string name="more_brain_capacity_summary">Уключэнне гэтай функцыі можа выправіць затрымку гуку, але павялічвае расход батарэі (Адключае разгрузку гуку).</string>
     <string name="track">Трэк</string>
     <string name="tracks">Трэкі</string>
     <string name="sort">Сартаваць</string>

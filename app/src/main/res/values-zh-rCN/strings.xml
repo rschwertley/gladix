@@ -222,7 +222,6 @@
     <string name="background_gradient_summary">根据上下文在背景中呈现渐变色调</string>
     <string name="all">全部</string>
     <string name="edit_playlist">编辑播放列表</string>
-    <string name="more_brain_capacity">提高大脑容量</string>
     <string name="explicit">限制级</string>
     <string name="x_followers">%1$s 位粉丝</string>
     <string name="shuffling_x">正在随机播放 %1$s</string>
@@ -276,7 +275,6 @@
     <string name="save">保存</string>
     <string name="playing_x">正在播放 %1$s</string>
     <string name="x_created">%1$s 已创建</string>
-    <string name="more_brain_capacity_summary">启用此功能可以帮助解决音频延迟并增加电池使用量（禁用音频卸载）。</string>
     <string name="saved_to_x">已保存至 %1$s</string>
     <string name="merging_x">正在合并 %1$s</string>
     <string name="no_download_extension">未找到下载扩展，请使用代码“echodown”获取.</string>

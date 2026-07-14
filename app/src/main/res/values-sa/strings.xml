@@ -130,7 +130,6 @@
     <string name="background_gradient">पृष्ठभूमेः आच्छादनवर्णः</string>
     <string name="background_gradient_summary">प्रसङ्गानुसारं पृष्ठभूमेः वर्णच्छायायाः परिवर्तनम्</string>
     <string name="all">सर्वम्</string>
-    <string name="more_brain_capacity">अधिकं मस्तिष्कशक्तिः</string>
     <string name="x_followers">%1$s अनुयायिनः</string>
     <string name="shuffling_x">%1$s क्रीडनम्</string>
     <string name="copying_the_error">त्रुटिं अनुकुर्वन्</string>
@@ -280,7 +279,6 @@
     <string name="subtitles">उपशीर्षकानि</string>
     <string name="off">दूरे</string>
     <string name="not_loading">लोड् न कुर्वन् अस्ति</string>
-    <string name="more_brain_capacity_summary">इदं सक्रियं कृत्वा, श्रवणविलम्बं सम्यक् कर्तुं तथा बैटरी उपयोगं वर्धयितुं शक्यते (श्रवणस्थानान्तरणं निष्क्रियं करोत)।</string>
     <string name="downloading_update_for_x">%1$s कृते अद्यतनं डाउनलोड् करणम्</string>
     <string name="download_complete">डाउनलोड सम्पूर्ण</string>
     <string name="delete_download">डाउनलोड् विलोपयन्तु</string>

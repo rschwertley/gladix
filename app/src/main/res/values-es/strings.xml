@@ -242,8 +242,6 @@
     <string name="background_gradient">Degradado de fondo</string>
     <string name="background_gradient_summary">Un tinte degradado en el fondo según el contexto</string>
     <string name="edit_playlist">Editar lista de reproducción</string>
-    <string name="more_brain_capacity">Mayor capacidad cerebral</string>
-    <string name="more_brain_capacity_summary">Activar esto puede solucionar el retraso del audio, pero aumenta drásticamente el uso de la batería (desactiva el descargo de audio).</string>
     <string name="sort">Ordenar</string>
     <string name="explicit">Explícito</string>
     <string name="x_followers">%1$s seguidores</string>

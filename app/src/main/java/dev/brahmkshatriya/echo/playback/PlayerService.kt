@@ -29,7 +29,6 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
-import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
@@ -149,11 +148,6 @@ class PlayerService : MediaLibraryService() {
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (key) {
             SKIP_SILENCE -> exoPlayer.skipSilenceEnabled = prefs.getBoolean(key, true)
-            MORE_BRAIN_CAPACITY -> exoPlayer.trackSelectionParameters =
-                exoPlayer.trackSelectionParameters
-                    .buildUpon()
-                    .setAudioOffloadPreferences(offloadPreferences(prefs.getBoolean(key, false)))
-                    .build()
             LOUDNESS_NORMALIZATION -> {
                 audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
@@ -476,12 +470,11 @@ class PlayerService : MediaLibraryService() {
     private val mediaChangeFlow = MutableSharedFlow<Pair<MediaItem, MediaItem>>()
 
     @OptIn(UnstableApi::class)
-    private fun offloadPreferences(moreBrainCapacity: Boolean) =
+    private fun offloadPreferences() =
         TrackSelectionParameters.AudioOffloadPreferences.Builder()
             // Offload is disabled unconditionally. The Pixel 10 (Tensor G5) gapless-offload
             // HAL drops audio silently across a natural track boundary; forcing ExoPlayer to
-            // decode on the CPU gives device-agnostic software gapless. moreBrainCapacity is
-            // now vestigial — kept only so the settings listener call sites compile unchanged.
+            // decode on the CPU gives device-agnostic software gapless.
             .setAudioOffloadMode(AUDIO_OFFLOAD_MODE_DISABLED)
             .setIsGaplessSupportRequired(true)
             .setIsSpeedChangeSupportRequired(true)
@@ -492,8 +485,7 @@ class PlayerService : MediaLibraryService() {
         audioEffectsProcessor: AudioEffectsProcessor,
         handleAudioBecomingNoisy: Boolean = true
     ) = run {
-        val audioOffloadPreferences =
-            offloadPreferences(app.settings.getBoolean(MORE_BRAIN_CAPACITY, false))
+        val audioOffloadPreferences = offloadPreferences()
 
         val factory = StreamableMediaSource.Factory(
             app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow, healthMonitor
@@ -513,11 +505,6 @@ class PlayerService : MediaLibraryService() {
                     .build()
                 it.preloadConfiguration = ExoPlayer.PreloadConfiguration(C.TIME_UNSET)
                 it.skipSilenceEnabled = app.settings.getBoolean(SKIP_SILENCE, true)
-                // Read-only diagnostic: logs the full timeline/period/state boundary sequence so a
-                // gapless-advance stall auto-records its root cause. AnalyticsListener is a pure observer —
-                // it cannot touch the pipeline or request a stream. Attached to the inner ExoPlayer
-                // (addAnalyticsListener is ExoPlayer-only, not on the ShufflePlayer wrapper).
-                it.addAnalyticsListener(EventLogger("GladixEvents"))
             }
     }
 
@@ -540,7 +527,6 @@ class PlayerService : MediaLibraryService() {
     }
 
     companion object {
-        const val MORE_BRAIN_CAPACITY = "offload"
         const val CLOSE_PLAYER = "close_player"
         private const val ACTION_CLEAR_QUEUE = "dev.rschwertley.gladix.auto.CLEAR_QUEUE"
         const val SKIP_SILENCE = "skip_silence"

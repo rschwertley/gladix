@@ -235,7 +235,6 @@
     <string name="background_gradient_summary">Ein Farbverlauf im Hintergrund je nach Kontext</string>
     <string name="all">Alle</string>
     <string name="edit_playlist">Playlist bearbeiten</string>
-    <string name="more_brain_capacity">Mehr Gehirnkapazität</string>
     <string name="sort">Sortieren</string>
     <string name="explicit">Explizit</string>
     <string name="x_followers">%1$s Follower</string>
@@ -276,7 +275,6 @@
     <string name="delete_playlist">Wiedergabeliste löschen</string>
     <string name="subtitle_selection">Auswahl der Untertitel</string>
     <string name="nothing_to_download_in_x">Nichts zum Herunterladen in %1$s</string>
-    <string name="more_brain_capacity_summary">Einen Aktivierung kann die Audioverzögerung auf Kosten des Akkuverbrauchs beheben. (Deaktiviert das Audio-Offloading).</string>
     <string name="unknown_quality">Unbekannte Qualität</string>
     <string name="video_selection">Video-Auswahl</string>
     <string name="adding_x_to_next">Hinzufügen von %1$s zum nächsten</string>

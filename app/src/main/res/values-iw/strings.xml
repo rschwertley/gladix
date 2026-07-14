@@ -199,8 +199,6 @@
     <string name="background_gradient_summary">גוון צבע הדרגתי ברקע בהתאם להקשר</string>
     <string name="all">הכל</string>
     <string name="edit_playlist">ערוך פלייליסט</string>
-    <string name="more_brain_capacity">יותר קיבולת מוחית</string>
-    <string name="more_brain_capacity_summary">הפעלת אפשרות זו יכולה לסייע בתיקון השהיית שמע, אך להגדיל את ניצול הסוללה (משבית את פריקת האודיו).</string>
     <string name="track">‮רצועה</string>
     <string name="tracks">רצועות</string>
     <string name="sort">מיון</string>

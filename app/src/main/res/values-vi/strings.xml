@@ -230,7 +230,6 @@
     <string name="background_gradient_summary">Một lớp màu mờ dần ở nền tùy thuộc vào ngữ cảnh</string>
     <string name="all">Tất cả</string>
     <string name="edit_playlist">Chỉnh sửa danh sách phát</string>
-    <string name="more_brain_capacity_summary">Bật tùy chọn này có thể giúp khắc phục độ trễ âm thanh và tăng mức tiêu thụ pin (Vô hiệu hóa việc tắt âm thanh).</string>
     <string name="track">Bài hát</string>
     <string name="tracks">Bài hát</string>
     <string name="sort">Sắp xếp</string>

@@ -248,7 +248,6 @@
     <string name="adding_x_to_next">%1$sを次に追加中</string>
     <string name="background_gradient">背景のグラデーション</string>
     <string name="edit_playlist">プレイリストを編集</string>
-    <string name="more_brain_capacity_summary">これを有効にすると、音声の遅延を修正し、バッテリーをより使用します（オーディオオフロードの無効化）。</string>
     <string name="track">トラック</string>
     <string name="tracks">トラック</string>
     <string name="sort">並び替え</string>

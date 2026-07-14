@@ -261,8 +261,6 @@
     <string name="background_gradient_summary">சூழலைப் பொறுத்து பின்னணியில் ஒரு சாய்வு வண்ண நிறம்</string>
     <string name="all">அனைத்தும்</string>
     <string name="edit_playlist">இயக்கபட்டியலைத் திருத்து</string>
-    <string name="more_brain_capacity">அதிக மூளை திறன்</string>
-    <string name="more_brain_capacity_summary">இதை இயக்குவதன் மூலம், ஒலி மந்தத்தை சரிசெய்யவும் பேட்டரி பயன்பாட்டை அதிகரிக்கவும் உதவும் (ஒலி இறக்கிவைத்தலை முடக்குகிறது).</string>
     <string name="track">மின்தடம்</string>
     <string name="tracks">தடங்கள்</string>
     <string name="sort">வரிசைப்படுத்து</string>

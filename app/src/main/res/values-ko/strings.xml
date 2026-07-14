@@ -228,7 +228,6 @@
     <string name="playing_x">%1$s 재생 중</string>
     <string name="adding_x_to_next">다음에 %1$s 추가 중</string>
     <string name="background_gradient">배경 그라데이션</string>
-    <string name="more_brain_capacity">더 많은 뇌 용량</string>
     <string name="sort">정렬</string>
     <string name="edit_playlist">재생목록 수정</string>
     <string name="copying_the_error">오류 복사하기</string>
@@ -267,7 +266,6 @@
     <string name="shuffling_x">셔플링 %1$s</string>
     <string name="x_created">%1$s 생성되었습니다</string>
     <string name="add_to_next">다음에 추가</string>
-    <string name="more_brain_capacity_summary">이 옵션을 활성화하면 오디오 지연 현상을 해결할 수 있지만, 배터리 사용량이 크게 증가합니다 (오디오 오프로딩이 비활성화됩니다).</string>
     <string name="explicit">설명</string>
     <string name="x_followers">%1$s 팔로워</string>
     <string name="loading_x">%1s 로딩중</string>

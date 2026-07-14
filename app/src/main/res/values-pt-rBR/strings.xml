@@ -167,7 +167,6 @@
     <string name="adding_x_to_queue">Adicionando %1$s à fila</string>
     <string name="adding_x_to_next">Adicionando %1$s à próxima</string>
     <string name="all">Tudo</string>
-    <string name="more_brain_capacity">Mais capacidade cerebral</string>
     <string name="sort">Ordenar</string>
     <string name="shuffling_x">Embaralhando %1$s</string>
     <string name="copying_the_error">Copiar o erro</string>
@@ -234,7 +233,6 @@
     <string name="video_selection">Seleção de vídeo</string>
     <string name="cache_playlist_warning">Recurso experimental. Qualquer coisa além de ouvi-las não é suportada.</string>
     <string name="edit_playlist">Editar playlist</string>
-    <string name="more_brain_capacity_summary">Ativar isso pode corrigir o atraso de áudio, mas aumenta drasticamente o consumo da bateria (Desativa o descarregamento de áudio).</string>
     <string name="explicit">Explícito</string>
     <string name="x_followers">%1$s Seguidores</string>
     <string name="scroll_animations">Animações de rolagem</string>

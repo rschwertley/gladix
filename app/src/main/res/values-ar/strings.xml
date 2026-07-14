@@ -260,8 +260,6 @@
     <string name="background_gradient_summary">خلفية لون متدرجة تعتمد على السياق</string>
     <string name="all">الكل</string>
     <string name="edit_playlist">تعديل قائمة التشغيل</string>
-    <string name="more_brain_capacity">المزيد من مساحة المخ</string>
-    <string name="more_brain_capacity_summary">تفعيل هذا، يمكن أن يساعد في إصلاح تأخر الصوت وزيادة استهلاك البطارية (يعطّل ميزة نقل الصوت خارج المعالج).</string>
     <string name="track">اغنيه</string>
     <string name="tracks">اغاني</string>
     <string name="sort">فرز</string>

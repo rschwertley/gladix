@@ -101,7 +101,6 @@
     <string name="adding_x_to_next">%1$s ekleniyor</string>
     <string name="background_gradient">Arka Plan Gradyanı</string>
     <string name="background_gradient_summary">Bağlama bağlamına bağlı olarak arka planda bir gradyan renk tonu</string>
-    <string name="more_brain_capacity">Daha Fazla Beyin Kapasitesi</string>
     <string name="sort">Sırala</string>
     <string name="x_followers">%1$s Takipçi</string>
     <string name="scroll_animations_summary">Kaydırma sırasında animasyonlar</string>
@@ -253,7 +252,6 @@
     <string name="playing_x">%1$s çalınıyor</string>
     <string name="all">Tümü</string>
     <string name="edit_playlist">Çalma Listesini Düzenle</string>
-    <string name="more_brain_capacity_summary">Bunu etkinleştirmek, ses gecikmesini düzeltebilir, ancak pil kullanımını önemli ölçüde artırır (ses yüklemesini devre dışı bırakır).</string>
     <string name="explicit">Açık</string>
     <string name="shuffling_x">Karıştırılıyor %1$s</string>
     <string name="copying_the_error">Hata kopyalanıyor</string>

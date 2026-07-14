@@ -124,8 +124,6 @@
     <string name="extension_installer">Instal·lador d\'extensions</string>
     <string name="all">Tot</string>
     <string name="edit_playlist">Edita la llista de reproducció</string>
-    <string name="more_brain_capacity">Més capacitat de procés</string>
-    <string name="more_brain_capacity_summary">Activant aquest paràmetre, es pot reduïr el retard d\'àudio, però incrementa l\'us de bateria (desactiva la descàrrega de àudio)</string>
     <string name="track">Pista</string>
     <string name="tracks">Pistes</string>
     <string name="sort">Endreça</string>

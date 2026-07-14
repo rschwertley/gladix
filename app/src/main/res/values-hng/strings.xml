@@ -285,8 +285,6 @@
     <string name="background_gradient">Background Gradient</string>
     <string name="background_gradient_summary">Context Ke Anusar Background Mein Gradient Color</string>
     <string name="all">Sab</string>
-    <string name="more_brain_capacity">Zyada Dimaag Shakti</string>
-    <string name="more_brain_capacity_summary">Ise Enable Karne Se Audio Lag Fix Ho Sakta Hai Aur Battery Zyada Use Hogi (Audio Offloading Band Hoga).</string>
     <string name="tracks">Tracks</string>
     <string name="explicit">Spa sht</string>
     <string name="x_followers">%1$s Followers</string>
