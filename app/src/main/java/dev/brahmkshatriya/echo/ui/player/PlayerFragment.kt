@@ -69,6 +69,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.showBackground
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.unloadedCover
+import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyHorizontalInsets
@@ -380,6 +381,23 @@ class PlayerFragment : Fragment() {
 
     private var isInitialLoad = true
     private var pendingPageScroll: Runnable? = null
+
+    // Resolve the current track's position in viewModel.queue for the ViewPager to scroll to.
+    // Current.index is the player's real timeline index and is authoritative: it comes from the
+    // SAME inner service player as fullQueueFlow (both via PlayerEventListener), so it indexes
+    // viewModel.queue directly — no windowing offset (that caveat is about the MediaController used
+    // in PlayerViewModel.changeCurrent, a different object). We must NOT re-derive the index with
+    // queue.indexOfFirst { mediaId == ... }: MediaItemUtils sets mediaId = track.id, so a queue that
+    // holds the same track twice has colliding ids and indexOfFirst lands on the FIRST copy —
+    // scrolling the full-screen pager to the wrong duplicate. The id search stays only as a fallback
+    // for the transient window where current and queue flows are momentarily out of sync (e.g. a
+    // queue edit shrinks the list before current updates), where index may be out of range.
+    private fun PlayerState.Current.queueIndex(): Int? {
+        val queue = viewModel.queue
+        return index.takeIf { it in queue.indices }
+            ?: queue.indexOfFirst { it.mediaId == mediaItem.mediaId }.takeIf { it != -1 }
+    }
+
     private fun configurePlayerControls() {
         val viewPager = binding!!.viewPager
         viewPager.adapter = adapter
@@ -391,10 +409,7 @@ class PlayerFragment : Fragment() {
         }
 
         fun submit() {
-            val capturedCurrent = viewModel.playerState.current.value
-            val capturedIndex = capturedCurrent?.let { c ->
-                viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }.takeIf { it != -1 }
-            }
+            val capturedIndex = viewModel.playerState.current.value?.queueIndex()
             adapter.submitList(viewModel.queue) {
                 val index = capturedIndex ?: return@submitList
                 val viewPager = binding?.viewPager ?: return@submitList
@@ -405,11 +420,12 @@ class PlayerFragment : Fragment() {
                 else {
                     pendingPageScroll?.let { viewPager.removeCallbacks(it) }
                     val runnable = Runnable {
-                        val liveCurrent = viewModel.playerState.current.value
-                        val liveIndex = liveCurrent?.let { c ->
-                            viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }.takeIf { it != -1 }
-                        } ?: index
-                        binding?.viewPager?.setCurrentItem(liveIndex, smooth)
+                        // Structural: scroll to the index captured from the current-track emission that
+                        // triggered THIS submit(). We never re-read current.value here, so there is no
+                        // dependence on whether current has updated by the time the runnable executes.
+                        // removeCallbacks above guarantees only the LATEST emission's runnable survives,
+                        // so this captured index is the latest target even under rapid auto-advance.
+                        binding?.viewPager?.setCurrentItem(index, smooth)
                     }
                     pendingPageScroll = runnable
                     viewPager.post(runnable)
