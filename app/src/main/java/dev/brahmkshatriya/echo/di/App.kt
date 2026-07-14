@@ -67,24 +67,38 @@ data class App(
                 }
             }
         }
-        val connectivityManager =
-            context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                val isMetered = connectivityManager.isActiveNetworkMetered
-                _networkFlow.value = if (isMetered) NetworkConnection.Metered
-                else NetworkConnection.Unmetered
-            }
+        // Network-state monitoring is best-effort. Some OEM/framework builds reject the ConnectivityManager
+        // binder call from the system server (e.g. OnePlus 7 / GM1913 / Android 11 threw SecurityException/
+        // RemoteException "Package android does not belong to <uid>"). Because this runs in the App singleton's
+        // CONSTRUCTOR, that used to cascade through Koin (App -> ExtensionLoader) and crash app launch entirely.
+        // Guard it so a flaky framework call degrades to "no live network updates" instead of failing to start.
+        try {
+            val connectivityManager =
+                context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            val networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    val isMetered = connectivityManager.isActiveNetworkMetered
+                    _networkFlow.value = if (isMetered) NetworkConnection.Metered
+                    else NetworkConnection.Unmetered
+                }
 
-            override fun onLost(network: Network) {
-                _networkFlow.value = NetworkConnection.NotConnected
+                override fun onLost(network: Network) {
+                    _networkFlow.value = NetworkConnection.NotConnected
+                }
             }
-        }
-        connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        _networkFlow.value = when {
-            connectivityManager.activeNetwork == null -> NetworkConnection.NotConnected
-            connectivityManager.isActiveNetworkMetered -> NetworkConnection.Metered
-            else -> NetworkConnection.Unmetered
+            connectivityManager.registerDefaultNetworkCallback(networkCallback)
+            _networkFlow.value = when {
+                connectivityManager.activeNetwork == null -> NetworkConnection.NotConnected
+                connectivityManager.isActiveNetworkMetered -> NetworkConnection.Metered
+                else -> NetworkConnection.Unmetered
+            }
+        } catch (e: Exception) {
+            // Degrade gracefully rather than crash construction: assume an online-but-metered connection so
+            // extensions still treat the device as connected (NotConnected would make them behave as offline)
+            // and playback stays on the conservative metered-quality path. No live updates on this device.
+            e.printStackTrace()
+            _networkFlow.value = NetworkConnection.Metered
+            scope.launch { throwFlow.emit(e) }  // record non-fatally (same Crashlytics path as everywhere else)
         }
     }
 }
