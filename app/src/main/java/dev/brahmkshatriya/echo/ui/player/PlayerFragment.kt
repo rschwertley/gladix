@@ -143,26 +143,6 @@ class PlayerFragment : Fragment() {
         super.onResume()
         if (uiViewModel.playerSheetState.value == STATE_EXPANDED)
             binding?.bgImage?.resume()
-        resyncCoverToCurrent()
-    }
-
-    // Re-sync both positional cover surfaces to the current track on every return to the foreground. A
-    // screen-off auto-advance runs submit()/applyCurrent() (the continuous collector never stops), but the
-    // pager's move is issued as a SMOOTH scroll that can't settle while the Choreographer is paused — so on
-    // screen-on the pager can be parked on the previous track, and nothing else re-issues it (the continuous
-    // collector doesn't re-fire; queueFlow is a replay=0 SharedFlow). Snap it synchronously here. This fires
-    // on every screen-on/foreground return, not just fragment recreation, and no-ops when already correct.
-    private fun resyncCoverToCurrent() {
-        val current = viewModel.playerState.current.value ?: return
-        // Index from the AUTHORITATIVE current identity, never the possibly-stale pager position.
-        val index = viewModel.queue.indexOfFirst { it.mediaId == current.mediaItem.mediaId }
-        binding?.viewPager?.let { pager ->
-            // Non-smooth = synchronous commit, no animation frames, so it lands immediately on resume. Guarded
-            // by currentItem != index, so it never fights a live smooth-scroll: this hook only fires on a
-            // lifecycle resume (not on every advance while visible), and is a no-op if already on the page.
-            if (index != -1 && pager.currentItem != index) pager.setCurrentItem(index, false)
-        }
-        loadCurrentBackground(current.mediaItem)
     }
 
     private val collapseHeight by lazy {
@@ -419,7 +399,15 @@ class PlayerFragment : Fragment() {
                 val index = capturedIndex ?: return@submitList
                 val viewPager = binding?.viewPager ?: return@submitList
                 val current = viewPager.currentItem
-                val smooth = !isInitialLoad && abs(index - current) <= 1
+                // Only smooth-scroll when the view is actually on-screen (STARTED). A smooth scroll is driven by
+                // Choreographer frames, which are paused while the screen is off — so a screen-off auto-advance's
+                // smoothScrollToPosition stalls and desyncs ViewPager2's logical mCurrentItem from the rendered
+                // page (the one-behind bug). A NON-smooth setCurrentItem commits via the LayoutManager's pending
+                // scroll (scrollToPosition when laid out, mPendingCurrentItem when not), applied on the next
+                // layout pass at screen-on — no frames needed — so the correct page renders with no stale frame.
+                // On-screen advances keep the animated ±1 behavior.
+                val started = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                val smooth = started && !isInitialLoad && abs(index - current) <= 1
                 isInitialLoad = false
                 if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
                 else {
