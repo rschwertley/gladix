@@ -22,7 +22,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.playback.PlayerCommands
 import dev.brahmkshatriya.echo.playback.PlayerService
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.download.DownloadFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
@@ -96,7 +96,9 @@ object FragmentUtils {
             } catch (e: Exception) {
                 false
             }
-            if (isFromGearhead && !recoverTracks().isNullOrEmpty()) {
+            // Existence only (decides whether to expand the player) — cheap stat, NOT a main-thread decode
+            // of the saved queue, which ANRs on a large queue + slow device (same fix as the button gate).
+            if (isFromGearhead && hasSavedQueue(this@setupIntents)) {
                 uiViewModel.changePlayerState(STATE_EXPANDED)
                 uiViewModel.changeMoreState(STATE_COLLAPSED)
             }
@@ -110,7 +112,8 @@ object FragmentUtils {
         val fromNotif = intent.hasExtra("fromNotification")
         if (fromNotif) uiViewModel.run {
             if (playerSheetState.value == STATE_HIDDEN) {
-                if (!recoverTracks().isNullOrEmpty()) {
+                // Existence only (decides whether to send resumeCommand) — cheap stat, not a main-thread decode.
+                if (hasSavedQueue(this@onIntent)) {
                     PlayerService.getController(application) { controller ->
                         controller.sendCustomCommand(
                             PlayerCommands.resumeCommand,

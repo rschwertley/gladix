@@ -143,6 +143,26 @@ class PlayerFragment : Fragment() {
         super.onResume()
         if (uiViewModel.playerSheetState.value == STATE_EXPANDED)
             binding?.bgImage?.resume()
+        resyncCoverToCurrent()
+    }
+
+    // Re-sync both positional cover surfaces to the current track on every return to the foreground. A
+    // screen-off auto-advance runs submit()/applyCurrent() (the continuous collector never stops), but the
+    // pager's move is issued as a SMOOTH scroll that can't settle while the Choreographer is paused — so on
+    // screen-on the pager can be parked on the previous track, and nothing else re-issues it (the continuous
+    // collector doesn't re-fire; queueFlow is a replay=0 SharedFlow). Snap it synchronously here. This fires
+    // on every screen-on/foreground return, not just fragment recreation, and no-ops when already correct.
+    private fun resyncCoverToCurrent() {
+        val current = viewModel.playerState.current.value ?: return
+        // Index from the AUTHORITATIVE current identity, never the possibly-stale pager position.
+        val index = viewModel.queue.indexOfFirst { it.mediaId == current.mediaItem.mediaId }
+        binding?.viewPager?.let { pager ->
+            // Non-smooth = synchronous commit, no animation frames, so it lands immediately on resume. Guarded
+            // by currentItem != index, so it never fights a live smooth-scroll: this hook only fires on a
+            // lifecycle resume (not on every advance while visible), and is a no-op if already on the page.
+            if (index != -1 && pager.currentItem != index) pager.setCurrentItem(index, false)
+        }
+        loadCurrentBackground(current.mediaItem)
     }
 
     private val collapseHeight by lazy {
@@ -444,6 +464,7 @@ class PlayerFragment : Fragment() {
                 submit()
                 it?.mediaItem ?: return@collectLatest
                 binding.applyCurrent(it.mediaItem)
+                loadCurrentBackground(it.mediaItem)
             }
         }
 
@@ -615,10 +636,30 @@ class PlayerFragment : Fragment() {
 
     private val likeListener = CheckBoxListener { viewModel.likeCurrent(it) }
 
+    // Ken Burns background is driven by CURRENT TRACK IDENTITY (loadCurrentBackground), like the mini bar —
+    // NOT by the attached page's coverDrawable, which is null/detached after a screen-off auto-advance and
+    // left it stale + downstream of the pager. Guarded by lastBlurredItemId so re-applying on every resume is
+    // a no-op when the track is unchanged.
+    private var lastBlurredItemId: String? = null
+    private fun loadCurrentBackground(item: MediaItem?) {
+        val bg = binding?.bgImage ?: return
+        val context = context ?: return
+        if (!context.showBackground()) {
+            bg.setImageDrawable(null)
+            lastBlurredItemId = null
+            return
+        }
+        val itemId = item?.mediaId
+        if (itemId == lastBlurredItemId) return
+        lastBlurredItemId = itemId
+        bg.loadBlurred(item?.track?.cover, 8f)
+    }
+
     private fun configureColors() {
         observe(viewModel.playerState.current) { adapter.onCurrentUpdated() }
         var last: Drawable? = null
-        var lastBlurredItemId: String? = null
+        // Colors/dynamic-theming still derive from the attached page drawable; only the Ken Burns background
+        // was moved to identity-based loading (loadCurrentBackground).
         adapter.currentDrawableListener = { drawable ->
             if (last != drawable) {
                 last = drawable
@@ -627,17 +668,6 @@ class PlayerFragment : Fragment() {
                 val colors =
                     if (context.isDynamic()) context.getColorsFrom(drawable?.toBitmap()) else null
                 uiViewModel.playerColors.value = colors
-                val currentItemId = viewModel.playerState.current.value?.mediaItem?.mediaId
-                if (context.showBackground()) {
-                    if (drawable == null) {
-                        lastBlurredItemId = null
-                    } else if (currentItemId != lastBlurredItemId) {
-                        lastBlurredItemId = currentItemId
-                        binding?.bgImage?.loadBlurred(drawable, 8f)
-                    }
-                } else {
-                    binding?.bgImage?.setImageDrawable(null)
-                }
             }
         }
         val bufferView =

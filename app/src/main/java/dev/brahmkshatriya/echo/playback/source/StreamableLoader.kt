@@ -104,7 +104,15 @@ class StreamableLoader(
             runCatching {
                 val isPlayable = mediaItem.track.playableString(app.context)
                 if (isPlayable != null) throw TrackUnavailableException(isPlayable)
-                val streamable = servers.getOrNull(index) ?: throw Exception("Server not found")
+                // serverIndex was chosen at build time against the stub's servers; if the freshly-loaded track
+                // exposes fewer servers, that index is out of range. This is a DETERMINISTIC local mismatch —
+                // re-resolving can never fix it (the generic-tail retry sets loaded=false and re-hits the
+                // network each pass, which is what produced the back-to-back "Server not found" burst and can
+                // feed a sub-extension rate-limit spiral). Throw the NON-retryable TrackUnavailableException so
+                // onPlayerError skips this track ONCE (the "not available" skip family), with no re-resolution,
+                // bounded by consecutiveUnavailableSkips — consistent with the 0-sources case just below.
+                val streamable = servers.getOrNull(index)
+                    ?: throw TrackUnavailableException("Server not found")
                 loadStreamableMedia(
                     app, it, mediaItem.track, streamable
                 ).getOrThrow() as Streamable.Media.Server

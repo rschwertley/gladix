@@ -8,6 +8,7 @@ import dev.brahmkshatriya.echo.common.clients.ExtensionClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Metadata
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
@@ -50,6 +51,15 @@ object ExtensionUtils {
         // Cooperative cancellation propagates instead of being reported. runCatching upstream
         // preserves the CancellationException identity in Result.failure, so this catches it here.
         if (it is CancellationException) throw it
+        // ABI drift: a third-party extension built against an OLDER common interface doesn't implement the
+        // current method signature, so the JVM throws an IncompatibleClassChangeError family member
+        // (AbstractMethodError / NoSuchMethodError / NoSuchFieldError / IllegalAccessError) at call time. That
+        // is "this outdated extension doesn't support this feature", not an app error — degrade SILENTLY
+        // (return null → empty settings / no-op at the call site) instead of a snackbar + Crashlytics non-fatal.
+        // Unwrap first: get() re-wraps the original as AppException.Other(cause = …). Scoped to this one family
+        // so genuine bugs still surface normally.
+        val cause = (it as? AppException)?.cause ?: it
+        if (cause is IncompatibleClassChangeError) return@getOrElse null
         throwableFlow.emit(it)
         it.printStackTrace()
         null

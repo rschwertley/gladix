@@ -22,8 +22,6 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.repeatOneCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.resumeCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.unlikeCommand
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getPendingIntent
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -51,9 +49,16 @@ abstract class BaseWidget : AppWidgetProvider(), KoinComponent {
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {
-        ControllerHelper.register(app, key) {
+        // A widget button broadcast can spin the process up just for this receiver. Make the off-main
+        // last-played decode's lifetime EXPLICIT: hold the receiver alive via goAsync() until the decode Job
+        // finishes (or release immediately if none was launched), instead of relying on the getController
+        // service-bind to incidentally keep the process alive. A disk read is well within goAsync()'s window.
+        val pending = goAsync()
+        val decodeJob = ControllerHelper.register(app, key) {
             updateWidgets(app.context)
         }
+        if (decodeJob == null) pending.finish()
+        else decodeJob.invokeOnCompletion { pending.finish() }
         val controller = ControllerHelper.controller ?: return
         println("Controller is $controller")
         when (intent?.action) {
@@ -138,11 +143,11 @@ abstract class BaseWidget : AppWidgetProvider(), KoinComponent {
             views: RemoteViews,
         ) {
             val current = controller?.currentMediaItem
-            val item = current?.state ?: context.run {
-                val list = recoverTracks().orEmpty()
-                val index = recoverIndex() ?: 0
-                list.getOrNull(index)?.first
-            }
+            // Live controller item first; else the last-played fallback that ControllerHelper decoded OFF the
+            // main thread. Never decodes the saved queue here — that synchronous parse ANR'd on large queues.
+            // Before the off-main decode lands, this is null and the view degrades to the placeholder below
+            // (title "so_empty", art_music cover) — a brief placeholder, never a blank flash.
+            val item = current?.state ?: ControllerHelper.lastKnownItem
             val title = item?.item?.title
             val artist = item?.item?.artists?.takeIf { it.isNotEmpty() }
                 ?.joinToString(", ") { it.name }

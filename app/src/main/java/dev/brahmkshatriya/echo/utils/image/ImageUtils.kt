@@ -118,6 +118,20 @@ object ImageUtils {
         enqueue(builder)
     }
 
+    // Blur a cover by IDENTITY (ImageHolder) straight into the view — the background equivalent of the mini
+    // bar's identity load. Unlike loadBlurred(Drawable), this doesn't need a pre-resolved page drawable, so
+    // the Ken Burns background is no longer coupled to an attached ViewPager holder (which is null/detached
+    // after a screen-off auto-advance). No crop transform, matching the existing full-bleed blurred look.
+    fun ImageView.loadBlurred(cover: ImageHolder?, radius: Float) = tryWith {
+        if (cover == null) { setImageDrawable(null); return@tryWith }
+        val builder = ImageRequest.Builder(context)
+        createRequest(cover, builder)
+        builder.transformations(BlurTransformation(context, radius))
+            .lifecycle(findViewTreeLifecycleOwner())
+            .target({}, {}) { image -> setImageDrawable(image.asDrawable(resources)) }
+        enqueue(builder)
+    }
+
     private val ImageHolder.diskId
         get() = when (this) {
             is ImageHolder.NetworkRequestImageHolder -> request.toString().hashCode().toString()

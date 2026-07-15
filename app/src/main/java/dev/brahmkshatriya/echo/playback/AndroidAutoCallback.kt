@@ -203,7 +203,10 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
-        if (params?.isRecent == true) {
+        if (params?.isRecent == true) return scope.futureCatching {
+            // recoverTracks() decodes the (unbounded) saved queue. onGetLibraryRoot runs on the app looper, so
+            // decode OFF it — a large queue was a synchronous ANR on connect. onGetLibraryRoot already returns
+            // a ListenableFuture; AA awaits the resolved root exactly as before, only the decode location moved.
             val tracks = context.recoverTracks()
             val rawIndex = context.recoverIndex() ?: 0
             // Same repair as recoverPlaylist so the AA resume tile shows the true current, not a skewed one.
@@ -211,20 +214,18 @@ abstract class AndroidAutoCallback(
                 it.first.item.id
             }
             val track = (tracks?.getOrNull(index) ?: tracks?.firstOrNull())?.first?.item
-            return Futures.immediateFuture(
-                LibraryResult.ofItem(
-                    if (track != null)
-                        browsableItem(
-                            "recent",
-                            track.title,
-                            track.subtitleWithE,
-                            browsable = true,
-                            artWorkUri = track.cover?.toUri(context)
-                        )
-                    else
-                        browsableItem("recent", "", browsable = false),
-                    null
-                )
+            LibraryResult.ofItem(
+                if (track != null)
+                    browsableItem(
+                        "recent",
+                        track.title,
+                        track.subtitleWithE,
+                        browsable = true,
+                        artWorkUri = track.cover?.toUri(context)
+                    )
+                else
+                    browsableItem("recent", "", browsable = false),
+                null
             )
         }
         if (browser.packageName != "com.google.android.projection.gearhead")
