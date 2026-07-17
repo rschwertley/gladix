@@ -53,6 +53,7 @@
             android:layout_height="wrap_content"
             android:text="@string/create"
             android:maxLines="2"
+            android:foreground="@drawable/tv_focus_pill"
             app:icon="@drawable/ic_playlist_add"
             android:layout_margin="24dp" />
     </FrameLayout>

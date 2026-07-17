@@ -1,10 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape android:shape="rectangle">
-            <stroke android:width="2dp" android:color="?attr/colorPrimary" />
-            <corners android:radius="?itemCorner" />
-        </shape>
+        <layer-list>
+            <!-- Interior tint on focus. Neutral translucent white rather than ?attr/colorPrimary: a
+                 translucent theme-attr fill can't be reliably expressed in a static drawable (android:alpha
+                 on a layer-list item isn't proven in this build), and ~15% white reads as a clean "selected"
+                 lift on the dark/AMOLED TV theme without hiding the card's content/art. -->
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#26FFFFFF" />
+                    <corners android:radius="?itemCorner" />
+                </shape>
+            </item>
+            <!-- Strong focus border: 4dp (was 2dp), theme accent so it tracks dynamic color. -->
+            <item>
+                <shape android:shape="rectangle">
+                    <stroke android:width="4dp" android:color="?attr/colorPrimary" />
+                    <corners android:radius="?itemCorner" />
+                </shape>
+            </item>
+        </layer-list>
     </item>
     <item android:drawable="@drawable/ripple_item_container" />
 </selector>

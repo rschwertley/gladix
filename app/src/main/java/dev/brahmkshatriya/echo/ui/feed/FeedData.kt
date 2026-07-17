@@ -19,6 +19,7 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.combineTransformLatest
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadDrawable
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,6 +61,9 @@ data class FeedData(
 
     val layoutManagerStates = hashMapOf<Int, Parcelable?>()
     val visibleScrollableViews = hashMapOf<Int, WeakReference<HorizontalListViewHolder>>()
+
+    // Surface flag for FeedType.toFeedType — drops the category preview's expand arrow on TV only.
+    private val isTv = app.context.isTv()
 
     private val refreshFlow = MutableSharedFlow<Unit>(1)
     private val cachedState = MutableStateFlow<Result<State<Feed<Shelf>>?>?>(null)
@@ -224,7 +228,8 @@ data class FeedData(
                         extensionId,
                         state.item,
                         tabId,
-                        noVideos
+                        noVideos,
+                        isTv = isTv
                     )
                 }
             }
@@ -236,7 +241,7 @@ data class FeedData(
             var start = 0L
             data.map { result ->
                 result.map {
-                    val list = it.toFeedType(feedId, extId, state.item, tabId, noVideos, start)
+                    val list = it.toFeedType(feedId, extId, state.item, tabId, noVideos, start, isTv)
                     start += list.size
                     list
                 }.getOrThrow()

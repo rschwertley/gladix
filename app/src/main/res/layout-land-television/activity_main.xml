@@ -30,7 +30,7 @@
 
         <com.google.android.material.navigationrail.NavigationRailView
             android:id="@+id/navView"
-            style="@style/NavView"
+            style="@style/NavViewTv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="@dimen/nav_width"

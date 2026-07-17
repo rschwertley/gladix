@@ -3,12 +3,15 @@ package dev.brahmkshatriya.echo.ui.feed
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.core.view.children
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonGroup
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.ItemTabBinding
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.databinding.ItemTabContainerBinding
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
@@ -56,7 +59,13 @@ class TabsAdapter<T>(
         val toKeep = tabs.size - parent.childCount
         val inflater = LayoutInflater.from(parent.context)
         if (toKeep > 0) repeat(toKeep) {
-            parent.addView(ItemTabBinding.inflate(inflater, parent, false).root)
+            val tab = ItemTabBinding.inflate(inflater, parent, false).root
+            // TV only (phone: isTv() == false → no-op, layout unchanged): add the focus frame so a D-pad-
+            // focused tab is distinguishable from the checked/selected tab. New instance per tab (foreground
+            // Drawables must not be shared across views).
+            if (parent.context.isTv())
+                tab.foreground = ContextCompat.getDrawable(parent.context, R.drawable.tv_focus_pill)
+            parent.addView(tab)
         } else if (toKeep < 0) repeat(-toKeep) {
             parent.getChildAt(tabs.size + it).isVisible = false
         }

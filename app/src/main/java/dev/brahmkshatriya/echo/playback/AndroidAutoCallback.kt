@@ -609,16 +609,27 @@ abstract class AndroidAutoCallback(
                 ?: return@future super.onSetMediaItems(
                     mediaSession, controller, mutableListOf(), 0, startPositionMs
                 ).await(context)
-            val all = tracks.loadAll().shuffled().map {
+            // Build the UNSHUFFLED album order, then shuffle the LIST. Record the unshuffled order so the
+            // ensuing setMediaItems keeps it as `original` and flips the shuffle flag ON (parity with the phone
+            // Shuffle button: a later toggle-OFF restores album order). The flag flip is changeQueue-free — the
+            // queue is applied already shuffled, so nothing re-shuffles.
+            val unshuffled = tracks.loadAll().map {
                 MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
             }
+            val shuffled = unshuffled.shuffled()
+            if (unshuffled.isNotEmpty())
+                (mediaSession.player as? ShufflePlayer)?.notifyShuffleTileOriginal(unshuffled)
             return@future super.onSetMediaItems(
-                mediaSession, controller, all.toMutableList(), 0, startPositionMs
+                mediaSession, controller, shuffled.toMutableList(), 0, startPositionMs
             ).await(context)
         }
 
         // Single-track tap from a playlist/album: expand to full queue at correct position
         if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith("auto/")) {
+            // In-order tap (all branches below build current+upcoming): sync the shuffle flag/icon OFF WITHOUT
+            // changeQueue. Set here (not after the framework applies the returned queue) because the ensuing
+            // setMediaItems doesn't touch the flag, so this survives — and `original` becomes the in-order queue.
+            (mediaSession.player as? ShufflePlayer)?.syncShuffleFlag(false)
             val auto = parseAutoId(mediaItems[0].mediaId)
             val cached = auto?.let {
                 context.getFromCache<Triple<Track, String, EchoMediaItem?>>(it.t, "auto", durable = true)

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <!-- Stadium focus frame: the 100dp radius clamps to half the height, so it renders fully rounded.
+             Matches pill buttons / the ExtendedFAB, and reads as a clear focus frame around icon and
+             cookie-shaped buttons regardless of their inner shape. 4dp stroke, no fill (a fill would tint
+             the button gap). Used only on TV (applied via isTv() gate in code, or in TV-only layouts). -->
+        <shape android:shape="rectangle">
+            <stroke android:width="4dp" android:color="?attr/colorPrimary" />
+            <corners android:radius="100dp" />
+        </shape>
+    </item>
+    <item android:drawable="@android:color/transparent" />
+</selector>

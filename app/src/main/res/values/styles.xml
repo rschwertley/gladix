@@ -93,6 +93,13 @@
         <item name="android:paddingBottom">0dp</item>
     </style>
 
+    <!-- TV-only NavView: adds a focus-aware item overlay so D-pad focus on a rail item is clearly visible
+         (distinct from the selected active-indicator). Applied ONLY in layout-land-television/activity_main.xml;
+         phone/tablet keep @style/NavView unchanged. -->
+    <style name="NavViewTv" parent="@style/NavView">
+        <item name="itemRippleColor">@color/tv_nav_item_ripple</item>
+    </style>
+
     <style name="AppBarOutline">
         <item name="android:outlineProvider">none</item>
         <item name="android:layout_width">match_parent</item>

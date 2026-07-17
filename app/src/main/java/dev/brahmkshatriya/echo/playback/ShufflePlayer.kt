@@ -71,7 +71,7 @@ class ShufflePlayer(
     private val reconstituteRunnable = Runnable { reconstitutionScheduled = false; runReconstitution() }
 
     private companion object {
-        const val BACK_STACK_CAP = 100
+        const val BACK_STACK_CAP = 1000
         const val PREVIOUS_RESTART_THRESHOLD_MS = 3000L
     }
 
@@ -82,6 +82,29 @@ class ShufflePlayer(
     // call setMediaItems AFTER shuffleModeEnabled and must never trigger this behavior.
     internal fun notifyFreshShuffle() {
         isFreshShuffle = true
+    }
+
+    // Set by a start-playback entry point right before the framework applies its returned queue; consumed by
+    // the next 3-arg setMediaItems. Non-null = "the queue about to be applied is the AA shuffle tile's
+    // PRE-shuffled list; record THIS (the unshuffled album order) as `original` and flip the flag ON." Lets
+    // the tile match the phone Shuffle button (toggle-OFF restores album order) race-free — no post-apply
+    // looper hop, and no other setMediaItems intervenes between the notify and the framework's apply.
+    private var pendingShuffleTileOriginal: List<MediaItem>? = null
+
+    // AA shuffle tile (E): record the unshuffled album order to become `original`, consumed by the ensuing
+    // setMediaItems. See pendingShuffleTileOriginal.
+    fun notifyShuffleTileOriginal(unshuffled: List<MediaItem>) {
+        pendingShuffleTileOriginal = unshuffled
+    }
+
+    // Sync the shuffle flag/icon to what a start-playback entry point actually did, WITHOUT physically
+    // reordering (no changeQueue). The inner ExoPlayer's shuffleOrder is UnshuffledShuffleOrder (identity), so
+    // setting the flag alone never changes advance order — it only fires onShuffleModeEnabledChanged (the icon).
+    // isShuffled is kept in lockstep so the next real toggle behaves, and so a queue drag still syncs `original`
+    // (moveMediaItem syncs original only when !isShuffled — a stale isShuffled=true would silently skip it).
+    fun syncShuffleFlag(enabled: Boolean) {
+        isShuffled = enabled
+        player.shuffleModeEnabled = enabled
     }
 
     override fun setShuffleModeEnabled(enabled: Boolean) {
@@ -263,7 +286,9 @@ class ShufflePlayer(
         startIndex: Int,
         startPositionMs: Long
     ) {
-        original = mediaItems
+        val tileOriginal = pendingShuffleTileOriginal
+        pendingShuffleTileOriginal = null
+        original = tileOriginal ?: mediaItems
         backStack.clear()
         cancelPendingReconstitution()
         player.setMediaItems(
@@ -271,6 +296,13 @@ class ShufflePlayer(
             startIndex.coerceAtMost(mediaItems.size - 1),
             startPositionMs
         )
+        if (tileOriginal != null) {
+            // AA shuffle tile: the queue was just applied ALREADY shuffled; keep the unshuffled album order as
+            // `original` and flip the flag ON without changeQueue (identity shuffleOrder → no reorder). A later
+            // toggle-OFF then changeQueue(original) restores album order, matching the phone Shuffle button.
+            isShuffled = true
+            player.shuffleModeEnabled = true
+        }
     }
 
     override fun clearMediaItems() {

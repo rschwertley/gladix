@@ -117,7 +117,7 @@ class PlayerCallback(
                 .add(radioCommand).add(sleepTimer)
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
                 .add(resumeCommand).add(imageCommand).add(backfillCommand)
-                .add(seekToFullCommand)
+                .add(seekToFullCommand).add(syncShuffleFlagCommand)
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -153,6 +153,13 @@ class PlayerCallback(
                 // is why this stays a custom command. `play` preserves play()=true / seek()=false. AA's
                 // onSkipToQueueItem path (seekToDefaultPosition) never enters here.
                 (player as? ShufflePlayer)?.seekToFullIndex(args.getInt("index"), args.getBoolean("play"))
+                Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            }
+            syncShuffleFlagCommand -> run {
+                // Pure icon sync from a CLIENT-side in-order start-playback path (track tap / History setQueue):
+                // set the flag WITHOUT changeQueue. `original` is already correct from the preceding setMediaItems,
+                // so this is cosmetic-only and cannot reorder.
+                (player as? ShufflePlayer)?.syncShuffleFlag(args.getBoolean("enabled"))
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
             else -> super.onCustomCommand(session, controller, customCommand, args)
@@ -437,6 +444,9 @@ class PlayerCallback(
                             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
                         }
                         setMediaItems(upcoming, 0, startPos)
+                        // In-order Play: sync the shuffle flag/icon OFF without changeQueue (order-safe,
+                        // cosmetic). `original` is already the in-order queue just set above.
+                        (this as? ShufflePlayer)?.syncShuffleFlag(false)
                     }
                     if (playbackState == Player.STATE_IDLE) prepare()
                     play()
@@ -478,6 +488,8 @@ class PlayerCallback(
         if (upcoming.isEmpty()) return@future error
         withContext(Dispatchers.Main) {
             player.setMediaItems(upcoming, 0, 0)
+            // History tap: in-order current+upcoming — sync the shuffle flag/icon OFF without changeQueue.
+            (player as? ShufflePlayer)?.syncShuffleFlag(false)
             player.prepare()
             player.playWhenReady = true
         }

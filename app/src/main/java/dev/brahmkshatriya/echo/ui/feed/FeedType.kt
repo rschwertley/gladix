@@ -128,6 +128,7 @@ sealed interface FeedType {
             tabId: String?,
             noVideos: Boolean = false,
             start: Long = 0,
+            isTv: Boolean = false,
         ): List<FeedType> = mapIndexed { index, shelf ->
 
             when (shelf) {
@@ -156,7 +157,11 @@ sealed interface FeedType {
                 is Shelf.Lists<*> -> listOf(
                     Header(
                         feedId, extId, context, tabId,
-                        shelf.id, shelf.title, shelf.subtitle, shelf.more,
+                        shelf.id, shelf.title, shelf.subtitle,
+                        // TV-only: drop the category preview's expand arrow — categories are browse
+                        // suggestions and the 6-item preview (capped below via shelf.more, unaffected) is
+                        // plenty on TV. Other shelves (media/tracks) keep their "see all" arrow on TV.
+                        if (isTv && shelf is Shelf.Lists.Categories) null else shelf.more,
                         if (shelf is Shelf.Lists.Tracks) shelf.list else null
                     )
                 ) + if (shelf.type == Shelf.Lists.Type.Linear) listOf(

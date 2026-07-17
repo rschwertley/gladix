@@ -79,6 +79,7 @@
         android:layout_marginEnd="-12dp"
         android:clickable="true"
         android:focusable="true"
+        android:foreground="@drawable/tv_focus_pill"
         android:importantForAccessibility="yes"
         android:contentDescription="@string/more"
         android:visibility="gone"

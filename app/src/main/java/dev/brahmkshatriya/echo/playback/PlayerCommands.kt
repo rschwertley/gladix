@@ -17,6 +17,9 @@ object PlayerCommands {
     val repeatOneCommand = SessionCommand("repeat_one", Bundle.EMPTY)
     val shuffleCommand = SessionCommand("shuffle_on", Bundle.EMPTY)
     val shuffleOffCommand = SessionCommand("shuffle_off", Bundle.EMPTY)
+    // Pure flag/icon sync (Bundle "enabled": Boolean): sets shuffleModeEnabled on the service player WITHOUT
+    // changeQueue, so a client-side in-order start-playback path can correct a stale shuffle icon without reordering.
+    val syncShuffleFlagCommand = SessionCommand("sync_shuffle_flag", Bundle.EMPTY)
     val playCommand = SessionCommand("play", Bundle.EMPTY)
     val addToQueueCommand = SessionCommand("add_to_queue", Bundle.EMPTY)
     val addToNextCommand = SessionCommand("add_to_next", Bundle.EMPTY)

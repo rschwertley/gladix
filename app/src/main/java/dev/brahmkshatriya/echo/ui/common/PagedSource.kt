@@ -20,7 +20,13 @@ class PagedSource<T : Any>(
         PagingConfig(
             pageSize = 10,
             enablePlaceholders = false,
-            prefetchDistance = 20
+            prefetchDistance = 20,
+            // Enable Paging3 page-dropping to bound deep-scroll growth (was unbounded → OOM contributor).
+            // Must be >= pageSize + 2*prefetchDistance = 10 + 40 = 50; 100 keeps ~10 pages so the active
+            // window + generous buffer never drops during normal browsing. Only far-offscreen pages drop, and
+            // scrolling back re-fetches instantly from the extension PagedData.itemMap (already cached, no
+            // network) — bounded memory, no correctness change.
+            maxSize = 100
         )
     ) { this }.flow.flowOn(Dispatchers.IO)
 

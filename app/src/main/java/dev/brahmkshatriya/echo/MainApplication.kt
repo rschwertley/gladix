@@ -54,7 +54,12 @@ class MainApplication : Application(), KoinStartup, SingletonImageLoader.Factory
         return ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(context, 0.25)
+                    // 0.15 (≈38MB of a 256MB heap) instead of 0.25 (≈64MB): decoded covers are SOFTWARE
+                    // bitmaps on the Java heap (allowHardware(false), needed by the blur/crop transforms), so
+                    // this cache counts against the heap cap. 0.15 still holds ~75–125 downsampled covers
+                    // (~4–8 screens), so normal browsing never re-decodes; only very deep scroll-back re-decodes
+                    // from the disk cache (fast, no network, no correctness change).
+                    .maxSizePercent(context, 0.15)
                     .build()
             }
             .diskCache {

@@ -175,6 +175,11 @@ class UiViewModel(
         if (playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
     val playerSheetState = MutableStateFlow(getState())
+    // True only on the TV surface (set in setupPlayerBehavior). TV rests at STATE_HIDDEN with a separate
+    // mini bar and has no drag gesture, so it must stay isHideable=true (needed to reach HIDDEN, and there
+    // is no drag to dismiss). applyPlayerBehaviorState reads this to keep isHideable=false phone-only —
+    // otherwise setHideable(false) while Material still reads HIDDEN force-collapses a from-HIDDEN expand.
+    var isTv = false
     val tvMiniPlayerVisible = MutableStateFlow(false)
     val playerSheetOffset = MutableStateFlow(0f)
     val moreSheetState = MutableStateFlow(STATE_COLLAPSED)
@@ -275,7 +280,13 @@ class UiViewModel(
             behavior.state = STATE_HIDDEN
         } else {
             behavior.state = state
-            behavior.isHideable = false
+            // Phone-only: isHideable=false prevents a drag-dismiss of the always-visible mini (COLLAPSED).
+            // On TV there is no drag gesture AND the sheet rests HIDDEN with isHideable=true; setting it false
+            // here — while Material still reads HIDDEN because the expand settle was posted (dirty layout) —
+            // makes setHideable(false) force setState(COLLAPSED), which the TV force-hide branch then turns into
+            // HIDDEN (the "expand collapses to mini" bug). Leaving TV hideable=true expands cleanly and keeps
+            // its HIDDEN-rest/minimize model. Phone still expands from COLLAPSED where isHideable is already false.
+            if (!isTv) behavior.isHideable = false
         }
     }
 
@@ -508,6 +519,9 @@ class UiViewModel(
         }
 
         fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false, navRailContainer: ViewGroup? = null) {
+            // Set before any expand can occur (setup runs before user interaction) so applyPlayerBehaviorState
+            // keeps isHideable=false phone-only. Uses the real isTV signal, NOT isRail (phone landscape is rail too).
+            viewModel.isTv = isTV
             val behavior = BottomSheetBehavior.from(view)
             viewModel.playerBehaviour = WeakReference(behavior)
             viewModel.playerSheetViewRef = WeakReference(view)

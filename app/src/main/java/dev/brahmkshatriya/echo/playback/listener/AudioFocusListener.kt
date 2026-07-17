@@ -21,8 +21,16 @@ class AudioFocusListener(
     private var pausedForFocus = false
     private var loweringVolume = false
 
+    // Mirrors whether commitPauseRunnable is actually queued. cancelCommit() reads it to skip
+    // handler.removeCallbacks — the framework's full MAIN-looper MessageQueue scan (removeMessagesLegacy),
+    // which ANR'd on budget devices during onDestroy — when nothing is pending (the usual state at teardown).
+    // Only ever touched on the main thread (postDelayed, the runnable, and every abandon path run on the main
+    // looper), so no synchronization is needed.
+    private var pendingCommit = false
+
     // Fires after the grace window expires — abandons focus after immediate pause on AUDIOFOCUS_LOSS
     private val commitPauseRunnable = Runnable {
+        pendingCommit = false   // executing now → no longer queued; clear before abandonFocus so its cancelCommit() no-ops
         abandonFocus()
     }
 
@@ -30,7 +38,7 @@ class AudioFocusListener(
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Log.d("GladixAudio", "AUDIOFOCUS_GAIN: playbackState=${player.playbackState} pausedForFocus=$pausedForFocus playWhenReady=${player.playWhenReady}")
-                handler.removeCallbacks(commitPauseRunnable)
+                cancelCommit()
                 if (loweringVolume) {
                     player.volume = 1f
                     loweringVolume = false
@@ -43,14 +51,14 @@ class AudioFocusListener(
             AudioManager.AUDIOFOCUS_LOSS -> {
                 Log.d("GladixAudio", "AUDIOFOCUS_LOSS: playWhenReady=${player.playWhenReady}")
                 if (player.playWhenReady) {
-                    handler.removeCallbacks(commitPauseRunnable)
+                    cancelCommit()
                     pausedForFocus = true
                     player.pause()
-                    handler.postDelayed(commitPauseRunnable, GRACE_WINDOW_MS)
+                    postCommit()
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                handler.removeCallbacks(commitPauseRunnable)
+                cancelCommit()
                 if (player.playWhenReady) {
                     pausedForFocus = true
                     player.pause()
@@ -100,8 +108,23 @@ class AudioFocusListener(
         }
     }
 
-    private fun abandonFocus() {
+    // Posting and cancelling the grace-window commit go through these two so pendingCommit stays in lockstep
+    // with the real queue state — postDelayed/removeCallbacks for commitPauseRunnable exist nowhere else.
+    private fun postCommit() {
+        handler.postDelayed(commitPauseRunnable, GRACE_WINDOW_MS)
+        pendingCommit = true
+    }
+
+    // Skips the removeCallbacks MAIN-queue scan when nothing is queued. When a commit IS pending it removes
+    // it exactly as before, then clears the flag.
+    private fun cancelCommit() {
+        if (!pendingCommit) return
         handler.removeCallbacks(commitPauseRunnable)
+        pendingCommit = false
+    }
+
+    private fun abandonFocus() {
+        cancelCommit()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             audioManager.abandonAudioFocusRequest(focusRequest!!)
         else audioManager.abandonAudioFocus(focusChangeListener)
@@ -117,12 +140,12 @@ class AudioFocusListener(
         } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) {
             // BT/headphone disconnect — cancel any pending focus-driven pause and abandon focus
             // so AUDIOFOCUS_GAIN cannot re-enable playback on the now-disconnected device
-            handler.removeCallbacks(commitPauseRunnable)
+            cancelCommit()
             pausedForFocus = false
             abandonFocus()
         } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && !pausedForFocus) {
             // User explicitly paused (not focus-driven) — release focus so other apps can play
-            handler.removeCallbacks(commitPauseRunnable)
+            cancelCommit()
             abandonFocus()
         }
     }

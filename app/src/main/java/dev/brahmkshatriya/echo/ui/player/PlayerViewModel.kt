@@ -37,6 +37,7 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
+import dev.brahmkshatriya.echo.playback.PlayerCommands.syncShuffleFlagCommand
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getController
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
@@ -325,6 +326,14 @@ class PlayerViewModel(
             }
             controller.setMediaItems(mediaItems, 0, upcoming.first().playedDuration ?: 0)
             controller.prepare()
+            // In-order queue set (track tap / History) — sync the shuffle flag/icon OFF on the service player
+            // WITHOUT changeQueue (pure primitive), so the icon can't stay stale-ON from prior playback.
+            // `original` is already the in-order queue from setMediaItems, so this is cosmetic-only. FIFO after
+            // setMediaItems, and idempotent regardless of arrival order. (The feed Play/Shuffle buttons call
+            // setShuffle(...) AFTER this, which correctly overrides the flag for the Shuffle-button case.)
+            controller.sendCustomCommand(
+                syncShuffleFlagCommand, Bundle().apply { putBoolean("enabled", false) }
+            )
         }
     }
 

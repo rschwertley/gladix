@@ -1,10 +1,13 @@
 package dev.brahmkshatriya.echo.utils.ui
 
 import android.app.Activity
+import android.app.UiModeManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.Configuration.ORIENTATION_LANDSCAPE
 import android.content.res.Configuration.UI_MODE_NIGHT_MASK
 import android.content.res.Configuration.UI_MODE_NIGHT_NO
+import android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 import android.text.TextUtils
 import android.view.View
 import android.view.WindowManager
@@ -57,6 +60,13 @@ object UiUtils {
 
     fun Context.isNightMode() =
         resources.configuration.uiMode and UI_MODE_NIGHT_MASK != UI_MODE_NIGHT_NO
+
+    // Google TV reports UI_MODE_TYPE_TELEVISION but NOT FEATURE_LEANBACK, so the UiModeManager check must
+    // come first (and stay) — FEATURE_LEANBACK alone would miss Google TV boxes.
+    fun Context.isTv() =
+        (getSystemService(Context.UI_MODE_SERVICE) as UiModeManager).currentModeType ==
+            UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
 
     fun Int.dpToPx(context: Context) = (this * context.resources.displayMetrics.density).toInt()
 

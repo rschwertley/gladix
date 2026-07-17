@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-only nav-rail item overlay (wired via @style/NavViewTv, applied only in
+     layout-land-television/activity_main.xml). A strong translucent colorPrimary on state_focused gives
+     the rail item a clear persistent focus tint that is distinct from the active-indicator "selected" pill,
+     fixing "focus vs selected is indistinguishable". Phone's shared @style/NavView is untouched. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:alpha="0.30" android:color="?attr/colorPrimary" android:state_focused="true" />
+    <item android:alpha="0.24" android:color="?attr/colorPrimary" android:state_pressed="true" />
+    <item android:alpha="0.20" android:color="?attr/colorPrimary" android:state_hovered="true" />
+    <item android:alpha="0.08" android:color="?attr/colorOnSurface" />
+</selector>
