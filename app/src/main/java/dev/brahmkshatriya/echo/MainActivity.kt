@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo
 
 import android.app.UiModeManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -277,7 +278,24 @@ open class MainActivity : AppCompatActivity() {
         }
 
         const val BACK_ANIM = "back_anim"
-        fun Context.getMainActivity() = if (getSettings().getBoolean(BACK_ANIM, false))
-            Back::class.java else MainActivity::class.java
+
+        // Picks the Back-animation launcher variant when the BACK_ANIM pref is on — but Back's <activity> is
+        // android:enabled="false" by default and only ENABLED at runtime by the settings toggle
+        // (changeEnabledComponent). The pref (SharedPreferences) and the component-enabled state can DIVERGE — a
+        // reinstall/update reverts Back to the manifest default, or a settings restore turns the pref on without
+        // enabling the component — and startActivity() on a DISABLED component throws a fatal
+        // ActivityNotFoundException (it hit all four getMainActivity() callers: opener, player/download
+        // notifications, webview login). Guard at this single chokepoint: return Back ONLY when it is actually
+        // ENABLED, else fall back to MainActivity. getComponentEnabledSetting returns ENABLED only for the explicit
+        // runtime-enable; DEFAULT (=manifest false) and DISABLED both mean "not usable". The fallback is always
+        // safe: the toggle only disables MainActivity in the SAME call that ENABLES Back, so whenever Back is not
+        // enabled, MainActivity is. runCatching guards the rare case of the query itself failing.
+        fun Context.getMainActivity(): Class<out MainActivity> {
+            if (!getSettings().getBoolean(BACK_ANIM, false)) return MainActivity::class.java
+            val backEnabled = runCatching {
+                packageManager.getComponentEnabledSetting(ComponentName(this, Back::class.java))
+            }.getOrNull() == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            return if (backEnabled) Back::class.java else MainActivity::class.java
+        }
     }
 }

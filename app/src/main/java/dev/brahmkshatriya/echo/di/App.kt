@@ -9,8 +9,10 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.mayakapps.kache.FileKache
 import com.mayakapps.kache.KacheStrategy
 import dev.brahmkshatriya.echo.BuildConfig
+import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
+import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +61,13 @@ data class App(
                 it.printStackTrace()
                 // BuildConfig.HAS_FIREBASE is a compile-time boolean (no Firebase type referenced),
                 // so in no-json builds this branch is dead and FirebaseCrashlytics is never loaded.
-                if (BuildConfig.HAS_FIREBASE) FirebaseCrashlytics.getInstance().apply {
+                // LoginRequired is an EXPECTED "user not signed in" signal (any extension can raise it), not a
+                // fault — so skip Crashlytics for it. This ONLY suppresses recordException: the throwFlow emission
+                // is untouched, so the "Sign in" snackbar (the separate setupExceptionHandler collector), the feed
+                // login shelf, and the player's LoginOrAuth stop() all still fire. isLoginRequired walks the cause
+                // chain to catch BOTH forms — the player path's PlayerException→AppException.LoginRequired AND the
+                // AA getList path's RAW ClientException.LoginRequired (which classify() would miss).
+                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired()) FirebaseCrashlytics.getInstance().apply {
                     setCustomKey("extension_id", crashExtensionId)
                     setCustomKey("player_state", crashPlayerState)
                     setCustomKey("is_playing", crashIsPlaying)
@@ -100,5 +108,17 @@ data class App(
             _networkFlow.value = NetworkConnection.Metered
             scope.launch { throwFlow.emit(e) }  // record non-fatally (same Crashlytics path as everywhere else)
         }
+    }
+
+    // True if this throwable (or anything in its cause chain) is a login-required signal. Matches BOTH
+    // ClientException.LoginRequired (raw form the AA getList path emits) and AppException.LoginRequired (the
+    // wrapped form the player/getOrThrow paths emit) — Unauthorized is a subclass of each, so it's covered.
+    private fun Throwable.isLoginRequired(): Boolean {
+        var t: Throwable? = this
+        while (t != null) {
+            if (t is ClientException.LoginRequired || t is AppException.LoginRequired) return true
+            t = t.cause
+        }
+        return false
     }
 }

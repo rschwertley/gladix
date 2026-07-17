@@ -24,7 +24,10 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -34,7 +37,16 @@ class EffectsListener(
     private val context: Context,
     private val audioSessionFlow: MutableStateFlow<Int>,
     private val audioEffectsProcessor: AudioEffectsProcessor,
+    // Service-lifetime scope (PlayerService.scope: SupervisorJob + IO, cancelled in onDestroy) — valid at
+    // init/onCreate and never fires after release, so the deferred broadcast can't leak or run post-teardown.
+    private val scope: CoroutineScope,
 ) : Player.Listener {
+
+    // Serial (parallelism=1) view of IO: the two ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION announces — the init
+    // one and the onAudioSessionIdChanged one — dispatch here in FIFO submission order, so the init announce can
+    // never land AFTER a later session-change announce and strand an external equalizer on a stale session.
+    // Declared before init so it's initialized before the init block's broadcast uses it.
+    private val broadcastDispatcher = Dispatchers.IO.limitedParallelism(1)
 
     init {
         audioSessionFlow.value = exoPlayer.audioSessionId
@@ -223,12 +235,21 @@ class EffectsListener(
     }
 
     private fun Context.broadcastAudioSession() {
+        // Capture the session id SYNCHRONOUSLY (cheap getter, no binder) so the deferred announce uses the
+        // session that was live at call time. Only the sendBroadcast — a blocking binder round-trip to
+        // ActivityManagerService that ANR'd service onCreate on slow devices — moves off the main thread,
+        // serialized via broadcastDispatcher to keep announce order. The audioSessionFlow write and effects
+        // setup at the call sites stay synchronous; nothing in our code observes this broadcast (it's the
+        // external-equalizer announce — no app-side receiver), so deferring it changes no internal state.
+        val ctx = this
         val id = exoPlayer.audioSessionId
-        sendBroadcast(Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
-            putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-            putExtra(AudioEffect.EXTRA_AUDIO_SESSION, id)
-            putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-        })
+        scope.launch(broadcastDispatcher) {
+            ctx.sendBroadcast(Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, ctx.packageName)
+                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, id)
+                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+            })
+        }
     }
 
     private fun Context.broadcastAudioSessionClose(id: Int) {

@@ -162,7 +162,7 @@ class PlayerService : MediaLibraryService() {
             }
         }
     }
-    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor) }
+    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor, scope) }
 
     private val historyRepository by inject<HistoryRepository>()
     private val downloader by inject<Downloader>()

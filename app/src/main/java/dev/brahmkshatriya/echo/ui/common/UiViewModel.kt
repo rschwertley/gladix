@@ -263,7 +263,13 @@ class UiViewModel(
     // hide. Going to a shown state: set it (COLLAPSED/EXPANDED are reachable regardless), then disable — so
     // the instant the bar is draggable, hideable is already false. The only time isHideable stays true is
     // while genuinely HIDDEN (empty queue), when there is no bar to drag.
-    private fun applyPlayerBehaviorState(behavior: BottomSheetBehavior<View>, state: Int) {
+    private fun applyPlayerBehaviorState(behavior: BottomSheetBehavior<View>, requested: Int) {
+        // Chokepoint guard: setState only accepts STABLE states. If a transient (SETTLING/DRAGGING) ever reaches
+        // here — e.g. a mid-drag activity recreation re-applying a stored state — coerce it to the resting default
+        // getState() (COLLAPSED if a track is loaded, else HIDDEN), since a recreated activity must place the sheet
+        // AT REST, not at a mid-drag position. Final states pass through unchanged, so normal expand/collapse/hide
+        // restore is untouched. Makes the "STATE_SETTLING should not be set externally" crash structurally impossible.
+        val state = if (isFinalState(requested)) requested else getState()
         if (state == STATE_HIDDEN) {
             behavior.isHideable = true
             behavior.state = STATE_HIDDEN
@@ -536,10 +542,15 @@ class UiViewModel(
                         viewModel.playerSheetState.value = STATE_HIDDEN
                         return
                     }
-                    // Track the physical state into the flow. isHideable is NOT touched here — the phone has no
-                    // dismiss gesture; hideable is owned end-to-end by applyPlayerBehaviorState.
-                    viewModel.playerSheetState.value = newState
+                    // Track the physical state into the flow — but ONLY final states. SETTLING/DRAGGING are
+                    // transient and Material forbids passing them to setState; storing one let a mid-drag activity
+                    // recreation re-apply it (setupPlayerBehavior -> changePlayerState -> behavior.state = SETTLING)
+                    // and crash. Gating the write keeps playerSheetState's observers (which branch on
+                    // EXPANDED/HIDDEN) off transient values too; the smooth drag is tracked separately via onSlide
+                    // -> playerSheetOffset. isHideable is NOT touched here — the phone has no dismiss gesture;
+                    // hideable is owned end-to-end by applyPlayerBehaviorState.
                     if (!isFinalState(newState)) return
+                    viewModel.playerSheetState.value = newState
                     if (isTV) {
                         val hidden = newState == STATE_HIDDEN
                         (bottomSheet as? ViewGroup)?.apply {
