@@ -42,7 +42,7 @@ data class App(
     // guard is defensive so it can never be reported. We bridge the non-suspend handler to the suspend emit via
     // scope.launch (safe: SupervisorJob keeps `scope` alive after a child fails), wrapped in runCatching so a
     // failure to record can never re-crash or loop. We only emit — the existing collectors do the handling.
-    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+    private val exceptionHandler: CoroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable is CancellationException) return@CoroutineExceptionHandler
         runCatching { scope.launch { throwFlow.emit(throwable) } }
     }

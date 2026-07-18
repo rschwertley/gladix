@@ -67,7 +67,7 @@ class ExtensionLoader(
     // degrade to the standard non-fatal instead of crashing. CancellationException never reaches the handler
     // (guarded anyway); scope.launch bridges to the suspend emit (SupervisorJob keeps the scope alive after a
     // child fails); runCatching keeps a recording failure from re-crashing. See App.exceptionHandler.
-    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+    private val exceptionHandler: CoroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable is CancellationException) return@CoroutineExceptionHandler
         runCatching { scope.launch { app.throwFlow.emit(throwable) } }
     }
