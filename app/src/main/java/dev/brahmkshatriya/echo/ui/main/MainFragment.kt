@@ -26,6 +26,7 @@ import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import dev.brahmkshatriya.echo.utils.ui.FastScrollerHelper
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -103,7 +104,10 @@ class MainFragment : Fragment() {
             val uiViewModel by activityViewModel<UiViewModel>()
             applyInsets(uiViewModel.tvMiniPlayerVisible) {
                 val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(recyclerView.context) else 0
-                recyclerView.applyInsets(it, 20, 20, bottom + 4 + miniExtra)
+                // TV overscan safe-area (phone: isTv() == false → 20/20, unchanged). `it.start` already carries
+                // the nav-rail width inset, so 48 is added on top of it (left = rail + 48, right = 48).
+                val tv = recyclerView.context.isTv()
+                recyclerView.applyInsets(it, if (tv) 27 else 20, if (tv) 48 else 20, bottom + 4 + miniExtra)
                 outline.updatePadding(top = it.top)
                 scroller?.setPadding(recyclerView.run {
                     val pad = 8.dpToPx(context)

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Persistent translucent circular scrim behind the top-left minimize chevron on the TV Now Playing
+     screen, so the chevron stays legible over ANY album cover (bright or dark). A circular ripple rides
+     on top for press feedback. TV-only: referenced solely by fragment_player_tv's tv_minimize_button. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/colorControlHighlight">
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#66000000" />
+        </shape>
+    </item>
+</ripple>

@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.feed
 
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
@@ -114,6 +115,8 @@ class ButtonsAdapter(
                     binding.sortToggleButton, binding.createPlaylistButton, binding.editPlaylistButton,
                     binding.micButton, binding.searchClose
                 ).forEach { it.foreground = ContextCompat.getDrawable(ctx, R.drawable.tv_focus_pill) }
+                // playButton is the only text button here — bump its 10-foot text size.
+                binding.playButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             }
         }
 

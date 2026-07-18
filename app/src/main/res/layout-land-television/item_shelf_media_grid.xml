@@ -41,7 +41,7 @@
                 android:layout_gravity="center"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:textSize="14sp"
+                android:textSize="18sp"
                 tools:ignore="TextSizeCheck"
                 tools:text="@tools:sample/full_names" />
 

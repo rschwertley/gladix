@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV (landscape television) size overrides — the central knob for TV sizing; tune here.
+     Scoping/phone-safety: this folder resolves ONLY on a landscape TV (matches -land + -television, the
+     exact TV config). It outranks values/ and values-land/ on TV, and phone/tablet never see it, so every
+     override here is TV-only and phone is byte-identical. -->
+<resources>
+    <!-- Hero album art on the media/history rows (was 64dp). Also drives the collapsed mini-player cover
+         on TV (fine — bigger there too). -->
+    <dimen name="collapsed_cover_size">110dp</dimen>
+
+    <!-- Split the rail box from collapsed_cover_size (values/ ties them together). Explicit here so the
+         rail sizes independently: 110dp width to fit a 36dp icon + BodyLarge label + padding. nav_height is
+         pinned to the original 64dp so player_info_peek_height (= @dimen/nav_height) is NOT changed — the
+         rail item HEIGHT is set separately via app:itemMinHeight in the TV activity_main. -->
+    <dimen name="nav_width">110dp</dimen>
+    <dimen name="nav_height">64dp</dimen>
+
+    <!-- Horizontal-shelf row heights grown to fit the bigger covers + text (were 80 / 68 / 216). -->
+    <dimen name="shelf_media_text_block_height">100dp</dimen>
+    <dimen name="shelf_category_row_height">100dp</dimen>
+    <dimen name="shelf_three_tracks_row_height">280dp</dimen>
+
+    <!-- Big-cover / grid album art driven by ?itemCoverSize (themes.xml now points these attrs at the
+         dimens below). Was 96dp (128dp on the BigCover themes). -->
+    <dimen name="item_cover_size">150dp</dimen>
+    <dimen name="item_cover_size_big">180dp</dimen>
+
+    <!-- Section header text ("Continue streaming" etc.), extracted from item_shelf_header (was 20sp). -->
+    <dimen name="shelf_header_text_size">28sp</dimen>
+</resources>

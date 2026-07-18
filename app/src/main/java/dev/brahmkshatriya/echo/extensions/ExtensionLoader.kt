@@ -39,6 +39,8 @@ import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAp
 import dev.brahmkshatriya.echo.extensions.exceptions.RequiredExtensionsMissingException
 import dev.brahmkshatriya.echo.extensions.repo.CombinedRepository
 import dev.brahmkshatriya.echo.extensions.repo.ExtensionParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,7 +61,17 @@ class ExtensionLoader(
     val cache: SimpleCache,
 ) {
     val parser = ExtensionParser(app.context)
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Same background safety net as App.scope: route UNCAUGHT failures of coroutines launched on this scope
+    // (eager injection, extension selection, network-triggered token work, etc.) to app.throwFlow so they
+    // degrade to the standard non-fatal instead of crashing. CancellationException never reaches the handler
+    // (guarded anyway); scope.launch bridges to the suspend emit (SupervisorJob keeps the scope alive after a
+    // child fails); runCatching keeps a recording failure from re-crashing. See App.exceptionHandler.
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable is CancellationException) return@CoroutineExceptionHandler
+        runCatching { scope.launch { app.throwFlow.emit(throwable) } }
+    }
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     val db = ExtensionDatabase.create(app.context)
 
     private var permGrantedFlow = false

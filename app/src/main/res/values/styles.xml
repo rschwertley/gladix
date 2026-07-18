@@ -98,6 +98,11 @@
          phone/tablet keep @style/NavView unchanged. -->
     <style name="NavViewTv" parent="@style/NavView">
         <item name="itemRippleColor">@color/tv_nav_item_ripple</item>
+        <!-- 10-foot rail: bigger icons + labels (default 24dp icon / BodySmall label). Only ever applied in
+             layout-land-television/activity_main.xml, so phone's @style/NavView is untouched. -->
+        <item name="itemIconSize">36dp</item>
+        <item name="itemTextAppearanceActive">@style/TextAppearance.Material3.BodyLarge</item>
+        <item name="itemTextAppearanceInactive">@style/TextAppearance.Material3.BodyLarge</item>
     </style>
 
     <style name="AppBarOutline">

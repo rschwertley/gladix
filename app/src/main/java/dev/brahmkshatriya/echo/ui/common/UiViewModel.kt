@@ -171,8 +171,14 @@ class UiViewModel(
 
     val playerBgVisible = MutableStateFlow(false)
 
+    // Resting sheet state. Phone: a loaded track rests at COLLAPSED (the peek/mini bar). TV: there is NO
+    // COLLAPSED resting state — the sheet rests HIDDEN behind a SEPARATE mini bar, and the TV force-route
+    // in onStateChanged bounces any COLLAPSED settle straight back to HIDDEN. So on TV, returning COLLAPSED
+    // here made collapsePlayer() (called on every drill-down via openFragment) drive the sheet
+    // HIDDEN→COLLAPSED→HIDDEN — a ~1–2s double settle during which updateVisibility() hid the mini bar
+    // (its "sheetHidden" gate went false then true). Rest HIDDEN on TV so drill-down is a no-op for the sheet.
     private fun getState() =
-        if (playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
+        if (!isTv && playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
     val playerSheetState = MutableStateFlow(getState())
     // True only on the TV surface (set in setupPlayerBehavior). TV rests at STATE_HIDDEN with a separate

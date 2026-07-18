@@ -26,7 +26,7 @@
             android:layout_gravity="center"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textSize="20sp"
+            android:textSize="@dimen/shelf_header_text_size"
             tools:ignore="TextSizeCheck"
             tools:text="@tools:sample/full_names" />
 

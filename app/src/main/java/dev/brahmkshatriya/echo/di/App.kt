@@ -13,6 +13,8 @@ import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +32,21 @@ data class App(
 ) {
     val throwFlow = MutableSharedFlow<Throwable>()
     val messageFlow = MutableSharedFlow<Message>()
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Safety net for UNCAUGHT exceptions in background coroutines launched on `scope` — e.g. an extension's
+    // background token refresh throwing a raw IllegalStateException. Without a handler these hit the default
+    // uncaught handler and CRASH the app; here they route to throwFlow and degrade to the exact same non-fatal
+    // path as every other extension error (the throwFlow collector below does printStackTrace + Crashlytics
+    // recordException with isLoginRequired() suppression; the ExceptionUtils collector shows the snackbar).
+    // Notes: CoroutineExceptionHandler is never invoked for CancellationException (normal cancellation) — the
+    // guard is defensive so it can never be reported. We bridge the non-suspend handler to the suspend emit via
+    // scope.launch (safe: SupervisorJob keeps `scope` alive after a child fails), wrapped in runCatching so a
+    // failure to record can never re-crash or loop. We only emit — the existing collectors do the handling.
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable is CancellationException) return@CoroutineExceptionHandler
+        runCatching { scope.launch { throwFlow.emit(throwable) } }
+    }
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
     // Updated by PlayerService whenever player state changes; read at crash-record time.
     @Volatile var crashExtensionId: String = "none"

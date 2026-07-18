@@ -14,11 +14,13 @@
         app:srcCompat="@drawable/gradient_track"
         app:tint="?echoBackground" />
 
-    <!-- Horizontal split: album art (50%) | info + controls (50%) -->
+    <!-- Horizontal split: album art (hero) | info + controls. Hero pass: left weight 0.5 -> 0.55 and the
+         top margin trimmed from ?actionBarSize -> 24dp for the realistic ~10% cover gain (cover is
+         height-bound past this — do not push further). -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="?actionBarSize"
+        android:layout_marginTop="24dp"
         android:baselineAligned="false"
         android:orientation="horizontal">
 
@@ -26,7 +28,7 @@
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="0.5">
+            android:layout_weight="0.55">
 
             <ImageView
                 android:id="@+id/tv_album_art"
@@ -43,7 +45,9 @@
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <!-- Right panel: info + controls -->
+        <!-- Right panel: info + controls. paddingEnd trimmed 56 -> 32 (symmetric with paddingStart) to
+             protect the enlarged control-row's horizontal fit; paddingVertical 24 -> 32 for breathing room
+             (the panel has vertical slack). -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -51,27 +55,8 @@
             android:gravity="center_vertical"
             android:orientation="vertical"
             android:paddingStart="32dp"
-            android:paddingEnd="56dp"
-            android:paddingVertical="24dp">
-
-            <!-- Minimize button — D-pad accessible top of panel -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/tv_minimize_button"
-                style="?attr/materialIconButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start"
-                android:contentDescription="@string/back"
-                android:focusable="true"
-                android:foreground="@drawable/tv_focus_indicator"
-                android:nextFocusDown="@+id/tv_track_heart"
-                android:nextFocusLeft="@id/tv_minimize_button"
-                android:nextFocusRight="@id/tv_minimize_button"
-                android:nextFocusUp="@id/tv_minimize_button"
-                android:outlineProvider="none"
-                app:icon="@drawable/ic_expand_more"
-                app:iconSize="24dp"
-                app:iconTint="@color/button_player" />
+            android:paddingEnd="32dp"
+            android:paddingVertical="32dp">
 
             <!-- Title row: title + heart -->
             <LinearLayout
@@ -92,7 +77,7 @@
                         android:layout_height="wrap_content"
                         android:ellipsize="marquee"
                         android:maxLines="1"
-                        android:textSize="28sp"
+                        android:textSize="34sp"
                         android:textStyle="bold"
                         tools:text="Track Title" />
 
@@ -103,15 +88,15 @@
                         android:ellipsize="end"
                         android:maxLines="1"
                         android:paddingTop="4dp"
-                        android:textSize="18sp"
+                        android:textSize="22sp"
                         tools:text="Artist Name" />
 
                 </LinearLayout>
 
                 <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/tv_track_heart"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
                     android:layout_marginStart="8dp"
                     android:background="@drawable/ripple_60dp"
                     android:button="@drawable/anim_heart_40dp"
@@ -130,7 +115,7 @@
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp">
+                android:layout_marginTop="24dp">
 
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/tv_buffer_bar"
@@ -142,7 +127,7 @@
                     app:indicatorColor="?attr/colorTertiary"
                     app:indicatorTrackGapSize="0dp"
                     app:trackColor="?attr/colorOnSurface"
-                    app:trackThickness="2dp" />
+                    app:trackThickness="4dp" />
 
                 <com.google.android.material.slider.Slider
                     android:id="@+id/tv_seek_bar"
@@ -157,15 +142,15 @@
                     android:paddingVertical="24dp"
                     android:value="0.5"
                     app:haloColor="@color/tv_slider_focus_selector"
-                    app:haloRadius="24dp"
+                    app:haloRadius="28dp"
                     app:labelBehavior="gone"
                     app:minTouchTargetSize="56dp"
                     app:thumbColor="?attr/colorTertiary"
-                    app:thumbHeight="20dp"
-                    app:thumbWidth="20dp"
+                    app:thumbHeight="24dp"
+                    app:thumbWidth="24dp"
                     app:trackColorActive="?attr/colorTertiary"
                     app:trackColorInactive="@android:color/transparent"
-                    app:trackHeight="2dp"
+                    app:trackHeight="4dp"
                     app:trackStopIndicatorSize="0dp" />
 
             </FrameLayout>
@@ -181,7 +166,7 @@
                     android:id="@+id/tv_current_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="14sp"
+                    android:textSize="16sp"
                     tools:text="0:00" />
 
                 <View
@@ -194,23 +179,25 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:alpha="0.66"
-                    android:textSize="14sp"
+                    android:textSize="16sp"
                     tools:text="3:45" />
 
             </LinearLayout>
 
-            <!-- Controls row: shuffle | prev | play/pause | next | repeat -->
+            <!-- Controls row: shuffle | prev | play/pause | next | repeat. Sizes grown (hero pass); same 5
+                 buttons, same order, same nextFocus wiring — focus graph identical. No inter-button gaps
+                 added, to guarantee the row does not overflow the panel width. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="16dp"
                 android:gravity="center"
                 android:orientation="horizontal">
 
                 <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/tv_track_shuffle"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
                     android:background="@drawable/ripple_60dp"
                     android:button="@drawable/anim_shuffle"
                     android:contentDescription="@string/shuffle"
@@ -240,12 +227,12 @@
                     android:outlineProvider="none"
                     app:elevation="1dp"
                     app:icon="@drawable/ic_skip_previous_40dp"
-                    app:iconSize="40dp"
+                    app:iconSize="48dp"
                     app:iconTint="@color/button_player" />
 
                 <FrameLayout
-                    android:layout_width="72dp"
-                    android:layout_height="72dp">
+                    android:layout_width="96dp"
+                    android:layout_height="96dp">
 
                     <com.google.android.material.progressindicator.CircularProgressIndicator
                         android:id="@+id/tv_playing_indicator"
@@ -254,12 +241,12 @@
                         android:alpha="0"
                         android:clickable="false"
                         android:indeterminate="true"
-                        app:indicatorSize="64dp" />
+                        app:indicatorSize="84dp" />
 
                     <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/tv_track_play_pause"
-                        android:layout_width="72dp"
-                        android:layout_height="72dp"
+                        android:layout_width="96dp"
+                        android:layout_height="96dp"
                         android:background="@drawable/ripple_68dp"
                         android:button="@drawable/anim_play_pause_48dp"
                         android:checked="true"
@@ -291,14 +278,14 @@
                     android:outlineProvider="none"
                     app:elevation="1dp"
                     app:icon="@drawable/ic_skip_next_40dp"
-                    app:iconSize="40dp"
+                    app:iconSize="48dp"
                     app:iconTint="@color/button_player" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/tv_track_repeat"
                     style="?attr/materialIconButtonStyle"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
                     android:background="@drawable/ripple_60dp"
                     android:contentDescription="@string/repeat"
                     android:focusable="true"
@@ -310,7 +297,7 @@
                     android:outlineProvider="none"
                     android:padding="12dp"
                     app:icon="@drawable/ic_repeat_off_40dp"
-                    app:iconSize="32dp"
+                    app:iconSize="36dp"
                     app:iconTint="@color/amoled_fg" />
 
             </LinearLayout>
@@ -320,13 +307,13 @@
                 android:id="@+id/tv_track_subtitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="16dp"
                 android:ellipsize="end"
                 android:gravity="center"
                 android:maxLines="1"
                 android:textAppearance="@style/TextAppearance.AppCompat.Small"
                 android:textColor="@color/amoled_fg"
-                android:textSize="14sp"
+                android:textSize="16sp"
                 tools:text="320kbps · FLAC" />
 
         </LinearLayout>
@@ -338,5 +325,36 @@
         android:id="@+id/tv_toolbar"
         style="@style/PlayerToolbarStyle"
         android:layout_gravity="top" />
+
+    <!-- Minimize chevron — RELOCATED to top-left (was the top of the right panel). This is the SAME single
+         @id/tv_minimize_button (same configureBack click handler), re-parented here — NOT a new view. It is
+         the LAST child so it draws over the top-left of the cover. The toolbar's own PlayerToolbarStyle
+         navigationIcon is a LATENT second chevron, suppressed only by configureBack's `navigationIcon =
+         null`; that line and the shared style are intentionally left untouched, so no duplicate can appear.
+         Focus is ID-based, so re-parenting preserves heart.Up <-> minimize.Down. Circular scrim keeps it
+         legible over any cover; 36dp icon + tv_focus_indicator ring = 10-foot prominence. ~48/27dp margins
+         = 5% overscan safe area (tune here). -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/tv_minimize_button"
+        style="?attr/materialIconButtonStyle"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="48dp"
+        android:layout_marginTop="27dp"
+        android:background="@drawable/tv_minimize_scrim"
+        android:contentDescription="@string/back"
+        android:focusable="true"
+        android:foreground="@drawable/tv_focus_indicator"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:nextFocusDown="@+id/tv_track_heart"
+        android:nextFocusLeft="@id/tv_minimize_button"
+        android:nextFocusRight="@id/tv_minimize_button"
+        android:nextFocusUp="@id/tv_minimize_button"
+        android:outlineProvider="none"
+        app:icon="@drawable/ic_expand_more"
+        app:iconSize="36dp"
+        app:iconTint="@color/button_player" />
 
 </FrameLayout>

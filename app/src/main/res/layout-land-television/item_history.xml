@@ -13,7 +13,7 @@
     android:minHeight="44sp"
     android:orientation="horizontal"
     android:paddingHorizontal="24dp"
-    android:paddingVertical="4dp">
+    android:paddingVertical="8dp">
 
     <androidx.cardview.widget.CardView
         android:layout_width="@dimen/collapsed_cover_size"
@@ -47,7 +47,7 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="?attr/colorOnSurface"
-            android:textSize="16sp"
+            android:textSize="22sp"
             tools:text="Track Title" />
 
         <TextView
@@ -58,6 +58,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="18sp"
             tools:text="Artist Name" />
 
         <TextView
@@ -66,7 +67,7 @@
             android:layout_height="wrap_content"
             android:alpha="0.5"
             android:textColor="?attr/colorOnSurfaceVariant"
-            android:textSize="12sp"
+            android:textSize="14sp"
             tools:text="2h ago · Deezer" />
 
     </LinearLayout>

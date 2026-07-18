@@ -71,24 +71,48 @@ class SaveToPlaylistViewModel(
             }?.getOrThrow().orEmpty()
             if (tracks.isEmpty()) return@runCatching false
 
+            // Per-playlist outcome instead of all-or-nothing. A playlist can be advertised as editable by
+            // listEditablePlaylists yet reload with isEditable == false — a legit third-party/aggregator
+            // listing-vs-detail inconsistency (e.g. Combine). Previously check(loaded.isEditable) threw and
+            // aborted the whole loop: earlier playlists were already committed, the rest silently skipped,
+            // and the UI reported a misleading Saved(false). Now: skip a non-editable playlist gracefully
+            // (no write, no throw), surface genuine errors per playlist, and keep going.
+            val saved = mutableListOf<Playlist>()
+            val skipped = mutableListOf<Playlist>()
             playlists.forEach { playlist ->
-                extension.getAs<PlaylistEditClient, Any?> {
+                val outcome = extension.getAs<PlaylistEditClient, Boolean> {
                     saveFlow.value = SaveState.LoadingPlaylist(playlist)
                     val loaded = loadPlaylist(playlist)
-                    check(loaded.isEditable)
+                    if (!loaded.isEditable) return@getAs false
                     val playlistTracks = loadTracks(loaded).loadAll()
                     saveFlow.value = SaveState.Saving(loaded, tracks)
                     val listener = this as? PlaylistEditorListenerClient
                     listener?.onEnterPlaylistEditor(loaded, playlistTracks)
                     addTracksToPlaylist(loaded, playlistTracks, playlistTracks.size, tracks)
                     listener?.onExitPlaylistEditor(loaded, playlistTracks + tracks)
-                }.getOrThrow()
+                    true
+                }.getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    app.throwFlow.emit(e)   // genuine error for THIS playlist — surface, don't abort
+                    null
+                }
+                when (outcome) {
+                    true -> saved.add(playlist)
+                    false -> skipped.add(playlist)
+                    null -> {}              // errored; already surfaced above
+                }
             }
-            val message =
-                if (playlists.size != 1) app.context.getString(R.string.saved_to_playlists)
-                else app.context.getString(R.string.saved_to_x, playlists.first().title)
-            app.messageFlow.emit(Message(message))
-            true
+            if (saved.isNotEmpty()) {
+                val message =
+                    if (saved.size == 1) app.context.getString(R.string.saved_to_x, saved.first().title)
+                    else app.context.getString(R.string.saved_to_playlists)
+                app.messageFlow.emit(Message(message))
+            }
+            if (skipped.isNotEmpty())
+                app.messageFlow.emit(
+                    Message(app.context.getString(R.string.couldnt_save_not_editable, skipped.size))
+                )
+            saved.isNotEmpty()
         }.getOrElse {
             if (it is CancellationException) throw it
             app.throwFlow.emit(it)

@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.ui.media
 
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -10,6 +9,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.databinding.FragmentMediaBinding
@@ -84,7 +84,7 @@ class MediaFragment : Fragment(R.layout.fragment_media), MediaDetailsFragment.Pa
             )
             true
         }
-        val isTV = requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        val isTV = requireContext().isTv()
         if (isTV) binding.appBarLayout.setExpanded(false, false)
 
         observe(viewModel.itemResultFlow) { result ->

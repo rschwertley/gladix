@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -83,7 +84,14 @@ class PlayerTvFragment : Fragment() {
         viewLifecycleOwner.observe(uiViewModel.playerSheetState) { state ->
             backCallback.isEnabled = state == STATE_EXPANDED
             if (state == STATE_EXPANDED) {
-                binding?.tvTrackPlayPause?.post { binding?.tvTrackPlayPause?.requestFocus() }
+                // Land D-pad focus on play/pause once the just-expanded player is actually laid out.
+                // doOnLayout runs now if the button is already measured, else one-shot on the next layout
+                // pass — no post{}-tick race and no busy retry loop. Re-check EXPANDED inside the callback
+                // so a quick expand→hide can't steal focus onto a player that's no longer showing.
+                binding?.tvTrackPlayPause?.doOnLayout {
+                    if (uiViewModel.playerSheetState.value == STATE_EXPANDED)
+                        binding?.tvTrackPlayPause?.requestFocus()
+                }
             }
         }
     }

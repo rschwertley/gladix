@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.feed
 
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -60,11 +61,13 @@ class TabsAdapter<T>(
         val inflater = LayoutInflater.from(parent.context)
         if (toKeep > 0) repeat(toKeep) {
             val tab = ItemTabBinding.inflate(inflater, parent, false).root
-            // TV only (phone: isTv() == false → no-op, layout unchanged): add the focus frame so a D-pad-
-            // focused tab is distinguishable from the checked/selected tab. New instance per tab (foreground
-            // Drawables must not be shared across views).
-            if (parent.context.isTv())
+            // TV only (phone: isTv() == false → no-op, layout unchanged): focus frame (distinguish D-pad
+            // focus from the checked tab) + bigger 10-foot tab text. New foreground instance per tab
+            // (Drawables must not be shared across views).
+            if (parent.context.isTv()) {
                 tab.foreground = ContextCompat.getDrawable(parent.context, R.drawable.tv_focus_pill)
+                tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            }
             parent.addView(tab)
         } else if (toKeep < 0) repeat(-toKeep) {
             parent.getChildAt(tabs.size + it).isVisible = false

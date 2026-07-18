@@ -24,4 +24,11 @@
     <dimen name="shelf_media_text_block_height_radio">45dp</dimen>
     <dimen name="shelf_category_row_height">68dp</dimen>
     <dimen name="shelf_three_tracks_row_height">216dp</dimen>
+
+    <!-- Backing dimens for the ?itemCoverSize theme attr (see themes.xml) and the section-header text size,
+         so both can be TV-overridden in values-land-television/. These phone values equal the previous
+         inline literals, so phone/tablet render identically. -->
+    <dimen name="item_cover_size">96dp</dimen>
+    <dimen name="item_cover_size_big">128dp</dimen>
+    <dimen name="shelf_header_text_size">20sp</dimen>
 </resources>
