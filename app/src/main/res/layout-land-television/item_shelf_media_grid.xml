@@ -5,6 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="4dp"
+    android:padding="12dp"
     android:focusable="true"
     android:foreground="@drawable/tv_focused_list_item">
 
@@ -22,9 +23,7 @@
             android:id="@+id/coverContainer"
             layout="@layout/item_shelf_media_cover"
             android:layout_width="@dimen/collapsed_cover_size"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="-4dp"
-            android:layout_marginBottom="-4dp" />
+            android:layout_height="wrap_content" />
 
         <LinearLayout
             android:layout_width="0dp"

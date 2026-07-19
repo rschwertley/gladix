@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewParent
 import androidx.core.view.doOnLayout
+import androidx.core.view.doOnNextLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
@@ -23,7 +24,7 @@ class TvAwareRecyclerView @JvmOverloads constructor(
 
     var navRailView: View? = null
 
-    override fun focusSearch(focused: View, direction: Int): View {
+    override fun focusSearch(focused: View, direction: Int): View? {
         if (!isTv) return super.focusSearch(focused, direction)
         val glm = layoutManager as? GridLayoutManager
             ?: return super.focusSearch(focused, direction)
@@ -46,14 +47,23 @@ class TvAwareRecyclerView @JvmOverloads constructor(
                     val currentSpanSize = lookup.getSpanSize(currentPos)
                     val nextSpanSize = lookup.getSpanSize(nextRowFirstPos)
                     if (currentSpanSize != nextSpanSize) {
-                        val targetView = glm.findViewByPosition(nextRowFirstPos)
-                        if (targetView != null) targetView
-                        else {
-                            glm.scrollToPosition(nextRowFirstPos)
-                            focused
-                        }
-                    } else super.focusSearch(focused, direction)
-                } else super.focusSearch(focused, direction)
+                        // Different span (card grid -> full-width shelf): advance to the next span
+                        // group with focus-follow. The next shelf's item view IS the inner horizontal
+                        // RecyclerView (item_shelf_lists root), so focus descends to its first card
+                        // via the default FOCUS_AFTER_DESCENDANTS.
+                        advanceFocusDown(glm, nextRowFirstPos, focused)
+                    } else {
+                        // Same span (card grid row -> row): let the platform beam-search handle it
+                        // column-aligned while the next row is laid out; only when it's offscreen
+                        // (super returns null) do we scroll in the column-aligned target and follow.
+                        super.focusSearch(focused, direction)
+                            ?: advanceFocusDown(
+                                glm,
+                                columnAlignedTarget(lookup, currentPos, nextRowFirstPos, spanCount),
+                                focused,
+                            )
+                    }
+                } else focused
             }
             FOCUS_UP -> {
                 if (currentPos == 0) focused
@@ -66,6 +76,52 @@ class TvAwareRecyclerView @JvmOverloads constructor(
             }
             else -> super.focusSearch(focused, direction)
         }
+    }
+
+    // Column-aligned target in the next row for a same-span DOWN: the item whose span index matches
+    // the current column, clamped to the last item of that row. The walk stops at the next row's span
+    // group boundary, so a short final row falls back to its last card instead of overshooting into a
+    // later span group. Matches on span index (not position offset) so it is correct for span>1 too.
+    // Bounded by spanCount iterations; span index/group lookups are cached.
+    private fun columnAlignedTarget(
+        lookup: GridLayoutManager.SpanSizeLookup,
+        currentPos: Int,
+        nextRowFirstPos: Int,
+        spanCount: Int,
+    ): Int {
+        val col = lookup.getSpanIndex(currentPos, spanCount)
+        val nextRowGroup = lookup.getSpanGroupIndex(nextRowFirstPos, spanCount)
+        val count = adapter?.itemCount ?: 0
+        var target = nextRowFirstPos
+        var p = nextRowFirstPos
+        while (p < count && lookup.getSpanGroupIndex(p, spanCount) == nextRowGroup) {
+            if (lookup.getSpanIndex(p, spanCount) <= col) target = p else break
+            p++
+        }
+        return target
+    }
+
+    // Focus-follow DOWN advance shared by both boundary branches in focusSearch. The old code either
+    // scrolled without moving focus (different-span) or had no advance at all (same-span fell to bare
+    // super); both stranded focus on the current card when the next row was offscreen. Unified here:
+    // if the target is laid out, return it so the framework moves focus this frame; if it's offscreen,
+    // scroll it in and request focus once the scroll's single re-anchored layout pass binds it.
+    // TV-only: only reachable from the isTv-gated FOCUS_DOWN path, so phone never calls it.
+    private var pendingFocusPos = NO_POSITION
+
+    private fun advanceFocusDown(glm: GridLayoutManager, targetPos: Int, focused: View): View {
+        if (targetPos < 0 || targetPos >= (adapter?.itemCount ?: 0)) return focused
+        glm.findViewByPosition(targetPos)?.let { return it }        // laid out -> framework focuses it
+        // Offscreen: scrollToPosition re-anchors layout on targetPos, so ONE next layout pass binds
+        // it regardless of distance (unlike smoothScroll's many frames -> no scroll listener needed).
+        pendingFocusPos = targetPos
+        glm.scrollToPosition(targetPos)
+        doOnNextLayout {
+            if (pendingFocusPos != targetPos) return@doOnNextLayout  // superseded by a later DOWN press
+            pendingFocusPos = NO_POSITION
+            glm.findViewByPosition(targetPos)?.requestFocus()        // fresh lookup; no-op if unbound
+        }
+        return focused
     }
 
     // --- TV D-pad focus restoration across hide()/show() (lateral tab switch AND drill-down/back) ---
@@ -105,24 +161,69 @@ class TvAwareRecyclerView @JvmOverloads constructor(
         restoreSavedFocus()
     }
 
-    private fun restoreSavedFocus() {
-        val outer = savedOuterPos
-        if (outer >= (adapter?.itemCount ?: 0)) { requestFocus(); return }
-        scrollToPosition(outer)
+    // ---- Generalized TV focus anchoring (#6 cold start, #7 player-collapse, #8 warm resume) ----
+    // Target is ALWAYS saved-if-valid-else-first, so first-item is a fallback within one resolver,
+    // never a path that can override a valid save (see maybeInitialAnchor). Layout-aware and
+    // idempotent via anchorGen. Separate from the Group-1 DOWN token (pendingFocusPos).
+    // NOTE: #8 (warm resume) is NOT triggered here — it is routed through the single MainActivity
+    // window-focus arbiter, which calls establishFeedFocus below. This view has no onWindowFocusChanged.
+    private var anchorGen = 0
+    private var didInitialAnchor = false
+
+    // Public entry for external triggers (#7 collapse, #8 arbiter). [allowClaim] is the caller's
+    // no-steal decision. Target = saved position if valid, else first shelf.
+    fun establishFeedFocus(allowClaim: Boolean) {
+        if (!isTv || !allowClaim) return
+        val count = adapter?.itemCount ?: 0
+        if (count == 0) return
+        anchorFocusAt(if (savedOuterPos in 0 until count) savedOuterPos else 0)
+    }
+
+    private fun anchorFocusAt(target: Int) {
+        if (target >= (adapter?.itemCount ?: 0)) { requestFocus(); return }
+        val gen = ++anchorGen
+        scrollToPosition(target)
         doOnLayout {
-            val itemView = layoutManager?.findViewByPosition(outer)
+            if (gen != anchorGen) return@doOnLayout              // superseded by a later anchor
+            val itemView = layoutManager?.findViewByPosition(target)
                 ?: run { requestFocus(); return@doOnLayout }
-            val inner = savedInnerPos
+            val inner = if (target == savedOuterPos) savedInnerPos else NO_POSITION
             val innerRv = if (inner != NO_POSITION) itemView.firstRecyclerOrSelf() else null
             if (innerRv != null) {
                 innerRv.scrollToPosition(inner)
                 innerRv.doOnLayout {
+                    if (gen != anchorGen) return@doOnLayout
                     val card = innerRv.layoutManager?.findViewByPosition(inner)
                     if (card == null || !card.requestFocus()) itemView.requestFocus()
                 }
             } else itemView.requestFocus()
         }
     }
+
+    // #6 cold start: land initial focus once the feed first has content. Uses the same saved-or-first
+    // resolver, so if a save is already present it RESTORES it rather than defaulting to first.
+    private val initialAnchorObserver = object : RecyclerView.AdapterDataObserver() {
+        override fun onChanged() = maybeInitialAnchor()
+        override fun onItemRangeInserted(positionStart: Int, itemCount: Int) = maybeInitialAnchor()
+    }
+
+    private fun maybeInitialAnchor() {
+        if (!isTv || didInitialAnchor || (adapter?.itemCount ?: 0) == 0) return
+        didInitialAnchor = true
+        establishFeedFocus(allowClaim = rootView?.findFocus() == null)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (isTv) runCatching { adapter?.registerAdapterDataObserver(initialAnchorObserver) }
+    }
+
+    override fun onDetachedFromWindow() {
+        if (isTv) runCatching { adapter?.unregisterAdapterDataObserver(initialAnchorObserver) }
+        super.onDetachedFromWindow()
+    }
+
+    private fun restoreSavedFocus() = anchorFocusAt(savedOuterPos)
 
     private fun View.isDescendantOfThis(): Boolean {
         var p: ViewParent? = parent

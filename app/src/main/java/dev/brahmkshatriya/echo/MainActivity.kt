@@ -9,6 +9,7 @@ import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
 import android.widget.ImageView
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -36,6 +37,7 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.setupExceptionHandler
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.setupIntents
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.setupSnackBar
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.setupNavBarAndInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.setupPlayerBehavior
@@ -99,6 +101,7 @@ open class MainActivity : AppCompatActivity() {
         }
         setupTvNavRail()
         setupTvMiniPlayer()
+        setupTvPlayerCollapseFocus()
         setupPlayerBehavior(
             uiViewModel, binding.playerFragmentContainer, isTV,
             binding.root.findViewById(R.id.navRailContainer)
@@ -128,6 +131,50 @@ open class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // #7: player leaves the screen (collapse/hide on TV) -> hand focus to the visible feed. Reclaim
+    // only from the dismissed player or from nothing; never steal the nav rail / mini bar / drill-in.
+    // This is a playerSheetState event, distinct from the window-focus arbiter below.
+    private fun setupTvPlayerCollapseFocus() {
+        if (!isTV) return
+        observe(uiViewModel.playerSheetState) { state ->
+            if (state != STATE_HIDDEN) return@observe
+            val feed = binding.navHostFragment.findVisibleTvFeed() ?: return@observe
+            val focus = currentFocus
+            val inPlayer = focus != null &&
+                generateSequence(focus.parent) { it.parent }.any { it === binding.playerFragmentContainer }
+            feed.establishFeedFocus(allowClaim = focus == null || inPlayer)
+        }
+    }
+
+    // SINGLE TV window-focus arbiter (warm resume, and cold-start window gain). Exactly one
+    // destination per window-focus event: expanded player -> play/pause; otherwise -> visible feed.
+    // Replaces both the feed RV's former onWindowFocusChanged and the former B3 player fallback, so
+    // no two handlers can request focus on one window-focus event. Resume-into-expanded and
+    // resume-into-feed are both legitimate and are chosen here, not designed away.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !isTV) return
+        if (uiViewModel.playerSheetState.value == STATE_EXPANDED) {
+            val container = binding.playerFragmentContainer
+            if (!container.hasFocus())
+                container.findViewById<View>(R.id.tv_track_play_pause)?.requestFocus()
+        } else {
+            val feed = binding.navHostFragment.findVisibleTvFeed() ?: return
+            val focus = currentFocus
+            val inFeed = focus != null &&
+                generateSequence(focus.parent) { it.parent }.any { it === feed }
+            feed.establishFeedFocus(allowClaim = focus == null || inFeed)
+        }
+    }
+
+    private fun View.findVisibleTvFeed(): TvAwareRecyclerView? {
+        if (this is TvAwareRecyclerView && isShown) return this
+        if (this is ViewGroup) for (i in 0 until childCount) {
+            getChildAt(i).findVisibleTvFeed()?.let { return it }
+        }
+        return null
     }
 
     private fun setupTvNavRail() {

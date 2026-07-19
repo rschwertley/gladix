@@ -589,6 +589,13 @@ class UiViewModel(
                             else
                                 View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                         }
+                        // #5: land on play/pause now that the sheet has physically settled and its
+                        // descendants are unblocked (above). Driving off the settle removes the race
+                        // where the old flow-driven landing ran while still BLOCK_DESCENDANTS. The
+                        // window-focus case (settle while window unfocused) is covered by the
+                        // MainActivity arbiter, not here.
+                        if (newState == STATE_EXPANDED)
+                            bottomSheet.findViewById<View>(R.id.tv_track_play_pause)?.requestFocus()
                     }
                     viewModel.setPlayerInsets(view.context, newState != STATE_HIDDEN)
                     onSlide(view, if (newState == STATE_EXPANDED) 1f else 0f)

@@ -14,15 +14,13 @@
     android:gravity="center"
     android:orientation="horizontal"
     android:paddingHorizontal="24dp"
-    android:paddingVertical="8dp">
+    android:paddingVertical="12dp">
 
     <include
         android:id="@+id/coverContainer"
         layout="@layout/item_shelf_media_cover"
         android:layout_width="@dimen/collapsed_cover_size"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="-4dp"
-        android:layout_marginBottom="-4dp" />
+        android:layout_height="wrap_content" />
 
     <LinearLayout
         android:layout_width="0dp"

@@ -19,7 +19,7 @@
         android:clipToPadding="false"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="8dp">
+        android:padding="12dp">
 
         <ImageView
             android:id="@+id/icon"

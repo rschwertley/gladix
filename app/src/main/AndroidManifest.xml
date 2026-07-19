@@ -26,6 +26,16 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- Android TV support: declare leanback optional so the app installs on TV, and mark
+         touchscreen optional so Play does not implicitly require it (TVs have no touchscreen).
+         Both required="false" keep the app fully available on phones/tablets unchanged. -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <!-- Scoped visibility for the Chromium package-name spoof lookup (MainApplication.spoofedPackageName),
          so that lookup does not depend on QUERY_ALL_PACKAGES. Extension discovery still needs the broad
          permission above (extensions are matched by <uses-feature>, which <queries> cannot express). -->
@@ -43,6 +53,7 @@
     <application
         android:name=".MainApplication"
         android:appCategory="audio"
+        android:banner="@drawable/tv_banner"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -104,6 +115,8 @@
                 <action android:name="android.intent.action.MUSIC_PLAYER" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- TV home-screen launcher entry (additive; phone LAUNCHER above is unchanged). -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.APP_MUSIC" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
@@ -152,6 +165,8 @@
                 <action android:name="android.intent.action.MUSIC_PLAYER" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- TV home-screen launcher entry (additive; phone LAUNCHER above is unchanged). -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.APP_MUSIC" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

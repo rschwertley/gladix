@@ -7,7 +7,7 @@
     android:clipToPadding="false"
     android:foreground="@drawable/tv_focused_list_item"
     android:orientation="vertical"
-    android:padding="4dp">
+    android:padding="12dp">
 
     <include
         android:id="@+id/coverContainer"

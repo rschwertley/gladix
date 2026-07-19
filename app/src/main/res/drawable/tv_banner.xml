@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android TV home-screen banner (nominal 320x180). This XML layer-list is a valid,
+    always-present placeholder built from the existing launcher assets so the manifest's
+    android:banner reference resolves at build time. Replace with a branded 320x180
+    raster in res/drawable-xhdpi/tv_banner.(png|webp) when available.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item
+        android:width="96dp"
+        android:height="96dp"
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>
