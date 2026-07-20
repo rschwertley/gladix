@@ -21,6 +21,7 @@ import coil3.request.transformations
 import coil3.transform.CircleCropTransformation
 import coil3.transform.Transformation
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import kotlinx.coroutines.Dispatchers
 
 object ImageUtils {
 
@@ -94,14 +95,21 @@ object ImageUtils {
     suspend fun ImageHolder?.loadDrawable(
         context: Context
     ) = tryWithSuspend {
+        // Headless (no view target): run Coil's interceptor chain off Main. execute() otherwise
+        // coordinates on Dispatchers.Main.immediate by default (RealImageLoader wraps in async(main) +
+        // withContext(EmptyCoroutineContext)), so decode/transform/cache land on Main. View-target loads
+        // (loadInto/enqueue) are untouched and keep their Main callbacks.
         val request = createRequest(context, null, null)
+            .interceptorCoroutineContext(Dispatchers.IO)
         context.imageLoader.execute(request.build()).image?.asDrawable(context.resources)
     }
 
     suspend fun ImageHolder?.loadAsCircleDrawable(
         context: Context
     ) = tryWithSuspend {
+        // Headless: keep Coil's chain off Main (see loadDrawable). This is the AppShortcuts path.
         val request = createRequest(context, null, null, circleCrop)
+            .interceptorCoroutineContext(Dispatchers.IO)
         context.imageLoader.execute(request.build()).image?.asDrawable(context.resources)
     }
 

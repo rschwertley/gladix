@@ -45,6 +45,11 @@ class CategoryViewHolder(
     override fun bind(feed: FeedType.Category) {
         this.feed = feed
         val category = feed.shelf
+        // A null-feed Category is a header/label (see Shelf.Category doc), not a destination: neuter the
+        // (unconditionally wired) click so tap / D-pad-center can't fire the dead "No feed found" snack.
+        // Keep it FOCUSABLE — the TV feed anchors initial focus to position 0 with no fallback, so a
+        // non-focusable leading row would strand initial focus. Focusable-but-inert = visible, no snack.
+        binding.root.isClickable = category.feed != null
         binding.bind(category)
     }
 

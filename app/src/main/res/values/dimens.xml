@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="collapsed_cover_size">64dp</dimen>
+    <!-- Corner radius for feed card art (rounded_rectangle_cover) and history thumbnails (CardView),
+         both via ?itemCorner. Phone default; bumped to 12dp on TV in values-land-television/dimens.xml. -->
+    <dimen name="item_corner">8dp</dimen>
     <!-- Width reserved at the trailing edge of the collapsed mini-player for the play/pause control
          (48dp button + 8dp padding each side). Referenced by BOTH item_player_collapsed_controls.xml
          (the live bar) and item_player_collapsed.xml (the invisible twin measured for the collapse

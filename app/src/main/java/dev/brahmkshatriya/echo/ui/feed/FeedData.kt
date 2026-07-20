@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.feed
 
 import android.os.Parcelable
 import androidx.paging.cachedIn
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ExtensionType
@@ -198,7 +199,9 @@ data class FeedData(
 
                 val sortState = feedSortState.value
                 val query = searchQuery
-                var shelves = data.loadTill(2000)
+                var shelves = data.loadTill(
+                    shelfLimit = 2000, itemLimit = MAX_SORT_SEARCH_ITEMS,
+                ) { shelf -> if (shelf is Shelf.Lists<*>) shelf.list.size.coerceAtLeast(1) else 1 }
                 shelves = if (sortState?.feedSort != null || query != null)
                     shelves.flatMap { shelf ->
                         when (shelf) {
@@ -210,6 +213,10 @@ data class FeedData(
                         }
                     }
                 else shelves
+                // Post-explosion item cap: guards the single-huge-shelf case and the Combine aggregate.
+                // `truncated` drives the leading "first N" indicator appended below.
+                val truncated = shelves.size > MAX_SORT_SEARCH_ITEMS
+                if (truncated) shelves = shelves.take(MAX_SORT_SEARCH_ITEMS)
                 loadedShelves.value = shelves
                 if (sortState != null) {
                     shelves = sortState.feedSort?.sorter?.invoke(app.context, shelves) ?: shelves
@@ -222,6 +229,16 @@ data class FeedData(
                         listOf(it.title)
                     }.map { it.second }
                 }
+                // Truncated (would-OOM aggregate / huge playlist): tell the user up front that sort/search
+                // only covered the first N. LEADING so it's seen on load, not after scrolling 15k items.
+                // Added AFTER sort+search so it isn't reordered/filtered; null feed => inert header row.
+                if (truncated) shelves = listOf(
+                    Shelf.Category(
+                        id = "feed-truncated-indicator",
+                        title = app.context.getString(R.string.feed_truncated, MAX_SORT_SEARCH_ITEMS),
+                        feed = null,
+                    )
+                ) + shelves
                 PagedData.Single {
                     shelves.toFeedType(
                         feedId,
@@ -250,13 +267,31 @@ data class FeedData(
         data
     }
 
-    private suspend fun <T : Any> PagedData<T>.loadTill(limit: Long): List<T> {
+    private companion object {
+        // Sort/search materialization bound — the non-paged analog of PagedSource maxSize=100. Bounds the
+        // sources×shelves×items explosion (Combine can reach 100k–400k+ items → ~1 GB → OOM). Set well above
+        // any legit feed (large playlists/libraries top out ~10–15k), so it only bites on would-OOM feeds;
+        // when it does, the feed shows a "first N" indicator (never silent). Objects cost ~2–4 KB each; the
+        // sort/search copies are shallow reference arrays, so ~15k ≈ 30–60 MB, safe under the 256 MB heap.
+        const val MAX_SORT_SEARCH_ITEMS = 15_000
+    }
+
+    // Item-aware: stop once cumulative item weight hits itemLimit, not just element count — one raw
+    // Shelf.Lists already holds its whole track list, so counting shelves alone doesn't bound memory.
+    private suspend fun <T : Any> PagedData<T>.loadTill(
+        shelfLimit: Int, itemLimit: Int, weight: (T) -> Int,
+    ): List<T> {
         val list = mutableListOf<T>()
+        var items = 0
         var page = loadPage(null)
-        list.addAll(page.data)
-        while (page.continuation != null && list.size < limit) {
+        fun add(data: List<T>): Boolean {
+            for (e in data) { list.add(e); items += weight(e); if (items >= itemLimit) return true }
+            return false
+        }
+        if (add(page.data)) return list
+        while (page.continuation != null && list.size < shelfLimit) {
             page = loadPage(page.continuation)
-            list.addAll(page.data)
+            if (add(page.data)) return list
         }
         return list
     }

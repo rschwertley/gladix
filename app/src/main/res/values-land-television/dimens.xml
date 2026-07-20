@@ -25,6 +25,11 @@
     <dimen name="item_cover_size">150dp</dimen>
     <dimen name="item_cover_size_big">180dp</dimen>
 
+    <!-- Corner radius (?itemCorner) for feed card art + history thumbnails: 8dp (phone) -> 12dp so the
+         rounding reads as clearly intentional at 10ft on the larger TV cards. Flows through both
+         rounded_rectangle_cover's corners and the history CardView's cardCornerRadius. -->
+    <dimen name="item_corner">12dp</dimen>
+
     <!-- Section header text ("Continue streaming" etc.), extracted from item_shelf_header (was 20sp). -->
     <dimen name="shelf_header_text_size">28sp</dimen>
 </resources>

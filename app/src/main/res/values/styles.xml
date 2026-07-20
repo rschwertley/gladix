@@ -184,6 +184,23 @@
         <item name="cornerSizeBottomLeft">8dp</item>
     </style>
 
+    <!-- TV full-screen player cover: slight, intentional rounding for 10-foot art. Referenced only by
+         fragment_player_tv (TV-only). Must be applied to an INSET cover — rounding edge-flush art just
+         gets clipped by the screen edge and looks broken (see cover margins in that layout). -->
+    <style name="TvCoverShape" parent="ShapeAppearance.Material3.Corner.None">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <!-- TV mini-player thumbnail: same slight-rounding intent as TvCoverShape, scaled to the 56dp
+         thumbnail so the artwork keeps its shape across collapse/expand. 16dp would read as a squircle
+         at this size; 8dp matches the app's small-art rounding. Referenced only by
+         fragment_player_mini_tv (TV-only). -->
+    <style name="TvMiniCoverShape" parent="ShapeAppearance.Material3.Corner.None">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
     <style name="PlayerMoreBottomShape" parent="ShapeAppearance.Material3.Corner.None">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSizeTopRight">8dp</item>

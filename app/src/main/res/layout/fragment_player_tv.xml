@@ -30,10 +30,14 @@
             android:layout_height="match_parent"
             android:layout_weight="0.55">
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/tv_album_art"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
+                android:layout_marginStart="48dp"
+                android:layout_marginTop="48dp"
+                android:layout_marginEnd="24dp"
+                android:layout_marginBottom="48dp"
                 android:focusable="false"
                 android:importantForAccessibility="no"
                 android:scaleType="centerCrop"
@@ -41,7 +45,8 @@
                 app:layout_constraintDimensionRatio="H,1:1"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toTopOf="parent"
+                app:shapeAppearanceOverlay="@style/TvCoverShape" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -337,11 +342,11 @@
     <com.google.android.material.button.MaterialButton
         android:id="@+id/tv_minimize_button"
         style="?attr/materialIconButtonStyle"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
         android:layout_gravity="top|start"
         android:layout_marginStart="48dp"
-        android:layout_marginTop="48dp"
+        android:layout_marginTop="32dp"
         android:background="@drawable/tv_minimize_scrim"
         android:contentDescription="@string/back"
         android:focusable="true"
@@ -359,7 +364,7 @@
         android:nextFocusUp="@id/tv_minimize_button"
         android:outlineProvider="none"
         app:icon="@drawable/ic_expand_more"
-        app:iconSize="36dp"
+        app:iconSize="44dp"
         app:iconTint="@color/button_player" />
 
 </FrameLayout>

@@ -225,7 +225,7 @@ class ExtensionLoader(
             all.collect { list ->
                 list.forEach {
                     if (!it.isEnabled) return@forEach
-                    it.inject("providers", app.throwFlow) { injectProviders(this) }
+                    it.inject("providers", app.throwFlow) { injectProviders(this, it.id) }
                 }
             }
         }
@@ -257,9 +257,15 @@ class ExtensionLoader(
         ExtensionType.MISC -> misc
     }
 
-    private fun injectProviders(client: ExtensionClient) {
+    private fun injectProviders(client: ExtensionClient, selfId: String) {
         (client as? MusicExtensionsProvider)?.run {
-            inject(requiredMusicExtensions, music.value) { setMusicExtensions(it) }
+            // Never hand a music extension our built-in aggregator (Unified) or its own id: a
+            // third-party aggregator (e.g. "Combine") given Unified forms a Unified<->aggregator
+            // feed cycle (each aggregates the other) -> unbounded recursion -> StackOverflow. Dropping
+            // selfId also blocks a third-party aggregator that would self-include. This is the single
+            // distribution chokepoint, so no provider (present or future) can receive a cycle source.
+            val sources = music.value.filter { it.id != selfId && it.id != UnifiedExtension.UNIFIED_ID }
+            inject(requiredMusicExtensions, sources) { setMusicExtensions(it) }
         }
         (client as? TrackerExtensionsProvider)?.run {
             inject(requiredTrackerExtensions, tracker.value) { setTrackerExtensions(it) }

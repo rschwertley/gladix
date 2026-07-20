@@ -54,6 +54,10 @@ sealed class AppException : Exception() {
     companion object {
         fun Throwable.toAppException(extension: Extension<*>) = toAppException(extension.metadata)
         fun Throwable.toAppException(extension: Metadata): AppException = when (this) {
+            // Already wrapped (e.g. by a nested aggregator combine re-entering the wrap): return as-is
+            // so a wrapping cycle collapses to ONE error instead of an unbounded "error in X ...
+            // error in X" chain / 1MB message. Also preserves the real leaf extension's attribution.
+            is AppException -> this
             // A withTimeout() timeout is a real, reportable failure, so keep wrapping it. Must be
             // checked before CancellationException (its supertype) below.
             is TimeoutCancellationException -> Other(this, extension)

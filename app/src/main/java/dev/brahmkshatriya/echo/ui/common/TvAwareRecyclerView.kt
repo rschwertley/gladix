@@ -47,11 +47,18 @@ class TvAwareRecyclerView @JvmOverloads constructor(
                     val currentSpanSize = lookup.getSpanSize(currentPos)
                     val nextSpanSize = lookup.getSpanSize(nextRowFirstPos)
                     if (currentSpanSize != nextSpanSize) {
-                        // Different span (card grid -> full-width shelf): advance to the next span
-                        // group with focus-follow. The next shelf's item view IS the inner horizontal
-                        // RecyclerView (item_shelf_lists root), so focus descends to its first card
-                        // via the default FOCUS_AFTER_DESCENDANTS.
-                        advanceFocusDown(glm, nextRowFirstPos, focused)
+                        // Different span (card grid -> non-focusable header / next shelf). Delegate to
+                        // RecyclerView's native focusSearch: its onFocusSearchFailed + the
+                        // !result.hasFocusable() path scroll a non-focusable header on-screen and keep
+                        // focus so the next press continues past it. Our custom advance suppressed that
+                        // recovery and stranded focus at the block ("can't scroll past first card block").
+                        // Fall back to advanceFocusDown ONLY when super finds nothing AND the target is
+                        // actually focusable — never advance across a non-focusable boundary.
+                        super.focusSearch(focused, direction) ?: run {
+                            if (glm.findViewByPosition(nextRowFirstPos)?.hasFocusable() == true)
+                                advanceFocusDown(glm, nextRowFirstPos, focused)
+                            else focused
+                        }
                     } else {
                         // Same span (card grid row -> row): let the platform beam-search handle it
                         // column-aligned while the next row is laid out; only when it's offscreen

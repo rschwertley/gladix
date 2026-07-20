@@ -16,25 +16,36 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircleDrawable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 object AppShortcuts {
     private suspend fun Context.applyAppShortcuts(extensions: List<MusicExtension>) {
-        val max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(this)
+        val context = this
+        val max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context)
         val ext = extensions.take(max)
-        val shortcuts = ext.map { extension ->
-            val bitmap =
-                extension.metadata.icon.loadAsCircleDrawable(this)
-                    ?.toBitmap()?.addPadding()
-                    ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_extension, theme)!!
-                        .toBitmap()
-            ShortcutInfoCompat.Builder(this, extension.id)
-                .setShortLabel(extension.name)
-                .setIcon(IconCompat.createWithBitmap(bitmap))
-                .setIntent(Intent(Intent.ACTION_VIEW, "echo://music/${extension.id}".toUri()))
-                .build()
+        // Independent loads -> build icons in parallel (cuts cold-start time); each stays off-main via
+        // loadAsCircleDrawable's interceptorCoroutineContext(IO). Cancels cleanly if collectLatest re-fires.
+        val shortcuts = coroutineScope {
+            ext.map { extension ->
+                async {
+                    val bitmap =
+                        extension.metadata.icon.loadAsCircleDrawable(context)
+                            ?.toBitmap()?.addPadding()
+                            ?: ResourcesCompat.getDrawable(context.resources, R.drawable.ic_extension, context.theme)!!
+                                .toBitmap()
+                    ShortcutInfoCompat.Builder(context, extension.id)
+                        .setShortLabel(extension.name)
+                        .setIcon(IconCompat.createWithBitmap(bitmap))
+                        .setIntent(Intent(Intent.ACTION_VIEW, "echo://music/${extension.id}".toUri()))
+                        .build()
+                }
+            }.awaitAll()
         }
         ShortcutManagerCompat.removeAllDynamicShortcuts(this)
         ShortcutManagerCompat.addDynamicShortcuts(this, shortcuts)
@@ -95,9 +106,16 @@ object AppShortcuts {
         val scope = loader.scope
         val musicExt = loader.music
         scope.launch {
-            musicExt.collectLatest {
-                loader.app.context.applyAppShortcuts(it)
-            }
+            musicExt
+                // loader.music re-emits on every extension refresh; skip the N-load rebuild when the
+                // shortcut-relevant set (id, name, enabled, icon) is unchanged.
+                .distinctUntilChanged { old, new -> old.shortcutSignature() == new.shortcutSignature() }
+                .collectLatest {
+                    loader.app.context.applyAppShortcuts(it)
+                }
         }
     }
+
+    private fun List<MusicExtension>.shortcutSignature() =
+        map { listOf(it.id, it.name, it.isEnabled, it.metadata.icon) }
 }
