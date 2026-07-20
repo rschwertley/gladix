@@ -332,7 +332,7 @@ object ResumptionUtils {
         // re-base, in recoverQueue. items[0] is current (or the list is empty).
         val rawPos = recoverPosition() ?: 0L
         if (items.isEmpty()) return Triple(items, C.INDEX_UNSET, rawPos)
-        val trackDuration = items.first().track?.duration
+        val trackDuration = items.first().track.duration
         val safePos = when {
             trackDuration != null && trackDuration > 0 && rawPos >= trackDuration + 2_000 -> 0L
             trackDuration == null && rawPos > 90 * 60_000L -> 0L
