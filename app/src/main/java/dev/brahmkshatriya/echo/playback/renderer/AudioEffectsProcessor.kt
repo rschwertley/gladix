@@ -32,10 +32,31 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
 
     // LUT infrastructure
-    private var activeLut: ShortArray = generateDualStageLUT(0f)
+    // Placeholder is a CLEAN PASSTHROUGH table (see passthroughLut) set synchronously in the ctor, so
+    // activeLut is always a valid 65536-entry array before the audio thread reads it. The real unity-gain
+    // table (~65k pow() — the onCreate ANR when built in the ctor) is generated OFF-MAIN in init{} below
+    // and swapped in by the audio thread via pendingLut, exactly like setTrackGain/resetGain.
+    private var activeLut: ShortArray = passthroughLut()
     private val pendingLut = AtomicReference<Pair<String, ShortArray>?>(null)
     private val currentTrackToken = AtomicReference("")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    init {
+        // Defer the unity-gain LUT off the main thread. Stage with the initial token so the audio thread's
+        // swap gate applies it only while no track has set its own gain yet; a later setTrackGain
+        // (unconditional pendingLut.set) always wins, and compareAndSet(null,…) here never disturbs it.
+        scope.launch {
+            val lut = generateDualStageLUT(0f)
+            pendingLut.compareAndSet(null, currentTrackToken.get() to lut)
+        }
+    }
+
+    // Clean unprocessed passthrough for the pre-swap window. The read path is index = rawSample + 32768,
+    // output = activeLut[index], so lut[i] = i - 32768 maps every input sample back to ITSELF exactly.
+    // (lut[i] = i would add a +32768 DC offset and clip — distortion.) No pow(), so it's cheap on main; it
+    // only omits the soft-limiter on >half-scale peaks until the real table swaps in — inaudible, and no
+    // audio flows at onCreate anyway.
+    private fun passthroughLut() = ShortArray(65536) { (it - 32768).toShort() }
 
     private fun generateDualStageLUT(gainDb: Float, isNormalizationEnabled: Boolean = true): ShortArray {
         val gainMultiplier = 10.0.pow(gainDb / 20.0)

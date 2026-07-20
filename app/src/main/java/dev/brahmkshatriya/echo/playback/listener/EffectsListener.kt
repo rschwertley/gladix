@@ -259,7 +259,28 @@ class EffectsListener(
         })
     }
 
+    // Runtime session-change CLOSE — deferred off-main on the SAME serial broadcastDispatcher as OPEN, so
+    // it can't block the ExoPlayer callback (main) thread on the AMS Binder round-trip (the ANR), and FIFO
+    // keeps CLOSE(old) — submitted from release() BEFORE broadcastAudioSession()'s OPEN(new) in
+    // onAudioSessionIdChanged — ordered ahead of that OPEN. `id` is passed by the caller (captured
+    // synchronously) so the coroutine closes the OLD session, not whatever is live when it runs.
+    private fun Context.broadcastAudioSessionCloseDeferred(id: Int) {
+        val ctx = this
+        scope.launch(broadcastDispatcher) { ctx.broadcastAudioSessionClose(id) }
+    }
+
     private fun release() {
+        effects.release()
+        // Defer the CLOSE off-main — this runs from onAudioSessionIdChanged on the callback/main thread.
+        // audioSessionFlow.value is still the OLD session here (updated AFTER this call), so we close it.
+        context.broadcastAudioSessionCloseDeferred(audioSessionFlow.value)
+    }
+
+    // Teardown CLOSE — SYNCHRONOUS by design. Called from PlayerService.onDestroy BEFORE scope.cancel();
+    // a deferred close would be dropped when the scope is cancelled → the final CLOSE never fires → the
+    // external equalizer keeps a stale, leaked effect-session. The cold-start ANR that motivated deferring
+    // the runtime OPEN/CLOSE does not apply at teardown (onDestroy, not a contended cold-start onCreate).
+    fun releaseBlocking() {
         effects.release()
         context.broadcastAudioSessionClose(audioSessionFlow.value)
     }

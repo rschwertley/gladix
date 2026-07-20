@@ -457,6 +457,12 @@ class PlayerService : MediaLibraryService() {
             // — a released player reports an empty timeline, which saveQueueBlocking no-ops on.
             ResumptionUtils.saveQueueBlocking(applicationContext, player)
             audioFocusListener.release()
+            // Synchronous final effect-session CLOSE. MUST precede scope.cancel() below: the runtime CLOSE
+            // (broadcastAudioSessionCloseDeferred) posts to this scope, which cancel() would drop — so the
+            // teardown close is done synchronously here, while the session is still live and before the
+            // scope dies. effects is always initialized (addListener in onCreate); teardown isn't a
+            // contended cold-start, so a synchronous sendBroadcast is fine.
+            effects.releaseBlocking()
             release()                  // mediaSession first — Media3 requirement
             player.release()           // player second — main thread, synchronous
             mediaSession = null

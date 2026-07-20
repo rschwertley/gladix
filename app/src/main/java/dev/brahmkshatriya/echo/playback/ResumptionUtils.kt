@@ -33,6 +33,12 @@ object ResumptionUtils {
     private const val SHUFFLE = "shuffle"
     private const val REPEAT = "repeat"
 
+    // Bound on how much of the persisted queue is materialized/persisted: current + up to this many
+    // upcoming. Shared by the restore window (recoverQueue) and the save cap (capForPersist) so disk,
+    // restore, and player converge on the same size. 2000 clears every normal queue (a big playlist ≈
+    // hundreds; 2000 ≈ 130+ hrs ahead) and trims only would-OOM "play all" queues. Tunable.
+    private const val QUEUE_CAP_UPCOMING = 2000
+
     // Atomic composite of the ESSENTIAL per-track pair (track + extensionId). Bundling just these two
     // keeps them physically un-desyncable — a torn/interleaved save can't mispair a track with a
     // neighbour's extensionId — while Track being a concrete @Serializable means this file ALWAYS
@@ -110,6 +116,16 @@ object ResumptionUtils {
 
     private fun Player.mediaItems() = (0 until mediaItemCount).map { getMediaItemAt(it) }
 
+    // Bound the persisted UPCOMING tail — the "play all" OOM vector. Keep [0 .. currentIndex + W] so the
+    // saved INDEX (= currentMediaItemIndex, written synchronously by saveIndex) stays valid against the
+    // list — NO re-base, so no index/list desync. before-current ≈ 0 in current+upcoming, so this is
+    // ~current + W upcoming. Never empties a non-empty list: an in-range current is always retained.
+    private fun List<MediaItem>.capForPersist(currentIndex: Int): List<MediaItem> {
+        val safeCurrent = currentIndex.coerceIn(0, size - 1)
+        val end = (safeCurrent + 1 + QUEUE_CAP_UPCOMING).coerceAtMost(size)
+        return if (end >= size) this else subList(0, end).toList()
+    }
+
     fun saveIndex(context: Context, index: Int, currentId: String?) {
         context.saveToQueue(INDEX, index)
         context.saveToQueue(CURRENT_ID, currentId)
@@ -126,10 +142,11 @@ object ResumptionUtils {
         // tripwire; both are read here on the main thread before the IO writes.
         val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId
+        val capped = list.capForPersist(currentIndex)   // currentIndex stays valid within capped
         withContext(Dispatchers.IO) {
             context.saveToQueue(INDEX, currentIndex)
             context.saveToQueue(CURRENT_ID, currentId)
-            context.writeQueueEntries(list)
+            context.writeQueueEntries(capped)
         }
     }
 
@@ -146,9 +163,10 @@ object ResumptionUtils {
     fun saveQueueBlocking(context: Context, player: Player) {
         val list = player.mediaItems()
         if (list.isEmpty()) return
-        context.saveToQueue(INDEX, player.currentMediaItemIndex)
+        val currentIndex = player.currentMediaItemIndex
+        context.saveToQueue(INDEX, currentIndex)
         context.saveToQueue(CURRENT_ID, player.currentMediaItem?.mediaId)
-        context.writeQueueEntries(list)
+        context.writeQueueEntries(list.capForPersist(currentIndex))
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
@@ -220,18 +238,50 @@ object ResumptionUtils {
             }
         }
         val tracks = recoverTracks() ?: return null
+        if (tracks.isEmpty()) return emptyList()
+
+        // ── Slice BEFORE the heavy build (the OOM fix) ──────────────────────────────────────────────
+        // Locate current on the LIGHTWEIGHT entries — CURRENT_ID == track.id (MediaItemUtils.build does
+        // setMediaId(state.item.id)), so idOf = { it.first.item.id }, identical to the AA resume tiles.
+        // We then build ONLY current + W upcoming, so the full ×N heavy build (each item embeds serialized
+        // state/context/cover) never happens. This slice ALSO subsumes the old P2 subList: it starts the
+        // window AT current, dropping any stranded before-current tracks, so recoverPlaylist must NOT
+        // re-base again — exactly one re-base, here.
+        val rawIndex = recoverIndex() ?: C.INDEX_UNSET
+        val coercedIndex = when {
+            rawIndex == C.INDEX_UNSET -> 0
+            rawIndex < tracks.size -> rawIndex
+            else -> tracks.size - 1
+        }
+        val savedCurrentId = recoverCurrentId()
+        val current = resolveCurrentIndex(tracks, coercedIndex, savedCurrentId) { it.first.item.id }
+            .coerceIn(0, tracks.size - 1)   // valid, non-empty window: current is always in range
+        // ResumeIndexMismatch telemetry (relocated from recoverPlaylist; track.id in place of mediaId).
+        val actualId = tracks.getOrNull(coercedIndex)?.first?.item?.id
+        if (savedCurrentId != null && actualId != null && savedCurrentId != actualId) {
+            healthMonitor?.report(
+                HealthMonitor.ResumeIndexMismatchException(savedCurrentId, actualId, coercedIndex, tracks.size),
+                HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
+            )
+        }
+        val end = (current + 1 + QUEUE_CAP_UPCOMING).coerceAtMost(tracks.size)
+        val window = tracks.subList(current, end)   // current at window index 0; before-current dropped
+
         // Skip-and-continue: build each saved item independently so ONE unbuildable entry (a partial/older-
         // format save, a mistyped item, a null field on a Track) can't throw out of the whole restore and
-        // brick cold start. A dropped item just leaves the list — resolveCurrentIndex in recoverPlaylist
-        // relocates CURRENT_ID by mediaId on the RESULTING list, so dropping a non-current item shifts
-        // positions harmlessly and the current is still found; if the current item itself is unbuildable it
-        // falls back to the coerced index (a neighbour), which ResumeIndexMismatch telemetry surfaces.
-        val built = tracks.mapNotNull { (state, item) ->
+        // brick cold start. resolveCurrentIndex already relocated current on the full entries above.
+        val built = window.mapNotNull { (state, item) ->
             runCatching { MediaItemUtils.build(app, downloads, state, item) }.getOrNull()
         }
-        val dropped = tracks.size - built.size
+        val dropped = window.size - built.size
         if (dropped > 0)
-            Log.w("GladixPlayback", "recoverQueue: skipped $dropped/${tracks.size} unbuildable saved item(s)")
+            Log.w("GladixPlayback", "recoverQueue: windowed [$current,$end) of ${tracks.size}; skipped $dropped/${window.size} unbuildable")
+        // Empty-window fallback — bounding must NEVER wipe a non-empty queue. Only reachable if every item
+        // in a ~2000-wide window is unbuildable (effectively impossible); if so, DON'T cap — build the full
+        // list rather than emit empty. Correctness (never lose the queue) outranks the theoretical heap risk.
+        if (built.isEmpty()) return tracks.mapNotNull { (state, item) ->
+            runCatching { MediaItemUtils.build(app, downloads, state, item) }.getOrNull()
+        }
         return built
     }
 
@@ -276,49 +326,19 @@ object ResumptionUtils {
         healthMonitor: HealthMonitor? = null,
     ): Triple<List<MediaItem>, Int, Long> {
         val items = recoverQueue(app, downloads, healthMonitor) ?: emptyList()
-        // INDEX and TRACKS are saved independently; a crash or system kill between the two
-        // writes can leave INDEX > items.size, which causes PlayerInfo.Builder.build() to
-        // throw an IllegalStateException when Media3 checks mediaItemIndex < windowCount.
-        val rawIndex = recoverIndex() ?: C.INDEX_UNSET
-        val coercedIndex = when {
-            items.isEmpty() -> C.INDEX_UNSET
-            rawIndex == C.INDEX_UNSET -> 0
-            rawIndex < items.size -> rawIndex
-            else -> items.size - 1
-        }
-        val savedCurrentId = recoverCurrentId()
-        // Repair the index against CURRENT_ID (ground truth) BEFORE it drives safePos and the subList: the
-        // debounced TRACKS can lag the synchronous index/current-id on disk after a hard kill (the
-        // auto-advance skew), leaving the previous track at coercedIndex. A wrong index would zero the
-        // position against the wrong track and trim the wrong span. Single resolver — see resolveCurrentIndex.
-        val index = resolveCurrentIndex(items, coercedIndex, savedCurrentId) { it.mediaId }
-        // Telemetry, kept on the repair branch: report when the coerced index disagreed with CURRENT_ID (the
-        // skew we just corrected), whether or not the track was relocatable — so a future regression still
-        // surfaces. Firebase-gated + 24h-deduped, so a local build won't show it; the device check is the
-        // GladixPlayback line below (coerced vs repaired index).
-        val actualId = items.getOrNull(coercedIndex)?.mediaId
-        if (savedCurrentId != null && actualId != null && savedCurrentId != actualId) {
-            healthMonitor?.report(
-                HealthMonitor.ResumeIndexMismatchException(savedCurrentId, actualId, coercedIndex, items.size),
-                HealthMonitor.Scope.PERSISTENT, 24 * 60 * 60 * 1000L
-            )
-        }
+        // recoverQueue already sliced-before-build AND re-based current to index 0 (it subsumed the old P2
+        // subList and moved the index-repair + ResumeIndexMismatch telemetry upstream). Do NOT re-resolve or
+        // re-slice here — a second re-base is exactly the device-confirmed wrong-track bug. Exactly one
+        // re-base, in recoverQueue. items[0] is current (or the list is empty).
         val rawPos = recoverPosition() ?: 0L
-        val trackDuration = items.getOrNull(index)?.track?.duration
+        if (items.isEmpty()) return Triple(items, C.INDEX_UNSET, rawPos)
+        val trackDuration = items.first().track?.duration
         val safePos = when {
             trackDuration != null && trackDuration > 0 && rawPos >= trackDuration + 2_000 -> 0L
             trackDuration == null && rawPos > 90 * 60_000L -> 0L
             else -> rawPos
         }
-        Log.d("GladixPlayback", "recoverPlaylist: returning ${items.size} items index=$index (raw=$rawIndex coerced=$coercedIndex repaired=${index != coercedIndex} currentId=$savedCurrentId) pos=$rawPos safePos=$safePos duration=$trackDuration")
-        // P2 — current+upcoming: the current track must restore at index 0. A queue can be persisted with a
-        // non-zero index and "before" tracks stranded above current — an older build, OR (since the deferred
-        // auto-advance trim) a save that lands in the ~1-cycle window before the just-played track is
-        // trimmed. Either way, drop them so restore comes back at the saved track as index 0. This heals both
-        // the phone (PlayerService) and AA (resume/onPlaybackResumption) paths at their single shared source.
-        // Naively coercing index to 0 without slicing would resume the WRONG, earlier track — hence the subList.
-        if (index != C.INDEX_UNSET && index > 0)
-            return Triple(items.subList(index, items.size).toList(), 0, safePos)
-        return Triple(items, index, safePos)
+        Log.d("GladixPlayback", "recoverPlaylist: ${items.size} items index=0 (windowed) pos=$rawPos safePos=$safePos duration=$trackDuration")
+        return Triple(items, 0, safePos)
     }
 }
