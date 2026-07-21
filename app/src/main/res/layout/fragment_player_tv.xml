@@ -40,7 +40,7 @@
                 android:layout_marginBottom="48dp"
                 android:focusable="false"
                 android:importantForAccessibility="no"
-                android:scaleType="centerCrop"
+                android:scaleType="fitCenter"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintDimensionRatio="H,1:1"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -337,7 +337,7 @@
          navigationIcon is a LATENT second chevron, suppressed only by configureBack's `navigationIcon =
          null`; that line and the shared style are intentionally left untouched, so no duplicate can appear.
          Focus is ID-based, so re-parenting preserves heart.Up <-> minimize.Down. Circular scrim keeps it
-         legible over any cover; 36dp icon + tv_focus_indicator ring = 10-foot prominence. ~48/27dp margins
+         legible over any cover; 44dp icon + tv_focus_indicator ring = 10-foot prominence. ~48/27dp margins
          = 5% overscan safe area (tune here). -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/tv_minimize_button"
@@ -346,7 +346,7 @@
         android:layout_height="64dp"
         android:layout_gravity="top|start"
         android:layout_marginStart="48dp"
-        android:layout_marginTop="32dp"
+        android:layout_marginTop="16dp"
         android:background="@drawable/tv_minimize_scrim"
         android:contentDescription="@string/back"
         android:focusable="true"

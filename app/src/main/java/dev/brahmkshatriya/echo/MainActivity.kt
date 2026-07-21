@@ -250,25 +250,6 @@ open class MainActivity : AppCompatActivity() {
         val playPauseListener = CheckBoxListener { playerViewModel.setPlaying(it) }
         miniPlayPause.addOnCheckedStateChangedListener(playPauseListener)
 
-        // TV nav-rail vertical position. Bound the rail's CONTAINER bottom so the rail sits HIGH consistently:
-        // bottomMargin = max(baselineRaise, mini-bar height when visible). baselineRaise always raises it; the
-        // bar's LIVE measured height (it's wrap_content + toggles GONE — so no static magic dp works) is
-        // cleared only while the bar shows. On the match_parent container in the CoordinatorLayout this ends
-        // the rail's region that far above the bottom, so the (centered) rail lands higher and clear of the bar.
-        val navRailContainer = binding.root.findViewById<View>(R.id.navRailContainer)
-        val baselineRaise = resources.getDimensionPixelSize(R.dimen.nav_rail_bottom_raise)
-        fun syncRailBottom() {
-            val rail = navRailContainer ?: return
-            val margin = maxOf(baselineRaise, if (miniPlayer.isVisible) miniPlayer.height else 0)
-            val lp = rail.layoutParams as? ViewGroup.MarginLayoutParams ?: return
-            if (lp.bottomMargin != margin) {
-                lp.bottomMargin = margin
-                rail.layoutParams = lp
-            }
-        }
-        // The bar's height is only known once it turns VISIBLE and lays out — re-sync on every (re)layout.
-        miniPlayer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> syncRailBottom() }
-
         fun updateVisibility() {
             val hasTrack = playerState.current.value != null
             val isHidden = uiViewModel.playerSheetState.value == STATE_HIDDEN
@@ -277,7 +258,6 @@ open class MainActivity : AppCompatActivity() {
             uiViewModel.tvMiniPlayerVisible.value = showMini
             binding.navHostFragment.nextFocusDownId =
                 if (showMini) R.id.tvMiniPlayer else View.NO_ID
-            syncRailBottom()   // GONE→baselineRaise-only applies immediately; VISIBLE→bar clearance via listener
         }
 
         var hadTrack = false
