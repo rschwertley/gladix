@@ -9,6 +9,7 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.doOnNextLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 
 class TvAwareRecyclerView @JvmOverloads constructor(
@@ -70,7 +71,14 @@ class TvAwareRecyclerView @JvmOverloads constructor(
                                 focused,
                             )
                     }
-                } else focused
+                } else {
+                    // Bottom of the feed (no next row). Route DOWN to the TV mini player when it's showing so
+                    // focus can leave the feed to reach it — our non-null return preempts nextFocusDown, so we
+                    // resolve the target here. Bar GONE (nothing playing) -> stay put. NEVER return null (keeps
+                    // the View? non-null invariant that guards the leanback null-path NPE).
+                    rootView?.findViewById<View>(R.id.tvMiniPlayer)
+                        ?.takeIf { it.visibility == View.VISIBLE } ?: focused
+                }
             }
             FOCUS_UP -> {
                 if (currentPos == 0) focused

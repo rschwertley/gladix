@@ -215,6 +215,12 @@ class PlayerEventListener(
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         emitFullQueue()
         if (timeline.windowCount > 0) onQueueApplied()
+        // Post-resumption custom-layout push (display-only). A restored/fresh queue applies via
+        // PLAYLIST_CHANGED here — AFTER onConnect (connect → resume → queue applied), so AA is stably
+        // connected. Re-push so the full layout (incl. the like button the synchronous onConnect seed
+        // couldn't include) reaches the connected controller instead of being lost in the connect race.
+        // updateCustomLayout no-ops when currentMediaItem is null, so an empty timeline here is safe.
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) updateCustomLayout()
         if ((session.player as? ShufflePlayer)?.isRearranging != true) {
             scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {

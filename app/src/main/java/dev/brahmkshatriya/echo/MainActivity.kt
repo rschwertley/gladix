@@ -22,6 +22,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.Lifecycle
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
@@ -140,11 +141,12 @@ open class MainActivity : AppCompatActivity() {
         if (!isTV) return
         observe(uiViewModel.playerSheetState) { state ->
             if (state != STATE_HIDDEN) return@observe
-            val feed = binding.navHostFragment.findVisibleTvFeed() ?: return@observe
             val focus = currentFocus
             val inPlayer = focus != null &&
                 generateSequence(focus.parent) { it.parent }.any { it === binding.playerFragmentContainer }
-            feed.establishFeedFocus(allowClaim = focus == null || inPlayer)
+            // Only reclaim from the dismissed player or from nothing — never steal the nav rail / drill-in.
+            // Posted so the mini bar's visibility/layout has settled before claimBrowsingFocus reads it.
+            if (focus == null || inPlayer) binding.root.post { claimBrowsingFocus() }
         }
     }
 
@@ -161,11 +163,17 @@ open class MainActivity : AppCompatActivity() {
             if (!container.hasFocus())
                 container.findViewById<View>(R.id.tv_track_play_pause)?.requestFocus()
         } else {
-            val feed = binding.navHostFragment.findVisibleTvFeed() ?: return
+            val feed = binding.navHostFragment.findVisibleTvFeed()
             val focus = currentFocus
-            val inFeed = focus != null &&
+            val inFeed = focus != null && feed != null &&
                 generateSequence(focus.parent) { it.parent }.any { it === feed }
-            feed.establishFeedFocus(allowClaim = focus == null || inFeed)
+            // Window-refocus (return-to-app) ONLY: also claim when the retained focus is STALE/DEAD —
+            // null, or a view that's no longer shown (a recycled/detached RV row, or an ancestor gone).
+            // After backgrounding while playing, focus is often stranded on such a dead view, and the
+            // plain `null || inFeed` guard refused to reclaim it → "can't regain D-pad focus". A
+            // genuinely-shown view outside the feed (mini bar root, nav rail) has isShown == true, so it
+            // is left alone. Destination is still the single claimBrowsingFocus() authority.
+            if (focus == null || inFeed || !focus.isShown) claimBrowsingFocus()
         }
     }
 
@@ -175,6 +183,16 @@ open class MainActivity : AppCompatActivity() {
             getChildAt(i).findVisibleTvFeed()?.let { return it }
         }
         return null
+    }
+
+    // SINGLE destination authority for "where focus goes when the player isn't on screen": the mini bar
+    // ROOT if it's visible (it carries the expand-click, focus ring, and nextFocusUp — the child play/pause
+    // button does not), else the visible feed. Callers own the WHEN/guard; this owns the WHERE, so the
+    // sheet-hide observer and the window-focus arbiter can't race to different destinations.
+    private fun claimBrowsingFocus() {
+        val mini = binding.root.findViewById<View>(R.id.tvMiniPlayer)?.takeIf { it.isVisible }
+        if (mini != null && mini.requestFocus()) return
+        binding.navHostFragment.findVisibleTvFeed()?.establishFeedFocus(allowClaim = true)
     }
 
     private fun setupTvNavRail() {
@@ -189,6 +207,13 @@ open class MainActivity : AppCompatActivity() {
                 uiViewModel.changePlayerState(STATE_EXPANDED)
                 false
             } else {
+                // Pop a drilled-in detail page off the back stack BEFORE switching tabs. This pop used to
+                // live only in setupNavBarAndInsets' per-item click listener, which navNowPlaying's
+                // visibility-toggle rebuild discards — after which TV SELECT reaches only THIS listener.
+                // Guard preserved: pop ONLY when a detail page is actually on the stack (never from root).
+                // This is the navView-level listener, so it survives the item-view rebuild.
+                if (!uiViewModel.isMainFragment.value)
+                    supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
                 uiViewModel.navigation.value = uiViewModel.navIds.indexOf(item.itemId)
                 true
             }
@@ -225,6 +250,25 @@ open class MainActivity : AppCompatActivity() {
         val playPauseListener = CheckBoxListener { playerViewModel.setPlaying(it) }
         miniPlayPause.addOnCheckedStateChangedListener(playPauseListener)
 
+        // TV nav-rail vertical position. Bound the rail's CONTAINER bottom so the rail sits HIGH consistently:
+        // bottomMargin = max(baselineRaise, mini-bar height when visible). baselineRaise always raises it; the
+        // bar's LIVE measured height (it's wrap_content + toggles GONE — so no static magic dp works) is
+        // cleared only while the bar shows. On the match_parent container in the CoordinatorLayout this ends
+        // the rail's region that far above the bottom, so the (centered) rail lands higher and clear of the bar.
+        val navRailContainer = binding.root.findViewById<View>(R.id.navRailContainer)
+        val baselineRaise = resources.getDimensionPixelSize(R.dimen.nav_rail_bottom_raise)
+        fun syncRailBottom() {
+            val rail = navRailContainer ?: return
+            val margin = maxOf(baselineRaise, if (miniPlayer.isVisible) miniPlayer.height else 0)
+            val lp = rail.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+            if (lp.bottomMargin != margin) {
+                lp.bottomMargin = margin
+                rail.layoutParams = lp
+            }
+        }
+        // The bar's height is only known once it turns VISIBLE and lays out — re-sync on every (re)layout.
+        miniPlayer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> syncRailBottom() }
+
         fun updateVisibility() {
             val hasTrack = playerState.current.value != null
             val isHidden = uiViewModel.playerSheetState.value == STATE_HIDDEN
@@ -233,6 +277,7 @@ open class MainActivity : AppCompatActivity() {
             uiViewModel.tvMiniPlayerVisible.value = showMini
             binding.navHostFragment.nextFocusDownId =
                 if (showMini) R.id.tvMiniPlayer else View.NO_ID
+            syncRailBottom()   // GONE→baselineRaise-only applies immediately; VISIBLE→bar clearance via listener
         }
 
         var hadTrack = false
@@ -260,11 +305,9 @@ open class MainActivity : AppCompatActivity() {
 
         observe(uiViewModel.playerSheetState) { state ->
             updateVisibility()
-            if (state == STATE_HIDDEN) {
-                binding.root.post {
-                    if (!miniPlayPause.requestFocus()) binding.navHostFragment.requestFocus()
-                }
-            }
+            // Focus on STATE_HIDDEN is owned solely by setupTvPlayerCollapseFocus → claimBrowsingFocus()
+            // now (mini bar ROOT, not this play/pause child). The old child-grab here raced that authority
+            // and pinned focus on the button (faint ring, no expand, no up-exit) — removed.
         }
 
         observe(playerViewModel.playWhenReady) {

@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.feed
 import android.os.Bundle
 import android.view.View
 import androidx.core.view.isVisible
+import androidx.core.view.updatePaddingRelative
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
@@ -86,6 +87,14 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         binding.extensionIcon.isVisible = false
         binding.toolBar.title = title
         binding.toolBar.subtitle = subtitle
+        // TV rail parity (matches MediaFragment): the collapsable HEADER (appBarLayout) is otherwise
+        // rail-unaware and stretches full-width across the nav rail, while the list already insets via
+        // `combined`. Pad the header start by the rail inset so it lines up with the list. isRail-gated,
+        // so on phone (isRail == false) this observer never registers and the header is untouched.
+        val uiViewModel by activityViewModel<UiViewModel>()
+        if (uiViewModel.isRail) observe(uiViewModel.combined) {
+            binding.appBarLayout.updatePaddingRelative(start = it.start)
+        }
         applyPlayerBg(view) {
             mainBgDrawable.combine(feedData.backgroundImageFlow) { a, b -> b ?: a }
         }

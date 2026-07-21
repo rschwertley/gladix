@@ -32,4 +32,10 @@
 
     <!-- Section header text ("Continue streaming" etc.), extracted from item_shelf_header (was 20sp). -->
     <dimen name="shelf_header_text_size">28sp</dimen>
+
+    <!-- How far to raise the TV nav rail's bottom bound so the rail centers HIGHER on screen (and clears the
+         mini bar). Applied in MainActivity as navRailContainer bottomMargin = max(this, mini-bar height when
+         shown). Tune on-device: larger = higher; too large shrinks the rail's region below the menu's content
+         height (5 × item_min_height 90dp = 450dp) and the items will clip/scroll. -->
+    <dimen name="nav_rail_bottom_raise">120dp</dimen>
 </resources>

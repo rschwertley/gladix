@@ -26,21 +26,18 @@
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:clipToPadding="false"
-        android:paddingTop="27dp"
         android:orientation="vertical">
 
         <com.google.android.material.navigationrail.NavigationRailView
             android:id="@+id/navView"
             style="@style/NavViewTv"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:minWidth="@dimen/nav_width"
             android:nextFocusDown="@id/tvMiniPlayer"
             app:elevation="0dp"
             app:itemMinHeight="90dp"
-            app:menu="@menu/nav_menu_tv"
-            app:menuGravity="top" />
+            app:menu="@menu/nav_menu_tv" />
 
     </LinearLayout>
 

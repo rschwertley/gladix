@@ -121,7 +121,21 @@ class PlayerCallback(
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-            .setAvailableSessionCommands(sessionCommands).build()
+            .setAvailableSessionCommands(sessionCommands)
+            // Seed the AA custom-action layout at connect (display-only). Shuffle + repeat read
+            // synchronously from player state, so they show on the FIRST auto-played track instead of only
+            // after track 2. No current item is needed, so this is safe before the queue is restored
+            // (currentMediaItem may be null here). The like button needs async extension IO → deferred to
+            // the post-resumption push in PlayerEventListener.onTimelineChanged.
+            .setCustomLayout(
+                with(PlayerCommands) {
+                    listOf(
+                        getShuffleButton(context, session.player.shuffleModeEnabled),
+                        getRepeatButton(context, session.player.repeatMode),
+                    )
+                }
+            )
+            .build()
     }
 
     override fun onCustomCommand(
