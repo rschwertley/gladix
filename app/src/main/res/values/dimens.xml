@@ -34,4 +34,9 @@
     <dimen name="item_cover_size">96dp</dimen>
     <dimen name="item_cover_size_big">128dp</dimen>
     <dimen name="shelf_header_text_size">20sp</dimen>
+
+    <!-- Base fallback so R.dimen.nav_rail_bottom_raise always resolves (clears MissingDefaultResource).
+         Only ever read on TV, where values-land-television/dimens.xml overrides it; this value is the
+         non-TV safety default. -->
+    <dimen name="nav_rail_bottom_raise">120dp</dimen>
 </resources>
