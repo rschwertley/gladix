@@ -103,6 +103,12 @@ open class MainActivity : AppCompatActivity() {
         setupTvNavRail()
         setupTvMiniPlayer()
         setupTvPlayerCollapseFocus()
+        // Keep the TV screen awake during playback: with no d-pad input and no video surface, the system
+        // starts the screensaver / powers off the display even while audio plays. View-level keepScreenOn on
+        // the activity root (like LyricsFragment) keeps the window awake while playing, released when
+        // paused/stopped. playWhenReady (not isPlaying, which flickers off during buffering). TV-only —
+        // phones are meant to sleep during audio playback (battery); the phone player manages its own case.
+        if (isTV) observe(playerViewModel.playWhenReady) { binding.root.keepScreenOn = it }
         setupPlayerBehavior(
             uiViewModel, binding.playerFragmentContainer, isTV,
             binding.root.findViewById(R.id.navRailContainer)
@@ -258,6 +264,17 @@ open class MainActivity : AppCompatActivity() {
             uiViewModel.tvMiniPlayerVisible.value = showMini
             binding.navHostFragment.nextFocusDownId =
                 if (showMini) R.id.tvMiniPlayer else View.NO_ID
+            // DOWN from the bottom rail item → the mini bar, when the bar is visible. navNowPlaying is the
+            // bottom rail item while playing (Home/Search/Library/History/Now Playing), so it's the one to
+            // wire. This MUST be item-level: the container navView's nextFocusDown isn't honored for a
+            // focused child item. Post it so it runs AFTER navNowPlaying's visibility toggle rebuilds the
+            // rail item views (that rebuild drops any view-level attr — same rebuild that dropped the
+            // nav-select handler). Cleared to NO_ID when the bar is gone (or the item absent) so DOWN never
+            // targets a hidden bar. showMini true ⟹ hasTrack ⟹ navNowPlaying is present.
+            binding.root.post {
+                binding.root.findViewById<View>(R.id.navNowPlaying)?.nextFocusDownId =
+                    if (showMini) R.id.tvMiniPlayer else View.NO_ID
+            }
         }
 
         var hadTrack = false

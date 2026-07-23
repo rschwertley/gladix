@@ -173,11 +173,21 @@ class ShufflePlayer(
     // Maps a timeline index to its `original` entry by mediaId. Returns null (not throwing) when the
     // item isn't in `original`: a transient timeline↔original divergence must degrade, never crash the
     // caller — jumpForwardTo's span removal walks this across many upcoming items on a common tap.
-    private fun getItemAt(index: Int) = player.getMediaItemAt(index).let {
-        original.firstOrNull { item -> item.mediaId == it.mediaId }
+    private fun getItemAt(index: Int): MediaItem? {
+        // A stale/racing index (a queue-snapshot position arriving after the timeline shifted) must
+        // degrade to "not found", never crash — getMediaItemAt below throws on out-of-range. Mirrors
+        // jumpForwardTo's out-of-range no-op.
+        if (index !in 0 until mediaItemCount) return null
+        val timelineItem = player.getMediaItemAt(index)
+        return original.firstOrNull { it.mediaId == timelineItem.mediaId }
     }
 
     override fun removeMediaItem(index: Int) {
+        // Stale queue-remove: a swipe position captured against a snapshot, arriving after the timeline
+        // shifted (auto-advance remove-on-advance, a prior remove, or the item already advanced away) →
+        // out-of-range → no-op instead of IndexOutOfBounds. Guard FIRST so neither `original` nor the
+        // player is half-updated. Mirrors jumpForwardTo.
+        if (index !in 0 until mediaItemCount) return
         getItemAt(index)?.let { original = original - it }
         player.removeMediaItem(index)
     }
@@ -205,6 +215,9 @@ class ShufflePlayer(
     // is the fixed unshuffle reference and a display-order reorder must not rewrite it. The cross-
     // current guard that keeps current at index 0 lives in QueueFragment (movement flags / onMove).
     override fun moveMediaItem(currentIndex: Int, newIndex: Int) {
+        // Stale queue-drag: a source position captured against a snapshot, arriving after the timeline
+        // shifted → out-of-range → no-op. Guard FIRST so neither `original` nor the player is half-updated.
+        if (currentIndex !in 0 until mediaItemCount) return
         val item = if (!isShuffled) getItemAt(currentIndex) else null
         if (item != null) {
             original = original.toMutableList().apply {

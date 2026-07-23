@@ -225,7 +225,11 @@ class FeedAdapter(
             Header, HorizontalList -> count
             Category, Media, Video -> when {
                 takeFullScreen -> count                  // checked first: full width on phone AND TV
-                isTV -> 2.coerceAtMost(count)            // TV: unchanged
+                // TV: pin to 2 columns regardless of feed width. span = count/2 yields exactly 2 tiles per
+                // row for any even count (configureGridLayout forces even), same idiom as CategoryGrid below.
+                // Was 2.coerceAtMost(count) = count/2-ish columns, which drifted 1<->2 as the width-derived
+                // spanCount crossed the floor/even boundary. count==1 (feed too narrow) degrades to 1 column.
+                isTV -> (count / 2).coerceAtLeast(1)
                 phoneSingleColumn -> count               // sw<600dp: full width -> 1 column
                 else -> 2.coerceAtMost(count)            // sw>=600dp tablet: today's behavior verbatim
             }

@@ -40,7 +40,7 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadDrawable
-import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadRoundedInto
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoClearedNullable
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.marquee
@@ -254,7 +254,7 @@ class PlayerTvFragment : Fragment() {
             if (current == null) return@observe
             val cover = current.track.cover
             val albumArt = binding?.tvAlbumArt ?: return@observe
-            cover.toMaxRes().loadInto(albumArt, R.drawable.ic_music)
+            cover.toMaxRes().loadRoundedInto(albumArt, 24f, R.drawable.ic_music)
             lifecycleScope.launch {
                 val drawable = cover.loadDrawable(requireContext())
                 if (lastDrawable !== drawable) {

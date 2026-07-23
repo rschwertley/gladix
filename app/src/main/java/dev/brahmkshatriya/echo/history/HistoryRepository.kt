@@ -4,6 +4,8 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.history.db.HistoryDao
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
+import dev.brahmkshatriya.echo.history.db.toSlim
+import dev.brahmkshatriya.echo.history.db.toSlimContext
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 
 class HistoryRepository(private val dao: HistoryDao) {
@@ -21,8 +23,8 @@ class HistoryRepository(private val dao: HistoryDao) {
                 trackId = track.id,
                 extensionId = extensionId,
                 playedAt = System.currentTimeMillis(),
-                trackData = track.toJson(),
-                contextData = context?.toJson(),
+                trackData = track.toSlim().toJson(),
+                contextData = context?.toSlimContext()?.toJson(),
             )
         )
         dao.trimToLimit()

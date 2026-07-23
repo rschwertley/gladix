@@ -29,7 +29,9 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.di.App
+import dev.brahmkshatriya.echo.extensions.exceptions.MediaUnavailableException
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -84,6 +86,16 @@ object Cached {
         runCatching {
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
+                // Deleted/unavailable content: some extensions (e.g. Deezer) return a BLANK item (empty id)
+                // instead of raising an error when the content no longer exists — a NORMAL condition, not a
+                // bug. Surface a friendly, localized "no longer available" message (the header Error holder
+                // renders it via getFinalTitle's `?: throwable.message` fallback) rather than the raw
+                // wrong-item ISE below. Checked FIRST: a blank id can never legitimately match a real id, so
+                // it would otherwise always fall into the mismatch branch. (Still routes through the cache
+                // fallback below, so a previously-cached copy is preferred when one exists.)
+                if (new.id.isBlank()) throw MediaUnavailableException(
+                    app.context.getString(R.string.x_no_longer_available, state.item.title)
+                )
                 // Compare CANONICAL ids, not raw strings: an extension may legitimately return a canonicalized
                 // form of the requested id (see canonicalId — YTM drops its "VL" playlist prefix), and raw
                 // equality would false-positive this guard. A genuinely different item still mismatches. The

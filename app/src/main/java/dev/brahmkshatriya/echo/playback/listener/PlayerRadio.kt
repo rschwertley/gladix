@@ -81,6 +81,19 @@ class PlayerRadio(
                 return
             }
 
+            // TEMP RADIO-DIAG (TV) — remove after capture. Reports loadTracks output at the
+            // context-menu/button + regeneration boundary as a Crashlytics non-fatal (via app.throwFlow).
+            run {
+                val ex = (loaded.context as? Radio)?.extras
+                val kind = when (ex?.get("radio")) {
+                    "track" -> "TRACK"; "artist" -> "ARTIST"
+                    "playlist" -> "PLAYLIST"; "album" -> "ALBUM"; else -> "FLOW"
+                }
+                app.throwFlow.emit(
+                    RuntimeException("RADIO-DIAG[play] kind=$kind size=${tracks.data.size} extras=$ex")
+                )
+            }
+
             stateFlow.value = if (tracks.continuation == null) PlayerState.Radio.Empty
             else loaded.copy(cont = tracks.continuation)
 

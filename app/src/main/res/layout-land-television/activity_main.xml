@@ -34,7 +34,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="@dimen/nav_width"
-            android:nextFocusDown="@id/tvMiniPlayer"
             app:elevation="0dp"
             app:itemMinHeight="90dp"
             app:menu="@menu/nav_menu_tv"

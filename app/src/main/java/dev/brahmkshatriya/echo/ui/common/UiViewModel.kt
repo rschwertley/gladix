@@ -349,7 +349,9 @@ class UiViewModel(
         ) {
             val uiViewModel by activityViewModel<UiViewModel>()
             observe(uiViewModel.combined) { insets ->
-                child?.updatePadding(
+                child?.updatePaddingRelative(
+                    start = insets.start,
+                    end = insets.end,
                     bottom = insets.bottom + bottom.dpToPx(child.context),
                 )
                 appBar.updatePaddingRelative(
@@ -358,6 +360,18 @@ class UiViewModel(
                     end = insets.end
                 )
                 uiViewModel.block(insets)
+            }
+        }
+
+        // TV / phone-landscape rail parity for headers that only use configureAppBar (which applies NO
+        // inset): pad the AppBar start by the rail inset so its content (nav icon, title) clears the left
+        // rail, matching the FeedFragment/MediaFragment header fix. isRail-gated, so phone portrait never
+        // registers it (header untouched); start-only, so fitsSystemWindows still owns the top status-bar
+        // inset (no duplication). Do NOT use on pages whose AppBar already gets start via applyInsetsWithChild.
+        fun Fragment.applyAppBarRailInset(appBar: View) {
+            val uiViewModel by activityViewModel<UiViewModel>()
+            if (uiViewModel.isRail) observe(uiViewModel.combined) {
+                appBar.updatePaddingRelative(start = it.start)
             }
         }
 

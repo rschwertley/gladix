@@ -38,6 +38,7 @@ import dev.brahmkshatriya.echo.databinding.ItemExtensionButtonBinding
 import dev.brahmkshatriya.echo.databinding.ItemInputBinding
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyAppBarRailInset
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
@@ -80,6 +81,7 @@ class LoginFragment : Fragment() {
                 toolbarOutline.alpha = offset
                 iconContainer.alpha = 1 - offset
             }
+            applyAppBarRailInset(appBarLayout)
             toolBar.setNavigationOnClickListener {
                 parentFragmentManager.popBackStack()
             }

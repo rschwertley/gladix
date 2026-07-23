@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.ui.common.ExceptionUtils
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyAppBarRailInset
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyFabInsets
@@ -68,6 +69,7 @@ class DownloadFragment : Fragment(R.layout.fragment_download) {
             binding.toolbarOutline.alpha = offset
             binding.iconContainer.alpha = 1 - offset
         }
+        applyAppBarRailInset(binding.appBarLayout)
         binding.toolBar.setNavigationOnClickListener {
             parentFragmentManager.popBackStack()
         }

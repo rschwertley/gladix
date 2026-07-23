@@ -10,6 +10,7 @@ import androidx.preference.PreferenceFragmentCompat
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.databinding.FragmentGenericCollapsableBinding
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyAppBarRailInset
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
@@ -44,6 +45,7 @@ abstract class BaseSettingsFragment : Fragment() {
             binding.toolbarOutline.alpha = offset
             binding.extensionIcon.alpha = 1 - offset
         }
+        applyAppBarRailInset(binding.appBarLayout)
         binding.toolBar.setNavigationOnClickListener {
             parentFragmentManager.popBackStack()
         }

@@ -395,6 +395,18 @@ class PlayerCallback(
                     if (shuffle) extension.get { tracks.loadAll() }.map { it to null as String? }
                     else runCatching {
                         val (list, continuation) = extension.get { tracks.loadPage(null) }.getOrThrow()
+                        // TEMP RADIO-DIAG (TV) — remove after capture. Reports loadTracks output at the
+                        // feed-card entry as a Crashlytics non-fatal (via throwableFlow).
+                        if (item is Radio) {
+                            val ex = item.extras
+                            val kind = when (ex["radio"]) {
+                                "track" -> "TRACK"; "artist" -> "ARTIST"
+                                "playlist" -> "PLAYLIST"; "album" -> "ALBUM"; else -> "FLOW"
+                            }
+                            throwableFlow.emit(
+                                RuntimeException("RADIO-DIAG[card] kind=$kind size=${list.size} extras=$ex")
+                            )
+                        }
                         if (continuation != null) scope.launch {
                             val all = extension.get { tracks.loadAll() }.getOrElse {
                                 if (it is CancellationException) throw it
