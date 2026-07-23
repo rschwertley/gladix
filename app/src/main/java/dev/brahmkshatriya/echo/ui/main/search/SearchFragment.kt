@@ -5,9 +5,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePaddingRelative
 import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
@@ -261,6 +263,15 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         binding.quickSearchRecyclerView.adapter = quickSearchAdapter
         observe(uiViewModel.combined) { insets ->
             binding.quickSearchRecyclerView.updatePaddingRelative(start = insets.start)
+            // Rail parity for the SearchView's OWN header (the toolbar holding the back/hint icon + text
+            // field), which is otherwise full-width and sits under the left nav rail. Uses marginStart, NOT
+            // padding: Material's setUpToolbarInsetListener calls setPadding(l,t,r,b) on this toolbar on every
+            // window-insets dispatch (from system-bar/cutout insets, which exclude our rail) and would clobber
+            // a start padding — it never touches margins. Phone-safe and consistent with the suggestions inset
+            // above: insets.start is 0 on phone portrait (bottom nav), = rail width on phone-landscape / TV.
+            binding.quickSearchView.toolbar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                marginStart = insets.start
+            }
         }
         observe(searchViewModel.quickFeed) { list ->
             quickSearchAdapter.submitList(list.map {

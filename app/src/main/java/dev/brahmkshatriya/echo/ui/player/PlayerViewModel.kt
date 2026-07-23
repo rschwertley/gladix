@@ -371,7 +371,11 @@ class PlayerViewModel(
         withBrowser {
             it.sendCustomCommand(trackRadioCommand, Bundle().apply {
                 putString("extId", id)
-                putSerialized("item", track)
+                // Serialize as EchoMediaItem (not Track) so the polymorphic "mediaItemType" discriminator is
+                // written and the handler's getSerialized<EchoMediaItem> can round-trip it. Serializing as
+                // the concrete Track omits the discriminator, decoding fails, and the seed guard silently
+                // bails before any playback — the "tapping does nothing" regression.
+                putSerialized<EchoMediaItem>("item", track)
             })
         }
     }

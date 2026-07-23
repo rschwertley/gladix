@@ -303,9 +303,12 @@ class PlayerCallback(
     private fun trackRadio(player: Player, args: Bundle) = scope.future {
         userQueueSet.set(true)
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
+        // The only guards permitted BEFORE playback are true playback prerequisites: without extId we can't
+        // build the seed's MediaItem, without a seed there is nothing to play. NO generation concern (the
+        // extension lookup, radio start/play) may sit in front of playback — that shape caused the "tapping
+        // does nothing" regression, so generation lives in the guarded block below, after the seed is playing.
         val extId = args.getString("extId") ?: return@future error
         val seed = args.getSerialized<EchoMediaItem>("item")?.getOrNull() as? Track ?: return@future error
-        val extension = extensions.music.getExtension(extId) ?: return@future error
         // Track-radio context: drives the "<title> Radio" header and is what generation runs from — the
         // same Radio the setQueue single-track path built on phone.
         val context = Radio(
@@ -313,6 +316,8 @@ class PlayerCallback(
             extras = mapOf("radio" to "track")
         )
         // 1) Seed first — replace the queue with the single seed and play it (mirrors setQueue single).
+        //    Committed here, before any generation step, so a missing extension or a generation failure can
+        //    never leave nothing playing: worst case is "seed plays, no radio", never silence.
         val seedItem = MediaItemUtils.build(
             app, downloadFlow.value, MediaState.Unloaded(extId, seed), context
         )
@@ -322,9 +327,20 @@ class PlayerCallback(
             if (playbackState == Player.STATE_IDLE) prepare()
             playWhenReady = true
         }
-        // 2) Append the generated radio after the seed (mirrors PlayerRadio.loadPlaylist: start + play).
-        val loaded = PlayerRadio.start(throwableFlow, extension, seed, context)
-        if (loaded != null) PlayerRadio.play(player, downloadFlow, app, radioFlow, loaded)
+        // 2) Generate the radio and append it after the seed (mirrors PlayerRadio.loadPlaylist: start +
+        //    play). Fully guarded: a missing extension or any generation error is reported but cannot abort
+        //    the seed already playing. Cancellation still propagates.
+        try {
+            val extension = extensions.music.getExtension(extId)
+            if (extension != null) {
+                val loaded = PlayerRadio.start(throwableFlow, extension, seed, context)
+                if (loaded != null) PlayerRadio.play(player, downloadFlow, app, radioFlow, loaded)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throwableFlow.emit(e)
+        }
         SessionResult(RESULT_SUCCESS)
     }
 

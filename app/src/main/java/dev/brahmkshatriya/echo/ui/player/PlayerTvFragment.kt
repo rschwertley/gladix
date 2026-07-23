@@ -9,7 +9,6 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
@@ -28,6 +27,7 @@ import com.google.android.material.slider.Slider
 import kotlinx.coroutines.flow.combine
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerTvBinding
+import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLiked
@@ -257,10 +257,19 @@ class PlayerTvFragment : Fragment() {
                     ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
         }
 
-        // More button stub
+        // Overflow → the same media "more" sheet the phone player opens for the current track
+        // (PlayerFragment.onMoreClicked): MediaMoreBottomSheet for the current item, fromPlayer=true.
+        // The sheet is already used on TV from the feed/history/media pages, so it's reachable and
+        // D-pad navigable as-is. No-op when nothing is playing.
         binding.tvToolbar.setOnMenuItemClickListener {
             if (it.itemId == R.id.menu_more) {
-                Toast.makeText(requireContext(), R.string.coming_soon, Toast.LENGTH_SHORT).show()
+                viewModel.playerState.current.value?.let { current ->
+                    MediaMoreBottomSheet.show(
+                        this, requireActivity().supportFragmentManager,
+                        R.id.navHostFragment, current.mediaItem.extensionId, current.track,
+                        current.isLoaded, true
+                    )
+                }
                 true
             } else false
         }
