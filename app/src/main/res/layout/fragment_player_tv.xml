@@ -360,7 +360,7 @@
         android:padding="0dp"
         android:nextFocusDown="@+id/tv_track_heart"
         android:nextFocusLeft="@id/tv_minimize_button"
-        android:nextFocusRight="@id/tv_minimize_button"
+        android:nextFocusRight="@id/menu_more"
         android:nextFocusUp="@id/tv_minimize_button"
         android:outlineProvider="none"
         app:icon="@drawable/ic_expand_more"

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.updatePaddingRelative
@@ -12,6 +13,7 @@ import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+import com.google.android.material.search.SearchView
 import com.google.android.material.transition.MaterialSharedAxis
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
@@ -19,7 +21,6 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Buttons.Companion.EMPTY
 import dev.brahmkshatriya.echo.common.models.QuickSearchItem
-import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.FragmentSearchBinding
@@ -42,6 +43,7 @@ import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.main.search.SearchViewModel.Companion.saveInHistory
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlinx.coroutines.flow.combine
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -106,11 +108,12 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 view: View?, extensionId: String?, context: EchoMediaItem?,
                 tracks: List<Track>?, pos: Int
             ): Boolean {
+                // Search "radio": play the tapped track as a single seed with NO context, so the base
+                // handler's single-track branch routes to playTrackRadio (seed first, then appended radio).
+                // The "<title> Radio" header/context is built there. Previously wrapped it in a placeholder
+                // Radio context + setQueue, which relied on auto-radio (which never fires on TV).
                 val track = tracks?.getOrNull(pos)
-                val placeholderRadio = track?.let {
-                    Radio(id = it.id, title = "${it.title} Radio", cover = it.cover, extras = mapOf("radio" to "track"))
-                }
-                return super.onTracksClicked(view, extensionId, placeholderRadio, track?.let { listOf(it) }, 0)
+                return super.onTracksClicked(view, extensionId, null, track?.let { listOf(it) }, 0)
             }
         }
     }
@@ -152,8 +155,15 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-        binding.quickSearchView.addTransitionListener { v, _, _ ->
+        binding.quickSearchView.addTransitionListener { v, _, newState ->
             backCallback.isEnabled = v.isShowing
+            // TV: when the overlay finishes collapsing, if Material's own restore-to-bar didn't land focus
+            // (focus lost), put it on the search bar so the feed stays navigable — DOWN then enters the
+            // freshly loaded, top-attached results. Only fires on lost focus, so it complements Material's
+            // restore rather than fighting it. Phone never enters (isTv false).
+            if (view.context.isTv() && newState == SearchView.TransitionState.HIDDEN &&
+                view.findFocus() == null
+            ) binding.recyclerView.findViewById<View>(R.id.searchBar)?.requestFocus()
         }
         applyBackPressCallback {
             if (it == STATE_EXPANDED) binding.quickSearchView.hide()
@@ -186,6 +196,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             }
         }
         binding.quickSearchView.editText.setText(searchViewModel.queryFlow.value)
+        // TV: give the on-screen keyboard a concrete submit action so its "done"/OK reliably fires the
+        // editor-action listener below (hide + run the search). Phone keeps the SearchView's default action.
+        if (view.context.isTv())
+            binding.quickSearchView.editText.imeOptions = EditorInfo.IME_ACTION_SEARCH
         binding.quickSearchView.editText.doOnTextChanged { text, _, _, _ ->
             searchViewModel.quickSearch(extensionId, text.toString())
         }

@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.feed
 
 import android.util.TypedValue
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -79,11 +80,25 @@ class TabsAdapter<T>(
                 isVisible = true
                 val title = getTitle(tab)
                 if (text.toString() != title) text = title
-                setOnClickListener(null)
                 isChecked = i == selected
-                setOnClickListener {
+                // Single selection action shared by touch (OnClickListener) and D-pad OK (OnKeyListener).
+                val select = View.OnClickListener { v ->
                     if (i == selected) isChecked = true
-                    else onTabSelected(it, i, tab)
+                    else onTabSelected(v, i, tab)
+                }
+                setOnClickListener(select)
+                // Mirror the feed cards' D-pad handling (GestureListener.handleGestures): on TV the default
+                // performClick path doesn't reach the listener for these grouped checkable buttons, so handle
+                // OK/ENTER on key-UP explicitly and run the SAME select action. Returning true consumes the UP
+                // so performClick can't also fire it (no double-invoke on TV). Inert on phone — touch never
+                // delivers a key event here. Re-applied on every apply(), so it survives tab rebuilds.
+                setOnKeyListener { v, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_UP &&
+                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+                    ) {
+                        select.onClick(v)
+                        true
+                    } else false
                 }
             }
         }

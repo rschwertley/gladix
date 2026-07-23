@@ -19,7 +19,6 @@ import coil3.request.placeholder
 import coil3.request.target
 import coil3.request.transformations
 import coil3.transform.CircleCropTransformation
-import coil3.transform.RoundedCornersTransformation
 import coil3.transform.Transformation
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import kotlinx.coroutines.Dispatchers
@@ -55,16 +54,18 @@ object ImageUtils {
         imageView.enqueue(request)
     }
 
-    // Rounds the DECODED bitmap (not just the view bounds). A ShapeableImageView shape only rounds the view
-    // rect, so a fitCenter/letterboxed image keeps SQUARE corners on its actual edges (the shape rounds the
-    // empty letterbox space instead). Rounding the bitmap keeps the corners on the cover itself regardless
-    // of aspect. Used by the TV full-screen cover (radius matches @style/TvCoverShape).
+    // Rounds the DECODED bitmap on its ACTUAL edges after scaling the cover DOWN to FIT (see
+    // FitRoundedCornersTransformation) — nothing is cropped, and the rounding lands on the cover itself
+    // rather than the view rect. (A ShapeableImageView shape only rounds the view rect, so a
+    // fitCenter/letterboxed cover would keep square corners with the shape rounding empty letterbox space;
+    // and Coil's own RoundedCornersTransformation fills-and-crops. This does neither.) Used by the TV
+    // full-screen cover (radius matches @style/TvCoverShape).
     fun ImageHolder?.loadRoundedInto(
         imageView: ImageView, cornerRadiusDp: Float, placeholder: Int? = null
     ) = tryWith {
         val radiusPx = cornerRadiusDp * imageView.resources.displayMetrics.density
         val request = createRequest(
-            imageView.context, placeholder, null, RoundedCornersTransformation(radiusPx)
+            imageView.context, placeholder, null, FitRoundedCornersTransformation(radiusPx)
         )
         request.target(imageView)
         imageView.enqueue(request)

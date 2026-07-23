@@ -35,6 +35,7 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.addToQueueCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.backfillCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.trackRadioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
 import dev.brahmkshatriya.echo.playback.PlayerCommands.syncShuffleFlagCommand
@@ -359,6 +360,18 @@ class PlayerViewModel(
                 putString("extId", id)
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
+            })
+        }
+    }
+
+    // Single-track "radio" tiles (Home "Mixes inspired by", search): play the seed first, then append the
+    // generated radio — service-side (PlayerCallback.trackRadio) so it works on TV without relying on
+    // auto-radio. No loading snackbar (the seed plays immediately), matching the old setQueue path.
+    fun playTrackRadio(id: String, track: Track) = viewModelScope.launch {
+        withBrowser {
+            it.sendCustomCommand(trackRadioCommand, Bundle().apply {
+                putString("extId", id)
+                putSerialized("item", track)
             })
         }
     }

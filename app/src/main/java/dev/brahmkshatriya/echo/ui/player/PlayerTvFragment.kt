@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -73,7 +74,25 @@ class PlayerTvFragment : Fragment() {
         val minimize = { uiViewModel.changePlayerState(STATE_HIDDEN) }
         binding!!.tvToolbar.setNavigationOnClickListener { minimize() }
         binding!!.tvToolbar.navigationIcon = null
-        binding!!.tvToolbar.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        // Let the toolbar's overflow action (menu_more) receive D-pad focus. The old FOCUS_BLOCK_DESCENDANTS
+        // blocked EVERY descendant to hide the removed nav-icon slot — but navigationIcon=null above already
+        // removes that view from the tree, and title/subtitle aren't focusable, so AFTER_DESCENDANTS exposes
+        // ONLY the overflow button. (TO the overflow is wired by-id in XML: tv_minimize_button.nextFocusRight
+        // = @id/menu_more, resolved to the current instance at focus-search time.)
+        binding!!.tvToolbar.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        // Scheme A routing FROM the overflow: Left -> minimize (top-left), Down -> heart (top of the right
+        // panel); Up/Right trap to self (top-right corner). ActionMenuView (re)builds its item view on
+        // layout, so RE-APPLY on every toolbar layout — a rebuilt view would otherwise lose these ids.
+        fun wireMoreButtonFocus() {
+            binding?.tvToolbar?.findViewById<View>(R.id.menu_more)?.apply {
+                nextFocusLeftId = R.id.tv_minimize_button
+                nextFocusDownId = R.id.tv_track_heart
+                nextFocusUpId = R.id.menu_more
+                nextFocusRightId = R.id.menu_more
+            }
+        }
+        binding!!.tvToolbar.doOnLayout { wireMoreButtonFocus() }
+        binding!!.tvToolbar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> wireMoreButtonFocus() }
         binding!!.tvMinimizeButton.setOnClickListener { minimize() }
         val backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() = minimize()

@@ -24,6 +24,7 @@ object PlayerCommands {
     val addToQueueCommand = SessionCommand("add_to_queue", Bundle.EMPTY)
     val addToNextCommand = SessionCommand("add_to_next", Bundle.EMPTY)
     val radioCommand = SessionCommand("radio", Bundle.EMPTY)
+    val trackRadioCommand = SessionCommand("track_radio", Bundle.EMPTY)
     val sleepTimer = SessionCommand("sleep_timer", Bundle.EMPTY)
     val resumeCommand = SessionCommand("resume", Bundle.EMPTY)
     val imageCommand = SessionCommand("image", Bundle.EMPTY)

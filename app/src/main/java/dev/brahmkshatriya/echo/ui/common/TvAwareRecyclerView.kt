@@ -83,6 +83,7 @@ class TvAwareRecyclerView @JvmOverloads constructor(
             FOCUS_UP -> {
                 if (currentPos == 0) focused
                 else super.focusSearch(focused, direction)
+                    ?: revealFocusableAbove(glm, currentPos, focused)
             }
             FOCUS_LEFT -> {
                 val spanIndex = glm.spanSizeLookup.getSpanIndex(currentPos, glm.spanCount)
@@ -135,6 +136,39 @@ class TvAwareRecyclerView @JvmOverloads constructor(
             if (pendingFocusPos != targetPos) return@doOnNextLayout  // superseded by a later DOWN press
             pendingFocusPos = NO_POSITION
             glm.findViewByPosition(targetPos)?.requestFocus()        // fresh lookup; no-op if unbound
+        }
+        return focused
+    }
+
+    // UP analogue of advanceFocusDown: when the platform beam-search finds nothing attached above (the
+    // target row is offscreen), reveal the nearest FOCUSABLE row above and focus it — so focus can climb
+    // back to the search bar / top shelf from deep in the feed (UP had no scroll-to-reveal, so an offscreen
+    // top row was unreachable). Same scroll + doOnNextLayout + pending-token pattern as advanceFocusDown,
+    // extended to step over the always-present 0-height chrome slots (an empty tabs/buttons row is a
+    // laid-out, non-focusable child): those are skipped synchronously, and if an offscreen row turns out
+    // non-focusable once revealed, the walk continues up on the next layout. Only reached from the
+    // isTv-gated FOCUS_UP path when super returns null, so phone never calls it and the attached case is
+    // unchanged.
+    private var pendingUpPos = NO_POSITION
+
+    private fun revealFocusableAbove(glm: GridLayoutManager, fromPos: Int, focused: View): View {
+        var target = fromPos - 1
+        while (target >= 0) {
+            val v = glm.findViewByPosition(target)
+            if (v == null) break                 // offscreen -> reveal (focusability verified after layout)
+            if (v.hasFocusable()) return v        // attached & focusable -> framework focuses it this frame
+            target--                              // attached & non-focusable (0-height chrome) -> skip
+        }
+        if (target < 0) return focused
+        val revealPos = target
+        pendingUpPos = revealPos
+        glm.scrollToPosition(revealPos)
+        doOnNextLayout {
+            if (pendingUpPos != revealPos) return@doOnNextLayout     // superseded by a later UP press
+            pendingUpPos = NO_POSITION
+            val view = glm.findViewByPosition(revealPos)
+            if ((view == null || !view.requestFocus()) && revealPos > 0)
+                revealFocusableAbove(glm, revealPos, focused)        // revealed row can't focus -> climb on
         }
         return focused
     }

@@ -114,7 +114,7 @@ class PlayerCallback(
             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(likeCommand).add(unlikeCommand).add(repeatCommand).add(repeatOffCommand)
                 .add(repeatOneCommand).add(shuffleCommand).add(shuffleOffCommand)
-                .add(radioCommand).add(sleepTimer)
+                .add(radioCommand).add(trackRadioCommand).add(sleepTimer)
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
                 .add(resumeCommand).add(imageCommand).add(backfillCommand)
                 .add(seekToFullCommand).add(syncShuffleFlagCommand)
@@ -157,6 +157,7 @@ class PlayerCallback(
             addToQueueCommand -> addToQueue(player, args)
             addToNextCommand -> addToNext(player, args)
             radioCommand -> radio(player, args)
+            trackRadioCommand -> trackRadio(player, args)
             sleepTimer -> onSleepTimer(player, args.getLong("ms"))
             resumeCommand -> resume(player)
             imageCommand -> getImage(player)
@@ -292,6 +293,41 @@ class PlayerCallback(
         SessionResult(RESULT_SUCCESS)
     }
 
+    // Seed-first radio for feed/search single-track "radio" tiles (Home "Mixes inspired by", search).
+    // Mirrors PHONE exactly: queue + play the SEED first (like setQueue's single-track path), THEN APPEND
+    // the generated radio (mirroring PlayerRadio.loadPlaylist's start+play) — instead of relying on
+    // auto-radio to append, which doesn't fire on TV (so the seed looped and loadTracks never ran).
+    // The seed is NOT filtered: it's the index-0 queued item; only the appended mix has it filtered
+    // (Deezer start_with_input_track=false), identical to phone.
+    @OptIn(UnstableApi::class)
+    private fun trackRadio(player: Player, args: Bundle) = scope.future {
+        userQueueSet.set(true)
+        val error = SessionResult(SessionError.ERROR_UNKNOWN)
+        val extId = args.getString("extId") ?: return@future error
+        val seed = args.getSerialized<EchoMediaItem>("item")?.getOrNull() as? Track ?: return@future error
+        val extension = extensions.music.getExtension(extId) ?: return@future error
+        // Track-radio context: drives the "<title> Radio" header and is what generation runs from — the
+        // same Radio the setQueue single-track path built on phone.
+        val context = Radio(
+            id = seed.id, title = "${seed.title} Radio", cover = seed.cover,
+            extras = mapOf("radio" to "track")
+        )
+        // 1) Seed first — replace the queue with the single seed and play it (mirrors setQueue single).
+        val seedItem = MediaItemUtils.build(
+            app, downloadFlow.value, MediaState.Unloaded(extId, seed), context
+        )
+        player.with {
+            setMediaItems(listOf(seedItem), 0, seed.playedDuration ?: 0)
+            (this as? ShufflePlayer)?.syncShuffleFlag(false)
+            if (playbackState == Player.STATE_IDLE) prepare()
+            playWhenReady = true
+        }
+        // 2) Append the generated radio after the seed (mirrors PlayerRadio.loadPlaylist: start + play).
+        val loaded = PlayerRadio.start(throwableFlow, extension, seed, context)
+        if (loaded != null) PlayerRadio.play(player, downloadFlow, app, radioFlow, loaded)
+        SessionResult(RESULT_SUCCESS)
+    }
+
     private suspend fun loadItem(
         extension: Extension<*>, item: EchoMediaItem,
     ) = when (item) {
@@ -395,18 +431,6 @@ class PlayerCallback(
                     if (shuffle) extension.get { tracks.loadAll() }.map { it to null as String? }
                     else runCatching {
                         val (list, continuation) = extension.get { tracks.loadPage(null) }.getOrThrow()
-                        // TEMP RADIO-DIAG (TV) — remove after capture. Reports loadTracks output at the
-                        // feed-card entry as a Crashlytics non-fatal (via throwableFlow).
-                        if (item is Radio) {
-                            val ex = item.extras
-                            val kind = when (ex["radio"]) {
-                                "track" -> "TRACK"; "artist" -> "ARTIST"
-                                "playlist" -> "PLAYLIST"; "album" -> "ALBUM"; else -> "FLOW"
-                            }
-                            throwableFlow.emit(
-                                RuntimeException("RADIO-DIAG[card] kind=$kind size=${list.size} extras=$ex")
-                            )
-                        }
                         if (continuation != null) scope.launch {
                             val all = extension.get { tracks.loadAll() }.getOrElse {
                                 if (it is CancellationException) throw it
