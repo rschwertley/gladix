@@ -394,6 +394,18 @@ class PlayerEventListener(
         //     once, via a hardcoded `2` with a comment claiming 2 == NEVER (the real mapping is
         //     0=ALWAYS, 1=NEVER, 2=AFTER_STOP_OR_ERROR), and it drove onPlaybackResumption ->
         //     unconditional player.play(). Do not re-enter it as a stepping stone.
+        //     ⚠⚠ AND THE SYMPTOM IT PRODUCED WAS NEVER EXPLAINED. That accidental `2` caused
+        //     COLD-START AUTOPLAY, which was investigated, never captured, and then SET DOWN
+        //     DELIBERATELY - a decision, not a pending task; the reasoning and everything the
+        //     investigation established are at RadioFallback's status note. So the recorded
+        //     sequencing is not merely unsafe in theory: IT IS A KNOWN REGRESSION THAT THIS APP HAS
+        //     ALREADY SHIPPED ONCE, and adopting it would reintroduce a mechanism producing the
+        //     exact symptom nobody was able to explain. The June fix set the constant to NEVER and
+        //     an August re-check verified it intact, so this is NOT the surviving cause - but it IS
+        //     why the stepping stone is closed.
+        //     ⚠️ REVISITING THIS BLOCKER MADE IT STRONGER, NOT WEAKER. Worth knowing as a
+        //     counter-case to the house rule on stale blockers: re-reading one is how you find a free
+        //     win, and equally how you avoid taking a recorded next step that has since been refuted.
         //   • stop() also leaves getPlayerError() non-null (stopInternal passes resetError=false) and only
         //     prepare() clears it. Not a problem AT ENDED — reaching ENDED requires a completed prepare(),
         //     so the error is null by construction — but stop() would move us to an IDLE that a later
@@ -413,7 +425,9 @@ class PlayerEventListener(
         // the progress ticker for ENDED — correct, and only conspicuous because the wave next to it kept
         // moving), and the replay-on-press behaviour, since ShufflePlayer.play()/setPlayWhenReady() still
         // seekTo(0, 0) at ENDED. That branch carries its own never-monitored note and is the same family as
-        // the open cold-start autoplay bug: a queue parked at ENDED is what converts a phantom play request
+        // the cold-start autoplay bug (investigated, never explained, set down deliberately rather
+        // than left pending - see RadioFallback's status note): a queue parked at ENDED is what
+        // converts a phantom play request
         // into audible playback of a finished track. Pausing does not remove ENDED, so that interaction is
         // UNCHANGED — it is only the five playWhenReady consumers above that are fixed.
         //

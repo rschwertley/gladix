@@ -136,18 +136,57 @@
 
                 <data android:scheme="gladix" />
             </intent-filter>
+            <!-- ⚠⚠ GLADIX SHARE LINKS. Verified via assetlinks.json at the ROOT of
+                 rschwertley.github.io, which lists BOTH signing certs - the debug keystore (sideloads,
+                 because the release build type signs with it) and Play App Signing. Both are required:
+                 with only one, that half of the installs silently fall back to the browser.
+
+                 ⚠⚠ pathPrefix IS /gladix/open/ AND NOT /gladix/, AND THE REASON IS NOT IN
+                 THIS FILE. Verification is host-level, but the filter is ours to narrow - and the TV
+                 pairing page lives at rschwertley.github.io/gladix/pair.html, which
+                 R.string.tv_pairing_option_3 tells the user to OPEN IN A BROWSER. Claiming /gladix/
+                 would make that link launch the app instead, breaking pairing for exactly the people
+                 who have Gladix installed. Nothing here references that page, so the constraint is
+                 invisible from this file.
+
+                 ⚠️ https ONLY. We never emit http, so claiming it would add surface we do
+                 not use. Format and parsing: FragmentUtils.openItemFragmentFromGladixLink.
+
+                 ⚠⚠ A FUTURE OWNED DOMAIN IS ADDED ALONGSIDE, NOT SWAPPED IN. An
+                 intent-filter takes MULTIPLE android:host entries, so buying a domain later means
+                 adding it here and hosting assetlinks.json at ITS root too, while
+                 rschwertley.github.io stays claimed for as long as already-shared links matter. The
+                 paths and params do not change; only the host does. A hard swap would silently break
+                 every link already in the wild.
+                 ⚠️ DO NOT TRY TO SOLVE IT WITH A REDIRECT: Android does NOT follow redirects
+                 when fetching assetlinks.json, and a redirected link is not reliably intercepted by
+                 the destination app. Claiming both hosts is the only clean migration. -->
+
+            <!-- ⚠⚠ THE DEEZER FILTER THAT WAS HERE IS GONE, DELIBERATELY. It claimed
+                 www.deezer.com, deezer.page.link, link.deezer.com and dzr.page.link over http+https -
+                 the EIGHT links in the Play Console's "deep links may be failing" warning. It could
+                 never verify (assetlinks must be hosted by the domain owner, and we are not Deezer),
+                 and MainActivity had no http/https handler at all, so a tapped Deezer link opened the
+                 bare app and discarded the URL. It also COMPETED with the standalone Deezer extension
+                 APK, which declares the same four hosts on its own link Opener activity.
+                 Removing it clears the warning entirely rather than reducing it.
+                 ⚠️ REVERSIBLE: if inbound deezer.com links are ever handled here, re-add the
+                 filter AND write the handler - the parser lives in that extension's Opener and is
+                 non-trivial (redirect-following for the link.deezer.com shortener, plus a type/id
+                 parse whose bare-form branch is broken upstream). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
 
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data android:scheme="http" />
                 <data android:scheme="https" />
-                <data android:host="www.deezer.com" />
-                <data android:host="deezer.page.link" />
-                <data android:host="link.deezer.com" />
-                <data android:host="dzr.page.link" />
+                <data android:host="rschwertley.github.io" />
+                <!-- ⚠⚠ THE TRAILING SLASH IS LOAD-BEARING. As "/gladix/o" this would claim
+                     /gladix/october-update.html and every other path starting with "o"; the slash is
+                     what makes a single-letter segment safe. Mirrored in
+                     FragmentUtils.GLADIX_LINK_PREFIX - keep the two in step. -->
+                <data android:pathPrefix="/gladix/o/" />
             </intent-filter>
         </activity>
 

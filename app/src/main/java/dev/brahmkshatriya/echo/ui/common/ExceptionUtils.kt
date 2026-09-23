@@ -75,7 +75,12 @@ object ExceptionUtils {
         is ExtensionLoaderException ->
             getString(R.string.error_loading_extension_from_x, throwable.clazz)
 
-        is ExtensionNotFoundException -> getString(R.string.extension_x_not_found, throwable.id)
+        // A null id is a DIFFERENT CONDITION, not a missing argument - see the note on the
+        // exception. "Extension null not found" read as a lookup failure when it is a
+        // missing-input failure.
+        is ExtensionNotFoundException -> throwable.id
+            ?.let { getString(R.string.extension_x_not_found, it) }
+            ?: getString(R.string.item_missing_extension)
         is RequiredExtensionsMissingException -> getString(
             R.string.required_extensions_missing_x,
             throwable.required.joinToString(", ")

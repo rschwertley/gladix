@@ -108,9 +108,49 @@ object ResumptionUtils {
      *
      * Only ADDS the key, never overwrites: a track that somehow kept its own stamp keeps it.
      */
-    private fun Track.restamped(extensionId: String) =
-        if (extras.containsKey(UnifiedExtension.EXTENSION_ID)) this
-        else copy(extras = extras + (UnifiedExtension.EXTENSION_ID to extensionId))
+    /**
+     * ⚠⚠ A QUEUE-LOCAL SLIMMER THAT KEEPS THE ONE ROUTING KEY. This is the fix for the
+     * defect recorded at UnifiedExtension.loadTrack: toSlim() sets `extras = emptyMap()`, which
+     * destroys a track's own `extension_id` on save, and for a UNIFIED queue that id is the only
+     * record of WHICH SUB-EXTENSION the track came from.
+     * ⚠⚠ IT DOES NOT RE-FATTEN ANYTHING, AND THAT DISTINCTION IS LOAD-BEARING. toSlim's
+     * stripping is deliberate twice over - a History CursorWindow OOM at row 53 of a 2MB window
+     * (~38KB/row), and the queue analogue where 2000 fat entries OOM'd. What made those fat was
+     * TRACK_TOKEN and the nested object graphs; this keeps ONE SHORT STRING, an extension id.
+     * ⚠⚠ A SLIMMER THAT KEEPS EXACTLY WHAT ONE DOWNSTREAM CONSUMER NEEDS IS THE ESTABLISHED
+     * PATTERN HERE, WITH TWO PRIOR INSTANCES - this is not a special case pleaded for itself:
+     *   toSlimContext        keeps a Radio's extras, deliberately, because radio re-resolution
+     *                        reads kind + seeds from them - it is the single source of truth that
+     *                        work depends on.
+     *   Cached.toPlaylistSlim keeps album.id/title/cover so "Go to Album" still works from a
+     *                        cached track.
+     * Each drops the bulk and keeps one routing or navigation key. So does this.
+     * DO NOT widen it to keep extras generally - that IS the re-fatten the two OOMs forbid, and the
+     * difference between the two is the whole point: keep a key, never keep a payload.
+     */
+    private fun MediaState<Track>.queueSlim() = item.toSlim().let { slim ->
+        val routing = item.extras.filterKeys { it == UnifiedExtension.EXTENSION_ID }
+        if (routing.isEmpty()) slim else slim.copy(extras = routing)
+    }
+
+    /**
+     * Back-fills the stamp for queues saved BEFORE queueSlim existed. New saves carry it already, so
+     * the `containsKey` guard makes this a no-op for them.
+     *
+     * ⚠⚠ IT MUST NOT STAMP "unified" - THAT IS THE TRAP THIS FUNCTION USED TO SET.
+     * `extensionId` here is the extension the QUEUE played under, which for a Unified queue is
+     * UNIFIED_ID. Stamping it satisfies the null check and then fails one layer down, because
+     * UnifiedExtension.extensions() filters `id != UNIFIED_ID` - turning
+     * ExtensionNotFoundException(null) into a bare Exception("Extension unified not found") and
+     * fixing nothing. For an old Unified queue there IS no recoverable sub-extension id, so leave it
+     * unstamped: the accessor then throws, Cached.loadMedia's cache fallback serves the previously
+     * cached state, and playback continues exactly as it does today.
+     */
+    private fun Track.restamped(extensionId: String) = when {
+        extras.containsKey(UnifiedExtension.EXTENSION_ID) -> this
+        extensionId == UnifiedExtension.UNIFIED_ID -> this
+        else -> copy(extras = extras + (UnifiedExtension.EXTENSION_ID to extensionId))
+    }
 
     private fun queueDir(context: Context) =
         File(context.filesDir, "context/queue").apply { mkdirs() }
@@ -221,7 +261,7 @@ object ResumptionUtils {
         // every debounced save. Hoisting to one `it.state` decode halves it. (Zero decodes would require
         // carrying the MediaState as an in-process object on the item rather than serialized in extras — a
         // separate, larger change.)
-        val entries = list.map { it.state.let { s -> QueueEntry(s.item.toSlim(), s.extensionId) } }
+        val entries = list.map { it.state.let { s -> QueueEntry(s.queueSlim(), s.extensionId) } }
         if (saveToQueue(QUEUE_ENTRIES, entries).isSuccess) {
             if (saveToQueue(CONTEXTS, list.map { it.context?.toSlimContext() }).isFailure)
                 deleteQueueKey(CONTEXTS)

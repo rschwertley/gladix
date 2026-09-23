@@ -1,6 +1,6 @@
 # Gladix
 
-A personal Android music player — a fork of [Echo](https://github.com/brahmkshatriya/echo) by brahmkshatriya, with the Deezer extension bundled and substantial work on Android Auto, Android TV, playback stability and everyday UX.
+A personal Android music player — a fork of [Echo](https://github.com/brahmkshatriya/echo) by brahmkshatriya, with the Deezer extension bundled, local-file playback that needs no account, and substantial work on Android Auto, Android TV, playback stability and everyday UX.
 
 > Gladix is a hobby project maintained by one person. It isn't affiliated with Deezer or any other service.
 
@@ -8,9 +8,9 @@ A personal Android music player — a fork of [Echo](https://github.com/brahmksh
 
 ## What it is
 
-Echo is an extension-based music player: the app itself knows nothing about any particular service, and extensions supply the content. Gladix keeps that architecture, bundles the Deezer extension so it works out of the box, and adds the things a daily-driver player needs.
+Echo is an extension-based music player: the app itself knows nothing about any particular service, and extensions supply the content. Gladix keeps that architecture, bundles Deezer and Offline so it works out of the box, and adds the things a daily-driver player needs.
 
-**Package:** `dev.rschwertley.gladix`
+**Package:** `dev.rschwertley.gladix.auto`
 
 ---
 
@@ -56,7 +56,7 @@ Firebase Crashlytics is wired in; `google-services.json` is gitignored, and the 
 
 ## Extensions
 
-Extensions are separate APKs loaded at runtime. Deezer is bundled; others are installed by the user.
+Extensions are separate APKs loaded at runtime. Two are bundled: **Deezer**, and **Offline**, which plays music already on the device — so the app does something useful straight after install, with no account and no network. Others are installed by the user.
 
 Two build checks protect the extension boundary, and both run on every shipped build:
 

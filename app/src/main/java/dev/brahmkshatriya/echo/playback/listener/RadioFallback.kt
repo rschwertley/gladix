@@ -55,6 +55,31 @@ import okhttp3.Request
  * REVISIT WHEN THAT ITEM CLOSES. It is a small change and the cost of waiting is one button press in a
  * rare case; the cost of not waiting is a harder diagnosis on an open bug.
  *
+ * ⚠⚠ [STATUS 2026-09-23] THAT ITEM DID NOT CLOSE, AND IT IS NOT WAITING ON ANYONE EITHER -
+ * IT WAS SET DOWN DELIBERATELY AT THE TIME. The decision taken then was: move on unless it becomes
+ * an issue again. THE REASONING IS RECORDED HERE BECAUSE THE RECORD KEPT THE INSTRUCTION AND LOST
+ * THE DECISION - the symptom is intermittent and phone-only, and capturing it means deliberately
+ * triggering cold start after cold start until it happens, which at the observed rate is near
+ * impossible. It has not been seen in over a month (last ~August 2026).
+ * SO THIS IS A CLOSED QUESTION, NOT A QUEUED TASK. Do not read "revisit when that item closes"
+ * above as waiting on a capture somebody will take.
+ * ⚠️ WHAT THE INVESTIGATION ESTABLISHED, kept because it is the part worth having if the
+ * symptom returns:
+ *   - both prior fixes verified intact - the SHOW_NOTIFICATION_FOR_IDLE_PLAYER constant at NEVER,
+ *     and PlayerEventListener's wasPlaying gate on the buffering-watchdog retry;
+ *   - NOTHING IN THE COLD-START PATH SHOULD PLAY - every app-side initiator was accounted for;
+ *   - and yet A REAL PLAY REQUEST ARRIVES, from a source that was never identified.
+ * That last line is the finding. If it comes back, start there rather than re-deriving it.
+ * ⚠️ ONE SUSPECT WAS SUBTRACTED AFTERWARDS: PlayerCallback.onPlaybackResumption reads as
+ * declining a play during a cold-start load and does not - media3 plays anyway on the failure arm
+ * (see the note there). That removes a candidate; it does not name one.
+ * ⚠️ WHAT THIS DOES TO THE DEFERRAL ABOVE, STATED RATHER THAN DECIDED: that reason is about
+ * not adding a candidate to a set an ACTIVE investigation is narrowing, and there is no active
+ * investigation. The reason is therefore weaker - but not void, because the play-request source
+ * was never identified, so a new app-initiated play() would make a recurrence harder to diagnose.
+ * THE DEFERRAL IS LEFT AS IS, deliberately. This note is what to re-read if it is ever picked up,
+ * not a signal that it now can be.
+ *
  * ⚠️ THIS IS A FALLBACK, NOT A REPLACEMENT. It does not run on the normal path, does not replace the
  * extension's radio, and does not guarantee a match. The final rung is still the queue ending cleanly —
  * which since 2026-09-09 is a settled state (PlayerEventListener pauses at STATE_ENDED) rather than a

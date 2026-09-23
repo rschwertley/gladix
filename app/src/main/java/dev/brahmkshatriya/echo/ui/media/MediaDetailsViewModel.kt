@@ -297,6 +297,37 @@ abstract class MediaDetailsViewModel(
             }
         }
 
+        /**
+         * ⚠⚠ PREREQUISITE FOR THE PLANNED "SHARE GLADIX LINK" SIBLING OF THIS FUNCTION:
+         * IT MUST PREFER item.extras[EXTENSION_ID] OVER extension.id WHEN BUILDING THE LINK.
+         * A Gladix link is `.../gladix/o/?e=<ext>&t=<type>&i=<id>&n=<title>&s=<name>` and the
+         * recipient's app rebuilds a STUB - Track(id, name) - with NO extras. UnifiedExtension
+         * routes by extras[EXTENSION_ID] (loadStreamableMedia proxies through it), so a link that
+         * says `e=unified` is DEAD ON ARRIVAL: Map.extensionId throws
+         * ExtensionNotFoundException(null) before anything can resolve.
+         * ⚠️ NOT HYPOTHETICAL - THE SHAPE WAS INVESTIGATED IN JULY 2026 as
+         * "getExtensionId 'Extension id not found' during backfillQueue -> loadRadio", diagnosed
+         * as an item reaching Unified without its EXTENSION_ID stamp. A share link constructs
+         * exactly such an item.
+         * The loaded item DOES carry the stamp (UnifiedExtension.withExtensionId sets it), so
+         * reading it costs nothing - and it is also what the recipient wants, since they may not
+         * use Unified at all.
+         *
+         * ⚠⚠ THE OTHER REQUIREMENT: CONDITION IT THE SAME AS showShare - i.e. REQUIRE
+         * ShareClient - AND THE OBVIOUS SHORTCUT IS WRONG. An earlier version of this note said to
+         * give it its OWN condition (item.isShareable alone), so extensions with no ShareClient could
+         * be shared at all. That is right for a NETWORK extension with no share support and WRONG for
+         * OfflineExtension, which is local files on one device and resolvable by nobody - and whose
+         * items leave isShareable at its `true` default, because there is no chokepoint to set it at
+         * (see the note on that class). isShareable alone would silently admit every Offline item.
+         * ⚠️ SO THE GAP IS DELIBERATELY LEFT OPEN: an extension with no ShareClient still
+         * cannot be shared, even by a Gladix link that needs no URL from it. CLOSING IT NEEDS A
+         * CAPABILITY THAT DOES NOT EXIST - one meaning "my items are resolvable by id", distinct
+         * from "I can mint a URL"; see the note on ShareClient for why those are different claims.
+         * That is a common-module ABI change plus per-extension adoption, declined. Do not close the
+         * gap with the nearest available proxy; it is the proxy that is wrong, not the gap.
+         * Add the entry to MediaMoreBottomSheet's button list rather than as a second header icon.
+         */
         suspend fun share(
             app: App, extension: Extension<*>?, item: EchoMediaItem,
         ) {

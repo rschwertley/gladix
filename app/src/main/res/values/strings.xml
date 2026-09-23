@@ -79,6 +79,9 @@
     <string name="no_internet">No Internet</string>
     <string name="error_loading_extension_from_x">Error loading extension from %1$s</string>
     <string name="extension_x_not_found">Extension %1$s not found</string>
+    <!-- Shown when a media item carries no extension stamp at all, so there was nothing to
+         look up. Deliberately NOT phrased as a lookup failure: nothing was ever asked for. -->
+    <string name="item_missing_extension">This item doesn\'t say which extension it came from</string>
     <string name="removed_extension_playback_stopped">Nothing to play: the extension for these tracks is no longer installed</string>
     <string name="server_error_skipping">Server error, skipping affected tracks</string>
     <string name="couldnt_copy_to_clipboard">Couldn\'t copy to clipboard</string>

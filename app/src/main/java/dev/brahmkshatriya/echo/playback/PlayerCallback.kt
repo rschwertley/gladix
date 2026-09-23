@@ -1232,8 +1232,31 @@ class PlayerCallback(
                 return@futureCatching MediaItemsWithStartPosition(listOf(item), 0, 0L)
             }
             try {
+                // ⚠⚠ THIS THROW DOES NOT PREVENT PLAYBACK, AND THE LOG LINE OVERSTATES WHAT
+                // IT DOES. Read from media3-session 1.11.0, MediaSessionImpl's resumption
+                // FutureCallback: its onFailure arm logs the UnsupportedOperationException and then
+                // calls Util.handlePlayButtonAction(playerWrapper) anyway, under the comment
+                // "Play as requested even if playback resumption fails." BOTH of the throws in
+                // this function hit that arm - this one and the "No saved queue" ones above.
+                // SO WHAT IS SKIPPED IS THE QUEUE RESTORE, NOT THE PLAY. If a queue is already on the
+                // player (which is exactly what activeLoadCount > 0 implies - something is resolving),
+                // the play lands on it and is audible.
+                // ⚠️ THERE IS A REAL GATE AND IT IS NOT OURS TO USE. MediaSessionImpl consults
+                // onPlayRequested() BEFORE any of this and drops the request entirely if it resolves
+                // false - but that lives on MediaSession.Listener, which MediaSessionService
+                // implements internally; it is not an app-facing Callback override. Do not go looking
+                // for it as a hook.
+                // ⚠️ RELEVANCE TO THE OPEN COLD-START AUTOPLAY ITEM, STATED CAREFULLY: this is
+                // NOT a new source of a play request. Both routes into that method require an
+                // incoming play - MediaSessionLegacyStub (media button, system UI, legacy AA) and
+                // MediaSessionStub (an AIDL MediaController.play()). What it DOES mean is that a play
+                // arriving DURING a cold-start load is not declined even though this code reads as
+                // declining it. That is worth knowing for an investigation whose finding is "a real
+                // play request is arriving and its source is unidentified" - it does not name the
+                // source, but it removes this function from the list of things that would have
+                // stopped it.
                 if (state.activeLoadCount.get() > 0) {
-                    Log.d("GladixPlayback", "onPlaybackResumption: skipping, activeLoadCount=${state.activeLoadCount.get()}")
+                    Log.d("GladixPlayback", "onPlaybackResumption: skipping RESTORE (play still proceeds), activeLoadCount=${state.activeLoadCount.get()}")
                     withContext(Dispatchers.Main) { state.resumptionApplying = false }
                     throw UnsupportedOperationException("Load in progress")
                 }

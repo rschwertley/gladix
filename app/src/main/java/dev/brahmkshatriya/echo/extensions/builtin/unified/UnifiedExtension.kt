@@ -121,8 +121,16 @@ class UnifiedExtension(
                 client?.block()
             }.getOrElse { throw it.toAppException(this) }
 
+        // ⚠⚠ TYPED, NOT A BARE Exception. A bare one got NEITHER the skip-breaker exemption
+        // NOR the removed-extension message, so "a sub-extension the user uninstalled" landed in the
+        // residual error bucket instead of being classified as a normal config condition. Same
+        // reasoning as the `Map.extensionId` accessor below, which was typed for exactly this.
+        // ⚠️ THIS IS THE CONFIG CONDITION - the stamp is PRESENT and names something not
+        // installed. The accessor's null-id case is the DATA condition - no stamp at all. Same type,
+        // told apart by whether `id` is null; see the note on ExtensionNotFoundException for why one
+        // type rather than two.
         private fun List<Extension<*>>.get(id: String?) =
-            find { it.id == id } ?: throw Exception("Extension $id not found")
+            find { it.id == id } ?: throw ExtensionNotFoundException(id)
 
         private fun List<Extension<*>>.getOrNull(id: String?) = find { it.id == id }
 
@@ -489,8 +497,30 @@ class UnifiedExtension(
     }
 
     /**
-     * ⚠️ KNOWN DEFECT, RECORDED 2026-09-07, NOT YET FIXED: `track.extras.extensionId` below THROWS FOR
-     * EVERY RESTORED TRACK, and it has been doing so since 2026-07-26.
+     * ⚠⚠ [FIXED 2026-09-23 - THE HISTORY BELOW IS KEPT BECAUSE THE TRAPS IN IT ARE STILL
+     * TRAPS.] Recorded 2026-09-07 as: `track.extras.extensionId` below THROWS FOR EVERY RESTORED
+     * TRACK, and had been doing so since 2026-07-26.
+     * WHAT LANDED, all four parts:
+     *   ResumptionUtils.queueSlim   the producer - the save side now keeps the one routing key
+     *                               instead of stripping it, so new queues carry the SUB-extension
+     *                               id and the accessor below resolves.
+     *   ResumptionUtils.restamped   no longer stamps UNIFIED_ID (the trap described further down).
+     *   List<Extension<*>>.get      typed, closing a parked item verbatim: it threw a bare
+     *                               Exception and so got NEITHER the breaker exemption NOR the
+     *                               removed-extension message. Typing it delivers exactly those two.
+     *   ExtensionNotFoundException  message split - a null id now reads as a missing stamp rather
+     *                               than a failed lookup.
+     * ⚠️ OLD QUEUES ARE NOT RETROACTIVELY FIXED. A Unified queue saved before this has no
+     * recoverable sub-extension id anywhere, so it stays unstamped and keeps resolving from cache
+     * exactly as it did. The accessor still throws for those; that is expected, not a regression.
+     *
+     * ⚠⚠ THE CRASHLYTICS ISSUE FOR THIS IS MUTED, NOT RESOLVED (2026-09-23) - SO SILENCE
+     * FROM IT IS NOT EVIDENCE OF ANYTHING. Nothing was fixed in the round that produced the notes
+     * below; everything was recorded. It was muted rather than closed on purpose: closing tells
+     * Crashlytics the defect is gone, and it would simply reopen, because the defect is live and
+     * known. IF YOU ARE HERE BECAUSE YOU HAVE SEEN NO REPORTS, THAT IS THE MUTE, NOT A FIX.
+     * Same shape as the house rule on absence-based conclusions: an absence only means something
+     * once you can name what would have produced a report and show that it happened.
      *
      * A queue is persisted through ResumptionUtils, which stores `QueueEntry(s.item.toSlim(), s.extensionId)`.
      * History's Track.toSlim() sets `extras = emptyMap()` (HistoryEntity.kt), so the track's own
@@ -510,11 +540,83 @@ class UnifiedExtension(
      * UnifiedExtension.radio (a non-fatal ExtensionNotFoundException("null") from PlayerRadio.loadPlaylist
      * on a cold start restoring a one-item queue with auto-radio on) and loadFeed(track).
      *
-     * ⚠️ FIXING THE STAMP ALONE WOULD REGRESS OFFLINE. Today the throw happens BEFORE any I/O, so the
-     * cache fallback is instant. With a correct id this would attempt the sub-extension's network call
-     * first and only fall back after its timeouts (Deezer: connect 15s + read 10s), inside the buffering
-     * path. The fix therefore needs the cache-first ordering made EXPLICIT at Cached.loadMedia's playback
-     * call site, not just the stamp restored.
+     * ⚠⚠ [2026-09-23] THE PARTIAL FIX THAT EXISTS STAMPS THE WRONG VALUE, AND THIS NOTE
+     * PREVIOUSLY SET A TRAP BY NOT SAYING SO. ResumptionUtils.restamped(entry.extensionId) was added
+     * to re-apply the stamp on restore - but `entry.extensionId` is THE EXTENSION THE QUEUE PLAYED
+     * UNDER, which for a Unified queue is "unified", NOT the sub-extension. So implementing the fix
+     * from this note alone does not fix anything: extras.extensionId then returns "unified", and
+     * `extensions().get("unified")` fails too, because extensions() filters `id != UNIFIED_ID`. The
+     * error merely MOVES - from ExtensionNotFoundException(null) at the accessor to the bare
+     * Exception("Extension unified not found") at List<Extension<*>>.get. THE STAMP MUST CARRY THE
+     * SUB-EXTENSION ID, which is the only value that was ever in the track's extras.
+     *
+     * ⚠️ AND THE RE-STAMP DOES NOT COVER EVERY RESTORE PATH. ResumptionUtils has three eras and
+     * only two are stamped: the composite decode handles BOTH the de-bundled QUEUE_ENTRIES format and
+     * the older bundled composite and calls restamped; the LEGACY THREE-FILE fallback
+     * (assembleLegacy, TRACKS/EXTENSIONS/CONTEXTS) builds MediaState.Unloaded directly with NO
+     * re-stamp. That path is not dead - it runs whenever the composite decode returns null, which
+     * includes a CORRUPT OR SIZE-GATED composite and not only genuine pre-composite state.
+     * ⚠️ "SIZE-GATED" IS A DOCUMENTED MECHANISM, NOT A GUESS: the July 2026 queue work is
+     * recorded as a "slim + size-gated migration", and getFromQueue/getFromCache take an explicit
+     * maxBytes (QUEUE_FILE_MAX_BYTES) which SKIPS AN OVERSIZED FILE UNREAD rather than failing.
+     * A skipped composite reads as absent, and absent is exactly what routes to assembleLegacy.
+     * So the legacy path has a real trigger on a current install, not just a historical one.
+     * ⚠️ WHICH PATH A GIVEN REPORT TOOK IS NOT DETERMINABLE FROM THE CRASH KEYS. A 2026-09-23
+     * report matched this note's predicted shape exactly (radio() on a cold start, one-item queue,
+     * auto-radio) but carried restore_build_count 41 against player_media_item_count 1 - a mismatch,
+     * where those two normally track each other. Still unresolved - but the size gate above is a
+     * CANDIDATE rather than nothing: if an oversized composite were skipped unread, a restore
+     * could build from one source and end up with a queue from another, which is the shape of a
+     * count mismatch. Do not treat that as established; it is somewhere to look, and it is
+     * checkable by comparing the on-disk queue file size against QUEUE_FILE_MAX_BYTES.
+     *
+     * ⚠⚠ ONE ROOT, THREE SURFACES - ALL toSlim, ALL FIXED BY CARRYING THE RIGHT ID RATHER THAN
+     * BY NOT STRIPPING. ⚠⚠ THE STRIPPING IS LOAD-BEARING TWICE OVER, ON TWO DIFFERENT
+     * STORES, FOR THE SAME REASON - anyone weighing a re-fatten should know there are TWO
+     * precedents, not one:
+     *   HISTORY  a CursorWindow OOM failing at ROW 53 with a 2MB window - roughly 38KB per row.
+     *            The row cap bounded the dimension that does not matter (rows) instead of the one
+     *            that does (bytes).
+     *   QUEUE    the direct analogue: saveQueue persisted fat entries - full serialized Track plus
+     *            context, tens of KB each - and 2000 of them OOM'd.
+     * (See also the note at HistoryEntity.toSlim.) So every fix has to restore the routing key
+     * downstream and never re-fatten the saved object:
+     *   1. the extension_id loss itself - partially addressed by restamped, see the trap above;
+     *   2. OfflineExtension.loadTrack returning its input, so restored Offline tracks kept empty
+     *      streamables and played nothing (fixed 2026-09-22 by re-resolving from MediaStore);
+     *   3. this - a restored Unified track reaching radio()/loadFeed() with no stamp.
+     * The Gladix share-link work hit the SAME insight independently: a link must emit the
+     * SUB-extension id, because `e=unified` rebuilds a stub with no extras and is dead on arrival
+     * (see MediaDetailsViewModel.share). Four places now, one shape: the id has to travel WITH the
+     * item, not beside it.
+     *
+     * ⚠️ THE MESSAGE IS ALSO WRONG, AND IT IS A SEPARATE FIX. "Extension not found: null" reads
+     * as a lookup failure; it is a MISSING-INPUT failure. A null id is not "not found", it is "never
+     * asked". The accessor at Map.extensionId (a DATA problem - the item carries no stamp) and
+     * List<Extension<*>>.get (a CONFIG problem - that extension is not installed) share one type and
+     * are told apart only by the id being null. They want different messages, and whether they want
+     * different TYPES is the same open pass as that bare Exception.
+     *
+     * ⚠⚠ [SATISFIED] THIS PARAGRAPH WAS THE REAL BLOCKER, AND IT STOPPED BEING ONE WITHOUT
+     * ANYONE NOTICING. As written: fixing the stamp alone would regress offline, because today the
+     * throw happens BEFORE any I/O so the cache fallback is instant - with a correct id it would
+     * attempt the sub-extension's network call first and only fall back after its timeouts (Deezer:
+     * connect 15s + read 10s), inside the buffering path. The stated requirement was the cache-first
+     * ordering made EXPLICIT at Cached.loadMedia's playback call site.
+     * THAT EXISTS: StreamableLoader.loadTrack passes `preferCache = true`, and its comment names the
+     * Unified throw as the mechanism it replaces. It was built ANTICIPATING this fix.
+     *
+     * ⚠⚠ WHY THIS WAITED IS MORE USEFUL THAN THE FIX. It was blocked by a condition THIS NOTE
+     * NAMED, the condition was satisfied by work on an unrelated thread (a playback-path ordering
+     * change), and NOBODY RE-CHECKED - so it sat scoped and recorded while its blocker was already
+     * gone. The person who removed it was not the person watching for it, which is exactly why it
+     * went unnoticed.
+     * ⚠️ SECOND INSTANCE OF THAT SHAPE. The first is recorded in the house rules as "when you
+     * answer a question, check whether a probe was already asking it" - where GATEWAY-ERROR work
+     * settled a smarttracklist probe's removal condition from a direction that never touched the
+     * probe. Same failure, one level up: a BLOCKER rather than a probe, and a note rather than a
+     * log line. THE GENERAL FORM: when you record something as blocked, the blocker is a claim with
+     * an expiry date, and nothing tells you when it expires. Re-read it before assuming it holds.
      */
     override suspend fun loadTrack(track: Track, isDownload: Boolean): Track {
         val cached = track.extras["cached"]?.toBoolean() ?: false

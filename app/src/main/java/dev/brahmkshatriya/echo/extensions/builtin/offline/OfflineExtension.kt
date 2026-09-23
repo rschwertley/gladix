@@ -60,6 +60,29 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 @OptIn(UnstableApi::class)
+/**
+ * ⚠⚠ NOTHING THIS EXTENSION PRODUCES IS SHAREABLE, AS A CLASS - AND THE STATEMENT OF THAT IS
+ * THE ABSENCE OF ShareClient FROM THE LIST BELOW. Do not add it, and do not "fix" sharing by setting
+ * isShareable = false on individual items: the constructions are spread across Convertors.toAlbum /
+ * toArtist / toPlaylist, MediaStoreUtils' Track and Artist builders and the stub at MediaStoreUtils,
+ * plus radio() below - SIX-PLUS SITES WITH NO CHOKEPOINT. Flagging one would imply the others are
+ * deliberate when they are merely untouched, and a seventh would arrive unflagged.
+ *
+ * WHY IT IS A CLASS PROPERTY RATHER THAN A PER-ITEM ONE: these are LOCAL FILES ON ONE DEVICE. A
+ * recipient cannot resolve a track, an album, a playlist or an artist from here - not just a radio.
+ * There is no id we could emit that means anything on another install.
+ *
+ * ⚠️ THE EVIDENCE, AND radio() IS THE SHARPEST CASE: its id is `radio_${item.hashCode()}` - a
+ * JVM hash, process-local, with the real payload in extras that any share format would discard.
+ * THAT ID HAS ALREADY BEEN CHANGED ONCE, DELIBERATELY: the August 2026 Track.hashCode fix recorded
+ * "a Track seed's generated radio-id string switches from value-based to id-based (COSMETIC, NOT A
+ * BREAK)" - judged safe precisely because NOTHING COULD DEPEND ON ITS STABILITY. A shared link would
+ * have been exactly such a dependency, and would have broken silently at that commit.
+ * ⚠️ TWO FOR TWO ON RADIOS, each for its own reason: Deezer's carry another entity's id
+ * (an artist's, or a randomly chosen seed track's - see DeezerExtension.loadRadio); this one carries
+ * a derived string we have already reserved the right to change. Neither is a promise anyone can
+ * share. That is what makes the unshareability structural rather than incidental.
+ */
 class OfflineExtension(
     private val context: Context,
 ) : ExtensionClient, HomeFeedClient, TrackClient, AlbumClient, ArtistClient, PlaylistClient,

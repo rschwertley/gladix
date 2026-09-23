@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.link
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import java.io.IOException
@@ -10,7 +11,23 @@ import java.net.URL
 
 class Opener : Activity() {
 
-    private val extensionId = "deezerApp"
+    // ⚠⚠ READ FROM OUR OWN MANIFEST, NOT HARDCODED - IT WAS "deezerApp" AND THE EXTENSION'S
+    // ID IS "deezer", SO EVERY URI THIS ACTIVITY EMITTED NAMED AN EXTENSION THAT DOES NOT EXIST.
+    // The two have NEVER agreed: `git log -S` shows both values arriving together in the
+    // submodule-flattening commit, and extId has never been "deezerApp" in this repo - so this is
+    // inherited from upstream rather than a rename that missed a string.
+    // ⚠⚠ THE META-DATA IS THE SAME SINGLE SOURCE THE HOST READS, WHICH IS WHY THIS CANNOT
+    // DRIFT AGAIN. `<meta-data android:name="id" android:value="${id}">` is filled from
+    // gradle.properties' extId via manifestPlaceholders, and ExtensionParser.parseManifest builds
+    // an extension's Metadata.id from `metaData.getString("id")` - this exact key. Hardcoding any
+    // string here re-creates a second copy of a value that already has one authority; a
+    // buildConfigField would too. Pair with the reader, do not restate.
+    private val extensionId by lazy {
+        runCatching {
+            packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+                .metaData?.getString("id")?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,7 +122,12 @@ class Opener : Activity() {
             else -> return
         }
 
-        val uriString = "echo://music/$extensionId/$path"
+        // Nothing useful can be built without it - the host would open a media page for an
+        // extension it cannot find, which resolves to a spinner that never completes (see
+        // MediaViewModel: extensionFlow is `list.find { it.id == extensionId }`, and the init
+        // collector early-returns on null, leaving itemResultFlow null and isRefreshing true).
+        val id = extensionId ?: return
+        val uriString = "echo://music/$id/$path"
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uriString)))
         finishAndRemoveTask()
     }
