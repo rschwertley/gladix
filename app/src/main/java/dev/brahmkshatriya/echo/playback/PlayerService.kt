@@ -206,12 +206,12 @@ class PlayerService : MediaLibraryService() {
                     putBoolean("normalization_force_disabled_v1", true)
                 }
             }
-            crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, false)
+            crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, true)
             // Clamp on READ. The sliders only clamp what they DISPLAY — neither persists the
             // corrected value (the programmatic `value =` assignment happens before the change
             // listener is attached), so anyone who stored 6-12 while that was the allowed range
             // still has it, and without this they get a 12-second fade while both UIs show 5.
-            crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 2)
+            crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 4)
                 .coerceIn(CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX) * 1000
             normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
         }

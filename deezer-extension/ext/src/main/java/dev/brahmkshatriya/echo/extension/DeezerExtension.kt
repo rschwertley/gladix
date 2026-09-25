@@ -116,13 +116,19 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                         "Audio quality used on mobile data connections",
                         mutableListOf("High (FLAC)", "Medium (320kbps)", "Low (128kbps)", "Auto (Global App Setting)"),
                         mutableListOf("highest", "medium", "lowest", "off"),
-                        3
+                        // index 2 == "lowest" == 128kbps. Deliberately NOT "off" (Auto): Auto falls
+                        // through to the APP-level stream_quality, which defaults to "medium", so
+                        // mobile data would stream 320kbps. Pinning it here caps mobile data while
+                        // Wi-Fi stays on index 3 (Auto) and therefore still gets the app's Medium.
+                        2
                     ),
                     SettingSlider(
                         "Image Quality",
                         "image_quality",
                         "Choose your preferred image quality (Can impact loading times)",
-                        240,
+                        // 480 = 120 * 4, on the slider's step grid (120..1920 step 120). Mirrored at
+                        // DeezerParser's getInt fallback, which is the only read.
+                        480,
                         120,
                         1920,
                         120
@@ -993,7 +999,14 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     private val shelf: String get() = session.settings?.getString("shelf") ?: DEFAULT_TYPE
-    private val log: Boolean get() = session.settings?.getBoolean("log") == true
+    // `!= false` so an UNSET key means ON, matching the SettingSwitch default of true declared in
+    // getSettingItems. It read `== true` until 2026-09-24, i.e. unset meant OFF, so the screen
+    // showed logging enabled while nothing was ever sent.
+    // WHAT IT ENABLES, because "logging" understates it: onMarkAsPlayed -> api.log -> DeezerUtil.log
+    // posts the gateway method `log.listen` after 30s of playback, carrying the track id and the
+    // page context. It populates the account's Deezer listening history, which is what makes the
+    // Deezer Home feed personalised. It is a report to Deezer, not a local log.
+    private val log: Boolean get() = session.settings?.getBoolean("log") != false
     private val history: Boolean get() = session.settings?.getBoolean("history") != false
 
     companion object {

@@ -484,6 +484,31 @@ abstract class AndroidAutoCallback(
                 null
             )
         }
+        // ⚠⚠ [DECISION 2026-09-23] AA SHOWED DEEZER WITH NO ITEMS WHILE YOUTUBE MUSIC WORKED -
+        // SEEN ONCE, NOT PURSUED. Play updated the app mid-drive (1107 -> 1109) with Android Auto
+        // connected; a full reconnect fixed it. The examined hypothesis was a credential-hydration
+        // race: a cold process, AA reconnects and browses before ExtensionLoader's currentUsersFlow
+        // delivers setLoginUser, so Deezer's handleArlExpiration throws LoginRequired on empty
+        // credentials. IT IS PROBABLY NOT THE CAUSE, and the reason is worth keeping: AA's root build
+        // calls Injectable.value() for EVERY enabled extension (Extension<*>.toMediaItem, for the
+        // browsable flag), and that same value() drains the queued setLoginUser - so hydration
+        // completes during ROOT BUILD, before any deep node is ever requested. For the race to bite,
+        // the Room emission would have to land after a root build that itself waits up to 30s for the
+        // package scan.
+        // NOT REPRODUCIBLE HERE: the installed app is Play-signed and local builds are debug-signed,
+        // so `adb install -r` cannot mimic the update restart, and force-stop is not equivalent (it
+        // sets the stopped state, and the manual launch needed to clear it warms value() and destroys
+        // the race). NOT PURSUING UNLESS IT RECURS.
+        // ⚠️ IF IT RECURS, THE TILE TEXT IS THE DISCRIMINATOR AND IT COSTS NOTHING TO READ:
+        //   "Failed to load content"                       auto_error_loading -> an extension
+        //       threw; getList also prints a stack trace and emits to throwFlow, so System.err will
+        //       name it (ClientException$LoginRequired for the hydration story).
+        //   "Content took too long to load, please try again"  auto_timed_out -> the
+        //       withTimeoutOrNull(15_000) below expired. Throws nothing, prints nothing, reports
+        //       nothing - silence on System.err is what distinguishes it.
+        // There is NO log line anywhere in this per-node path, so deep-node silence is not evidence
+        // that the browse did not run.
+        //
         // ⚠️ KNOWN GAP, RECORDED 2026-09-07, DELIBERATELY NOT FIXED HERE. This per-node dispatch
         // resolves extId against the RAW list: `extensions` is extensionList.value verbatim (the else-branch
         // at the top of onGetChildren), while the ROOT branch just above filters

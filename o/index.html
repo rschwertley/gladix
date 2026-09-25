@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open in Gladix</title>
+<meta name="robots" content="noindex">
+<!--
+  Landing page for Gladix share links: /gladix/o/?e=<ext>&t=<type>&i=<id>&n=<name>&s=<subtitle>
+
+  This page is the FALLBACK, not the primary path. When Gladix is installed and the app link is
+  verified, Android intercepts the URL and this HTML is never fetched. It is what a person WITHOUT
+  the app sees, so it must work with no app, no network beyond this file, and no assumptions.
+
+  Constraints that are deliberate, not incidental:
+    - NO EXTERNAL REQUESTS. No fonts, no images, no analytics. Everything is inline. A share link
+      must not leak a visit to a third party.
+    - NO GOOGLE PLAY LINK, DELIBERATELY. Play distribution is INVITE-ONLY, so a Play button would
+      send most visitors to a page they cannot install from. "Get Gladix" points at the GitHub
+      releases page instead - the SAME repo the in-app updater checks, which is
+      R.string.app_github_repo = "rschwertley/gladix", read by AppUpdater into its
+      api.github.com/repos/$githubRepo/releases calls. If that string ever changes, this link is a
+      second place that has to move with it.
+    - EVERY PARAMETER IS UNTRUSTED. They arrive from a URL anyone can edit, so nothing is ever
+      written with innerHTML, and the Deezer link is built only from an allow-listed type and a
+      digits-only id. Garbage in any field degrades to "show less", never to a broken or hostile page.
+    - The path is /gladix/o/ and must stay in step with AndroidManifest's
+      android:pathPrefix="/gladix/o/" and FragmentUtils.GLADIX_LINK_PREFIX. All three change together.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #faf7fb;
+    --card: #ffffff;
+    --text: #1b1520;
+    --muted: #6b6172;
+    --line: #e7e0ea;
+    --accent: #c2185b;
+    --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141017;
+      --card: #1e1822;
+      --text: #f2ecf5;
+      --muted: #a396ad;
+      --line: #2e2634;
+      --accent: #ff4d8d;
+      --accent-text: #2a0013;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 28px 24px 24px;
+    text-align: center;
+  }
+  .mark {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+  h1 {
+    font-size: 24px;
+    line-height: 1.25;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .sub {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+  .kind {
+    margin: 16px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .actions { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+  a.btn {
+    display: block;
+    padding: 14px 18px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+    border: 1px solid transparent;
+  }
+  a.primary { background: var(--accent); color: var(--accent-text); }
+  a.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+  a.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .hint {
+    margin: 18px 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <p class="mark">Gladix</p>
+    <h1 id="title">Shared from Gladix</h1>
+    <p class="sub" id="subtitle" hidden></p>
+    <p class="kind" id="kind" hidden></p>
+
+    <div class="actions">
+      <a class="btn primary" id="deezer" hidden rel="noopener noreferrer">Listen on Deezer</a>
+      <a class="btn secondary" id="get"
+         href="https://github.com/rschwertley/gladix/releases"
+         rel="noopener">Get Gladix</a>
+    </div>
+
+    <p class="hint">If you already have Gladix installed, this link opens straight in the app.</p>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  // Fail soft, always. A thrown error here would leave a blank page, which is strictly worse than
+  // the generic card already rendered in the HTML above — so every enhancement below is additive.
+  try {
+    var params = new URLSearchParams(window.location.search);
+
+    // Cap length before display. A share link can carry an arbitrarily long name; the card should
+    // stay a card. Trimming also turns "?n=" and "?n=%20%20" into the same empty case.
+    function read(key) {
+      var raw = params.get(key);
+      if (raw === null) return "";
+      var value = raw.trim();
+      return value.length > 200 ? value.slice(0, 200) + "…" : value;
+    }
+
+    var extension = read("e").toLowerCase();
+    var type = read("t").toLowerCase();
+    var id = read("i");
+    var name = read("n");
+    var subtitle = read("s");
+
+    // Only these four are meaningful; anything else is treated as unknown rather than rendered.
+    var TYPES = { track: "Track", album: "Album", artist: "Artist", playlist: "Playlist" };
+    var typeLabel = Object.prototype.hasOwnProperty.call(TYPES, type) ? TYPES[type] : "";
+
+    // textContent, never innerHTML: these strings come from a URL and are not trusted markup.
+    if (name) document.getElementById("title").textContent = name;
+
+    if (subtitle) {
+      var subtitleEl = document.getElementById("subtitle");
+      subtitleEl.textContent = subtitle;
+      subtitleEl.hidden = false;
+    }
+
+    if (typeLabel) {
+      var kindEl = document.getElementById("kind");
+      kindEl.textContent = typeLabel;
+      kindEl.hidden = false;
+    }
+
+    // Deezer web links are /<type>/<numeric id>. The id is checked against digits only — that both
+    // rejects malformed links and makes it impossible to smuggle a path, a query or a scheme into
+    // the href. A link that fails any check is simply not offered; Get Gladix still is.
+    if (extension === "deezer" && typeLabel && /^[0-9]{1,20}$/.test(id)) {
+      var deezerEl = document.getElementById("deezer");
+      deezerEl.href = "https://www.deezer.com/" + type + "/" + id;
+      deezerEl.textContent = "Listen on Deezer";
+      deezerEl.hidden = false;
+    } else {
+      // No playable destination to offer, so the remaining action carries the card on its own and
+      // is styled as the primary one. Without this the page would show a single muted outline
+      // button and read as though something were still loading.
+      var getEl = document.getElementById("get");
+      getEl.className = "btn primary";
+    }
+
+    if (name) {
+      document.title = typeLabel ? name + " • " + typeLabel + " on Gladix" : name + " on Gladix";
+    }
+  } catch (e) {
+    // Generic card stands. Nothing to report to, and nothing the visitor could do about it.
+  }
+})();
+</script>
+</body>
+</html>

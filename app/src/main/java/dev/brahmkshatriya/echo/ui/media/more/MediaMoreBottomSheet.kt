@@ -29,6 +29,7 @@ import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.databinding.DialogMediaMoreBinding
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.MediaState
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.gladixLinkFor
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
@@ -370,6 +371,33 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             ) { vm.onShare() }
             state == null && client is ShareClient && item.isShareable -> placeholderButton(
                 "share", R.string.share, R.drawable.ic_share
+            )
+            else -> null
+        },
+        // ⚠⚠ SAME CONDITION AS THE SHARE BUTTON ABOVE - showShare, WHICH REQUIRES
+        // ShareClient - PLUS gladixLinkFor RETURNING NON-NULL. The ShareClient half looks
+        // unnecessary (this link needs no URL from the extension) and is not: OfflineExtension's
+        // items leave isShareable at its `true` default with no chokepoint to set it, so a weaker
+        // condition would silently offer a shareable link to local files resolvable by nobody.
+        // The gap that leaves - a network extension with no ShareClient cannot be link-shared - is
+        // deliberate; closing it needs a capability meaning "my items are resolvable by id", which
+        // does not exist. Full reasoning at MediaDetailsViewModel.share.
+        // ⚠⚠ IT HAS A placeholderButton TWIN BECAUSE THIS SHEET RENDERS IN ONE PASS AND
+        // A LATE ROW WOULD SHIFT THE ONES BELOW IT - the flash/jump that every other async button
+        // here already has a placeholder to prevent. An entry with no placeholder is not "safer",
+        // it reintroduces a fixed bug.
+        // ⚠️ AND THE KEY IS gladixLinkFor ITSELF, EVALUATED ON THE STUB. Everything it
+        // refuses is knowable before the load: the TYPE comes from the item's class, the blank-id
+        // check reads item.id, and the unified check reads item.extras - all present on the
+        // unloaded item. So the placeholder and the real button ask the same question of two
+        // different snapshots rather than approximating one with the other.
+        when {
+            state?.showShare == true && gladixLinkFor(extensionId, state.item) != null -> button(
+                "share_gladix", R.string.share_gladix_link, R.drawable.ic_share
+            ) { vm.onShareGladixLink() }
+            state == null && client is ShareClient && item.isShareable
+                && gladixLinkFor(extensionId, item) != null -> placeholderButton(
+                "share_gladix", R.string.share_gladix_link, R.drawable.ic_share
             )
             else -> null
         }

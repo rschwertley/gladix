@@ -507,6 +507,21 @@ object AppUpdater {
     ) : Exception(message)
 
     /**
+     * A 404 from the releases endpoint: the repo has no releases, or no longer exists.
+     *
+     * ⚠⚠ IT EXISTS TO BE EXCLUDED FROM `anyFailed`, NOT TO BE RENDERED DIFFERENTLY. The
+     * message and every emit path are unchanged; the ONLY consumer is ExtensionsViewModel.updateExt,
+     * which maps it to ExtUpdate.PermanentlyFailed so the 24h throttle is not zeroed. Before this,
+     * a dead repo set anyFailed on every pass, the pass zeroed last_update_check, and the next
+     * launch ran the whole update pass again - permanently. Same loop shape as the rate limit, from
+     * the opposite cause: a failure that retrying can never fix.
+     * ⚠️ 404 ONLY. 403 stays a plain Exception and therefore transient, deliberately: that
+     * arm covers a refusal that CAN clear (secondary rate limiting, a temporarily private repo), and
+     * treating it as permanent would stop retrying something that would have succeeded.
+     */
+    class GithubNoReleasesException(message: String) : Exception(message)
+
+    /**
      * ⚠⚠ WALKS THE WHOLE CAUSE CHAIN, AND MUST. This exception is wrapped at least twice before
      * any caller sees it - getUpdateFileUrl's runIOCatching, then getExtensionUpdate's
      * `it.named(extension.name)` - so an `is` test against the throwable, or against its ROOT cause,
@@ -518,6 +533,23 @@ object AppUpdater {
         var t: Throwable? = this
         while (t != null) {
             if (t is GithubRateLimitException) return true
+            t = t.cause
+        }
+        return false
+    }
+
+    /**
+     * ⚠⚠ WALKS THE CHAIN, AND UNLIKE THE RATE LIMIT IT HAS NO CHOICE. A rate limit is
+     * RETHROWN UNWRAPPED by getGithubUpdateUrl's getOrElse, so a top-level check would nearly work
+     * there; this one is always wrapped by that same getOrElse into
+     * "Failed to fetch latest release for $user/$repo", and then again by getExtensionUpdate's
+     * named(). A direct `is` test would never match - the third instance of the wrong-node type
+     * check this project has recorded.
+     */
+    fun Throwable.isGithubNoReleases(): Boolean {
+        var t: Throwable? = this
+        while (t != null) {
+            if (t is GithubNoReleasesException) return true
             t = t.cause
         }
         return false
@@ -584,7 +616,9 @@ object AppUpdater {
             response.code == 403 ->
                 Exception("GitHub refused the request for $user/$repo (403)$suffix")
 
-            response.code == 404 -> Exception(
+            // Typed, and the message is byte-identical to what it threw before - see
+            // GithubNoReleasesException for why the type exists and why 403 above does not get one.
+            response.code == 404 -> GithubNoReleasesException(
                 "No releases found for $user/$repo " + EM_DASH +
                     " it may have no releases, or may no longer exist"
             )

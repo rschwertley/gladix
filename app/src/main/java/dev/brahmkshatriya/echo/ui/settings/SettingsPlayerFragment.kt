@@ -73,7 +73,10 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     entryValues = streamQualities
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
-                    setDefaultValue(streamQualities[2])
+                    // streamQualities[1] == "medium", matching PlayerService.select's `default`
+                    // parameter. This row declared [2] ("lowest") while every read used [1], so the
+                    // screen showed Lowest on a device that was streaming Medium.
+                    setDefaultValue(streamQualities[1])
                     addPreference(this)
                 }
 
@@ -86,7 +89,10 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     entryValues = streamQualities + "off"
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
-                    setDefaultValue(streamQualities[1])
+                    // "off" is the Auto entry appended to entryValues just above, and matches the
+                    // default PlayerService.select reads for this key. It declared "medium" while
+                    // every read used "off", so the screen showed Medium on a device using Auto.
+                    setDefaultValue("off")
                     addPreference(this)
                 }
             }
@@ -143,7 +149,13 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     summary = getString(R.string.crossfade_summary)
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
-                    setDefaultValue(false)
+                    // ON by default as of 2026-09-24. This reverses the August decision that shipped
+                    // it OFF at 2s; the default now matches PlayerService's and
+                    // AudioEffectsBottomSheet's reads, and the duration default moved to 4s. FOUR
+                    // PLACES HOLD THIS ONE VALUE - this row, the visibility gate below,
+                    // PlayerService.onSharedPreferenceChanged's re-read, and AudioEffectsBottomSheet.
+                    // Change them together or the sheet and the engine disagree.
+                    setDefaultValue(true)
                     setOnPreferenceChangeListener { _, newValue ->
                         skipFadeOnAlbums.isVisible = newValue as Boolean
                         true
@@ -161,12 +173,14 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                         CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX
                     )
                     isIconSpaceReserved = false
-                    setDefaultValue(2)
+                    // 4 is inside CROSSFADE_DURATION_MIN..MAX (1..5). Mirrored at PlayerService's and
+                    // AudioEffectsBottomSheet's getInt defaults.
+                    setDefaultValue(4)
                     addPreference(this)
                 }
 
                 skipFadeOnAlbums.isVisible =
-                    preferenceManager.sharedPreferences?.getBoolean(CROSSFADE_ENABLED, false) == true
+                    preferenceManager.sharedPreferences?.getBoolean(CROSSFADE_ENABLED, true) == true
                 addPreference(skipFadeOnAlbums)
 
                 SwitchPreferenceCompat(context).apply {

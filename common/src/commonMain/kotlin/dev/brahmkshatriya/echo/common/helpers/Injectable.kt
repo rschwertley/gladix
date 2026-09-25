@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.common.helpers
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -53,11 +54,53 @@ class Injectable<T>(
     suspend fun value() = runCatching {
         mutex.withLock {
             val t = data.value.getOrThrow()
-            injections.forEach { it(t) }
-            injections = emptyList()
-            injectionsMap.values.forEach { it(t) }
-            injectionsMap.clear()
-            t
+            try {
+                injections.forEach { it(t) }
+                // ⚠⚠ STILL AFTER THE forEach, AND STILL NOT IN THE finally. A failing list
+                // entry MUST leave `injections` pending so a later value() re-runs it - that
+                // self-healing is the behaviour the 2026-09-22 rethrow relied on, and the fix below
+                // deliberately does not touch it.
+                injections = emptyList()
+                t
+            } finally {
+                // ⚠⚠ DRAINED IN A finally SO THE LIST FAILING CANNOT STRAND IT - THIS IS THE
+                // FIX (2026-09-23), and it is the whole of it. Before this, a throw from the list
+                // skipped both this drain and the clear, so entries queued through injectOrRun could
+                // NEVER run: ExtensionLoader delivers `setLoginUser` here, so a Deezer session's
+                // credential hydration was stranded by an unrelated injection failure. See the
+                // history above.
+                // ⚠️ value() STILL FAILS WHEN THE LIST FAILED. The exception propagates
+                // through this finally untouched, so isSuccess is unchanged for that case and
+                // ExtensionUtils.isClient keeps FAILING CLOSED on a failed activation. Only the side
+                // effect is new. Do not convert this into a catch.
+                // ⚠️ PER-ENTRY ISOLATION, AND IT CHANGES ONE CASE DELIBERATELY: a throwing MAP
+                // entry no longer fails value() and no longer blocks the clear. Previously it threw
+                // on every call forever (the clear was unreachable), which made the extension
+                // permanently uninjectable - the exact shape that locked users out of Deezer in
+                // build 1108. A login-hydration failure must not be able to remove an extension's
+                // capabilities; it should fail visibly at the point of use instead.
+                // ⚠️ NOTHING IS REPORTED FROM HERE, BY DESIGN. Reporting would need a flow
+                // this class has no reference to, and adding a constructor parameter would change
+                // :common's public ABI - which third-party extensions link against without bundling.
+                // The report is done AT THE QUEUING SITE instead: see ExtensionLoader's
+                // injectOrRun("user") block, which catches its own failure and emits to throwFlow.
+                // A new injectOrRun caller that wants reporting must do the same - this catch is a
+                // belt, not the reporter.
+                // ⚠️ CancellationException IS RETHROWN, so a cancelled drain leaves the map
+                // PENDING and unclear - correct, because nothing ran and it must still be able to.
+                // That is the one path where "drained regardless" does not hold, and it matches the
+                // pre-fix behaviour exactly.
+                injectionsMap.values.forEach { injection ->
+                    try {
+                        injection(t)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        // Isolated on purpose; reported by the caller that queued it.
+                    }
+                }
+                injectionsMap.clear()
+            }
         }
     }
 

@@ -817,7 +817,9 @@ class DeezerParser(private val session: DeezerSession) {
 
     private fun getCover(md5: String?, type: String?): ImageHolder? {
         if (md5.isNullOrEmpty() || type.isNullOrEmpty()) return null
-        val size = session.settings?.getInt("image_quality") ?: 240
+        // Mirrors the SettingSlider default in DeezerExtension.getSettingItems; both were 240 until
+        // 2026-09-24. This is the only read of the key.
+        val size = session.settings?.getInt("image_quality") ?: 480
         val url = "https://cdn-images.dzcdn.net/images/$type/$md5/${size}x${size}-000000-80-0-0.jpg"
         return url.toImageHolder()
     }

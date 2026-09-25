@@ -165,7 +165,10 @@ class SettingsLookFragment : BaseSettingsFragment() {
                     summary = getString(R.string.scroll_bar_summary)
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
-                    setDefaultValue(false)
+                    // ON by default as of 2026-09-24; mirrored at FastScrollerHelper
+                    // .isScrollBarEnabled, which is the only read. Note this row is not even built on
+                    // TV (the isTv() guard above), so the default there comes from that read alone.
+                    setDefaultValue(true)
                     addPreference(this)
                 }
 

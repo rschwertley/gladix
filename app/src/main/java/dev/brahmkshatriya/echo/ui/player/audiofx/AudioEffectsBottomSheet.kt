@@ -133,9 +133,9 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
 
             loudnessNormalization.isVisible = false
 
-            crossfadeSwitch.isChecked = appSettings.getBoolean(CROSSFADE_ENABLED, false)
+            crossfadeSwitch.isChecked = appSettings.getBoolean(CROSSFADE_ENABLED, true)
             crossfadeDurationSlider.isEnabled = crossfadeSwitch.isChecked
-            val durationValue = appSettings.getInt(CROSSFADE_DURATION, 2)
+            val durationValue = appSettings.getInt(CROSSFADE_DURATION, 4)
                 .coerceIn(CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX)
             crossfadeDurationSlider.value = durationValue.toFloat()
             crossfadeDurationValue.text = "${durationValue}s"

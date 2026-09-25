@@ -19,7 +19,16 @@ import me.zhanghai.android.fastscroll.FastScrollerBuilder
 
 object FastScrollerHelper {
     const val SCROLL_BAR = "scroll_bar"
-    fun View.isScrollBarEnabled() = context.getSettings().getBoolean(SCROLL_BAR, false)
+    // Default ON as of 2026-09-24, mirroring SettingsLookFragment's row. Sole read of the key; every
+    // other mention is that row's `key =`.
+    // ⚠️ [CORRECTED 2026-09-24] AN EARLIER VERSION OF THIS NOTE SAID "on TV it is the only
+    // declaration too", IMPLYING THE NEW true DEFAULT REACHES TV. IT DOES NOT. This function has
+    // exactly one caller, isFastScrollUsable below, which is `!isTv() && isScrollBarEnabled()` -
+    // so isTv() short-circuits before the pref is read and no default here can put a scroller on
+    // TV. The switch being absent from that screen is the SECOND gate, not the only one.
+    // The wrong reading came from stopping at this line instead of following its single caller two
+    // lines down; kept because the same shortcut is the obvious one to take again.
+    fun View.isScrollBarEnabled() = context.getSettings().getBoolean(SCROLL_BAR, true)
 
     /**
      * The fast scroller is a DRAG-TO-SCROLL affordance, so it is never applied on TV regardless of the

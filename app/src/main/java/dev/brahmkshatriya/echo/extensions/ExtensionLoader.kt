@@ -182,12 +182,30 @@ class ExtensionLoader(
         list.onEach { result ->
             scope.launch(Dispatchers.IO) {
                 val (metadata, injectable) = result.getOrNull() ?: return@launch
+                // ⚠⚠ THE INNER runCatching IS LOAD-BEARING AND IS NOT A DUPLICATE OF THE
+                // OUTER ONE - THEY CATCH FAILURES FROM TWO DIFFERENT MOMENTS. injectOrRun either
+                // RUNS this block now (when the client is already constructed) or QUEUES it to run
+                // later, inside Injectable.value(). The outer runCatching only ever sees the first
+                // case; a failure of the QUEUED run happens on someone else's call stack entirely.
+                // ⚠️ AND Injectable DELIBERATELY DOES NOT REPORT IT. Its drain isolates a
+                // failing entry so one bad injection cannot revoke an extension's capabilities, but
+                // it has no flow to report through and cannot be given one without changing
+                // :common's ABI. So THIS is the reporting site for setLoginUser, on both paths.
+                // Without it a failed credential hydration is silent: the extension looks healthy
+                // and every call that needs credentials fails somewhere far away.
+                // ⚠️ ANY FUTURE injectOrRun CALLER MUST DO THE SAME. The contract is: the
+                // queuing caller owns reporting, because only it knows what the block was for.
                 runCatching {
                     injectable.injectOrRun("user") {
                         if (this !is LoginClient) return@injectOrRun
-                        val newCurr = users.getUser(metadata)
-                        val user = newCurr?.let { db.getUser(it) }
-                        setLoginUser(user)
+                        runCatching {
+                            val newCurr = users.getUser(metadata)
+                            val user = newCurr?.let { db.getUser(it) }
+                            setLoginUser(user)
+                        }.onFailure { e ->
+                            if (e is CancellationException) throw e
+                            app.throwFlow.emit(e.toAppException(metadata))
+                        }
                     }
                 }.onFailure {
                     app.throwFlow.emit(it.toAppException(metadata))

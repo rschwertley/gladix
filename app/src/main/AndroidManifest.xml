@@ -141,13 +141,19 @@
                  because the release build type signs with it) and Play App Signing. Both are required:
                  with only one, that half of the installs silently fall back to the browser.
 
-                 ⚠⚠ pathPrefix IS /gladix/open/ AND NOT /gladix/, AND THE REASON IS NOT IN
+                 ⚠⚠ pathPrefix IS /gladix/o/ AND NOT /gladix/, AND THE REASON IS NOT IN
                  THIS FILE. Verification is host-level, but the filter is ours to narrow - and the TV
                  pairing page lives at rschwertley.github.io/gladix/pair.html, which
                  R.string.tv_pairing_option_3 tells the user to OPEN IN A BROWSER. Claiming /gladix/
                  would make that link launch the app instead, breaking pairing for exactly the people
                  who have Gladix installed. Nothing here references that page, so the constraint is
                  invisible from this file.
+                 ⚠️ THIS LINE READ /gladix/open/ UNTIL 2026-09-24 WHILE THE data ELEMENT BELOW
+                 HAS ALWAYS SAID /gladix/o/. Noted rather than silently corrected because the wrong
+                 value very nearly got an open/index.html built on the Pages site - the landing page
+                 lives at /gladix/o/, matching this filter and FragmentUtils.GLADIX_LINK_PREFIX.
+                 THREE PLACES, ONE VALUE: this filter, that constant, and o/index.html in the
+                 rschwertley/gladix repo root. Nothing checks that they agree.
 
                  ⚠️ https ONLY. We never emit http, so claiming it would add surface we do
                  not use. Format and parsing: FragmentUtils.openItemFragmentFromGladixLink.

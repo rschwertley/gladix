@@ -27,6 +27,7 @@ import dev.brahmkshatriya.echo.utils.AppUpdater
 import dev.brahmkshatriya.echo.utils.AppUpdater.downloadUpdate
 import dev.brahmkshatriya.echo.utils.AppUpdater.getUpdateFileUrl
 import dev.brahmkshatriya.echo.utils.AppUpdater.githubRateLimitReset
+import dev.brahmkshatriya.echo.utils.AppUpdater.isGithubNoReleases
 import dev.brahmkshatriya.echo.utils.AppUpdater.isGithubRateLimit
 import dev.brahmkshatriya.echo.utils.AppUpdater.updateApp
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
@@ -144,6 +145,11 @@ class ExtensionsViewModel(
                         ExtUpdate.Updated -> anyUpdateFound = true
                         ExtUpdate.Failed -> anyFailed = true
                         ExtUpdate.UpToDate -> Unit
+                        // Deliberately NOT anyFailed, and deliberately not a break. See
+                        // ExtUpdate.PermanentlyFailed. The user has already been told (manual) or the
+                        // report already filed silently (automatic); all this arm decides is that the
+                        // throttle survives, so the next pass is tomorrow rather than next launch.
+                        ExtUpdate.PermanentlyFailed -> Unit
                         is ExtUpdate.RateLimited -> {
                             rateLimited = result.error
                             break
@@ -304,13 +310,32 @@ class ExtensionsViewModel(
         data object UpToDate : ExtUpdate
         data object Failed : ExtUpdate
         data class RateLimited(val error: Throwable) : ExtUpdate
+
+        /**
+         * A failure retrying cannot fix - today only a 404 from the releases endpoint.
+         *
+         * ⚠⚠ DISTINCT FROM [Failed] FOR EXACTLY ONE REASON: it must not set `anyFailed`,
+         * because that zeroes last_update_check and a dead repo would then re-run the whole pass on
+         * every launch, for ever. It is NOT quieter than [Failed] - the error still reaches
+         * throwFlow (manual) or silentThrowFlow (automatic) from getExtensionUpdate, untouched.
+         * ⚠️ AND UNLIKE [RateLimited] IT DOES NOT BREAK THE LOOP. A rate limit means the
+         * next repo would fail identically; a missing repo says nothing about any other, so the
+         * pass continues and the remaining extensions are still checked.
+         */
+        data object PermanentlyFailed : ExtUpdate
     }
 
     private suspend fun updateExt(
         ext: Extension<*>, show: Boolean = false, announce: Boolean = true,
     ): ExtUpdate {
         val file = getExtensionUpdate(ext, show, announce).getOrElse {
-            return if (it.isGithubRateLimit()) ExtUpdate.RateLimited(it) else ExtUpdate.Failed
+            // Order matters only for readability - the two classifiers are disjoint by construction
+            // (different exception types). Both walk the cause chain; see their notes.
+            return when {
+                it.isGithubRateLimit() -> ExtUpdate.RateLimited(it)
+                it.isGithubNoReleases() -> ExtUpdate.PermanentlyFailed
+                else -> ExtUpdate.Failed
+            }
         } ?: return ExtUpdate.UpToDate
         val type = ext.metadata.importType
         if (type == ImportType.File) {

@@ -338,6 +338,9 @@
     <string name="n_dot_x" translatable="false">%1$d. %2$s</string>
 
     <string name="share">Share</string>
+    <!-- Deliberately NOT "Share to Gladix users": the landing page handles recipients who do
+         not have the app, so the link works for anyone. -->
+    <string name="share_gladix_link">Share Gladix link</string>
     <string name="sharing_x">Sharing %1$s</string>
 
     <string name="save_to_library">Save to library</string>

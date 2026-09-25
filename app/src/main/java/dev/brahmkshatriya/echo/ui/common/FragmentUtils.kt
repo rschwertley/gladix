@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.playback.PlayerCommands
 import dev.brahmkshatriya.echo.playback.PlayerService
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
@@ -257,6 +258,67 @@ object FragmentUtils {
     // the project site beginning with "o". The single-letter segment is only safe BECAUSE of the
     // slash. Keep this in step with AndroidManifest.xml's pathPrefix.
     private const val GLADIX_LINK_PREFIX = "/gladix/o/"
+
+    /**
+     * Builds the share link for [item], or null when no correct link can be made.
+     *
+     * ⚠⚠ IT LIVES BESIDE THE PARSER ON PURPOSE. openItemFragmentFromGladixLink reads
+     * e/t/i/n and this writes them; keeping producer and consumer in one file is what stops the
+     * two drifting, and it is why this does not duplicate GLADIX_LINK_HOST/PREFIX. Those two
+     * constants are already one copy too many (the manifest holds the third) - do not make a
+     * fourth somewhere else.
+     *
+     * ⚠⚠ RETURNING null IS A REAL ANSWER AND THE CALLER MUST HIDE THE ACTION, not
+     * fall back to something. Three ways to get it:
+     *   e would be "unified"   An unstamped item viewed through Unified. A link saying
+     *                        e=unified is DEAD ON ARRIVAL - the recipient rebuilds a stub with no
+     *                        extras, and UnifiedExtension routes by extras[EXTENSION_ID], so
+     *                        Map.extensionId throws ExtensionNotFoundException(null) before
+     *                        anything resolves. Better to offer nothing than a link that cannot work.
+     *   unsupported type   openMediaItemFragment handles exactly track/album/artist/playlist. A
+     *                        Radio link would parse and then hit `else -> null` -> "Invalid item
+     *                        type" on the recipient's device. See the radio note at that function.
+     *   blank id           nothing to resolve.
+     *
+     * ⚠️ s IS BUILT FROM ARTISTS, NOT FROM subtitleWithOutE, and the difference is not
+     * cosmetic: Track.subtitleWithOutE LEADS WITH DURATION ("03:21 • Daft Punk"), and
+     * subtitleWithE prepends the explicit marker. Both would ride into the URL and onto the
+     * landing page, where a recipient wants the attribution and nothing else. Omitted for Artist
+     * (no artists to name) and whenever blank. The app never reads s - only the landing page does.
+     */
+    fun gladixLinkFor(extensionId: String, item: EchoMediaItem): String? {
+        // The STAMP wins over the extension being browsed: an item seen through Unified must name
+        // the sub-extension that can actually resolve it, which is also what the recipient wants
+        // since they may not use Unified at all.
+        val ext = item.extras[UnifiedExtension.EXTENSION_ID] ?: extensionId
+        if (ext.isBlank() || ext == UnifiedExtension.UNIFIED_ID) return null
+        val type = when (item) {
+            is Track -> "track"
+            is Album -> "album"
+            is Artist -> "artist"
+            is Playlist -> "playlist"
+            else -> return null
+        }
+        if (item.id.isBlank()) return null
+        val artists = when (item) {
+            is Track -> item.artists
+            is EchoMediaItem.Lists -> item.artists
+            else -> emptyList()
+        }.joinToString(", ") { it.name }.trim()
+        // appendQueryParameter encodes each VALUE, so a title with & or a comma cannot break the
+        // query - do not assemble this string by hand.
+        return Uri.Builder()
+            .scheme("https")
+            .authority(GLADIX_LINK_HOST)
+            .encodedPath(GLADIX_LINK_PREFIX)
+            .appendQueryParameter("e", ext)
+            .appendQueryParameter("t", type)
+            .appendQueryParameter("i", item.id)
+            .appendQueryParameter("n", item.title)
+            .apply { if (artists.isNotBlank()) appendQueryParameter("s", artists) }
+            .build()
+            .toString()
+    }
 
     /**
      * Opens a Gladix share link:

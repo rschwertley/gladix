@@ -33,6 +33,7 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.getTracks
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadItem
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadTracks
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.gladixLinkFor
 import dev.brahmkshatriya.echo.ui.feed.FeedData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -191,6 +192,18 @@ abstract class MediaDetailsViewModel(
         share(app, extension, item)
     }
 
+    // ⚠⚠ READS THE LOADED ITEM, NOT THE PAGE'S STUB, AND THAT IS WHAT MAKES THE STAMP
+    // RELIABLE. UnifiedExtension's loadTrack/loadAlbum/loadArtist/loadPlaylist all end in
+    // .withExtensionId(id, this), so a successfully loaded Unified item carries its sub-extension
+    // id by construction. Building this from the unloaded item would reintroduce exactly the
+    // missing-stamp case gladixLinkFor exists to refuse.
+    fun onShareGladixLink() = app.scope.launch(Dispatchers.IO) {
+        val item = itemResultFlow.value?.getOrNull()?.item ?: return@launch
+        val extensionId = extensionFlow.value?.id ?: return@launch
+        val link = gladixLinkFor(extensionId, item) ?: return@launch
+        shareGladixLink(app, item, link)
+    }
+
     val isRefreshing get() = itemResultFlow.value == null
     val isRefreshingFlow = itemResultFlow.map {
         isRefreshing
@@ -340,6 +353,19 @@ abstract class MediaDetailsViewModel(
                 .setType("text/plain")
                 .setChooserTitle("${extension.name} - ${item.title}")
                 .setText(url)
+                .createChooserIntent()
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.context.startActivity(intent)
+        }
+
+        // No createMessage("Sharing X") here, unlike share() above: that message exists because
+        // onShare makes a NETWORK call (ShareClient.onShare) and the chooser can lag behind the tap.
+        // This mints the URL locally, so the chooser is immediate and a toast would arrive with it.
+        fun shareGladixLink(app: App, item: EchoMediaItem, link: String) {
+            val intent = ShareCompat.IntentBuilder(app.context)
+                .setType("text/plain")
+                .setChooserTitle(item.title)
+                .setText(link)
                 .createChooserIntent()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.context.startActivity(intent)
