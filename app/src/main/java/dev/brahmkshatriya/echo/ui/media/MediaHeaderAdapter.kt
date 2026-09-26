@@ -43,6 +43,7 @@ import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ui.SimpleItemSpan
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toCompactDurationString
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
@@ -145,9 +146,11 @@ class MediaHeaderAdapter(
             binding.radioButton.setOnClickListener {
                 listener.onRadioClicked(it)
             }
+            // NOT disabled here. The tap now opens a share CHOICE, and disabling on tap left the
+            // icon dead whenever that dialog was dismissed - nothing re-enables it until the next
+            // configureButtons() bind. The disable moved to the selection callback below.
             binding.shareButton.setOnClickListener {
                 listener.onShareClicked(it)
-                it.isEnabled = false
             }
         }
 
@@ -212,7 +215,12 @@ class MediaHeaderAdapter(
 
             playButton.isVisible = state.item is Track && !fromPlayer && state.item.isPlayable == Track.Playable.Yes
             radioButton.isVisible = state.showRadio && !fromPlayer
-            shareButton.isVisible = state.showShare && !fromPlayer
+            // !root.context.isTv(): TV has no share targets, so the icon would open an empty
+            // chooser. The More sheet's Share row is gated on the same isTv() check; between them
+            // there is no way to reach a share action on TV. (fromPlayer already hid this icon on
+            // the player, so this line is specifically about TV MEDIA PAGES.)
+            shareButton.isVisible =
+                state.showShare && !fromPlayer && !root.context.isTv()
             configureButtons()
 
             explicit.isVisible = state.item.isExplicit
@@ -487,7 +495,9 @@ class MediaHeaderAdapter(
             }
 
             override fun onShareClicked(view: View) {
-                viewModel.onShare()
+                // Fires only once a share is actually chosen, so a dismissed dialog leaves the icon
+                // usable. view.context is the Activity-backed context the header is attached to.
+                viewModel.shareWithChoice(view.context) { view.isEnabled = false }
             }
 
             override fun onDescriptionClicked(

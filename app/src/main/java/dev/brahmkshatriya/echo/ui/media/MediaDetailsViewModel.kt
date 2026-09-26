@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.media
 
 import android.content.Context
 import android.content.Intent
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.app.ShareCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,6 +26,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
+import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.cache.Cached.bustAlbumTracksCache
 import dev.brahmkshatriya.echo.extensions.cache.Cached.bustPlaylistTracksCache
@@ -33,6 +35,7 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.getTracks
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadItem
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadTracks
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.gladixLinkFor
 import dev.brahmkshatriya.echo.ui.feed.FeedData
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +56,9 @@ abstract class MediaDetailsViewModel(
     private val app: App,
     private val loadFeeds: Boolean,
     extension: Flow<MusicExtension?>,
+    // Only ever used to turn an EXTENSION_ID stamp into a display name - see
+    // sourceExtensionName. Both subclasses already receive it, so this costs one argument each.
+    private val extensionLoader: ExtensionLoader,
 ) : ViewModel() {
     val extensionFlow = extension.stateIn(viewModelScope, Eagerly, null)
     val downloadsFlow = downloader.flow
@@ -186,10 +192,27 @@ abstract class MediaDetailsViewModel(
         refresh()
     }
 
+    /**
+     * The name of the extension the item actually CAME FROM, for anything a user reads.
+     *
+     * ⚠⚠ extensionFlow.value.name IS THE WRONG ANSWER UNDER UNIFIED AND HAS CONFUSED
+     * USERS TWICE. Browsing through Unified makes that name "Unified" while the URL being shared is
+     * the sub-extension's - UnifiedExtension.onShare proxies straight through to it. So the stamp
+     * wins here for the same reason it wins in gladixLinkFor: it names the thing that can resolve
+     * the item.
+     * Falls back to the browsed extension only when there is no stamp, which is the non-Unified
+     * case where the two agree anyway.
+     */
+    fun sourceExtensionName(item: EchoMediaItem): String {
+        val stamp = item.extras[UnifiedExtension.EXTENSION_ID]
+        val stamped = stamp?.let { id -> extensionLoader.music.value.find { it.id == id } }
+        return stamped?.name ?: extensionFlow.value?.name.orEmpty()
+    }
+
     fun onShare() = app.scope.launch(Dispatchers.IO) {
         val item = itemResultFlow.value?.getOrNull()?.item ?: return@launch
         val extension = extensionFlow.value
-        share(app, extension, item)
+        share(app, extension, item, sourceExtensionName(item))
     }
 
     // ⚠⚠ READS THE LOADED ITEM, NOT THE PAGE'S STUB, AND THAT IS WHAT MAKES THE STAMP
@@ -342,7 +365,7 @@ abstract class MediaDetailsViewModel(
          * Add the entry to MediaMoreBottomSheet's button list rather than as a second header icon.
          */
         suspend fun share(
-            app: App, extension: Extension<*>?, item: EchoMediaItem,
+            app: App, extension: Extension<*>?, item: EchoMediaItem, sourceName: String,
         ) {
             val extension = extension ?: return notFound(app, R.string.extension)
             createMessage(app) { getString(R.string.sharing_x, item.title) }
@@ -351,7 +374,9 @@ abstract class MediaDetailsViewModel(
             } ?: return notFound(app, R.string.extension)
             val intent = ShareCompat.IntentBuilder(app.context)
                 .setType("text/plain")
-                .setChooserTitle("${extension.name} - ${item.title}")
+                // sourceName, NOT extension.name: under Unified the latter says "Unified" while the
+                // URL below is the sub-extension's. Same source as the share dialog's label.
+                .setChooserTitle("$sourceName - ${item.title}")
                 .setText(url)
                 .createChooserIntent()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -383,4 +408,50 @@ abstract class MediaDetailsViewModel(
             )
         }
     }
+}
+
+/**
+ * The single share entry point for every surface.
+ *
+ * ⚠⚠ ONE ACTION, NOT TWO BUTTONS. The header icon and the More sheet both land here, so
+ * there is exactly one place that decides what a share means. Before this the header shared the
+ * extension link while a separate More row shared a Gladix link, and which one a user got depended
+ * on which affordance they happened to tap.
+ *
+ * ⚠⚠ THE gladixLinkFor CHECK HAPPENS AT TAP TIME, ON THE LOADED ITEM, AND THAT IS LOAD-
+ * BEARING. The stamp it needs is only reliable after UnifiedExtension's loadX has re-applied it;
+ * deciding at BIND time would both read an unstamped stub and make the row's own visibility depend
+ * on a value that changes when the load lands - the appear-then-vanish this collapse removes.
+ * A null link is not an error: it means no correct Gladix link exists (unified with no stamp, an
+ * unsupported type, a blank id), so the dialog is skipped entirely and the extension link is shared
+ * directly. The user is never offered a choice with one dead option.
+ *
+ * ⚠️ [onSelected] FIRES ONLY ON AN ACTUAL CHOICE, never on dismiss. The header icon uses it
+ * to disable itself, and disabling on TAP left the icon dead whenever the dialog was cancelled -
+ * nothing re-enables it until the next state bind.
+ *
+ * ⚠️ PASS AN ACTIVITY CONTEXT FROM THE SHEET. MoreButton.button dismisses the bottom sheet
+ * immediately after onClick, so a fragment-scoped context would be torn down under the dialog.
+ */
+fun MediaDetailsViewModel.shareWithChoice(context: Context, onSelected: () -> Unit = {}) {
+    val item = itemResultFlow.value?.getOrNull()?.item ?: return
+    val extensionId = extensionFlow.value?.id
+    val gladix = extensionId?.let { gladixLinkFor(it, item) }
+    if (gladix == null) {
+        onShare()
+        onSelected()
+        return
+    }
+    val sourceName = sourceExtensionName(item)
+    val options = arrayOf<CharSequence>(
+        context.getString(R.string.share_link_gladix),
+        context.getString(R.string.share_link_x, sourceName)
+    )
+    MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.share)
+        .setItems(options) { _, which ->
+            if (which == 0) onShareGladixLink() else onShare()
+            onSelected()
+        }
+        .show()
 }

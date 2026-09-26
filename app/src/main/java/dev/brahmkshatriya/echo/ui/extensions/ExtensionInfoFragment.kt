@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -31,6 +32,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.toSettings
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.streamQualities
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.settings.BaseSettingsFragment
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.registerActivityResultLauncher
@@ -38,6 +40,8 @@ import dev.brahmkshatriya.echo.utils.Serializer.getSerialized
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
 import dev.brahmkshatriya.echo.utils.exportExtensionSettings
 import dev.brahmkshatriya.echo.utils.importExtensionSettings
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasCreateDocument
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasOpenDocument
 import dev.brahmkshatriya.echo.utils.ui.prefs.LoadingPreference
 import dev.brahmkshatriya.echo.utils.ui.prefs.MaterialListPreference
 import dev.brahmkshatriya.echo.utils.ui.prefs.MaterialMultipleChoicePreference
@@ -177,13 +181,33 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
                     screen.addPreference(this)
+                    isVisible = context.hasCreateDocument()
                     setOnPreferenceClickListener {
                         val contract = ActivityResultContracts.CreateDocument("application/json")
-                        requireActivity().registerActivityResultLauncher(contract) { uri ->
-                            uri?.let {
-                                context.exportExtensionSettings(extensionType, extensionId, it)
+                        val launcher =
+                            requireActivity().registerActivityResultLauncher(contract) { uri ->
+                                uri?.let {
+                                    context.exportExtensionSettings(extensionType, extensionId, it)
+                                }
                             }
-                        }.launch("echo-$extensionType-$extensionId-settings.json".lowercase())
+                    // ⚠⚠ ActivityNotFoundException SPECIFICALLY, NOT A BLANKET runCatching.
+                    // A missing picker is the ONE failure this knows how to explain; swallowing
+                    // everything here would hide a real bug behind a "no file manager" message.
+                    // ⚠️ AND THE LAUNCHER MUST BE UNREGISTERED ON FAILURE. registerActivity
+                    // ResultLauncher registers a FRESH launcher per call under a random UUID key and
+                    // unregisters it in its own callback - which never runs when launch() throws, so
+                    // without this the registration leaks until the Activity is destroyed, once per tap.
+                    // ⚠️ KEPT EVEN THOUGH THE PREFERENCE IS NOW GATED: resolveActivity can
+                    // false-positive under package visibility, and a handler can be uninstalled between
+                    // the gate and the tap. Same defense-in-depth as onEqualizerClicked.
+                        try {
+                            launcher.launch(
+                                "echo-$extensionType-$extensionId-settings.json".lowercase()
+                            )
+                        } catch (_: ActivityNotFoundException) {
+                            launcher.unregister()
+                            createSnack(R.string.no_file_picker)
+                        }
                         true
                     }
                 }
@@ -195,19 +219,29 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                     layoutResource = R.layout.preference
                     isIconSpaceReserved = false
                     screen.addPreference(this)
+                    isVisible = context.hasOpenDocument()
                     setOnPreferenceClickListener {
                         val contract = ActivityResultContracts.OpenDocument()
-                        requireActivity().registerActivityResultLauncher(contract) {
-                            it?.let {
-                                if (context.importExtensionSettings(extensionType, extensionId, it))
-                                    requireActivity().recreate()
-                                else Toast.makeText(
-                                    context,
-                                    getString(R.string.invalid_settings_file),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                        val launcher =
+                            requireActivity().registerActivityResultLauncher(contract) {
+                                it?.let {
+                                    if (context.importExtensionSettings(extensionType, extensionId, it))
+                                        requireActivity().recreate()
+                                    else Toast.makeText(
+                                        context,
+                                        getString(R.string.invalid_settings_file),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
-                        }.launch(arrayOf("application/json"))
+                        // See the export preference above for why this catches ActivityNotFound
+                        // specifically and why the launcher is unregistered on failure.
+                        try {
+                            launcher.launch(arrayOf("application/json"))
+                        } catch (_: ActivityNotFoundException) {
+                            launcher.unregister()
+                            createSnack(R.string.no_file_picker)
+                        }
                         true
                     }
                 }

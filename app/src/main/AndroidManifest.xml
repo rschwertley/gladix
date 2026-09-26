@@ -48,6 +48,22 @@
         <intent>
             <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
         </intent>
+        <!-- ⚠⚠ REQUIRED BY UiUtils.hasCreateDocument / hasOpenDocument, WHICH GATE THE
+             EXPORT/IMPORT PREFERENCES. Without these, resolveActivity returns null under API 30+
+             package visibility and those four preferences are hidden on devices that CAN handle a
+             picker. Exactly the coupling the equalizer <intent> above documents - the gate and the
+             query ship together or not at all.
+             Two entries because CREATE_DOCUMENT and OPEN_DOCUMENT are distinct actions and are
+             resolved independently. mimeType is a wildcard here on purpose: <queries> declares what
+             we may ASK about, while the real intents carry application/json. -->
+        <intent>
+            <action android:name="android.intent.action.CREATE_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
     </queries>
 
     <application

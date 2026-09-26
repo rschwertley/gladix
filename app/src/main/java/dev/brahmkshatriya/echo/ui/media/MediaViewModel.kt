@@ -25,7 +25,8 @@ class MediaViewModel(
     val loaded: Boolean,
 ) : MediaDetailsViewModel(
     downloader, app, loadFeeds,
-    extensionLoader.music.map { list -> list.find { it.id == extensionId } }
+    extensionLoader.music.map { list -> list.find { it.id == extensionId } },
+    extensionLoader
 ) {
 
     override fun getItem(): Triple<String, EchoMediaItem, Boolean> {

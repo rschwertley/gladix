@@ -3,6 +3,8 @@ package dev.brahmkshatriya.echo.ui.media.more
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
+import androidx.activity.viewModels
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.ViewModel
@@ -29,7 +31,8 @@ import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.databinding.DialogMediaMoreBinding
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.MediaState
-import dev.brahmkshatriya.echo.ui.common.FragmentUtils.gladixLinkFor
+import dev.brahmkshatriya.echo.ui.media.shareWithChoice
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
@@ -68,6 +71,36 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     }
 
     companion object {
+    /**
+     * Activity-hosted variant, for callers with no Fragment to hand - today the Gladix track-link
+     * handler, which runs on the Activity from an intent.
+     *
+     * ⚠⚠ IT DIFFERS FROM THE Fragment OVERLOAD IN TWO LINES AND NOTHING ELSE: the Args
+     * ViewModel and the FragmentManager both come from the ACTIVITY rather than the host fragment.
+     * Args is activity-scoped in the Fragment overload too (host.activityViewModels), so the sheet
+     * reads the same instance either way - this is a reachability change, not a scoping one.
+     */
+        fun show(
+            activity: FragmentActivity,
+            contId: Int,
+            extensionId: String,
+            item: EchoMediaItem,
+            loaded: Boolean,
+            context: EchoMediaItem? = null,
+        ) {
+            val argsVm by activity.viewModels<Args>()
+            argsVm.item = item
+            argsVm.context = context
+            MediaMoreBottomSheet().apply {
+                arguments = Bundle().apply {
+                    putInt("contId", contId)
+                    putString("extensionId", extensionId)
+                    putBoolean("loaded", loaded)
+                    putBoolean("fromPlayer", false)
+                }
+            }.show(activity.supportFragmentManager, null)
+        }
+
         fun show(
             host: Fragment,
             manager: FragmentManager = host.parentFragmentManager,
@@ -364,40 +397,29 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         }
     )
 
+    // ⚠⚠ ONE ROW, AND THE PLACEHOLDER IS ON IDENTICAL CONDITIONS TO THE REAL ONE. That is
+    // what keeps this sheet's single-pass rendering honest: nothing here depends on the loaded
+    // item's EXTENSION_ID stamp, so the row cannot appear or vanish when the load lands. A brief
+    // second row keyed on gladixLinkFor did exactly that and is gone - the Gladix/extension choice
+    // is now made AFTER the tap, inside shareWithChoice, where the loaded item is available.
     private fun getShareButton(client: ExtensionClient?, state: MediaState.Loaded<*>?) = listOfNotNull(
         when {
+            // ⚠⚠ NOTHING TO SHARE TO ON TV, SO THE ROW IS NOT OFFERED AT ALL. Android TV
+            // ships no share targets, so every branch below would end at a chooser with nothing in
+            // it. Gated FIRST and on ONE condition so the real row and the placeholder disappear
+            // together - splitting it across the two arms would let a placeholder render and then
+            // vanish, which is the single-pass jump this sheet's rendering exists to avoid.
+            // ⚠️ THIS IS THE ONLY SHARE PATH ON TV. PlayerTvFragment's overflow opens this
+            // same sheet with fromPlayer=true, and the header icon is hidden there anyway, so this
+            // one line removes share from the TV player as well as TV media pages.
+            requireContext().isTv() -> null
+            // requireActivity(), not requireContext(): button() dismisses this sheet right after
+            // onClick, so the dialog must not hold a context that is being torn down.
             state?.showShare == true -> button(
                 "share", R.string.share, R.drawable.ic_share
-            ) { vm.onShare() }
+            ) { vm.shareWithChoice(requireActivity()) }
             state == null && client is ShareClient && item.isShareable -> placeholderButton(
                 "share", R.string.share, R.drawable.ic_share
-            )
-            else -> null
-        },
-        // ⚠⚠ SAME CONDITION AS THE SHARE BUTTON ABOVE - showShare, WHICH REQUIRES
-        // ShareClient - PLUS gladixLinkFor RETURNING NON-NULL. The ShareClient half looks
-        // unnecessary (this link needs no URL from the extension) and is not: OfflineExtension's
-        // items leave isShareable at its `true` default with no chokepoint to set it, so a weaker
-        // condition would silently offer a shareable link to local files resolvable by nobody.
-        // The gap that leaves - a network extension with no ShareClient cannot be link-shared - is
-        // deliberate; closing it needs a capability meaning "my items are resolvable by id", which
-        // does not exist. Full reasoning at MediaDetailsViewModel.share.
-        // ⚠⚠ IT HAS A placeholderButton TWIN BECAUSE THIS SHEET RENDERS IN ONE PASS AND
-        // A LATE ROW WOULD SHIFT THE ONES BELOW IT - the flash/jump that every other async button
-        // here already has a placeholder to prevent. An entry with no placeholder is not "safer",
-        // it reintroduces a fixed bug.
-        // ⚠️ AND THE KEY IS gladixLinkFor ITSELF, EVALUATED ON THE STUB. Everything it
-        // refuses is knowable before the load: the TYPE comes from the item's class, the blank-id
-        // check reads item.id, and the unified check reads item.extras - all present on the
-        // unloaded item. So the placeholder and the real button ask the same question of two
-        // different snapshots rather than approximating one with the other.
-        when {
-            state?.showShare == true && gladixLinkFor(extensionId, state.item) != null -> button(
-                "share_gladix", R.string.share_gladix_link, R.drawable.ic_share
-            ) { vm.onShareGladixLink() }
-            state == null && client is ShareClient && item.isShareable
-                && gladixLinkFor(extensionId, item) != null -> placeholderButton(
-                "share_gladix", R.string.share_gladix_link, R.drawable.ic_share
             )
             else -> null
         }

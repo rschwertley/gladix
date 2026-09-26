@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.os.Bundle
 import android.view.View
@@ -8,11 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.PreferenceFragmentCompat
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.SETTINGS_NAME
 import dev.brahmkshatriya.echo.utils.PermsUtils.registerActivityResultLauncher
 import dev.brahmkshatriya.echo.utils.exportSettings
 import dev.brahmkshatriya.echo.utils.importSettings
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasCreateDocument
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasOpenDocument
 import dev.brahmkshatriya.echo.utils.ui.prefs.SwitchLongClickPreference
 import dev.brahmkshatriya.echo.utils.ui.prefs.TransitionPreference
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -57,11 +61,20 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                 layoutResource = R.layout.preference
                 isIconSpaceReserved = false
                 screen.addPreference(this)
+                isVisible = context.hasCreateDocument()
                 setOnPreferenceClickListener {
                     val contract = ActivityResultContracts.CreateDocument("application/json")
-                    requireActivity().registerActivityResultLauncher(contract) { uri ->
+                    val launcher = requireActivity().registerActivityResultLauncher(contract) { uri ->
                         uri?.let { context.exportSettings(it) }
-                    }.launch("echo-settings.json")
+                    }
+                    // See ExtensionInfoFragment's export preference for the full reasoning: catch
+                    // ActivityNotFound ONLY, and unregister the per-tap launcher when launch throws.
+                    try {
+                        launcher.launch("echo-settings.json")
+                    } catch (_: ActivityNotFoundException) {
+                        launcher.unregister()
+                        createSnack(R.string.no_file_picker)
+                    }
                     true
                 }
             }
@@ -73,9 +86,10 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                 layoutResource = R.layout.preference
                 isIconSpaceReserved = false
                 screen.addPreference(this)
+                isVisible = context.hasOpenDocument()
                 setOnPreferenceClickListener {
                     val contract = ActivityResultContracts.OpenDocument()
-                    requireActivity().registerActivityResultLauncher(contract) {
+                    val launcher = requireActivity().registerActivityResultLauncher(contract) {
                         it?.let {
                             if (context.importSettings(it)) requireActivity().recreate()
                             else Toast.makeText(
@@ -84,7 +98,14 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                                 Toast.LENGTH_LONG
                             ).show()
                         }
-                    }.launch(arrayOf("application/json"))
+                    }
+                    // As above: ActivityNotFound only, unregister on failure.
+                    try {
+                        launcher.launch(arrayOf("application/json"))
+                    } catch (_: ActivityNotFoundException) {
+                        launcher.unregister()
+                        createSnack(R.string.no_file_picker)
+                    }
                     true
                 }
             }

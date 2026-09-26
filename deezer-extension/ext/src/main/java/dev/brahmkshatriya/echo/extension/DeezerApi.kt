@@ -120,7 +120,12 @@ class DeezerGatewayException(
  */
 class DeezerAuthRejectedException(
     val errorText: String,
-) : Exception("Deezer did not accept these credentials.") {
+) : Exception(
+    // ⚠️ App.kt matches this EXACT text (DEEZER_AUTH_REJECTED_MESSAGE) to keep credential
+    // refusals out of Crashlytics - the type is not reachable from :app. Changing it re-enables
+    // reporting silently.
+    "Deezer did not accept these credentials."
+) {
     override fun toString() = "DeezerAuthRejectedException(error=$errorText)"
 }
 

@@ -255,7 +255,8 @@ data class App(
                 // all subsequent ones. Pairs with the DROP_OLDEST buffer above - that stops a stuck
                 // collector blocking emitters, this stops a throwing one disappearing entirely.
                 @Suppress("KotlinConstantConditions", "SimplifyBooleanWithConstants", "SwallowedException")
-                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired()) runCatching {
+                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired() && !it.isAuthRejection())
+                    runCatching {
                     FirebaseCrashlytics.getInstance().apply {
                         // extension_id is the PLAYING extension (crashExtensionId, written by
                         // PlayerService's onMediaItemTransition — grep `crashExtensionId =`) — NOT the
@@ -351,5 +352,52 @@ data class App(
             t = t.cause
         }
         return false
+    }
+
+    /**
+     * A credential REFUSAL from an extension's own login screen. Suppressed from Crashlytics for the
+     * same reason as [isLoginRequired]: it is a user mistake, not a fault.
+     *
+     * ⚠⚠ MATCHED ON THE MESSAGE TEXT BECAUSE THE TYPE IS UNREACHABLE FROM HERE, NOT AS A
+     * SHORTCUT. DeezerAuthRejectedException lives in the Deezer extension module, so :app has no
+     * compile-time reference to it - there is no `is` check available at any level of care. String
+     * literals survive R8 (it renames classes, not string contents), which is what makes this stable
+     * where a class-name match would not be: the minified name changed tl0 -> ul0 between builds
+     * 1109 and 1110, so every release minted a NEW Crashlytics issue for the same user error.
+     *
+     * ⚠⚠ THE CHAIN WALK IS MANDATORY, NOT STYLISTIC. The throwable that reaches this
+     * collector is AppException.Other WRAPPING the refusal (ExtensionUtils.get -> toAppException's
+     * `else -> Other(this, extension)`), so a check on the top node can never match. Fourth recorded
+     * instance of the wrong-node type check in this repo.
+     *
+     * ⚠️ IT SUPPRESSES REPORTING ONLY. The throwFlow emission is untouched, so the login
+     * screen still shows the message - ExceptionUtils renders AppException.Other as
+     * "<ext name>: <cause title>" and getFinalTitle falls through to the cause's message.
+     *
+     * ⚠️ WHAT STAYS REPORTED, DELIBERATELY: getArlByEmail's two SIBLING throws, which are
+     * plain Exceptions with different messages ("Login failed: no access_token in response" /
+     * "no ARL in response"). Its own comment calls that split out - an explicit error from Deezer is
+     * a refusal, no error at all is a SHAPE SURPRISE and stays retryable and reportable. Do not widen
+     * this to cover them.
+     *
+     * ⚠️ AND IT COVERS MORE THAN "WRONG PASSWORD", CORRECTLY. The exception's own doc records
+     * that a suspended account, a forced password reset or a region block can share the same Deezer
+     * error, and that the handling deliberately does not try to name which. All are user-actionable.
+     */
+    private fun Throwable.isAuthRejection(): Boolean {
+        var t: Throwable? = this
+        while (t != null) {
+            if (t.message == DEEZER_AUTH_REJECTED_MESSAGE) return true
+            t = t.cause
+        }
+        return false
+    }
+
+    companion object {
+        // Byte-identical to DeezerAuthRejectedException's super-constructor message. A comment at that
+        // declaration points back here; changing either text silently RE-ENABLES reporting, and the
+        // only symptom is a Crashlytics issue reappearing per release.
+        private const val DEEZER_AUTH_REJECTED_MESSAGE =
+            "Deezer did not accept these credentials."
     }
 }

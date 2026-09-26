@@ -52,7 +52,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/likeButton"
-                style="@style/IconButtonTertiary"
+                style="@style/IconButtonTonal"
                 android:checkable="true"
                 android:checked="false"
                 android:contentDescription="@string/like"

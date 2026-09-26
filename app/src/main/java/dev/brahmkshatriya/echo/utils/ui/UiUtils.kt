@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.utils.ui
 import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration.ORIENTATION_LANDSCAPE
 import android.content.res.Configuration.UI_MODE_NIGHT_MASK
@@ -60,6 +61,45 @@ object UiUtils {
 
     fun Context.isNightMode() =
         resources.configuration.uiMode and UI_MODE_NIGHT_MASK != UI_MODE_NIGHT_NO
+
+    /**
+     * Is there anything on this device that can handle a document picker?
+     *
+     * ⚠⚠ CREATE AND OPEN ARE CHECKED INDEPENDENTLY AND MUST STAY THAT WAY. They are separate
+     * framework actions, and a device can resolve one without the other; collapsing them into one flag
+     * would hide Import on a device that can only Open, or offer Export on one that cannot Create.
+     *
+     * ⚠⚠ THESE READS DEPEND ON THE <queries> ENTRIES IN AndroidManifest.xml AND ARE WORSE
+     * THAN NOTHING WITHOUT THEM. Under API 30+ package visibility, resolveActivity returns null for an
+     * unqueried action even when a handler exists - so gating a preference on this WITHOUT the manifest
+     * entries hides Export/Import on every modern device. Same coupling the equalizer check has, and
+     * the same reason its <intent> entry exists. If you ever remove those entries, remove these gates.
+     *
+     * ⚠️ CAPABILITY-GATED, NOT isTv()-GATED, DELIBERATELY. Android TV usually ships no
+     * DocumentsUI, which is why this matters there most - but a TV box that DOES have a file manager
+     * keeps the feature, and a phone that somehow lacks one loses it. The device answers the question;
+     * the form factor only correlates with the answer.
+     *
+     * ⚠️ CACHED PER PROCESS, like hasSystemEqualizer. A picker cannot appear or vanish without
+     * a package install, and the tap-time catch is the backstop for the window where it does.
+     */
+    private var canCreateDocument: Boolean? = null
+    private var canOpenDocument: Boolean? = null
+
+    fun Context.hasCreateDocument() = canCreateDocument ?: resolves(
+        Intent(Intent.ACTION_CREATE_DOCUMENT)
+    ).also { canCreateDocument = it }
+
+    fun Context.hasOpenDocument() = canOpenDocument ?: resolves(
+        Intent(Intent.ACTION_OPEN_DOCUMENT)
+    ).also { canOpenDocument = it }
+
+    // CATEGORY_OPENABLE + a concrete type, because that is what the contracts actually launch -
+    // resolving a bare action would answer a question nobody asks.
+    private fun Context.resolves(intent: Intent) = intent
+        .addCategory(Intent.CATEGORY_OPENABLE)
+        .setType("application/json")
+        .resolveActivity(packageManager) != null
 
     // Google TV reports UI_MODE_TYPE_TELEVISION but NOT FEATURE_LEANBACK, so the UiModeManager check must
     // come first (and stay) — FEATURE_LEANBACK alone would miss Google TV boxes.

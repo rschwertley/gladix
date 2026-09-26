@@ -31,6 +31,14 @@ import dev.brahmkshatriya.echo.ui.extensions.WebViewUtils.onWebViewIntent
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
 import dev.brahmkshatriya.echo.ui.settings.TvPairingFragment
 import dev.brahmkshatriya.echo.di.App
+import androidx.lifecycle.lifecycleScope
+import dev.brahmkshatriya.echo.playback.PlayerState
+import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
+import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.koin.android.ext.android.get
 
@@ -245,6 +253,84 @@ object FragmentUtils {
         openFragment<MediaFragment>(null, MediaFragment.getBundle(extensionId, item, false))
     }
 
+    /**
+     * A shared TRACK link: never interrupt, never lose the user's place.
+     *
+     *   PLAYING      open the track's own More sheet over the current screen. No details page behind
+     *                it, so dismissing leaves the user exactly where they were - intended.
+     *   NOT PLAYING  play it (replacing the queue) and open the full player.
+     *
+     * ⚠⚠ PlayerState.current, NOT PlayerViewModel.isPlaying, AND THE DIFFERENCE IS THE WHOLE
+     * RELIABILITY OF THIS BRANCH. isPlaying is a MutableStateFlow(false) written only by
+     * PlayerUiListener, which needs a CONNECTED MediaController - on a link launch into a fresh
+     * Activity it still reads its initial false while audio is playing. PlayerState is a Koin
+     * singleton whose Current is written service-side by PlayerEventListener, so it is already
+     * correct here.
+     * ⚠️ AND A COLD PROCESS NEEDS NO SPECIAL CASE: playback runs in a foreground service in
+     * THIS process, so "audio playing" and "cold process" are mutually exclusive. A cold start reads
+     * current == null, which is the honest answer - nothing is playing.
+     *
+     * ⚠⚠ WHY THE EXPAND IS A ONE-SHOT WAIT AND NOT changePlayerState RIGHT HERE. Three
+     * recorded regressions live in this exact situation (a fresh, not-yet-laid-out Activity):
+     * an unconditional expand on cold start left the bar stuck at the top for 30-60s; a state change
+     * before layout left it stuck permanently; and a fresh Activity with current == null parked the
+     * sheet fully offscreen. changePlayerState now defers until laid out on its own, but it ALSO
+     * returns silently when playerBehaviour is not yet set - which on a cold-start link it is not.
+     * So the expand waits for a real track instead of a clock.
+     * ⚠⚠ !isPlaceholder IS WHAT MAKES IT ORDERING-INDEPENDENT. On a cold start the service
+     * ALSO restores the saved queue, and PlayerViewModel seeds a PLACEHOLDER Current from that
+     * snapshot (isPlaying = false) whenever current is still null. If that placeholder lands first,
+     * MainActivity's current-observer takes its null->non-null edge with playWhenReady false and
+     * COLLAPSES the sheet - and its `!hadTrack` edge never fires again, so the real track would play
+     * in the mini player. Waiting on a NON-placeholder current makes the placeholder irrelevant
+     * whether it arrives first, last, or not at all.
+     * ⚠️ THE mediaId MATCH IS EXACT, VERIFIED RATHER THAN ASSUMED: playItem builds the queue
+     * entry straight from the stub handed to play() - MediaState.Unloaded(extId, item) - and
+     * MediaItemUtils.build does setMediaId(state.item.id). The id never passes through extension
+     * code on this path, so it equals the link's `i=` verbatim for every extension. (Contrast
+     * Cached.loadMedia, which compares CANONICAL ids because a details-page load may legitimately
+     * canonicalise - that is a different path and does not apply here.) Without the match, the
+     * restore's own real track would satisfy the wait and expand the player on the wrong song.
+     * ⚠️ AND IT IS BOUNDED. If the shared track never arrives - a load failure, a removed
+     * extension - the wait expires and nothing happens, so a later unrelated play can never inherit
+     * this expand. Doing nothing is the right failure: the user still has whatever screen they were
+     * on, and play() has already reported its own error through the usual path.
+     * ⚠️ ACCEPTED: on a cold start the placeholder may still COLLAPSE the sheet for a frame
+     * or two before this expands it. Removing that would mean changing MainActivity's
+     * current-observer, which three separate fixes have already converged on. Not worth it.
+     */
+    private fun FragmentActivity.openSharedTrack(extensionId: String, track: Track) {
+        val playerState by inject<PlayerState>()
+        val playerViewModel by viewModel<PlayerViewModel>()
+        val uiViewModel by viewModel<UiViewModel>()
+        if (playerState.current.value?.isPlaying == true) {
+            MediaMoreBottomSheet.show(
+                this, R.id.navHostFragment, extensionId, track, false
+            )
+            return
+        }
+        // loaded = false: this is a link stub, exactly as FeedClickListener passes for an unloaded
+        // item. Same command a normal track tap sends, so queue replacement, the "Playing from"
+        // context and history all behave identically.
+        playerViewModel.play(extensionId, track, false)
+        lifecycleScope.launch {
+            val arrived = withTimeoutOrNull(SHARED_TRACK_EXPAND_TIMEOUT_MS) {
+                playerState.current.first {
+                    it != null && !it.isPlaceholder && it.mediaItem.mediaId == track.id
+                }
+            }
+            if (arrived != null) uiViewModel.changePlayerState(STATE_EXPANDED)
+        }
+    }
+
+    // Generous on purpose: this bounds a FAILURE, not a latency budget. A cold start has to create
+    // the service, connect a controller and resolve a stream before the track can land, and
+    // expanding late is harmless while expiring early means a shared link silently does not open the
+    // player. StreamableLoader's own ceiling is withTimeout(30_000), so this is deliberately shorter
+    // than the slowest thing it waits on - if the load is going to take longer than this, it is
+    // failing rather than loading.
+    private const val SHARED_TRACK_EXPAND_TIMEOUT_MS = 15_000L
+
     // ⚠⚠ THE HOST AND PREFIX ARE DUPLICATED FROM AndroidManifest.xml AND THAT IS DELIBERATE.
     // The manifest filter already restricts what reaches us, so this guard is redundant TODAY. It is
     // here for the day a SECOND https filter is added - handling deezer.com links is already an
@@ -383,9 +469,21 @@ object FragmentUtils {
         // `s` is deliberately NOT read here - see the param note above. It is carried for the landing
         // page and for the not-installed message, which is raised where a missing extension is
         // actually detected (MediaViewModel), not at parse time.
-        openMediaItemFragment(
-            extensionId, type, id, uri.getQueryParameter("n").orEmpty()
-        )
+        val name = uri.getQueryParameter("n").orEmpty()
+        // ⚠⚠ TRACKS DIVERGE HERE, AND THE BRANCH MUST STAY IN THIS HANDLER RATHER THAN IN
+        // openMediaItemFragment. That helper has TWO callers - this one and the echo:// handler,
+        // which AppShortcuts also drives for its per-extension launcher shortcuts. Those must keep
+        // opening the details page: "play it, do not interrupt" is a property of a SHARED LINK, not
+        // of every way an item id can reach the app. Putting it in the helper silently changed
+        // echo://music/<ext>/track/<id> too.
+        // The other three types fall through unchanged - browsing a list is the point of sharing one.
+        // A shared TRACK is a "listen to this" gesture: it plays when nothing is, and offers the
+        // item's own actions over the current screen when something is. See openSharedTrack.
+        if (type == "track") {
+            openSharedTrack(extensionId, Track(id, name))
+            return
+        }
+        openMediaItemFragment(extensionId, type, id, name)
     }
 }
 

@@ -29,7 +29,8 @@ class TrackInfoViewModel(
         current?.mediaItem?.extensionId?.let { id ->
             music.find { it.id == id }
         }
-    }
+    },
+    extensionLoader
 ) {
     val currentFlow = playerState.current
     override fun getItem(): Triple<String, EchoMediaItem, Boolean>? {

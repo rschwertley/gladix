@@ -118,6 +118,10 @@
     <string name="equalizer">Equalizer</string>
     <string name="equalizer_summary">Open the device equalizer settings</string>
     <string name="no_system_equalizer">No system equalizer available on this device</string>
+    <!-- Shown when ACTION_CREATE_DOCUMENT / ACTION_OPEN_DOCUMENT has no handler: no DocumentsUI
+         (common on Android TV, and seen on an Android 9 phone). Never surface the raw
+         ActivityNotFoundException. -->
+    <string name="no_file_picker">No file manager available on this device</string>
     <string name="some_tracks_couldnt_be_restored">Some tracks couldn\'t be restored — reopen from Library</string>
 
     <string name="stream_quality">Mobile Data Stream Quality</string>
@@ -338,9 +342,11 @@
     <string name="n_dot_x" translatable="false">%1$d. %2$s</string>
 
     <string name="share">Share</string>
-    <!-- Deliberately NOT "Share to Gladix users": the landing page handles recipients who do
-         not have the app, so the link works for anyone. -->
-    <string name="share_gladix_link">Share Gladix link</string>
+    <!-- The two options in the share chooser. "Gladix link" is deliberately NOT "Share to Gladix
+         users": the landing page handles recipients without the app, so it works for anyone.
+         share_link_x is filled with the SOURCE extension's name (Deezer, not Unified). -->
+    <string name="share_link_gladix">Gladix link</string>
+    <string name="share_link_x">%1$s link</string>
     <string name="sharing_x">Sharing %1$s</string>
 
     <string name="save_to_library">Save to library</string>
