@@ -12,6 +12,7 @@ import dev.brahmkshatriya.echo.common.models.Metadata
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 
 class PagedSource<T : Any>(
     private val loaded: Result<PagedData<T>>?,
@@ -61,18 +62,48 @@ class PagedSource<T : Any>(
         loaded?.getOrNull()?.invalidate(key)
     }
 
-    override suspend fun load(params: LoadParams<String>): LoadResult<String, T> {
-        val key = params.key
-        return runCatching {
-            val page = loaded?.getOrThrow()?.loadPage(key) ?: throw LoadingException()
-            LoadResult.Page(page.data, key, page.continuation)
-        }.getOrElse { error ->
-            val cachedPage = cached?.mapCatching { it.loadPage(key) }?.getOrNull()
-            return if (cachedPage == null || cachedPage.data.isEmpty())
-                LoadResult.Error(transform(error))
-            else LoadResult.Page(cachedPage.data, key, cachedPage.continuation)
+    /**
+     * ⚠⚠ withContext(IO) HERE IS NOT REDUNDANT WITH flowOn(Dispatchers.IO) ABOVE, AND THE
+     * DIFFERENCE IS WHAT CAUSED AN ANR. `Pager.flow` is a Flow<PagingData<T>> - a flow of CONTAINERS -
+     * so flowOn moves where those few containers are EMITTED. The page loading lives in each
+     * PagingData's OWN inner flow of PageEvents, which the differ collects in ITS context
+     * (AsyncPagingDataDiffer.submitData, on the UI lifecycleScope = Main). PageFetcherSnapshot then
+     * calls this function from there. Nothing propagates a dispatcher across that boundary, which is
+     * why Paging 3 has no fetchDispatcher (Paging 2's setFetchExecutor did) - the contract is that
+     * PagingSource.load must be main-safe ITSELF.
+     * FIELD EVIDENCE: an ANR on build 1062 (budget device, Android 11) with the main thread inside
+     * Json.decodeFromString of a cached Page<Shelf>, stack reading
+     * PageFetcherSnapshot.doInitialLoad -> PagedSource.load -> PagedData.loadPage. The same ANR was
+     * closed on build 979 as "already fixed", almost certainly on the strength of the flowOn line -
+     * which was already present and never covered this. Do not read flowOn as covering it again.
+     *
+     * ⚠️ IT COVERS MORE THAN THE CACHE DECODE. Everything a page load does moves off main -
+     * the decode in Cached.getData AND the extension's own parsing inside loadPage. The chokepoint
+     * wrap at Cached.getData/putData is the companion fix for callers that never come through paging;
+     * neither makes the other unnecessary, and fixing only one is how this reopened between 979 and 1062.
+     *
+     * ⚠️ CANCELLATION IS UNCHANGED, WHICH IS EASY TO MISREAD. runCatching still catches
+     * CancellationException inside this block, so a cancelled page load still becomes
+     * LoadResult.Error exactly as before - see the note at transform() for why that is deliberate.
+     * withContext sits OUTSIDE it and does not reorder that.
+     *
+     * ⚠️ THE getOrElse ARM LOST ITS `return`, AND HAD TO. It was a non-local return out of
+     * load(); inside a suspend lambda that will not compile. It was already the arm's last expression,
+     * so dropping the keyword changes nothing at runtime.
+     */
+    override suspend fun load(params: LoadParams<String>): LoadResult<String, T> =
+        withContext(Dispatchers.IO) {
+            val key = params.key
+            runCatching {
+                val page = loaded?.getOrThrow()?.loadPage(key) ?: throw LoadingException()
+                LoadResult.Page(page.data, key, page.continuation)
+            }.getOrElse { error ->
+                val cachedPage = cached?.mapCatching { it.loadPage(key) }?.getOrNull()
+                if (cachedPage == null || cachedPage.data.isEmpty())
+                    LoadResult.Error(transform(error))
+                else LoadResult.Page(cachedPage.data, key, cachedPage.continuation)
+            }
         }
-    }
 
     /**
      * ⚠⚠ THE ONLY EXTENSION CALL PATH IN THE APP THAT DID NOT APPLY toAppException, AND THE

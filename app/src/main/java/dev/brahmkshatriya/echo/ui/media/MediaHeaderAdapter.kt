@@ -146,9 +146,23 @@ class MediaHeaderAdapter(
             binding.radioButton.setOnClickListener {
                 listener.onRadioClicked(it)
             }
-            // NOT disabled here. The tap now opens a share CHOICE, and disabling on tap left the
-            // icon dead whenever that dialog was dismissed - nothing re-enables it until the next
-            // configureButtons() bind. The disable moved to the selection callback below.
+            // ⚠⚠ SHARE DOES NOT DISABLE ITSELF, UNLIKE THE FOUR TOGGLES ABOVE, AND THE
+            // DIFFERENCE IS NOT STYLISTIC. follow/saved/like/hide each fire a MUTATION whose result
+            // comes back as new state, and that state refresh is what re-binds and re-enables them at
+            // configureButtons(). Share mutates NOTHING, so no refresh follows a tap and no bind is
+            // owed - the re-enable simply never runs. Disabling on tap (or on selection) therefore
+            // greyed the icon out PERMANENTLY once the user came back from the chooser, which is what
+            // was reported. Note playButton directly below is the same shape - non-toggle, no state
+            // change - and has never disabled either.
+            // ⚠️ AND NOTHING NEEDS THE GUARD NOW. The tap opens a MODAL dialog, so the rapid
+            // double-tap it approximated cannot happen while it is up; afterwards a second tap is a
+            // deliberate act. The worst a double tap costs is two chooser launches - no mutation, no
+            // duplicate write, nothing to undo.
+            // ⚠️ AND DO NOT "FIX" THIS BY RE-ENABLING WHEN THE SHARE FINISHES: onShare launches
+            // on app.scope and returns immediately, so "finished" is not observable from here. A
+            // re-enable right after the callback returns is identical to never disabling, while
+            // plumbing a real completion signal back to a RecyclerView holder is disproportionate to a
+            // cosmetic guard.
             binding.shareButton.setOnClickListener {
                 listener.onShareClicked(it)
             }
@@ -495,9 +509,9 @@ class MediaHeaderAdapter(
             }
 
             override fun onShareClicked(view: View) {
-                // Fires only once a share is actually chosen, so a dismissed dialog leaves the icon
-                // usable. view.context is the Activity-backed context the header is attached to.
-                viewModel.shareWithChoice(view.context) { view.isEnabled = false }
+                // view.context is the Activity-backed context the header is attached to. No enabled-
+                // state bookkeeping - see the click listener's note for why this button never disables.
+                viewModel.shareWithChoice(view.context)
             }
 
             override fun onDescriptionClicked(

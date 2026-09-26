@@ -48,7 +48,9 @@ import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -148,16 +150,30 @@ object Cached {
         }
     }
 
+    // ⚠⚠ THE withContext IS THE FIX FOR A MAIN-THREAD ANR, NOT TIDINESS. This is a file read
+    // PLUS a JSON decode, and being `suspend` imposes no dispatcher of its own - it ran on whatever
+    // thread the caller was on. A cached Page<Shelf> decoded on main ANR'd a budget device (build
+    // 1062). Wrapped HERE rather than at the callers because every cache read funnels through this one
+    // function - getMedia, getFeed's three reads, and getFeedShelf's recursion through Category /
+    // Categories - so a per-caller fix leaves the rest exposed, which is exactly how the 979 closure
+    // came back on 1062. PagedSource.load carries the paging-path half; see its note.
     suspend inline fun <reified T> FileKache.getData(id: String) = runCatching {
-        val file = get(id) ?: throw NotFound(id)
-        File(file).readText().toData<T>().getOrThrow()
+        withContext(Dispatchers.IO) {
+            val file = get(id) ?: throw NotFound(id)
+            File(file).readText().toData<T>().getOrThrow()
+        }
     }
 
+    // Same hazard in the WRITE direction, same reasoning as getData above: toJson() encodes a whole
+    // page and writeText hits the disk, on whatever thread called it. Fixed together because they are
+    // one mechanism, not two.
     suspend inline fun <reified T> FileKache.putData(id: String, data: T) = runCatching {
-        put(id) {
-            runCatching {
-                File(it).writeText(data.toJson())
-            }.isSuccess
+        withContext(Dispatchers.IO) {
+            put(id) {
+                runCatching {
+                    File(it).writeText(data.toJson())
+                }.isSuccess
+            }
         }
     }
 

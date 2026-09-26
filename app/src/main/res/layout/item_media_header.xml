@@ -50,6 +50,15 @@
                 app:icon="@drawable/ic_play"
                 app:iconSize="24dp" />
 
+            <!-- iconTint matches the player's heart; THE TONAL CONTAINER STAYS. Matching on colour
+                 means the ICON changes with the checked state (amoled_fg -> ?attr/colorTertiary).
+                 Dropping the container too would make this the one icon-only control among five
+                 container-styled siblings - the tertiary-container clash of 2026-09-25 arriving from
+                 the other direction.
+                 The selector resolves because a MaterialButton with checkable="true" merges
+                 state_checked into its drawable state, which is what iconTint is evaluated against -
+                 the same mechanism anim_heart_40dp already relies on for outline/filled.
+                 This overrides the tint inherited from @style/IconButtonTonal, deliberately. -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/likeButton"
                 style="@style/IconButtonTonal"
@@ -57,7 +66,8 @@
                 android:checked="false"
                 android:contentDescription="@string/like"
                 android:visibility="gone"
-                app:icon="@drawable/anim_heart_40dp" />
+                app:icon="@drawable/anim_heart_40dp"
+                app:iconTint="@color/button_player_heart" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/hideButton"

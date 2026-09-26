@@ -231,6 +231,33 @@ object ImageUtils {
         enqueue(builder)
     }
 
+    /**
+     * ⚠⚠ TEMPORARY DIAGNOSTIC HELPER (2026-09-26, tag GladixArt). Remove with the two
+     * ARTSRC probes in PlayerTrackAdapter.bind and MainActivity's mini-art branch.
+     *
+     * ⚠⚠ IT ISSUES NOTHING AND BUILDS NO ImageRequest, WHICH IS THE WHOLE POINT. The last
+     * GladixArt probe made its own Coil request and SUPPRESSED the bug it was measuring, so this reads
+     * ONLY the ImageHolder's own fields. Do not "improve" it by calling createRequest.
+     *
+     * ⚠️ WHAT IT CAPTURES AND WHY THOSE FIELDS. `data` and the crop flag are what createRequest
+     * feeds Coil (builder.data(...) plus squareCrop when crop), and Coil derives the MEMORY key from
+     * data + transformations + target size - it is never set explicitly here. So two surfaces can
+     * share a `data` and still miss each other's memory cache if their transformations differ. Size is
+     * NOT printed: it is a property of the target view, not the holder, and reading it would mean
+     * touching the view. Treat equal keys as "same data and crop", not as "guaranteed cache hit".
+     * `disk` mirrors diskId below, which IS set explicitly, so it can be compared exactly.
+     */
+    fun ImageHolder?.artKey(): String {
+        val self = this ?: return "none"
+        val data = when (self) {
+            is ImageHolder.NetworkRequestImageHolder -> "net:${self.request.url}"
+            is ImageHolder.ResourceUriImageHolder -> "uri:${self.uri}"
+            is ImageHolder.ResourceIdImageHolder -> "res:${self.resId}"
+            is ImageHolder.HexColorImageHolder -> "hex:${self.hex}"
+        }
+        return "$data|crop=${self.crop}|disk=${self.diskId}"
+    }
+
     private val ImageHolder.diskId
         get() = when (this) {
             is ImageHolder.NetworkRequestImageHolder -> request.toString().hashCode().toString()

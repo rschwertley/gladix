@@ -7,32 +7,35 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
-import android.widget.ImageView
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.android.material.navigationrail.NavigationRailView
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.lifecycle.Lifecycle
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
 import com.google.android.material.navigation.NavigationBarView
+import com.google.android.material.navigationrail.NavigationRailView
 import dev.brahmkshatriya.echo.databinding.ActivityMainBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.setupExceptionHandler
@@ -48,14 +51,14 @@ import dev.brahmkshatriya.echo.ui.player.PlayerFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.PLAYER_COLOR
 import dev.brahmkshatriya.echo.ui.player.PlayerTvFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
-import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.artKey
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -369,6 +372,28 @@ open class MainActivity : AppCompatActivity() {
             miniArtist.text = track.artists.joinToString(", ") { it.name }
             if (current.mediaItem.mediaId != lastMiniArtId) {
                 lastMiniArtId = current.mediaItem.mediaId
+                // ⚠⚠ TEMPORARY DIAGNOSTIC (2026-09-26), TAG GladixArt - the `where=mini` half
+                // of the pair. Read it together with PlayerTrackAdapter.bind's line; the outcome table
+                // is there. REMOVE BOTH TOGETHER.
+                // This is the ONLY place the mini art loads (the lastMiniArtId guard means once per
+                // mediaId), so if cover is null here the correct art on screen cannot have come from
+                // track.cover - which is the third row of that table.
+                Log.d(
+                    "GladixArt",
+                    "ARTSRC where=mini id=${current.mediaItem.mediaId}" +
+                        " currentCoverNull=${track.cover == null}" +
+                        " listCoverNull=${
+                            playerViewModel.queue
+                                .firstOrNull { it.mediaId == current.mediaItem.mediaId }
+                                ?.track?.cover == null
+                        }" +
+                        " currentKey=${track.cover.artKey()}" +
+                        " listKey=${
+                            playerViewModel.queue
+                                .firstOrNull { it.mediaId == current.mediaItem.mediaId }
+                                ?.track?.cover.artKey()
+                        }"
+                )
                 track.cover.loadInto(miniArt, R.drawable.ic_music)
             }
         }

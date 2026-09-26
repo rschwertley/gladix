@@ -98,6 +98,13 @@
 
                 </LinearLayout>
 
+                <!-- buttonTint is button_player_heart, NOT button_player: the heart is the one
+                     transport-row control representing a persistent CHOICE, so liked vs unliked must
+                     read as a COLOUR change and not only as a fill shape. Matches the phone player's
+                     trackHeart (item_player_controls.xml). TV lands on the selector's
+                     ?attr/colorTertiary for the checked state - PlayerFragment's runtime accent
+                     override does not run here, which is exactly what that file's pre-tint default
+                     exists for. -->
                 <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/tv_track_heart"
                     android:layout_width="64dp"
@@ -112,7 +119,7 @@
                     android:nextFocusUp="@+id/tv_minimize_button"
                     android:nextFocusLeft="@id/tv_track_heart"
                     android:nextFocusRight="@id/tv_track_heart"
-                    app:buttonTint="@color/button_player" />
+                    app:buttonTint="@color/button_player_heart" />
 
             </LinearLayout>
 

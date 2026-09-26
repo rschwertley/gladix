@@ -426,20 +426,20 @@ abstract class MediaDetailsViewModel(
  * unsupported type, a blank id), so the dialog is skipped entirely and the extension link is shared
  * directly. The user is never offered a choice with one dead option.
  *
- * ⚠️ [onSelected] FIRES ONLY ON AN ACTUAL CHOICE, never on dismiss. The header icon uses it
- * to disable itself, and disabling on TAP left the icon dead whenever the dialog was cancelled -
- * nothing re-enables it until the next state bind.
+ * ⚠️ IT REPORTS NOTHING BACK, DELIBERATELY. An earlier version took an onSelected callback so
+ * the header icon could disable itself on a real choice. Both the callback and the disable are gone:
+ * share mutates no state, so nothing ever re-binds the header to re-enable it, and the icon stayed
+ * greyed out for good. See the note at MediaHeaderAdapter's shareButton click listener.
  *
  * ⚠️ PASS AN ACTIVITY CONTEXT FROM THE SHEET. MoreButton.button dismisses the bottom sheet
  * immediately after onClick, so a fragment-scoped context would be torn down under the dialog.
  */
-fun MediaDetailsViewModel.shareWithChoice(context: Context, onSelected: () -> Unit = {}) {
+fun MediaDetailsViewModel.shareWithChoice(context: Context) {
     val item = itemResultFlow.value?.getOrNull()?.item ?: return
     val extensionId = extensionFlow.value?.id
     val gladix = extensionId?.let { gladixLinkFor(it, item) }
     if (gladix == null) {
         onShare()
-        onSelected()
         return
     }
     val sourceName = sourceExtensionName(item)
@@ -451,7 +451,6 @@ fun MediaDetailsViewModel.shareWithChoice(context: Context, onSelected: () -> Un
         .setTitle(R.string.share)
         .setItems(options) { _, which ->
             if (which == 0) onShareGladixLink() else onShare()
-            onSelected()
         }
         .show()
 }

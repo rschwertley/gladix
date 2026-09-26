@@ -2,8 +2,8 @@ package dev.brahmkshatriya.echo.ui.player
 
 import android.graphics.Outline
 import android.graphics.drawable.Drawable
-import android.view.LayoutInflater
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -25,6 +25,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyHorizontalInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.defaultPlayerColors
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.artKey
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.getCachedDrawable
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadWithThumb
 import dev.brahmkshatriya.echo.utils.ui.GestureListener
@@ -33,8 +34,8 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isLandscape
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.max
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class PlayerTrackAdapter(
     private val uiViewModel: UiViewModel,
@@ -350,6 +351,28 @@ class PlayerTrackAdapter(
         }
 
         fun bind(item: MediaItem?) {
+            // ⚠⚠ TEMPORARY DIAGNOSTIC (2026-09-26), TAG GladixArt. REMOVE AS SOON AS ONE
+            // ROW BELOW IS OBSERVED - it prints on EVERY bind and every mini-art load, working cases
+            // included, so silence can only mean this code did not run.
+            // THE QUESTION: a shared-link track shows correct art on the mini player and lock screen
+            // and a BLANK cover on the full player's page. Both surfaces provably read the same
+            // objects - PlayerEventListener is the only writer of currentFlow, and ShufflePlayer
+            // overrides neither getCurrentMediaItem nor getMediaItemAt - so the split must be in what
+            // each does with them.
+            //   currentCoverNull=f listCoverNull=t  -> they DO read different items after all; the
+            //       queue flow is stale independently of the timeline. Fix at emitFullQueue's triggers.
+            //   currentCoverNull=f listCoverNull=f  -> the page HAS the cover and the image load is
+            //       suppressed. Fix at the pendingMediaId/boundId guard or the cache key.
+            //   both t, yet the mini player shows art -> the mini art is not coming from track.cover
+            //       at all (cache or placeholder). Fix at the ImageUtils cache key.
+            Log.d(
+                "GladixArt",
+                "ARTSRC where=page id=${item?.mediaId}" +
+                    " currentCoverNull=${current.value?.track?.cover == null}" +
+                    " listCoverNull=${item?.track?.cover == null}" +
+                    " listKey=${item?.track?.cover.artKey()}" +
+                    " currentKey=${current.value?.track?.cover.artKey()}"
+            )
             // ☠️ INERT - these TextViews are inside the permanently invisible collapsedPlayerInfo, so this
             // text is never seen. The mini-bar title/artist the user reads are written in PlayerFragment
             // onto item_player_collapsed_controls. See item_player_collapsed.xml's root note.
@@ -384,6 +407,19 @@ class PlayerTrackAdapter(
                         ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                     setImageDrawable(image)
                     paintedDrawable = it
+                    // ⚠⚠ TEMPORARY (2026-09-26, GladixArt). The bind-time line cannot answer
+                    // "did it paint" - nothing has been delivered yet there. This fires in the EXISTING
+                    // paint lambda, so it adds no request and no callback: painted=f with a non-null
+                    // cover is row 2 (the load was issued and produced nothing), painted=f with a null
+                    // cover is row 3 (there was nothing to load). decision distinguishes which guard
+                    // ran - see recordCoverDecision above.
+                    Log.d(
+                        "GladixArt",
+                        "ARTSRC where=page-done id=$boundId" +
+                            " painted=${it != null}" +
+                            " decision=$lastCoverDecision" +
+                            " key=${item?.track?.cover.artKey()}"
+                    )
                     applyDrawable()
                 }
             }
