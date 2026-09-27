@@ -271,6 +271,21 @@ class PlayerService : MediaLibraryService() {
         startForegroundCompat()
         setListener(MediaSessionServiceListener(this, getPendingIntent(this)))
 
+        // ⚠⚠ HEAP TICKER, SERVICE HALF. The Activity has its own; this one covers the sessions
+        // the Activity ticker cannot see - a restore OOM inside the service, and the background/AA OOM
+        // loop - where nothing is in the foreground and no checkpoint may fire for minutes.
+        // ⚠️ NO WAKEUPS: delay() suspends a coroutine, it does not schedule an alarm and cannot
+        // wake the device. The ticker lives exactly as long as `scope`, i.e. until onDestroy, so it
+        // cannot outlive the service or hold it alive.
+        // ⚠️ SAFE ALONGSIDE THE ACTIVITY TICKER: both call CrashKeys.onHeapTick, whose running
+        // max is an AtomicInteger getAndUpdate - see the note there.
+        scope.launch {
+            while (true) {
+                CrashKeys.onHeapTick()
+                delay(60_000)
+            }
+        }
+
         val player = ShufflePlayer(exoPlayer, ::mapAaError)
         scope.launch(Dispatchers.Main) {
             mediaChangeFlow.collect { (o, n) -> player.onMediaItemChanged(o, n) }

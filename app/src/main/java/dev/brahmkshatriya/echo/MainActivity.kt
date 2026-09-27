@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -35,7 +34,6 @@ import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigationrail.NavigationRailView
 import dev.brahmkshatriya.echo.databinding.ActivityMainBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.setupExceptionHandler
@@ -53,13 +51,15 @@ import dev.brahmkshatriya.echo.ui.player.PlayerTvFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
-import dev.brahmkshatriya.echo.utils.image.ImageUtils.artKey
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
@@ -181,6 +181,23 @@ open class MainActivity : AppCompatActivity() {
         // paused/stopped. playWhenReady (not isPlaying, which flickers off during buffering). TV-only —
         // phones are meant to sleep during audio playback (battery); the phone player manages its own case.
         if (isTV) observe(playerViewModel.playWhenReady) { binding.root.keepScreenOn = it }
+
+        // ⚠⚠ HEAP TICKER, FOREGROUND HALF. heap_peak_mb used to advance ONLY at five
+        // checkpoints (service create, AA cache clear, queue build, feed load, controller connect), so
+        // a session that climbed between them recorded nothing: a 1111 OOM read 29 MB at 35s and died
+        // at 256 MB seven minutes later with no sample in between. PlayerService runs the other half,
+        // for sessions with no Activity in the foreground at all.
+        // ⚠️ FOREGROUND-ONLY BY CONSTRUCTION, NOT BY A CHECK. observe() is
+        // flowWithLifecycle(lifecycle), which CANCELS the upstream below STARTED and restarts it on
+        // STARTED - so the flow does not exist while backgrounded. There is no ProcessLifecycleOwner in
+        // this project (no lifecycle-process dependency), which is why the Activity lifecycle is the
+        // signal here.
+        // ⚠️ NO WAKEUPS: delay() suspends a coroutine; it schedules no alarm and cannot wake the
+        // device. Emitting BEFORE the delay is deliberate - every return to the foreground takes a free
+        // sample, which is exactly where an unobserved background climb would show up.
+        // ⚠️ onHeapTick only advances the peak, writes nothing when it does not, and leaves
+        // heap_first_* alone. See its note in CrashKeys for why it does not call sampleHeap.
+        observe(flow { while (true) { emit(Unit); delay(60_000) } }) { CrashKeys.onHeapTick() }
         setupPlayerBehavior(
             uiViewModel, binding.playerFragmentContainer, isTV,
             binding.root.findViewById(R.id.navRailContainer)
@@ -372,28 +389,6 @@ open class MainActivity : AppCompatActivity() {
             miniArtist.text = track.artists.joinToString(", ") { it.name }
             if (current.mediaItem.mediaId != lastMiniArtId) {
                 lastMiniArtId = current.mediaItem.mediaId
-                // ⚠⚠ TEMPORARY DIAGNOSTIC (2026-09-26), TAG GladixArt - the `where=mini` half
-                // of the pair. Read it together with PlayerTrackAdapter.bind's line; the outcome table
-                // is there. REMOVE BOTH TOGETHER.
-                // This is the ONLY place the mini art loads (the lastMiniArtId guard means once per
-                // mediaId), so if cover is null here the correct art on screen cannot have come from
-                // track.cover - which is the third row of that table.
-                Log.d(
-                    "GladixArt",
-                    "ARTSRC where=mini id=${current.mediaItem.mediaId}" +
-                        " currentCoverNull=${track.cover == null}" +
-                        " listCoverNull=${
-                            playerViewModel.queue
-                                .firstOrNull { it.mediaId == current.mediaItem.mediaId }
-                                ?.track?.cover == null
-                        }" +
-                        " currentKey=${track.cover.artKey()}" +
-                        " listKey=${
-                            playerViewModel.queue
-                                .firstOrNull { it.mediaId == current.mediaItem.mediaId }
-                                ?.track?.cover.artKey()
-                        }"
-                )
                 track.cover.loadInto(miniArt, R.drawable.ic_music)
             }
         }

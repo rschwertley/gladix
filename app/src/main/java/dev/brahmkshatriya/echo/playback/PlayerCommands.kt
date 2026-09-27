@@ -20,6 +20,10 @@ object PlayerCommands {
     // Pure flag/icon sync (Bundle "enabled": Boolean): sets shuffleModeEnabled on the service player WITHOUT
     // changeQueue, so a client-side in-order start-playback path can correct a stale shuffle icon without reordering.
     val syncShuffleFlagCommand = SessionCommand("sync_shuffle_flag", Bundle.EMPTY)
+
+    // Backward edge swipe on the full player. Distinct from Player.seekToPrevious so the button keeps
+    // its 3s-restart behaviour - see ShufflePlayer.handlePrevious.
+    val previousTrackCommand = SessionCommand("previous_track", Bundle.EMPTY)
     val playCommand = SessionCommand("play", Bundle.EMPTY)
     val addToQueueCommand = SessionCommand("add_to_queue", Bundle.EMPTY)
     val addToNextCommand = SessionCommand("add_to_next", Bundle.EMPTY)

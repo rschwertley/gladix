@@ -180,7 +180,7 @@ class PlayerCallback(
                 .add(radioCommand).add(trackRadioCommand).add(sleepTimer)
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
                 .add(resumeCommand).add(imageCommand).add(backfillCommand)
-                .add(seekToFullCommand).add(syncShuffleFlagCommand)
+                .add(seekToFullCommand).add(syncShuffleFlagCommand).add(previousTrackCommand)
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
@@ -253,6 +253,12 @@ class PlayerCallback(
                 val shuffled = player as? ShufflePlayer
                 if (shuffled == null) bugAsync("seek_to_full", "player is not a ShufflePlayer")
                 else shuffled.seekToFullIndex(args.getInt("index"), args.getBoolean("play"))
+                Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            }
+            previousTrackCommand -> run {
+                val shuffled = player as? ShufflePlayer
+                if (shuffled == null) bugAsync("previous_track", "player is not a ShufflePlayer")
+                else shuffled.previousTrackAlways()
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
             syncShuffleFlagCommand -> run {

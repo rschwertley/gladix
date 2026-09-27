@@ -8,17 +8,18 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
-import android.hardware.display.DisplayManager
-import android.view.Display
-import android.view.KeyEvent
 import android.graphics.Outline
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.AnimatedVectorDrawable
 import android.graphics.drawable.Drawable
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.method.LinkMovementMethod
+import android.util.Log
+import android.view.Display
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -26,11 +27,8 @@ import android.view.ViewOutlineProvider
 import android.widget.ProgressBar
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
-import androidx.lifecycle.Lifecycle
-import androidx.recyclerview.widget.LinearLayoutManager
-import android.util.Log
-import androidx.lifecycle.withResumed
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmap
@@ -39,8 +37,9 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.doOnNextLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.RecyclerView
+import androidx.lifecycle.withResumed
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -57,11 +56,12 @@ import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.slider.Slider
-import androidx.core.content.ContextCompat
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -107,15 +107,16 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.isLandscape
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.marquee
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
+import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.onFirstPageBackSwipe
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.registerOnUserPageChangeCallback
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.supportBottomSheetBehavior
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
 
 // The fraction of the player-sheet drag that each chrome fade occupies. The collapsed mini-bar fades
 // OUT over the first CHROME_FADE_FRACTION of the drag; the expanded toolbar and controls fade IN over
@@ -581,6 +582,10 @@ class PlayerFragment : Fragment() {
         val viewPager = binding!!.viewPager
         viewPager.adapter = adapter
         (viewPager.getChildAt(0) as? RecyclerView)?.itemAnimator = null
+        // Backward swipe on page 0 - the one gesture ViewPager2 cannot report. Routed to the
+        // always-previous command rather than to viewModel.previous(), and it never touches the page
+        // position. See ViewPager2Utils.onFirstPageBackSwipe.
+        viewPager.onFirstPageBackSwipe { viewModel.previousTrack() }
         viewPager.registerOnUserPageChangeCallback { pos, isUser ->
             val curr = viewModel.playerState.current.value
             val index = curr?.let { c -> viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId } } ?: -1

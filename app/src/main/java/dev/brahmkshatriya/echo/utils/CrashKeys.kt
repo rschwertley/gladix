@@ -204,8 +204,19 @@ object CrashKeys {
      *    survives as the one order-independent value, because a running max does not care when it was
      *    sampled.
      *
-     * 2. ⚠️ THE HEAP IS ONLY EVER OBSERVED AT CHECKPOINTS — there is no continuous sampling anywhere in
-     *    this class. heapPeakMb is a running max over sampleHeap calls, and sampleHeap is called only from
+     * 2. ⚠️ THE HEAP IS OBSERVED AT CHECKPOINTS *AND*, SINCE 2026-09-26, ON A ~60s TICK.
+     *    [AMENDED] The sampling-artifact warning below still applies to every CHECKPOINT key and to any
+     *    peak a checkpoint set — but heap_peak_mb / heap_peak_at_age_s are no longer
+     *    checkpoint-only: onHeapTick advances them from a foreground Activity ticker AND from the
+     *    PlayerService scope while the service lives. A peak dated between checkpoints is now REAL
+     *    rather than absent, and heap_peak_at_age_s has ~minute resolution instead of event resolution.
+     *    WHY: a 1111 OOM read 29 MB at 35s then died at 256 MB about seven minutes later with NOTHING
+     *    recorded in between, because no checkpoint fired in that window.
+     *    ⚠️ onHeapTick WRITES NO headroom, AND THAT IS NOT A GAP. The heap LIMIT is derivable
+     *    from any used+headroom pair in the same report (limit = used + headroom), so a tick-set peak
+     *    can still be read against the ceiling without spending two more of the 64 keys on a sixth
+     *    pair. Read the limit off whichever pair the report carries.
+     *    heapPeakMb is a running max over sampleHeap calls, and sampleHeap is called only from
      *    onServiceCreate / onControllerConnected / onQueueBuild / onQueueSize / onFeedLoad /
      *    onExtensionSwitch. So "the peak was at a feed load" means only that the highest CHECKPOINT SAMPLE
      *    happened to be a feed load — and feed loads are by far the most frequent checkpoint. IT IS A
@@ -244,6 +255,40 @@ object CrashKeys {
         // Running max: written only when it actually advances, so a heap that plateaus stops writing. With
         // first + peak + last, "born high" (first ≈ peak ≈ last) is distinguishable from "climbed" (first low,
         // peak late), and heap_peak_at_age_s dates the climb.
+        val previousPeak = heapPeakMb.getAndUpdate { if (usedMb > it) usedMb else it }
+        if (usedMb > previousPeak) {
+            set("heap_peak_mb", usedMb)
+            set("heap_peak_at_age_s", ageS())
+        }
+    }
+
+    /**
+     * Advances heap_peak_mb / heap_peak_at_age_s ONLY. Called from a ~60s ticker; see note 2.
+     *
+     * ⚠⚠ IT DELIBERATELY DOES NOT CALL sampleHeap. Every sampleHeap call also writes a
+     * used/headroom PAIR, and passing an existing pair would destroy that pair's meaning -
+     * heap_used_mb_feed would stop meaning "at a feed load". Passing a NEW pair would cost two more
+     * keys against the ~50-of-64 already in use. So this touches the two peak keys and nothing else.
+     *
+     * ⚠⚠ NOTE 4 IS SATISFIED BY CONSTRUCTION, NOT BY LUCK: both writes sit inside the
+     * peak-advanced branch. A tick that finds no new peak writes NOTHING, and the retained value is
+     * still true - the accumulator case note 4 licenses. Nothing here is a snapshot, so there is no
+     * key that would silently describe an earlier moment.
+     *
+     * ⚠️ heap_first_* IS DELIBERATELY UNTOUCHED. If a tick fired before any checkpoint,
+     * setting it would redefine heap_first_mb from "first CHECKPOINT sample" to "first anything",
+     * silently changing how every existing report reads.
+     *
+     * ⚠️ TWO TICKERS CALL THIS AND THAT IS INTENDED - the Activity's and PlayerService's.
+     * heapPeakMb is an AtomicInteger updated with getAndUpdate, so a concurrent tick can at worst
+     * lose a redundant write of an equal-or-lower value; the max itself cannot go backwards. The
+     * service ticker exists because the OOMs that motivated this happened with NO Activity in the
+     * foreground (a restore OOM inside the service, and an OOM loop in background/AA sessions), where
+     * an Activity-only ticker would have recorded nothing at all.
+     */
+    fun onHeapTick() {
+        val rt = Runtime.getRuntime()
+        val usedMb = ((rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)).toInt()
         val previousPeak = heapPeakMb.getAndUpdate { if (usedMb > it) usedMb else it }
         if (usedMb > previousPeak) {
             set("heap_peak_mb", usedMb)

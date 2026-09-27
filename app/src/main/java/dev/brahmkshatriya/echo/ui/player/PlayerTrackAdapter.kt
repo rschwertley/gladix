@@ -25,7 +25,6 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyHorizontalInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.defaultPlayerColors
-import dev.brahmkshatriya.echo.utils.image.ImageUtils.artKey
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.getCachedDrawable
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadWithThumb
 import dev.brahmkshatriya.echo.utils.ui.GestureListener
@@ -241,6 +240,11 @@ class PlayerTrackAdapter(
         // would attribute. They did not: BOTH landed in f2b661b0 (build 1057) and both were live in 1058
         // and 1059. Screen-off natural timeout, auto-advance, wake on 1059 still produced a cover exactly
         // one track behind, with title, artist and the mini bar all correct.
+        // [REMOVED 1060] forceReloadCover AND refreshCovers NO LONGER EXIST - deleted by 7341175b
+        // (2026-08-29, build 1060), which is also the commit that added this note. Grep finds them only
+        // in this comment and at the "open question" below. Recorded because the surrounding text reads
+        // as present tense and has already sent one reader looking for a third onDelivered callback to
+        // guard; there are TWO (bind and retryLoad), which is all there is to fix.
         // So the pair is refuted together, and each half separately:
         //   * suppressing a stale paint does not cure it -> the failure is NOT a superseded delivery
         //     overwriting a correct one, which was the whole overwrite hypothesis;
@@ -252,6 +256,9 @@ class PlayerTrackAdapter(
         // correct after five dark advances. The cure was the REQUEST, not the pixels. Why that request
         // worked where forceReloadCover's did not is the open question, and it is a difference between
         // the two call sites, not between the two images.
+        // [REMOVED 1060] THAT QUESTION IS ABOUT CODE THAT IS GONE. forceReloadCover's call site no
+        // longer exists, so the comparison it names cannot be made from the tree any more - only from
+        // 7341175b's parent. Treat it as archaeology, not as an open thread someone can pick up.
         //
         // The belt was removed in full rather than narrowed: a change with a failed experiment behind it
         // and no mechanism in front of it is not worth a full size decode per wake on a tree that OOM'd
@@ -337,7 +344,27 @@ class PlayerTrackAdapter(
                 onDelivered = { drawable ->
                     if (pendingMediaId == boundId) {
                         coverDrawable = drawable
-                        lastBoundMediaId = boundId
+                        // ⚠⚠ lastBoundMediaId LATCHES ONLY ON A REAL DELIVERY. A null drawable still reaches
+                        // this callback - loadWithThumb wires ::setDrawable as BOTH the success and error target
+                        // (ImageUtils: request.target({}, ::setDrawable, ::setDrawable)) and invokes onDelivered
+                        // unconditionally - so latching on it marked the id "done" while nothing was painted, and the
+                        // next bind of the SAME id was declined at the lastBoundMediaId guard. That is the state the
+                        // declaration warns about: bookkeeping correct while pixels are wrong, so every recovery path is
+                        // correctly disarmed.
+                        // MEASURED, build 1110 (2026-09-26), shared Gladix track link id=764920: bind at 12.410 with no
+                        // cover -> issued:bind, painted=false, which latched; the 13.051 bind with the cover present (and
+                        // an identical image key on both sides) produced NO load at all. The full player stayed blank
+                        // while the mini bar showed art, because PlayerFragment's mini bar re-issues on every current
+                        // emission and never latches.
+                        // ⚠️ coverDrawable IS STILL ASSIGNED UNCONDITIONALLY, DELIBERATELY. It is the retry guard
+                        // and its own note requires it to reflect real deliveries only; this change makes
+                        // lastBoundMediaId AGREE with it instead of running ahead of it. Do not "simplify" by gating both
+                        // on the same condition.
+                        // ⚠️ COST, ACCEPTED: a cover that genuinely cannot load leaves the holder rebindable, so
+                        // each rebind re-issues one request instead of none. Bounded by rebind frequency, and
+                        // ImageUtils already records that there is no per-view coalescing, so concurrent requests per
+                        // view are a condition this code already tolerates.
+                        if (drawable != null) lastBoundMediaId = boundId
                     }
                 }
             ) {
@@ -351,28 +378,6 @@ class PlayerTrackAdapter(
         }
 
         fun bind(item: MediaItem?) {
-            // ⚠⚠ TEMPORARY DIAGNOSTIC (2026-09-26), TAG GladixArt. REMOVE AS SOON AS ONE
-            // ROW BELOW IS OBSERVED - it prints on EVERY bind and every mini-art load, working cases
-            // included, so silence can only mean this code did not run.
-            // THE QUESTION: a shared-link track shows correct art on the mini player and lock screen
-            // and a BLANK cover on the full player's page. Both surfaces provably read the same
-            // objects - PlayerEventListener is the only writer of currentFlow, and ShufflePlayer
-            // overrides neither getCurrentMediaItem nor getMediaItemAt - so the split must be in what
-            // each does with them.
-            //   currentCoverNull=f listCoverNull=t  -> they DO read different items after all; the
-            //       queue flow is stale independently of the timeline. Fix at emitFullQueue's triggers.
-            //   currentCoverNull=f listCoverNull=f  -> the page HAS the cover and the image load is
-            //       suppressed. Fix at the pendingMediaId/boundId guard or the cache key.
-            //   both t, yet the mini player shows art -> the mini art is not coming from track.cover
-            //       at all (cache or placeholder). Fix at the ImageUtils cache key.
-            Log.d(
-                "GladixArt",
-                "ARTSRC where=page id=${item?.mediaId}" +
-                    " currentCoverNull=${current.value?.track?.cover == null}" +
-                    " listCoverNull=${item?.track?.cover == null}" +
-                    " listKey=${item?.track?.cover.artKey()}" +
-                    " currentKey=${current.value?.track?.cover.artKey()}"
-            )
             // ☠️ INERT - these TextViews are inside the permanently invisible collapsedPlayerInfo, so this
             // text is never seen. The mini-bar title/artist the user reads are written in PlayerFragment
             // onto item_player_collapsed_controls. See item_player_collapsed.xml's root note.
@@ -398,7 +403,8 @@ class PlayerTrackAdapter(
                     onDelivered = { drawable ->
                         if (pendingMediaId == boundId) {
                             coverDrawable = drawable
-                            lastBoundMediaId = boundId
+                            // Same rule as the retryLoad path above - see the note there.
+                            if (drawable != null) lastBoundMediaId = boundId
                         }
                     }
                 ) {
@@ -407,19 +413,6 @@ class PlayerTrackAdapter(
                         ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                     setImageDrawable(image)
                     paintedDrawable = it
-                    // ⚠⚠ TEMPORARY (2026-09-26, GladixArt). The bind-time line cannot answer
-                    // "did it paint" - nothing has been delivered yet there. This fires in the EXISTING
-                    // paint lambda, so it adds no request and no callback: painted=f with a non-null
-                    // cover is row 2 (the load was issued and produced nothing), painted=f with a null
-                    // cover is row 3 (there was nothing to load). decision distinguishes which guard
-                    // ran - see recordCoverDecision above.
-                    Log.d(
-                        "GladixArt",
-                        "ARTSRC where=page-done id=$boundId" +
-                            " painted=${it != null}" +
-                            " decision=$lastCoverDecision" +
-                            " key=${item?.track?.cover.artKey()}"
-                    )
                     applyDrawable()
                 }
             }

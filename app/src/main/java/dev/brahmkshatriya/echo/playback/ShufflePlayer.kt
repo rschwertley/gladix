@@ -700,16 +700,21 @@ class ShufflePlayer(
     override fun seekToPreviousMediaItem() = handlePrevious()
     override fun seekToPrevious() = handlePrevious()
 
-    private fun handlePrevious() {
+    // The backward-edge-swipe entry point. NOT an override: nothing in Media3 must be able to reach
+    // this, or the 3s restart convention would change for the button too. Invoked only through
+    // PlayerCommands.previousTrackCommand.
+    internal fun previousTrackAlways() = handlePrevious(allowRestart = false)
+
+    private fun handlePrevious(allowRestart: Boolean = true) {
         // Auto-advance trims are synchronous, so the just-departed track is already in the backStack. Settle
         // any pending REPEAT_ALL reconstitution first so we pop against a settled queue.
         settlePendingReconstitution()
-        if (player.currentPosition > PREVIOUS_RESTART_THRESHOLD_MS) {
+        if (allowRestart && player.currentPosition > PREVIOUS_RESTART_THRESHOLD_MS) {
             player.seekToDefaultPosition()
             return
         }
         val item = backStack.removeLastOrNull() ?: run {
-            player.seekToDefaultPosition()
+            if (allowRestart) player.seekToDefaultPosition()
             return
         }
         isNavigating = true

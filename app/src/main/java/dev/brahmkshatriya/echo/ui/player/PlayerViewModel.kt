@@ -19,9 +19,9 @@ import androidx.media3.session.SessionResult
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
+import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Streamable
-import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
@@ -29,6 +29,8 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
+import dev.brahmkshatriya.echo.history.HistoryRepository
+import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -37,18 +39,18 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.addToNextCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToQueueCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.backfillCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.playCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.previousTrackCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
-import dev.brahmkshatriya.echo.playback.PlayerCommands.trackRadioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
 import dev.brahmkshatriya.echo.playback.PlayerCommands.syncShuffleFlagCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.trackRadioCommand
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getController
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
+import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
-import dev.brahmkshatriya.echo.history.HistoryRepository
-import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -57,7 +59,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.max
 
 @OptIn(UnstableApi::class)
 class PlayerViewModel(
@@ -339,6 +340,13 @@ class PlayerViewModel(
 
     fun previous() {
         withBrowser { it.seekToPrevious() }
+    }
+
+    // Backward edge swipe only. Deliberately NOT previous(): that one restarts the current track past
+    // 3s, which is right for a button and wrong for a navigation gesture. See
+    // ShufflePlayer.handlePrevious. A no-op service-side when the back-stack is empty.
+    fun previousTrack() {
+        withBrowser { it.sendCustomCommand(previousTrackCommand, Bundle.EMPTY) }
     }
 
     fun setShuffle(isShuffled: Boolean, changeCurrent: Boolean = false) {
