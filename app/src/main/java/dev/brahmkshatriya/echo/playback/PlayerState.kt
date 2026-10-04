@@ -41,6 +41,20 @@ data class PlayerState(
     // under-reporting would dismiss one that is.
     val loadEpisodeStartMs = AtomicLong(0L)
 
+    // TRACER (2026-10-03, relSkip) - REMOVE WITH THAT FIELD. Counts the times
+    // StreamableMediaSource.prepareSourceInternal's posted prepareChildSource found `released` true and
+    // returned without preparing a child source.
+    // ⚠⚠ WHAT IT IS TESTING: that branch is the leading candidate for the "loaded=true loads=0
+    // opens=0 bytes=0" stall (5 of ~30 Deezer consecutive-skip reports). Take it and the load job
+    // completes, `error` stays NULL, and no child source is ever registered - so
+    // maybeThrowSourceInfoRefreshError has nothing to throw and CompositeMediaSource:61-65 iterates an
+    // empty map. The player polls a silent source forever (ExoPlayerImplInternal:1511 calls
+    // maybeThrowPrepareError every doSomeWork while unprepared) and only our 5s watchdog notices.
+    // ⚠️ A COUNT HERE, A BOOLEAN IN THE REPORT. PlayerEventListener diffs it per item and renders
+    // relSkip=yes|no, because lastCauses feeds HealthMonitor.report's dedupe signature and a raw number
+    // there would give every trip a unique signature. See the cardinality note in armBufferingWatchdog.
+    val releasedPrepareSkips = AtomicInteger(0)
+
     // Single cold-start restore: the queue is read from disk ONCE at service creation
     // (PlayerService.onCreate) into this Deferred, and shared by every consumer — so no path runs its own
     // recoverPlaylist and races another. A null payload means the disk was empty.

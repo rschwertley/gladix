@@ -209,6 +209,17 @@ class HealthMonitor(private val app: App) {
             setCustomKey("extension_id", app.crashExtensionId)
             setCustomKey("player_state", app.crashPlayerState)
             setCustomKey("is_playing", app.crashIsPlaying)
+            // ⚠⚠ ALWAYS "none" HERE, AND THAT IS THE CORRECT VALUE RATHER THAN A PLACEHOLDER.
+            // deezer_gateway is written by App.kt's collector from a cause-chain walk for a
+            // DeezerGatewayException. The exceptions THIS path records carry no cause at all - stated a
+            // few lines above, and the same fact that makes throwing_extension_id read the exception's
+            // own identity instead of walking - so a walk here could only ever return null.
+            // WHY IT IS WRITTEN AT ALL: it is a SNAPSHOT key (CrashKeys doc note 4), and this path
+            // deliberately does not go through App.throwFlow, so nothing else populates it for a
+            // HealthMonitor report. Omitted, it would keep the LAST throwFlow report's gateway refusal
+            // and attach a Deezer error to an unrelated breaker trip - exactly the
+            // throwing_extension_id defect recorded above, on a new key.
+            setCustomKey("deezer_gateway", "none")
             // Twin of the call in App.kt's throwFlow collector, and it must stay a twin. report_age_s is
             // the only key carrying the instant a report was RECORDED (every age_s_* is the age at its own
             // checkpoint; process_age_s is first-write). A key present on one recording path and absent on

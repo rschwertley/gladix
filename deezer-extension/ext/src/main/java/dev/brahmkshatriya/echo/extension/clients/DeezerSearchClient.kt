@@ -10,6 +10,8 @@ import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.extension.DeezerApi
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -21,7 +23,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.Locale
 
 class DeezerSearchClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val scope: CoroutineScope, private val history: Boolean, private val parser: DeezerParser) {
 
@@ -157,12 +158,36 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     }
 
     private suspend fun browseFeed(shelf: String): List<Shelf> {
+        // ⚠⚠ THE LOGIN CHECK AND THE COUNTRY PUSH ARE SPLIT, AND THE SPLIT IS THE WHOLE POINT.
+        // handleArlExpiration keeps THIS EXACT try/catch - log then `throw e` - character for
+        // character, so its propagation is unchanged: a ClientException.LoginRequired still reaches the
+        // host and still produces the sign-in prompt, and the "Search ERROR" line it has logged since
+        // 9d33d55c still appears. 1108's lockout came from changing how Deezer's login-check errors
+        // propagate; nothing here touches that path.
         try {
             deezerExtension.handleArlExpiration()
-            api.updateCountry()
         } catch (e: Exception) {
             println("GladixDeezer Search ERROR: ${e.message}")
             throw e
+        }
+        // ⚠⚠ THE COUNTRY PUSH IS BEST-EFFORT: IT IS A SIDE CALL AND MUST NOT BREAK THE LOAD.
+        // It sets an account PREFERENCE and contributes nothing to the shelves built below, yet a
+        // failure used to fail the whole browse feed.
+        // ⚠️ AND THE RETHROW IT REPLACES WAS NEVER A DECISION - checked with git log -S before
+        // changing it. Both calls were BARE until 9d33d55c (2026-06-20), "chore(room): migrate to Room
+        // 3.0.0-rc01 + improve diagnostic logging": that commit added the try/catch to attach the
+        // println, and `throw e` was there so the logging wrapper changed nothing. Propagation was the
+        // ABSENCE of a catch, never a choice - every other edit in that hunk is logging.
+        // ⚠️ WHY THIS MATTERS NOW: callApi throws DeezerGatewayException on a non-empty gateway
+        // `error` object, and an unlisted RECOMMENDATION_COUNTRY is a candidate trigger - see
+        // DeezerCountries.resolveApiCountry. If App.kt's deezer_gateway key ever reports
+        // `gw=user.updateRecommendationCountry`, this is the call it means.
+        // ⚠️ CancellationException IS RETHROWN: runCatching catches Throwable, and swallowing a
+        // cancellation here would break coroutine cancellation for the whole feed load. Same guard the
+        // module already uses at DeezerTrackClient.loadStreamableMedia.
+        runCatching { api.updateCountry() }.onFailure {
+            if (it is CancellationException) throw it
+            println("GladixDeezer Search: updateCountry failed (continuing): ${it.message}")
         }
 
         val (searchHomePipeShelves, exploreTabShelves) = coroutineScope {

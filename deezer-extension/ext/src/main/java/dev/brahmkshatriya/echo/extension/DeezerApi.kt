@@ -65,8 +65,24 @@ import javax.net.ssl.X509TrustManager
 class DeezerGatewayException(
     val method: String,
     val errorText: String,
+    // ⚠⚠ THE LANG THIS REQUEST CARRIED, ADDED 2026-10-03 FOR App.kt's deezer_gateway KEY.
+    // The 1113 reports of this exception (12 events / 3 users, example at a startup feed load) could not
+    // be triaged because the MESSAGE is a fixed generic string by design - see the two-strings note
+    // above - and no Crashlytics key carried method or errorText, so twelve events arrived with zero
+    // recoverable cause. The leading hypothesis was an unsupported gateway LANG, which nothing in a
+    // report could confirm or refute. This field is the half of that question the exception can answer
+    // about itself; see DeezerCountries.resolveApiLanguageTag for the fix shipped alongside it.
+    // ⚠️ IT IS MEANINGFUL FOR EVERY METHOD, not only page.get. page.get carries LANG inside
+    // gateway_input and deezer.pageAlbum/pageArtist/pagePlaylist/pageShow carry a `lang` param, but
+    // getHeaders puts Accept-Language and Content-Language on EVERY call, so there is no gateway
+    // request this does not describe.
+    val lang: String,
 ) : Exception("Deezer refused this request.") {
-    override fun toString() = "DeezerGatewayException(method=$method, error=$errorText)"
+    // ⚠️ FORMAT CHANGED 2026-10-03 (lang inserted). It is forwarded WHOLE by App.kt's fallback
+    // arm and never parsed, so nothing reads the field order - but do not assume the old two-field
+    // shape when reading an older stack trace.
+    override fun toString() =
+        "DeezerGatewayException(method=$method, lang=$lang, error=$errorText)"
 }
 
 /**
@@ -147,10 +163,30 @@ class DeezerApi(private val session: DeezerSession) {
     }
 
     private val language: String
-        get() = session.settings?.getString("lang") ?: Locale.getDefault().toLanguageTag()
+        // ⚠⚠ GOES THROUGH THE SUPPORTED LIST - DO NOT COLLAPSE BACK TO `?:`. This read was
+        // `settings.getString("lang") ?: Locale.getDefault().toLanguageTag()`, which sent the raw device
+        // tag as gateway LANG for every user who never picked a language, because the default-index
+        // helper writes a DIFFERENT key ("languageCode"). Full argument, and what each input now
+        // returns, at DeezerCountries.resolveApiLanguageTag.
+        get() = DeezerCountries.resolveApiLanguageTag(
+            session.settings?.getString("lang"),
+            Locale.getDefault().toLanguageTag(),
+            Locale.getDefault().country
+        )
 
-    private val country: String
-        get() = session.settings?.getString("country") ?: Locale.getDefault().country
+    // ⚠⚠ NULLABLE, AND NULL MEANS "SEND NOTHING" - see DeezerCountries.resolveApiCountry. This
+    // read was `settings.getString("country") ?: Locale.getDefault().country`, which sent an
+    // unvalidated device region for every user who never picked a country, because the default-index
+    // helper writes a DIFFERENT key ("countryCode"). Exactly the `lang`/`languageCode` mismatch one
+    // field over.
+    // ⚠️ ONE CONSUMER, VERIFIED BY GREP OVER THE MODULE: updateCountry() below. DeezerShow's
+    // `country` param is NOT this - it derives a region from the language tag, which is a separate
+    // defect scoped separately; see the note at DeezerShow.show.
+    private val country: String?
+        get() = DeezerCountries.resolveApiCountry(
+            session.settings?.getString("country"),
+            Locale.getDefault().country
+        )
 
     val langCode: String
         get() = language.substringBefore("-")
@@ -472,9 +508,11 @@ class DeezerApi(private val session: DeezerSession) {
                 // without this line those refusals become invisible again, which is the exact defect this
                 // whole probe exists to remove. The throw serves the surfacing paths; the log serves the
                 // swallowing ones. Two audiences, two mechanisms.
+                // lang= mirrors the field now on the exception, so the logcat line and the
+                // deezer_gateway Crashlytics key cannot disagree about the same request.
                 println(
-                    "GladixDeezer GATEWAY-ERROR method=$method resultsUsable=$resultsUsable " +
-                        "error=${errorText.take(300)}"
+                    "GladixDeezer GATEWAY-ERROR method=$method lang=$langCode " +
+                        "resultsUsable=$resultsUsable error=${errorText.take(300)}"
                 )
                 // ⚠⚠ [FLIPPED 2026-09-12] RULE B CONFIRMED BY MEASUREMENT, NOT BY ARGUMENT.
                 // Thirteen samples across two sessions, zero counter-examples:
@@ -498,7 +536,7 @@ class DeezerApi(private val session: DeezerSession) {
                 // what this is avoiding - a typed failure that carries nothing cannot tell "signed out"
                 // from "token went stale", and the whole value of the two captures above was the literal
                 // text "Page type smarttracklist does not exist".
-                throw DeezerGatewayException(method, errorText)
+                throw DeezerGatewayException(method, errorText, langCode)
             }
             result
         }
@@ -921,7 +959,27 @@ class DeezerApi(private val session: DeezerSession) {
 
     private val deezerUtil by lazy { DeezerUtil(this) }
 
-    suspend fun updateCountry() = deezerUtil.updateCountry(country)
+    /**
+     * Pushes RECOMMENDATION_COUNTRY to the account, at most once per distinct value per session.
+     *
+     * ⚠⚠ TWO GUARDS, AND THEY EXIST FOR DIFFERENT REASONS - do not collapse them.
+     *   NULL means the resolver could not validate a country (see DeezerCountries.resolveApiCountry).
+     *     Sending nothing leaves the account's own preference intact, which is the safe answer.
+     *   UNCHANGED means we already pushed this exact value successfully in this session. The only
+     *     caller is DeezerSearchClient.browseFeed, which runs on EVERY Search/Browse load, so without
+     *     this the same account preference was re-written on every browse - a redundant gateway write
+     *     per screen, on the one endpoint family a shared-account rate limit would notice first.
+     * ⚠️ RECORDED ONLY ON SUCCESS, so a failed push is retried on the next browse rather than
+     * being latched as done. The memo lives on DeezerSession and is cleared by
+     * DeezerExtension.setLoginUser - RECOMMENDATION_COUNTRY is PER ACCOUNT, so a user switch must be
+     * able to push again even when the resolved value has not changed.
+     */
+    suspend fun updateCountry() {
+        val resolved = country ?: return
+        if (resolved == session.lastSentCountry) return
+        deezerUtil.updateCountry(resolved)
+        session.setLastSentCountry(resolved)
+    }
 
     suspend fun log(track: Track) = deezerUtil.log(track, userId)
 

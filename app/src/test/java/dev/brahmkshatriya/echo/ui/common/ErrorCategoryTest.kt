@@ -4,12 +4,17 @@ import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.ImportType
 import dev.brahmkshatriya.echo.common.models.Metadata
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
-import org.junit.Assert.assertEquals
-import org.junit.Test
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 /**
  * Drift guard for [classify] vs the phone-snackbar classifier ([ExceptionUtils]'s getTitle/
@@ -54,6 +59,39 @@ class ErrorCategoryTest {
 
     // Deliberate NON-match: a mid-stream SocketException is a per-track transient, not "no internet".
     // It must stay Generic so PlayerEventListener's retry-then-skip branch keeps its meaning.
+    // getTitle's timeout arm: `is SocketTimeoutException, is TimeoutCancellationException ->`
+    // playback_stream_stalling, or no_internet when the device reports no active network. classify has
+    // no Context and both of getTitle's answers are Network, so it resolves unconditionally.
+    @Test
+    fun `bare SocketTimeoutException is Network`() {
+        assertEquals(ErrorCategory.Network, classify(SocketTimeoutException("timeout")))
+    }
+
+    // The real A1 chain, reproduced rather than mocked: RawDataSource.open rewraps the HEAD's
+    // TimeoutCancellationException as a SocketTimeoutException carrying it as the CAUSE, and media3's
+    // Loader wraps whatever escapes DataSource.open. Every node must resolve to Network at any depth.
+    // ⚠️ THE TIMEOUT IS CAUGHT FROM A REAL withTimeout, NOT CONSTRUCTED:
+    // TimeoutCancellationException's constructor is INTERNAL to kotlinx-coroutines, so the type can be
+    // caught and type-checked but never instantiated from here. Do not "simplify" this to a constructor
+    // call - it will not compile.
+    @Test
+    fun `wrapped stream timeout is Network at every depth`() {
+        val timeout = try {
+            runBlocking { withTimeout(1) { delay(10_000) } }
+            throw AssertionError("withTimeout did not time out")
+        } catch (e: TimeoutCancellationException) {
+            e
+        }
+        assertEquals(ErrorCategory.Network, classify(timeout))
+        val rewrapped = SocketTimeoutException("Stream open timed out").apply { initCause(timeout) }
+        assertEquals(ErrorCategory.Network, classify(rewrapped))
+        assertEquals(ErrorCategory.Network, classify(IOException(rewrapped)))
+    }
+
+    // DRIFT GUARD, AND THE ONE MOST LIKELY TO BE BROKEN BY A WELL-MEANING WIDENING. The timeout arm
+    // added 2026-10-03 must NOT pull plain SocketException with it: SocketTimeoutException extends
+    // InterruptedIOException, not SocketException, which is exactly why the two can be separated. A
+    // mid-stream connection reset stays Generic and keeps its retry-then-skip meaning.
     @Test
     fun `plain SocketException stays Generic`() {
         assertEquals(ErrorCategory.Generic, classify(SocketException("Connection reset")))

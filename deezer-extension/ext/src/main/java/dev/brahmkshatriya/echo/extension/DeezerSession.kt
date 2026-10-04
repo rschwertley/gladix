@@ -85,6 +85,24 @@ class DeezerSession(
         credentialsRejected = rejected
     }
 
+    /**
+     * The RECOMMENDATION_COUNTRY value last pushed SUCCESSFULLY in this session, or null if none.
+     * Read by [DeezerApi.updateCountry] to skip a redundant write; see that function for why.
+     *
+     * ⚠️ CLEARED BY [DeezerExtension.setLoginUser] FOR A CONCRETE REASON, not for symmetry
+     * with [credentialsRejected]: the preference is PER ACCOUNT, so after a logout or a user switch
+     * the new account has not been told anything, and a stale memo would skip the push the new
+     * account needs. Same chokepoint, same argument - it runs on login, logout and user switch.
+     * Not persisted: a fresh process pushes once, which is correct and cheap.
+     */
+    @Volatile
+    var lastSentCountry: String? = null
+        private set
+
+    fun setLastSentCountry(country: String?) {
+        lastSentCountry = country
+    }
+
     companion object {
         @Volatile
         private var instance: DeezerSession? = null

@@ -114,19 +114,76 @@ class UiViewModel(
     val isMainFragment = MutableStateFlow(true)
     var isRail = false
 
+    /**
+     * Every inset a content view must reserve: system bars + the nav bar + the collapsed player.
+     *
+     * ⚠⚠ THE NAV TERM IS UNCONDITIONAL, AND IT USED TO BE GATED ON isMainFragment. That gate
+     * was correct when written and WRONG FOR FOUR MONTHS AFTERWARDS. Two commits on 2026-05-29 split
+     * the nav bar's VISIBILITY from its INSET and neither updated this line:
+     *   280e68d0 "nav bar visibility" changed AnimationUtils.animateTranslation from
+     *     `visible = if (isRail) true else (isMainFragment && isPlayerCollapsed)` to
+     *     `visible = if (isRail) true else isPlayerCollapsed` - so the phone nav bar stopped hiding
+     *     on sub-pages and became visible on EVERY page unless the player sheet is expanded;
+     *   3e6f301e "player bar overlap" changed setPlayerNavViewInsets(this, isMainFragment, isRail)
+     *     to (this, true, isRail) - so the WRITTEN inset stopped varying too.
+     * Before those, isMainFragment==false meant the bar was hidden AND navViewInsets was already
+     * Insets(), so this gate was redundant-but-correct. After them it dropped 64dp of inset for a bar
+     * that was still on screen.
+     *
+     * ⚠⚠ WHY NOTHING NOTICED FOR FOUR MONTHS, AND WHY ANDROID AUTO EXPOSED IT. isMainFragment
+     * was read with .value INSIDE this combine while not being one of the combined flows, so `combined`
+     * never recomputed when it changed. Drilling into an artist/album page set it false and left this
+     * flow STALE - still carrying the nav bar's 64dp - so the padding was accidentally right. The bug
+     * appeared only when something else made an upstream flow emit and forced a recompute, and in
+     * practice that was AA: playerInsets is Insets() or Insets(bottom=72dp) and Insets is a data class,
+     * so MutableStateFlow conflates equal writes and ONLY a HIDDEN<->shown sheet transition emits.
+     * "First track of the session arrives while you are already standing on a detail page" is the AA
+     * case; starting playback on the phone happens before you drill in, so the stale value survives.
+     * Measured on device: the last row of an artist page clears with no AA and is covered by ~one row
+     * after AA connects. MediaDetailsFragment pads by combined.bottom + 16dp against a 136dp peek, so
+     * the shortfall was 48dp there.
+     *
+     * ⚠️ IT IS SAFE TO ADD THE NAV TERM UNCONDITIONALLY RATHER THAN GATING IT ON
+     * "sheet not expanded", because every consumer that cares about the expanded state branches away
+     * BEFORE the nav term can reach it - checked, not assumed:
+     *   getSnackbarInsets returns Insets() for STATE_EXPANDED in an earlier return;
+     *   PlayerFragment's combined observer uses `system`, not getCombined(), when STATE_EXPANDED;
+     *   PlayerFragment's playerCollapsedContainer uses getCombined() unconditionally but through
+     *     applyHorizontalInsets, which writes start/end only - the phone nav inset is bottom-only;
+     *   PlayerTrackAdapter reads getCombined() only when isLandscape, where the nav is a RAIL and its
+     *     inset is start/end.
+     * A VERSION GATED ON playerSheetState WAS SCOPED AND REJECTED: the only input it treated
+     * differently was "non-main page while expanded", which none of the above can observe, and it cost
+     * two extra flows in the combine and therefore a new emission on every navigation and every sheet
+     * state change. Do not reintroduce it without a consumer that needs the distinction.
+     *
+     * ⚠️ AND THE LAMBDA NOW READS NO MUTABLE STATE OUTSIDE ITS FLOWS, which is the structural
+     * point rather than a tidy-up: isRail is a `var` assigned once in setupNavBarAndInsets before any
+     * layout, so there is nothing left here that can go stale the way isMainFragment did. If you ever
+     * add a term to this lambda, it must be a COMBINED FLOW, not a .value read.
+     */
     val combined = systemInsets.combine(navViewInsets) { system, nav ->
-        if (isMainFragment.value || isRail) system.add(nav) else system
+        system.add(nav)
     }.combine(playerInsets) { system, player ->
         system.add(player)
     }.stateIn(viewModelScope, Lazily, Insets())
 
-    fun getCombined() = (if (isMainFragment.value || isRail) systemInsets.value.add(navViewInsets.value)
-    else systemInsets.value).add(playerInsets.value)
+    /** Imperative twin of [combined]. Same terms, same reasoning - see that doc before changing either. */
+    fun getCombined() =
+        systemInsets.value.add(navViewInsets.value).add(playerInsets.value)
 
+    /**
+     * What a snackbar must clear. No systemInsets term, deliberately - a Snackbar's own parent already
+     * applies those.
+     *
+     * ⚠️ THE STATE_EXPANDED EARLY RETURN IS WHY THE NAV TERM BELOW NEEDS NO GATE: an expanded
+     * sheet covers the screen, and this returns before any nav/player term is reached. The second line
+     * was `if (isMainFragment.value || isRail)` with a bare `playerInsets.value` fallback until
+     * 2026-10-03; see [combined] for the four-month-old split that made that gate wrong.
+     */
     fun getSnackbarInsets(): Insets {
         if (playerSheetState.value == STATE_EXPANDED) return Insets()
-        if (isMainFragment.value || isRail) return navViewInsets.value.add(playerInsets.value)
-        return playerInsets.value
+        return navViewInsets.value.add(playerInsets.value)
     }
 
     fun setPlayerNavViewInsets(context: Context, isNavVisible: Boolean, isRail: Boolean): Insets {
@@ -143,6 +200,26 @@ class UiViewModel(
         return insets
     }
 
+    /**
+     * ⚠⚠ THE VALUE WRITTEN HERE IS EFFECTIVELY FROZEN, AND UN-FREEZING IT IS A TRAP. Its only
+     * caller is animateNav, which passes setPlayerNavViewInsets(this, true, isRail) - `isNavVisible`
+     * hardcoded true since 3e6f301e (2026-05-29). So on a phone this always writes
+     * Insets(bottom = nav_height), Insets is a data class, and MutableStateFlow conflates equal values:
+     * navViewInsets has not actually changed since setup.
+     *
+     * ⚠️ THAT ACCIDENT KILLED A REAL RACE, which is why restoring a varying write is not the
+     * "more correct" fix it looks like. AnimationUtils.animateTranslation fires its action at the
+     * animation START when the bar appears and at the END when it leaves - deliberately asymmetric, so
+     * space is reserved before the bar arrives and released after it goes. A varying write from inside
+     * those callbacks is the "animation window race" the 2026-05-26/27 work recorded and deliberately
+     * left alone on phone: back then animateNav ran on EVERY drill-down and pop (the bar hid per page),
+     * so two navigations could land their callbacks out of order and strand the wrong inset.
+     * ⚠️ AND IT WOULD OPEN A NEW HOLE TODAY: animateNav is called from exactly two places
+     * (setup, and the back-stack listener) and NEVER on a sheet-state change. So if the player were
+     * expanded during a navigation, a varying write would set this to Insets() and nothing would
+     * restore it when the user collapsed the player - the same missing-64dp bug with a new trigger.
+     * The 2026-10-03 fix therefore changed the READERS ([combined] and friends) and left this frozen.
+     */
     fun setNavInsets(insets: Insets) {
         navViewInsets.value = insets
     }
@@ -335,6 +412,21 @@ class UiViewModel(
             view.background = bg
         }
 
+        /**
+         * ⚠⚠ DO NOT "TIDY" THE combined.value READ BELOW INTO getCombined() - IT LOOKS
+         * EQUIVALENT AND WAS A NEAR-MISS. While the nav term was gated on isMainFragment (see
+         * [combined]), the two differed in exactly the way that mattered: `combined` did not observe
+         * isMainFragment, so on a detail page it served a STALE nav-inclusive value and the bottom
+         * padding came out right by accident, whereas getCombined() evaluates the gate FRESH at call
+         * time with nothing to mask it. Swapping it in would have dropped the nav bar's 64dp on EVERY
+         * detail page immediately, turning an Android-Auto-only symptom into a permanent one.
+         * The gate is gone as of 2026-10-03, so the two are equivalent again TODAY - but the next
+         * divergence between the flow and the imperative reader will have the same shape, and this
+         * helper is where it would land.
+         * ⚠️ The block always reads combined.value rather than the merged flow's emission
+         * because `flows` may carry unrelated triggers (a result flow, a visibility flag); the inset is
+         * read fresh on every tick regardless of which flow woke it.
+         */
         fun Fragment.applyInsets(vararg flows: Flow<*>, block: UiViewModel.(Insets) -> Unit) {
             val uiViewModel by activityViewModel<UiViewModel>()
             val flows = listOf(uiViewModel.combined) + flows
@@ -499,11 +591,10 @@ class UiViewModel(
             }
 
             fun animateNav(animate: Boolean) {
-                val isMainFragment = uiViewModel.isMainFragment.value
                 val insets =
                     uiViewModel.setPlayerNavViewInsets(this, true, isRail)
                 val isPlayerCollapsed = uiViewModel.playerSheetState.value != STATE_EXPANDED
-                navView.animateTranslation(isRail, isMainFragment, isPlayerCollapsed, animate) {
+                navView.animateTranslation(isRail, isPlayerCollapsed, animate) {
                     uiViewModel.setNavInsets(insets)
                     if (isPlayerCollapsed) navView.updateLayoutParams<MarginLayoutParams> {
                         bottomMargin = -it.toInt()

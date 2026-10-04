@@ -92,6 +92,7 @@
     <string name="playback_error_no_connection">No connection — check your phone</string>
     <string name="playback_error_login_required">Sign in on your phone to continue</string>
     <string name="playback_error_generic">Can\'t play this track</string>
+    <string name="playback_stream_stalling">Connection is stalling — playback paused</string>
     <string name="error_x">Error: %1$s</string>
     <string name="str_copy">Copy</string>
     <string name="extensions">Extensions</string>

@@ -3,8 +3,10 @@ package dev.brahmkshatriya.echo.ui.common
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
+import kotlinx.coroutines.TimeoutCancellationException
 
 /**
  * Android-Auto-facing error classification, consumed only by the AA error mapper (Lever B, wired in
@@ -47,6 +49,26 @@ tailrec fun classify(throwable: Throwable?): ErrorCategory = when (throwable) {
     // additions — these must move together (see ErrorCategoryTest).
     is UnknownHostException, is UnresolvedAddressException,
     is ConnectException, is NoRouteToHostException -> ErrorCategory.Network
+    // Timeouts added 2026-10-03, and they bring this function into line with a classifier that already
+    // said so: PlayerEventListener.skipFamily has grouped SocketTimeoutException and
+    // TimeoutCancellationException under Network since it was written, while THIS function resolved them
+    // to Generic - so an Android Auto stall showed "Can't play this track" for a connection problem.
+    // classify() and skipFamily were the two that disagreed; getTitle carries the matching arm.
+    // ⚠⚠ THIS IS BROADER THAN THE DEFECT THAT PROMPTED IT, DELIBERATELY AND WITH SIGN-OFF. The
+    // trigger was Deezer's getContentLength HEAD timing out at 10s (okhttp's readTimeout owns that 10s
+    // as of 2026-10-03; see Utils.getContentLength), but the arm covers EVERY socket and
+    // coroutine timeout on every extension and every path. A timeout is a connectivity symptom to a user
+    // whatever produced it, and splitting it per-source would mean a fourth ErrorCategory member - which
+    // the note above makes expensive (enum + mapAaError + getTitle + this test, in lockstep).
+    // ⚠️ STILL NOT all SocketException: the exclusion above survives untouched.
+    // SocketTimeoutException extends InterruptedIOException, NOT SocketException, so adding it here does
+    // not widen that line - a mid-stream connection RESET stays Generic and keeps its retry-then-skip
+    // meaning in PlayerEventListener.
+    // ⚠️ getTitle's ARM IS CONDITIONAL AND THIS ONE IS NOT, and that asymmetry is intended
+    // rather than drift: getTitle has a Context, so it can read live connectivity and say "No Internet"
+    // when the network actually dropped mid-socket. classify has no Context - and both of its possible
+    // answers are Network anyway, so there is nothing to condition on.
+    is SocketTimeoutException, is TimeoutCancellationException -> ErrorCategory.Network
     is AppException.LoginRequired -> ErrorCategory.LoginOrAuth // Unauthorized is a LoginRequired subclass
     else -> classify(throwable.cause)
 }

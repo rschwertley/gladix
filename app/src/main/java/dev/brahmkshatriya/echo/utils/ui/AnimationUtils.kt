@@ -44,9 +44,29 @@ object AnimationUtils {
         FastOutSlowInInterpolator()
     )
 
+    /**
+     * Slides the phone nav bar / rail in or out, and reports the resulting translation to [action].
+     *
+     * ⚠⚠ THIS IS THE ONLY DEFINITION OF "THE NAV BAR OCCUPIES SPACE", AND ITS READER IS IN
+     * ANOTHER FILE. `visible` here and the nav term in UiViewModel.combined must mean the same thing;
+     * they were split apart on 2026-05-29 and stayed split for four months. 280e68d0 changed this line
+     * from `(isMainFragment && isPlayerCollapsed)` to `isPlayerCollapsed` - the bar became visible on
+     * every page - while combined kept gating its inset on isMainFragment, so detail pages reserved
+     * 64dp less than the bar occupied. Read UiViewModel.combined's doc before changing this predicate.
+     *
+     * ⚠️ THE isMainFragment PARAMETER WAS REMOVED 2026-10-03, dead since 280e68d0. It is not
+     * being recorded here as housekeeping: while it sat in the signature it read as a live dependency,
+     * and it is what made a later investigation assert that the nav bar hides on sub-pages - refuted
+     * only by someone looking at the device. A parameter the body ignores is a false claim about
+     * behaviour, not spare documentation.
+     *
+     * ⚠️ action() FIRES AT THE ANIMATION START WHEN THE BAR APPEARS AND AT THE END WHEN IT
+     * LEAVES. That asymmetry is deliberate - reserve space before the bar arrives, release it after it
+     * goes - so a caller never sees a window where the bar occupies space nothing reserved. See
+     * UiViewModel.setNavInsets for why its caller nonetheless writes a constant.
+     */
     fun NavigationBarView.animateTranslation(
         isRail: Boolean,
-        isMainFragment: Boolean,
         isPlayerCollapsed: Boolean,
         animate: Boolean = true,
         action: (Float) -> Unit

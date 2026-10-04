@@ -38,7 +38,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *    service create. Every checkpoint now stamps its OWN age key. `process_age_s` is kept, but is explicitly
  *    "age at the most recent checkpoint of any kind" and must not be read as belonging to any one of them.
  *
- * 3. LAST-WRITE HEAP SAMPLES CANNOT SHOW A TRAJECTORY. Every heap key read 255/0, which is near-tautological
+ * 3. LAST-WRITE HEAP SAMPLES CANNOT SHOW A TRAJECTORY. Every heap key read 255 used / 0 headroom (the
+ *    headroom half is heap_limit_mb since build 1114 - see sampleHeap), which is near-tautological
  *    once the heap is full and events keep firing — it could not distinguish "born high" from "climbed to
  *    full and stayed". A first-ever sample and a running max are now recorded alongside, giving three points
  *    (first → peak → last) instead of one.
@@ -68,16 +69,24 @@ import java.util.concurrent.atomic.AtomicInteger
  * general statement that notes 2 and 3 above are instances of, and it is the one to carry: stampAge
  * re-stamps on EVERY iteration, so a checkpoint that fires in a loop reports its LAST occurrence. That
  * is why age_s_build == age_s_conn == age_s_svc == process_age_s does NOT mean they fired together - it
- * means each fired last, at the dying end. heap_used/headroom are sampled at those same checkpoints and
- * inherit it. ONLY heap_first_mb is CAS-guarded (heapFirstRecorded), which is what makes a low value
+ * means each fired last, at the dying end. heap_used_mb_* is sampled at those same checkpoints and
+ * inherits it. ONLY heap_first_mb is CAS-guarded (heapFirstRecorded), which is what makes a low value
  * there - 18-22MB in the August reports - genuinely mean "the process started small".
+ * heap_limit_mb is exempt by NATURE rather than by a guard: maxMemory does not move, so its dying-end
+ * value and its first value are the same number.
  *
- * ⚠️ THE PRACTICAL COROLLARY: READ headroom BEFORE TREATING A heap_peak_mb AS A MEASUREMENT.
- * used 255 WITH HEADROOM 0 is maxMemory on a 256MB-heap device - "the heap was full", near-tautological,
- * NOT a quantity to account for. A 2026-09-22 ANR showed heap_peak_mb 255 with HEADROOM 84MB, so that
- * device's maxMemory is >= ~339MB and 255 is a genuine high-water mark. SAME NUMBER, OPPOSITE
- * EVIDENTIAL VALUE. The headroom check works precisely BECAUSE of the dying-end property above: a
- * saturated sample tells you the ceiling, not the allocation.
+ * ⚠️ THE PRACTICAL COROLLARY: READ heap_peak_mb AGAINST heap_limit_mb BEFORE TREATING IT AS A
+ * MEASUREMENT. peak 255 on a device whose heap_limit_mb IS 256 means "the heap was full" -
+ * near-tautological, NOT a quantity to account for. A 2026-09-22 ANR showed heap_peak_mb 255 on a
+ * device whose limit was >= ~339MB, and there 255 is a genuine high-water mark. SAME NUMBER, OPPOSITE
+ * EVIDENTIAL VALUE. The check works precisely BECAUSE of the dying-end property above: a saturated
+ * sample tells you the ceiling, not the allocation.
+ * ⚠⚠ [AMENDED 2026-10-03] THIS TEST USED TO READ "READ headroom", AND THE heap_headroom_mb_*
+ * KEYS NO LONGER EXIST - see the key-budget note at sampleHeap. THE TEST IS UNCHANGED IN SUBSTANCE:
+ * headroom was only ever maxMemory - used at one checkpoint, and the ceiling is a PROCESS CONSTANT, so
+ * comparing the peak to heap_limit_mb asks the identical question AND no longer depends on which
+ * checkpoint happened to fire. A report written before build 1114 carries headroom and no limit: add
+ * heap_used_mb_<suffix> + heap_headroom_mb_<suffix> to recover it.
  *
  * ⚠⚠ AND THE AUGUST 255/0 CLUSTER IS NOT OPEN - IT WAS ROOT-CAUSED IN A LATER SESSION, WHICH THE
  * SESSION THAT RAN THE HUNT COULD NOT KNOW. Anyone landing on that elimination table will read it as
@@ -89,8 +98,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * Do not use that 255 as a target to explain, and do not relate a later 255 to it.
  *
  * Heap note: "used" is totalMemory - freeMemory and is sampled WITHOUT forcing a GC, so it includes garbage
- * not yet collected and can overstate live data under a high allocation rate. "headroom" is maxMemory - used,
- * i.e. room to the growth limit — NOT Runtime.freeMemory (free-within-committed, which is misleading near OOM).
+ * not yet collected and can overstate live data under a high allocation rate. heap_limit_mb is maxMemory,
+ * i.e. the growth ceiling — NOT Runtime.freeMemory (free-within-committed, which is misleading near OOM).
+ * Headroom at any sample is heap_limit_mb minus that sample's used value, derived rather than stored.
  */
 object CrashKeys {
 
@@ -114,6 +124,10 @@ object CrashKeys {
     private val serviceCreates = AtomicInteger(0)
 
     private val heapFirstRecorded = AtomicBoolean(false)
+    // Gates the one-shot heap_limit_mb write. A separate flag rather than reusing heapFirstRecorded,
+    // which also gates heap_first_at_age_s: folding them would mean a future change to either write
+    // silently changing when the other fires.
+    private val heapLimitRecorded = AtomicBoolean(false)
     private val heapPeakMb = AtomicInteger(0)
 
     private fun set(key: String, value: Int) {
@@ -212,13 +226,24 @@ object CrashKeys {
      *    rather than absent, and heap_peak_at_age_s has ~minute resolution instead of event resolution.
      *    WHY: a 1111 OOM read 29 MB at 35s then died at 256 MB about seven minutes later with NOTHING
      *    recorded in between, because no checkpoint fired in that window.
-     *    ⚠️ onHeapTick WRITES NO headroom, AND THAT IS NOT A GAP. The heap LIMIT is derivable
-     *    from any used+headroom pair in the same report (limit = used + headroom), so a tick-set peak
-     *    can still be read against the ceiling without spending two more of the 64 keys on a sixth
-     *    pair. Read the limit off whichever pair the report carries.
+     *    ⚠️ onHeapTick WRITES NO CEILING OF ITS OWN, AND THAT IS NOT A GAP: read a tick-set
+     *    peak against heap_limit_mb, which sampleHeap writes once per process.
+     *    ⚠⚠ [AMENDED 2026-10-03] THIS PARAGRAPH SAID "The heap LIMIT is derivable from any
+     *    used+headroom pair ... without spending two more of the 64 keys on a sixth pair. Read the
+     *    limit off whichever pair the report carries." THE REASONING WAS RIGHT AND WAS THEN FOLLOWED
+     *    THROUGH: if one pair suffices, four of the five were redundant, so the five
+     *    heap_headroom_mb_* families became a single heap_limit_mb. There is no pair left to read the
+     *    limit off - read the key. Full argument and the key census at sampleHeap.
      *    heapPeakMb is a running max over sampleHeap calls, and sampleHeap is called only from
-     *    onServiceCreate / onControllerConnected / onQueueBuild / onQueueSize / onFeedLoad /
-     *    onExtensionSwitch. So "the peak was at a feed load" means only that the highest CHECKPOINT SAMPLE
+     *    onServiceCreate / onAutoCachesCleared / onQueueBuild / onFeedLoad / onControllerConnected.
+     *    ⚠️ [CORRECTED 2026-10-03] THAT LIST PREVIOUSLY READ "onServiceCreate /
+     *    onControllerConnected / onQueueBuild / onQueueSize / onFeedLoad / onExtensionSwitch" - SIX
+     *    NAMES, TWO OF THEM WRONG AND ONE MISSING. onQueueSize and onExtensionSwitch call stampAge
+     *    ONLY and take no heap sample; onAutoCachesCleared does and was absent. Counted from the five
+     *    actual call sites while doing the key census at sampleHeap, which is the first time anything
+     *    needed the exact number. The sampling-artifact point below is UNAFFECTED - feed loads are
+     *    still by far the most frequent of the five.
+     *    So "the peak was at a feed load" means only that the highest CHECKPOINT SAMPLE
      *    happened to be a feed load — and feed loads are by far the most frequent checkpoint. IT IS A
      *    SAMPLING ARTIFACT, NOT ATTRIBUTION.
      *    Worked example, 2026-09-07: five OOM reports appeared to show that the FEWER feed loads a session
@@ -230,22 +255,60 @@ object CrashKeys {
      *
      * Between them: (1) says a repeated checkpoint reports its last firing, (2) says an event you did not
      * checkpoint is invisible and the checkpoint you did fire will get the blame.
+     *
+     * ⚠⚠ [2026-10-03] THE PER-CHECKPOINT headroom KEYS WERE REMOVED HERE, AND THE REASON IS A
+     * HARD LIMIT RATHER THAN TIDINESS: CRASHLYTICS STORES 64 CUSTOM KEYS AND SILENTLY DROPS EVERY KEY
+     * WRITTEN AFTER THE 64th. This object had been read as using "~50 of 64" - the stale figure now
+     * corrected at onHeapTick - because a census by grepping literal set("name") CANNOT SEE THE NAMES
+     * stampAge AND THIS FUNCTION BUILD. Counted properly, before this change:
+     *   26  literal names in this object
+     *    5  App.kt's throwFlow collector
+     *   20  stampAge   - 10 checkpoint call sites x (base + _first)
+     *   20  sampleHeap -  5 call sites x (used + headroom + both _first twins)
+     *   71  TOTAL NAMES, i.e. ALREADY OVER THE LIMIT BEFORE ANYTHING WAS ADDED.
+     * Per-session maxima were 56 non-AA, 63 AA, 71 AA-plus-app-update - so update sessions on AA have
+     * been losing keys, invisibly, and WHICH keys is decided by write ORDER rather than importance.
+     *
+     * ⚠⚠ WHY headroom WAS THE RIGHT TEN TO LOSE - THE ARGUMENT WAS ALREADY IN THIS FILE. The
+     * note added at doc item 2 on 2026-09-26 reads: "The heap LIMIT is derivable from any used+headroom
+     * pair in the same report (limit = used + headroom), so a tick-set peak can still be read against
+     * the ceiling without spending two more of the 64 keys". If ONE pair suffices to recover the
+     * ceiling, four of the five were redundant by that same reasoning - and the quantity is maxMemory,
+     * a PROCESS CONSTANT, so five pairs each re-measuring it was never the right shape. heap_limit_mb
+     * is written once, CAS-guarded, at the first sample of any kind. NET -9 NAMES (10 out, 1 in).
+     * ⚠️ NOTHING DIAGNOSTIC WAS LOST, which is the whole case for choosing these ten: headroom
+     * at a checkpoint = heap_limit_mb - that checkpoint's heap_used_mb_*, now recoverable for EVERY
+     * suffix rather than only the five that stored it.
+     * ⚠️ WHAT DID CHANGE, STATED SO IT IS NOT REDISCOVERED AS A DEFECT: reports from before
+     * build 1114 carry heap_headroom_mb_* and no heap_limit_mb; reports after carry the reverse. A
+     * console filter on a headroom key goes EMPTY rather than erroring, which reads like a regression.
+     *
+     * ⚠️ AND THE CENSUS IS THE REUSABLE PART, NOT THE SAVING. Measured against the tree AFTER
+     * this change: 33 literal names + 10 stampAge sites x2 + 5 sampleHeap sites x2 = 63 OF 64, and
+     * per-session maxima of 50 baseline, 51 non-AA with a stuck report, 56 on AA, 63 on AA plus an
+     * app-update session. ONE KEY OF HEADROOM IN THE WORST CASE - the next key added has to take one
+     * out, and the cheapest candidate is folding install_source_installer into install_source the way
+     * app_update_completed already formats "$from->$to".
+     * HOW TO RE-RUN IT: count the stampAge call sites x2 and the sampleHeap call sites x2, add the
+     * literal set(...) / setCustomKey(...) names, and STRIP COMMENTS FIRST - the census script counted
+     * this very note's `set("name")` example as a 34th key on its first run, which is the same
+     * blind-spot-in-the-instrument failure the note is about, one level in.
      */
-    private fun sampleHeap(usedKey: String, headroomKey: String) {
+    private fun sampleHeap(usedKey: String) {
         val rt = Runtime.getRuntime()
         val used = rt.totalMemory() - rt.freeMemory()
         val usedMb = (used / (1024 * 1024)).toInt()
-        val headroomMb = ((rt.maxMemory() - used) / (1024 * 1024)).toInt()
         set(usedKey, usedMb)
-        set(headroomKey, headroomMb)
+        // The growth ceiling, once per process. maxMemory() cannot change for the life of the process, so
+        // a later write could only repeat the first - hence CAS rather than last-write-wins, and hence no
+        // _first companion (doc note 5 is about repeated checkpoints and does not apply to a constant).
+        if (heapLimitRecorded.compareAndSet(false, true))
+            set("heap_limit_mb", (rt.maxMemory() / (1024 * 1024)).toInt())
         // Per-checkpoint FIRST sample, same reasoning as stampAge: a repeatedly-fired checkpoint's
         // last-write heap value is the dying-end reading, not the reading at the event you are
         // attributing to. heap_used_mb_conn on the build-1036 AA report was the LAST connect of the
         // session, not the first — which is exactly the misreading these companions prevent.
-        if (firstStamped.add(usedKey)) {
-            set("${usedKey}_first", usedMb)
-            set("${headroomKey}_first", headroomMb)
-        }
+        if (firstStamped.add(usedKey)) set("${usedKey}_first", usedMb)
         // First-ever sample: pins the STARTING point of the trajectory, which no last-write key can. CAS so
         // the first sampler wins even if two checkpoints race.
         if (heapFirstRecorded.compareAndSet(false, true)) {
@@ -265,10 +328,16 @@ object CrashKeys {
     /**
      * Advances heap_peak_mb / heap_peak_at_age_s ONLY. Called from a ~60s ticker; see note 2.
      *
-     * ⚠⚠ IT DELIBERATELY DOES NOT CALL sampleHeap. Every sampleHeap call also writes a
-     * used/headroom PAIR, and passing an existing pair would destroy that pair's meaning -
-     * heap_used_mb_feed would stop meaning "at a feed load". Passing a NEW pair would cost two more
-     * keys against the ~50-of-64 already in use. So this touches the two peak keys and nothing else.
+     * ⚠⚠ IT DELIBERATELY DOES NOT CALL sampleHeap. Passing an existing checkpoint's key would
+     * destroy that key's meaning - heap_used_mb_feed would stop meaning "at a feed load". Passing a NEW
+     * one would cost another key. So this touches the two peak keys and nothing else.
+     * ⚠️ [CORRECTED 2026-10-03] THIS NOTE READ "Every sampleHeap call also writes a used/headroom
+     * PAIR" AND "two more keys against the ~50-of-64 already in use". The first is no longer true -
+     * sampleHeap writes no headroom - and the SECOND WAS WRONG THE DAY IT WAS WRITTEN: the real census
+     * is 71 names against a 64 limit, not ~50, because the figure came from grepping literal set("name")
+     * calls and interpolated names are invisible to that. See the key-budget note at sampleHeap.
+     * THE CONCLUSION SURVIVES INTACT: not calling sampleHeap is still right, and the budget argument for
+     * it is STRONGER than the one recorded here rather than weaker.
      *
      * ⚠⚠ NOTE 4 IS SATISFIED BY CONSTRUCTION, NOT BY LUCK: both writes sit inside the
      * peak-advanced branch. A tick that finds no new peak writes NOTHING, and the retained value is
@@ -299,7 +368,7 @@ object CrashKeys {
     fun onServiceCreate() {
         stampAge("age_s_svc")
         set("service_create_count", serviceCreates.incrementAndGet())
-        sampleHeap("heap_used_mb_svc", "heap_headroom_mb_svc")
+        sampleHeap("heap_used_mb_svc")
     }
 
     // Sampled immediately AFTER AndroidAutoCallback.clearCaches(). heap_used_mb_conn is taken in
@@ -307,7 +376,7 @@ object CrashKeys {
     // last session left, and this measures what survives the clear. The difference is the browse caches.
     fun onAutoCachesCleared() {
         stampAge("age_s_auto_clear")
-        sampleHeap("heap_used_mb_auto_clear", "heap_headroom_mb_auto_clear")
+        sampleHeap("heap_used_mb_auto_clear")
     }
 
     /**
@@ -433,7 +502,7 @@ object CrashKeys {
     fun onQueueBuild(itemCount: Int) {
         stampAge("age_s_build")
         set("restore_build_count", itemCount)
-        sampleHeap("heap_used_mb_build", "heap_headroom_mb_build")
+        sampleHeap("heap_used_mb_build")
     }
 
     fun onQueueSize(count: Int) {
@@ -452,9 +521,9 @@ object CrashKeys {
         set("feed_load_count", feedLoads.incrementAndGet())
         // The only heap sample tied to the aggregate-working-set hypothesis (feed loads accumulate
         // covers/shelves that the svc-create and queue-build samples both miss, being earlier). Caller is
-        // debounced 100ms + collectLatest (~once per settled switch/refresh); 3 Runtime reads + 3 key writes,
-        // no allocation — not hot, no every-Nth gating needed.
-        sampleHeap("heap_used_mb_feed", "heap_headroom_mb_feed")
+        // debounced 100ms + collectLatest (~once per settled switch/refresh); a few Runtime reads and key
+        // writes, no allocation — not hot, no every-Nth gating needed.
+        sampleHeap("heap_used_mb_feed")
     }
 
     fun onPlayingExtension(extensionId: String) {
@@ -472,7 +541,7 @@ object CrashKeys {
         // All three known crashes fired at MediaController connect, a few hundred ms after onCreate — so the
         // svc-create sample can already be stale. The svc→conn heap delta shows whether startup is climbing
         // fast or the heap was already high on arrival.
-        sampleHeap("heap_used_mb_conn", "heap_headroom_mb_conn")
+        sampleHeap("heap_used_mb_conn")
     }
 
     fun onControllerDisconnected(packageName: String) {
@@ -485,3 +554,29 @@ object CrashKeys {
         set("aa_connected", connected)
     }
 }
+
+/**
+ * The shared guard for any third-party string that reaches Crashlytics: strip URLs (signed CDN tokens
+ * live in them) and hard-cap.
+ *
+ * ⚠⚠ MOVED HERE FROM PlayerEventListener ON 2026-10-03 FOR THE REASON THAT FUNCTION'S OWN
+ * COMMENT GAVE FOR EXTRACTING IT: it was pulled out of its two call sites so the extension name would
+ * get "exactly the same treatment as the message rather than a second, drifting copy of the rule".
+ * App.kt's deezer_gateway key is a third caller in a third package, so the same argument applies one
+ * level up. The BODY IS UNCHANGED, which is what keeps lastCauses byte-identical - HealthMonitor
+ * requires that format to be fixed.
+ *
+ * ⚠️ THE REGEX IS HOISTED AND THE BEHAVIOUR IS NOT CHANGED. It was compiled per call at the old
+ * site; a file-level val compiles it once. Same pattern, same replacement, same trim-then-take order.
+ *
+ * ⚠️ IT STRIPS URLs AND CAPS LENGTH. IT DOES NOT STRIP IDENTIFIERS, and no caller should read
+ * it as a PII filter. A caller passing a string that might carry an account id has to say so at its
+ * own site - deezer_gateway's note in App.kt does.
+ *
+ * Top-level rather than a member of [CrashKeys] because a member extension function cannot be
+ * imported, and both callers live in other packages.
+ */
+internal fun String.scrubbedForCrashlytics(max: Int) =
+    replace(URL_PATTERN, "<url>").trim().take(max)
+
+private val URL_PATTERN = Regex("https?://\\S+")

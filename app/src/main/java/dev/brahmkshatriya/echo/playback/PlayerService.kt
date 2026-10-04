@@ -47,8 +47,6 @@ import androidx.media3.session.SessionToken
 import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
-import dev.brahmkshatriya.echo.ui.common.ErrorCategory
-import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
@@ -71,26 +69,29 @@ import dev.brahmkshatriya.echo.playback.listener.TrackingListener
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
+import dev.brahmkshatriya.echo.playback.source.StreamableDataSource
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
+import dev.brahmkshatriya.echo.ui.common.ErrorCategory
+import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
-import kotlinx.coroutines.async
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
-import java.io.File
 
 @OptIn(UnstableApi::class)
 class PlayerService : MediaLibraryService() {
@@ -327,6 +328,15 @@ class PlayerService : MediaLibraryService() {
                 activeLoadCount = { state.activeLoadCount.get() },
                 // Epoch ms of the current load episode's start, 0 when idle - stuck_detail's loadAge.
                 loadEpisodeStartMs = { state.loadEpisodeStartMs.get() },
+                // >0 while a DataSource open() is blocked (the Deezer HEAD, a ranged GET, an HTTP
+                // connect). The watchdog's second suppression arm - see OPEN_GRACE_MS. Static rather than
+                // PlayerState because the counter lives where the opens happen.
+                openInFlight = { StreamableDataSource.openInFlight.get() },
+                // Epoch ms the last open() finished - covers media3's inter-retry gaps, where
+                // openInFlight is legitimately 0. See OPEN_IDLE_SLACK_MS.
+                lastOpenEndMs = { StreamableDataSource.lastOpenEndMs.get() },
+                // TRACER - relSkip. Diffed per item; see PlayerState.releasedPrepareSkips.
+                releasedPrepareSkips = { state.releasedPrepareSkips.get() },
                 // Clears the resumption marker once the queue lands (timeline non-empty) — the success
                 // clear for onPlaybackResumption; on Main, since Player.Listener fires on the app looper.
                 onQueueApplied = { state.resumptionApplying = false },

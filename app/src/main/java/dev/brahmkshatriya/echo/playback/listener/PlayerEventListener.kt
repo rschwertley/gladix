@@ -28,12 +28,12 @@ import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.exceptions.MediaUnavailableException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
-import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
-import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
@@ -45,25 +45,15 @@ import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils
 import dev.brahmkshatriya.echo.playback.ShufflePlayer
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
-import dev.brahmkshatriya.echo.playback.queueEpochOrZero
-import dev.brahmkshatriya.echo.utils.CrashKeys
-import dev.brahmkshatriya.echo.playback.source.StreamableDataSource
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
+import dev.brahmkshatriya.echo.playback.queueEpochOrZero
+import dev.brahmkshatriya.echo.playback.source.StreamableDataSource
 import dev.brahmkshatriya.echo.ui.common.ErrorCategory
 import dev.brahmkshatriya.echo.ui.common.classify
+import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import java.io.FileNotFoundException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -72,6 +62,17 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import kotlin.reflect.KClass
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(UnstableApi::class)
 class PlayerEventListener(
@@ -91,6 +92,15 @@ class PlayerEventListener(
     // outstanding). Wired from PlayerService alongside activeLoadCount. PROBE - remove with
     // stuck_detail's loadAge field.
     private val loadEpisodeStartMs: () -> Long = { 0L },
+    // Live StreamableDataSource.openInFlight (>0 ⇒ a DataSource open() is blocked - the Deezer HEAD, a
+    // ranged GET, an HTTP connect). Read by the watchdog's SECOND suppression arm; see OPEN_GRACE_MS.
+    private val openInFlight: () -> Int = { 0 },
+    // Live StreamableDataSource.lastOpenEndMs (epoch ms the last open() returned or threw, 0 if none).
+    // Read with openInFlight so media3's inter-retry gaps still count as activity - see
+    // OPEN_IDLE_SLACK_MS.
+    private val lastOpenEndMs: () -> Long = { 0L },
+    // Live PlayerState.releasedPrepareSkips. TRACER - remove with probeDetail's relSkip field.
+    private val releasedPrepareSkips: () -> Int = { 0 },
     // Invoked when the timeline becomes non-empty (a queue was applied, from any source) — the success
     // clear for PlayerState.resumptionApplying. Fires on the app looper (Main), preserving that invariant.
     private val onQueueApplied: () -> Unit = {},
@@ -369,6 +379,12 @@ class PlayerEventListener(
         } else {
             bufferingWatchdog?.cancel()
             bufferingWatchdog = null
+            // The episode ended. Cleared HERE rather than at the arm sites for the same reason the
+            // cancel above lives here: this is the one callback that knows we left STATE_BUFFERING.
+            // A BUFFERING -> BUFFERING non-event produces no callback, so the clock correctly survives
+            // it; a watchdog retry's stop() drives IDLE through here and legitimately starts a new
+            // episode, which is bounded in turn by maxWatchdogRetries.
+            bufferingEpisodeStartMs = 0L
         }
         // ⚠⚠ SETTLE playWhenReady AT THE END OF THE QUEUE. ExoPlayer does NOT clear it on STATE_ENDED,
         // and nothing else here did either, so a queue that simply ran out sat at ENDED with the player
@@ -518,6 +534,12 @@ class PlayerEventListener(
 
     private fun armBufferingWatchdog() {
         Log.d("GladixPlayback", "STATE_BUFFERING: ${player.currentMediaItem?.mediaId} \"${player.currentMediaItem?.mediaMetadata?.title}\"")
+        // PROBE - see lastWatchdogArmMs. Stamped FIRST, ahead of the grace rekey and the cancel below,
+        // so it records this call unconditionally and cannot be skewed by anything the function decides.
+        lastWatchdogArmMs = System.currentTimeMillis()
+        // Buffering-episode clock for the open-in-flight arm. STAMP-IF-UNSET, never overwrite: this
+        // function is also the re-arm. See the field's note.
+        if (bufferingEpisodeStartMs == 0L) bufferingEpisodeStartMs = System.currentTimeMillis()
         // Start (or keep) the cold-resolution grace timer for the current item.
         val graceMediaId = player.currentMediaItem?.mediaId
         if (graceMediaId != resolveGraceMediaId) {
@@ -531,6 +553,8 @@ class PlayerEventListener(
             openCountAtItemStart = StreamableDataSource.openCount.get()
             // PROBE (2026-09-01) - same baseline, same reasoning, for the `bytes` delta.
             bytesReadAtItemStart = StreamableDataSource.bytesRead.get()
+            // TRACER (2026-10-03) - same baseline, same reasoning, for `relSkip`.
+            relSkipAtItemStart = releasedPrepareSkips()
         }
         bufferingWatchdog?.cancel()
         bufferingWatchdog = scope.launch {
@@ -561,10 +585,54 @@ class PlayerEventListener(
                 // cold-restore path fires onMediaItemTransition / PLAYLIST_CHANGED as part of
                 // setMediaItems, and callback-order resets were fragile there) is about NOT resetting from
                 // callbacks and is untouched by widening.
-                if (activeLoadCount() > 0
-                    && System.currentTimeMillis() - resolveGraceStart < RESOLVE_GRACE_MS
-                ) {
+                val graceElapsed = System.currentTimeMillis() - resolveGraceStart
+                // ARM ONE: a stream RESOLUTION is in flight. Unchanged.
+                if (activeLoadCount() > 0 && graceElapsed < RESOLVE_GRACE_MS) {
                     Log.d("GladixPlayback", "Buffering watchdog: resolve in flight, re-arming")
+                    armBufferingWatchdog()
+                    return@withContext
+                }
+                // ARM TWO (2026-10-03): a DataSource open() is BLOCKED. Same action - re-arm WITHOUT
+                // touching the player - and the same reason as arm one: the thing we would interrupt is
+                // still working.
+                //
+                // ⚠⚠ THIS ARM IS WHAT MAKES THE A1 REWRAP ACTUALLY DO ANYTHING. Arm one reads
+                // activeLoadCount, which tracks StreamableMediaSource's RESOLVE job - already finished by
+                // the time media3's Loader starts retrying open(). So a stalled open read loads=0, this
+                // body fell through to the retry branch at 5s, and its stop() + prepare() destroyed the
+                // Loader and reset errorCount to 0. media3 never reached attempt 2. Rewrapping the
+                // timeout without this arm would have been INERT - the retries would exist and never run.
+                // ⚠️ MEASURED SHAPE IT ADDRESSES: 2 users x 4 reports, identical every time -
+                // TimeoutCancellationException(10s) -> StuckBuffering -> StuckBuffering, then the breaker,
+                // then the same three again ~23-26s after the user pressed play. Tracks 2 and 3 were
+                // skipped by THIS branch, not by the timeout.
+                // ⚠️ ORDER MATTERS ONLY FOR READABILITY, not behaviour: the two arms are an OR and
+                // read different counters. Arm one stays first because it is the older, narrower case.
+                //
+                // ⚠⚠ [CORRECTED BEFORE FIRST BUILD] THIS ARM WAS FIRST WRITTEN AS
+                // `openInFlight() > 0 && graceElapsed < OPEN_GRACE_MS`, REUSING ARM ONE's CLOCK, AND IT
+                // WOULD HAVE BEEN INERT. graceElapsed derives from resolveGraceStart, which is rekeyed
+                // only on a mediaId CHANGE and persists across re-arms of the same item - so on a
+                // mid-track stall (the dominant shape: bytes=1M+, then a 10s timeout) it is already
+                // minutes old, the test is false on the first tick, and the 5s retry below tears down
+                // media3's ladder exactly as before. The clock is now bufferingEpisodeStartMs; see its
+                // field note for why not "time since openInFlight rose from 0" either.
+                // ⚠️ TWO CONDITIONS, NOT ONE, AND THE SLACK IS NOT PADDING: between retry
+                // attempts media3 sleeps with no open outstanding, so openInFlight legitimately reads 0
+                // for up to the policy's backoff. A 5s tick landing in a gap would see an idle counter
+                // and fall through. lastOpenEndMs covers those windows - see OPEN_IDLE_SLACK_MS.
+                val openActive = openInFlight() > 0
+                    || lastOpenEndMs().let {
+                        it != 0L && System.currentTimeMillis() - it < OPEN_IDLE_SLACK_MS
+                    }
+                val episodeAge = bufferingEpisodeStartMs.let {
+                    if (it == 0L) Long.MAX_VALUE else System.currentTimeMillis() - it
+                }
+                if (openActive && episodeAge < OPEN_GRACE_MS) {
+                    Log.d(
+                        "GladixPlayback",
+                        "Buffering watchdog: open in flight (episodeAge=$episodeAge), re-arming"
+                    )
                     armBufferingWatchdog()
                     return@withContext
                 }
@@ -821,14 +889,102 @@ class PlayerEventListener(
         // How long the buffering watchdog defers while a stream resolution is IN FLIGHT (any item, cold or
         // mid-queue — see the gate in armBufferingWatchdog; cold start is one instance, not the whole of it).
         //
-        // ≥ Deezer stream-resolution ceiling: DeezerApi clientNP connect 15s + read 10s;
-        // getContentLength 10s. If clientNP ever gains a callTimeout, anchor to that instead.
+        // ≥ Deezer stream-resolution ceiling: DeezerApi clientNP connect 15s + read 10s, with no
+        // callTimeout. If clientNP ever gains one, anchor to that instead.
+        //
+        // ⚠⚠ [CORRECTED 2026-10-03] THE JUN 30 DERIVATION ALSO LISTED "getContentLength 10s",
+        // AND THAT TERM NEVER BELONGED HERE - it was wrong when written, not merely stale. This window
+        // gates ARM ONE of the watchdog, whose condition is activeLoadCount() > 0; activeLoadCount
+        // tracks StreamableMediaSource.prepareSourceInternal's loadJob, i.e. the RESOLVE
+        // (StreamableLoader.load -> loadTrack + loadServer -> loadStreamableMedia). getContentLength is
+        // NOT in that path: DeezerTrackClient.loadStreamableMedia returns a Streamable.InputProvider
+        // whose LAMBDA BODY holds the call, and that body runs later, at RawDataSource.open - i.e. at
+        // OPEN time, which is what the separate OPEN_GRACE_MS arm exists for. Verified by grep: the
+        // function has exactly one call site, DeezerTrackClient:174, inside that lambda.
+        // (It is also stale now - the backstop there moved to 30s on 2026-10-03 - but the term would
+        // have to come out even if it were still 10s.)
+        //
+        // ⚠️ "WRONG WHEN WRITTEN" IS CHECKED AGAINST THE JUNE TREE, NOT TODAY's, BECAUSE THE
+        // OBVIOUS OBJECTION IS THAT THE STREAM PATH MOVED SINCE. It did not:
+        //   this line and COLD_GRACE_MS (as it then was) both arrived in 8256ca3b, 2026-06-29;
+        //   at 8256ca3b the call sat at DeezerTrackClient:156 INSIDE Streamable.InputProvider, and at
+        //     8256ca3b^ - the parent - it sat at :155, same shape;
+        //   the deferred open-time architecture itself predates both, from d95228a0 (2025-06-05,
+        //     "introduce raw source, with Input Stream Provider");
+        //   and of the nine commits that have touched that file since, none moved the call out of the
+        //     lambda - including 286b3f90 (2026-08-03), the one a later note describes phase 2 from.
+        // So an August record that DESCRIBES getContentLength as running inside RawDataSource.open is
+        // describing an arrangement that was already a year old, not a rework that moved it there. Do
+        // not re-derive this as "accurate when written, later overtaken" - it was checked.
+        //
+        // ⚠️ THE CONSTANT IS UNAFFECTED AND STAYS AT 25_000. Removing that term does not change
+        // what the number has to satisfy: the clientNP arithmetic is the reason it is ~25s rather than
+        // ~5s, and the LOAD-BEARING half is the ordering below. Note the arithmetic was never a true
+        // ceiling on a resolve anyway - loadStreamableMedia retries twice around up to three
+        // media-URL calls, so a pathological resolve far exceeds 25s, which is exactly why the
+        // StreamableLoader bound below is the one that must hold.
         //
         // ⚠️ MUST STAY BELOW StreamableLoader's withTimeout(30_000). That ordering is what keeps the
         // widened gate bounded: a hung resolve loses the grace at 25s and the watchdog returns, and even if
         // it did not, the loader throws TimeoutCancellationException at 30s onto the isTimeout error path.
         // Two independent ceilings; raising this above 30s would remove the first and leave only the second.
         private const val RESOLVE_GRACE_MS = 25_000L
+        // How long the watchdog defers while a DataSource open() is BLOCKED, as opposed to while a
+        // stream RESOLUTION is in flight. Separate constant, separate counter, separate ceiling.
+        //
+        // ⚠⚠ IT IS NOT RESOLVE_GRACE_MS RAISED, AND IT DELIBERATELY DOES NOT TOUCH IT. That one
+        // carries a documented ordering constraint - "MUST STAY BELOW StreamableLoader's
+        // withTimeout(30_000) ... raising this above 30s would remove the first and leave only the
+        // second" - which is about bounding a hung RESOLVE with two independent ceilings. This arm gates
+        // a different quantity whose ceiling is media3's retry budget, so it gets its own number and the
+        // documented pairing above stays intact.
+        //
+        // ⚠⚠ DERIVED FROM MEDIA3's OWN LADDER, WHICH IS THE WHOLE POINT OF THE NUMBER. After the
+        // A1 rewrap at RawDataSource.open, a stalled open is retried IN PLACE by media3:
+        //   DefaultLoadErrorHandlingPolicy.getRetryDelayMsFor = min((errorCount - 1) * 1000, 5000)
+        //   getMinimumLoadableRetryCount(C.DATA_TYPE_MEDIA) = DEFAULT_MIN_LOADABLE_RETRY_COUNT = 3
+        //   Loader.LoadTask.maybeThrowError throws only once errorCount > that
+        // so: 4 attempts x the 10s HEAD fuse, plus 0 + 1 + 2s of backoff = ~43s before the
+        // error ever reaches onPlayerError. 50s covers that with margin for the resolve that precedes
+        // the first open and for scheduling.
+        // ⚠️ THE 10s FUSE IS OKHTTP's readTimeout, NOT getContentLength's withTimeout, since
+        // 2026-10-03 - and the distinction matters to this arithmetic even though the NUMBER is the
+        // same 10s either way. Ours is now a 30s backstop sitting deliberately ABOVE okhttp's, so that
+        // okhttp's stream timeout is the one that fires and its degraded ping evicts a half-open HTTP/2
+        // connection from the pool. Full derivation at Utils.getContentLength. If that backstop is ever
+        // lowered below ~25s it becomes the fuse again, the eviction stops happening, and this 43s
+        // figure changes with it.
+        // ⚠️ MEASURED FROM bufferingEpisodeStartMs, NOT from resolveGraceStart. The first
+        // version of this arm used the latter and was INERT on a mid-track stall - see the
+        // [CORRECTED] block at the arm itself. The two windows gate different clocks as well as
+        // different counters, which is the whole reason this is a separate constant.
+        // ⚠️ AND IT CANNOT DEFER INDEFINITELY EVEN IF THAT ARITHMETIC CHANGES, because a single
+        // open is independently bounded: DeezerApi.createOkHttpClient gives clientNP connect 15s /
+        // read 10s / write 15s (no callTimeout, deliberately - the audio body read takes minutes), so
+        // connect + read puts okhttp's own ceiling for a HEAD at ~25s.
+        // ⚠️ [AMENDED 2026-10-03] THIS READ "getContentLength adds its own withTimeout(10_000)
+        // on top", i.e. the ~25s came from min(okhttp, ours). It no longer does: that backstop is now
+        // 30_000, ABOVE okhttp's ceiling and deliberately so - see the long note at
+        // Utils.getContentLength for why okhttp's readTimeout must be the one that fires (its degraded
+        // ping is what evicts a half-open HTTP/2 connection from the pool; a coroutine cancel does not
+        // arm it). The ~25s bound is UNCHANGED and now rests on okhttp alone, which is the stronger
+        // derivation - it does not depend on a number in another module staying small.
+        // ⚠️ THE COST, STATED: a hanging open is now deferred up to 50s rather than 25s before
+        // the watchdog acts. That is the price of letting media3 finish its ladder, and the ladder is
+        // what turns a 10-15s cell handoff into a resumed track instead of a lost one.
+        //
+        // SAME VALUE ON PHONE AND IN ANDROID AUTO, and that follows the June 30 AA cold-connect
+        // precedent rather than departing from it: that fix made the watchdog RE-ARM without touching
+        // the player so the running load survived, with its window derived from clientNP's own timeouts.
+        // This arm is the same pattern one layer down, so it takes the same treatment on both transports.
+        private const val OPEN_GRACE_MS = 50_000L
+        // How long after an open() FINISHES it still counts as activity for the arm above. Exists only
+        // to span media3's inter-attempt backoff, during which openInFlight is correctly 0.
+        // Derived, not guessed: DefaultLoadErrorHandlingPolicy.getRetryDelayMsFor is
+        // min((errorCount - 1) * 1000, 5000), so NO gap in any ladder can exceed 5s. 6s covers the
+        // largest possible one with margin, and stays well under OPEN_GRACE_MS so it cannot extend the
+        // overall bound - a ladder that genuinely stops still loses the arm at 50s.
+        private const val OPEN_IDLE_SLACK_MS = 6_000L
         // Bounds for enriched skip-cause reporting (safeCause) — keep the Crashlytics non-fatal small and
         // spiral-proof: per-cause detail is capped, and only maxConsecutiveUnavailableSkips (3) causes are
         // ever joined, so lastCauses stays ~a few hundred chars regardless of how nested a message is.
@@ -907,6 +1063,37 @@ class PlayerEventListener(
     private var serverErrorNotified = false
 
     private var bufferingWatchdog: Job? = null
+
+    /**
+     * Epoch ms at which the CURRENT buffering episode began, 0 while not buffering. Read ONLY by the
+     * watchdog's open-in-flight arm (see OPEN_GRACE_MS).
+     *
+     * ⚠⚠ IT EXISTS BECAUSE resolveGraceStart IS THE WRONG CLOCK FOR THAT ARM, AND USING IT WAS
+     * A BUG CAUGHT BEFORE THE BUILD. resolveGraceStart is rekeyed only when the current mediaId CHANGES
+     * (armBufferingWatchdog's `graceMediaId != resolveGraceMediaId` guard) and, per its own field note,
+     * "persists across watchdog re-arms of the same item". So on a MID-TRACK stall - which is the
+     * dominant measured shape, bytes=1M+ then a 10s timeout - it is already minutes old, the arm's
+     * window test is false on the first tick, and the 5s watchdog tears down media3's retry ladder
+     * anyway. The arm would have been inert in exactly the case it was written for.
+     * ⚠️ WHY NOT "TIME SINCE openInFlight WENT 0 -> >0": that restarts on every attempt of the
+     * ladder, so it can never bound the ladder as a whole - which is the one thing OPEN_GRACE_MS is for.
+     * The buffering EPISODE spans every attempt and resets when the player actually leaves
+     * STATE_BUFFERING, so it bounds the stall rather than one open.
+     * ⚠️ STAMPED ONLY WHEN UNSET (0), inside armBufferingWatchdog so every arm site is covered -
+     * including onPlayWhenReadyChanged's BUFFERING -> BUFFERING non-event, which produces no state
+     * callback at all. The `== 0L` guard is load-bearing: armBufferingWatchdog is ALSO the re-arm, and
+     * an unguarded write there would restart the clock every 5s and make the bound unreachable.
+     * CLEARED in onPlaybackStateChanged's non-BUFFERING branch, which is the one place that already
+     * knows the episode ended (it cancels the watchdog there for the same reason).
+     */
+    private var bufferingEpisodeStartMs = 0L
+
+    // PROBE (2026-10-03, stuck_detail's armAge) - REMOVE WITH THAT FIELD. Epoch ms of the last
+    // armBufferingWatchdog call, 0 if it has never been armed. NOT cleared when the watchdog is
+    // cancelled, deliberately: the question armAge answers is "when was the watchdog last ARMED", and
+    // the case it has to catch is a cancel with no following re-arm - which is exactly the case where
+    // clearing on cancel would erase the evidence.
+    private var lastWatchdogArmMs = 0L
     // Serializes the involuntary auto-skip coroutine (error-driven skip-to-next). A 403 cascade fires an
     // auto-skip per failed track; without this guard those pause->delay->skip->prepare->play coroutines
     // could stack and over-skip. launchInvoluntarySkip() cancels any prior in-flight skip AND the
@@ -980,6 +1167,8 @@ class PlayerEventListener(
     private var lastReadyDurationKnown: Boolean? = null
     private var bytesReadAtItemStart = 0L
     private var openCountAtItemStart = 0
+    // TRACER (2026-10-03, relSkip) - baseline for the per-item delta. REMOVE WITH THAT FIELD.
+    private var relSkipAtItemStart = 0
 
     // The three probe fields rendered for a detail string. ONE helper, called from EVERY recordSkip site,
     // because the fields were originally built inline in the buffering watchdog and therefore reported on
@@ -1014,6 +1203,51 @@ class PlayerEventListener(
      *       detector itself fires on the main looper and did fire, so the thread was alive.
      * WHAT WOULD SEPARATE THEM: a PLAYLIST_CHANGED count, or the age of the last watchdog arm.
      * Neither exists yet - do not add both blind, pick after reading loadAge on the next report.
+     *
+     * ⚠⚠ [2026-10-03] SECOND POPULATED REPORT (build 1113, Deezer, phone, NOT Android Auto):
+     *   type=buffering-no-progress to=60000 wd=live pwr=true state=1 items=64 next=yes
+     *   bufAhead=0 totalBuf=0 loads=1 loadAge=98829 graceAge=98817 wdRetries=0 errRetries=0
+     *   dur=? opens=0 bytes=0
+     * The contradiction above REPRODUCED - wd=live, loads=1, wdRetries=0 beside a ~99s graceAge - on a
+     * 64-item queue rather than a 3132-item one, which weakens (a)'s "items=3132 makes a queue rebuild
+     * plausible" supporting detail without touching (a) itself.
+     *
+     * ⚠⚠ loadAge ANSWERED ITS OWN QUESTION AND NOT THIS ONE. It settled where the job sits -
+     * see the [CORRECTED] block at its own prediction table below, because the answer REFUTES the
+     * prediction that was written there. It did NOT separate (a) from (b): loadAge and graceAge agree
+     * to 12ms because both are stamped at the same edge (the 0 -> 1 of activeLoadCount, and the mediaId
+     * rekey of a first buffering episode), so their agreement says only that the load episode never
+     * ended - which is true under either candidate.
+     * ⚠️ ONE NARROWING, MARKED AS INFERENCE because it was reasoned from the two field values
+     * and not observed: wd reads bufferingWatchdog?.isActive, and (a)'s PLAYLIST_CHANGED branch CANCELS
+     * the watchdog - a cancelled Job is not active. So wd=live means that if (a) fired, a NEW watchdog
+     * was armed after it and then ALSO failed to run its body, which is (b)'s behaviour. (a) alone does
+     * not reach wd=live; it needs (b) on top. That is a reason to measure (b) first, not a refutation.
+     *
+     * ⚠⚠ armAge [2026-10-03] IS THE DISCRIMINATOR, AND IT IS THE ONLY FIELD ADDED - the
+     * PLAYLIST_CHANGED count is deliberately still absent, per the "do not add both blind" line above.
+     * Age in ms of the last armBufferingWatchdog call, -1 if it was never armed. Data only; nothing
+     * about the watchdog's behaviour changed with it.
+     * STATED BEFORE THE FIRST READING, and every outcome moves the question:
+     *   armAge <= ~5000 (BUFFERING_WATCHDOG_MS)  -> THE WATCHDOG IS BEING RE-ARMED AND ITS BODY IS NOT
+     *       RUNNING. Candidate (b). Re-arming that recently, ~99s in, can only come from the arm sites
+     *       firing repeatedly, so the fault is downstream of arming: read the delay -> withContext(Main)
+     *       hop, not the reset logic.
+     *   armAge ~= graceAge (one arm, at the start)  -> IT WAS ARMED ONCE AND NEVER AGAIN, so something
+     *       cancelled or outlived it with no re-arm. Candidate (a) territory, AND the point at which the
+     *       PLAYLIST_CHANGED count becomes worth adding - note this outcome does NOT by itself name
+     *       PLAYLIST_CHANGED, since launchInvoluntarySkip also cancels the watchdog.
+     *   armAge between the two (seconds to tens of seconds, not ~5s, not ~graceAge)  -> arming STOPPED
+     *       part-way through the stall. Neither candidate as written predicts that; the interval itself
+     *       becomes the lead, since whatever last happened at that moment is what stopped the re-arms.
+     *   armAge = -1  -> IT WAS NEVER ARMED AT ALL, which falsifies BOTH candidates and the wd=live
+     *       reading with them (a live job with no arm is impossible as written). Suspect the field set
+     *       before the model in that case.
+     * ⚠️ armAge CANNOT COME OUT INCONSISTENT WITH wd BY CONSTRUCTION, which is what makes it a
+     * discriminator rather than a second symptom: the stamp is unconditional and sits ahead of every
+     * decision in armBufferingWatchdog, so it reports the arm ATTEMPT, while wd reports the resulting
+     * job's fate. REMOVAL CONDITION, named so it is checkable: armAge goes when one report has come
+     * back carrying it AND (a)/(b) are separated - not merely when the wedge stops being seen.
      *
      * ⚠️ AND state=1 (STATE_IDLE) IS NOT A CLUE - DO NOT SPEND A ROUND ON IT. Any playback
      * error transitions ExoPlayer to STATE_IDLE and StuckPlayerException arrives through the error
@@ -1085,6 +1319,40 @@ class PlayerEventListener(
      *                                 including TimeoutCancellationException, and its finally
      *                                 decrements - so loads could not still read 1 afterwards.
      *   loadAge > 60000            -> the same defect, and it alone explains the whole stall.
+     *
+     * ⚠⚠ [CORRECTED 2026-10-03] THE TWO BULLETS DIRECTLY ABOVE ARE WRONG, and the report that
+     * refuted them is the 2026-10-03 one at the top of this block: loadAge=98829, i.e. past both
+     * thresholds. THE CLAIM WAS: loadAge past 30s means StreamableLoader's withTimeout(30_000) failed to
+     * fire and the fault is in our timeout. WHAT REPLACED IT: loadAge CAN exceed 30s with the timeout
+     * working perfectly, because THE COUNTER SPANS THE WHOLE loadJob WHILE THE TIMEOUT BOUNDS ONLY
+     * loader.load. Read from StreamableMediaSource.prepareSourceInternal: activeLoadCount is incremented
+     * at the top of the launch and decremented in that launch's finally, and between loader.load
+     * RETURNING and that finally sit several steps the 30s ceiling never covered -
+     * state.serverChanged.emit, source-factory creation, changeFlow.emit, and the handler.post that
+     * calls prepareChildSource. A job parked anywhere in that tail reads loadAge=99s with the timeout
+     * entirely intact.
+     * ⚠️ WHY THE OLD BULLET'S SUB-ARGUMENT DID NOT CATCH THIS, since it looks airtight and is
+     * worth keeping for what it does prove: "runCatching catches TimeoutCancellationException and the
+     * finally decrements, so loads could not still read 1" is CORRECT, and it proves only that the
+     * timeout had not THROWN. It silently assumed the throw was still possible - that the job was still
+     * inside the timed call. Once loader.load has returned there is nothing left to throw, and both
+     * "the timeout never fired" and "the timeout was never needed" produce loads=1 with a large
+     * loadAge. Same shape as the `loads` defect this field was added to fix, one level further in.
+     * ⚠⚠ SO THE SEPTEMBER FRAMING THAT BOUNDED THIS WEDGE TO MEDIA3's CONTROLLER -> SESSION
+     * DISPATCH IS NOT ESTABLISHED, AND NEITHER IS "a defect in StreamableLoader". The park is inside
+     * OUR coroutine, PAST our own timeout, in code we own. Do not spend a round re-reading the loader's
+     * timeout or media3's dispatch on the strength of a large loadAge.
+     * ⚠️ WHERE IT NARROWS TO, as inference from the existing fields rather than from a new
+     * reading: opens=0 bytes=0 means no DataSource was ever opened, which puts the park BEFORE
+     * prepareChildSource and leaves the two emits and the factory creation. changeFlow is
+     * PlayerService.mediaChangeFlow, a MutableSharedFlow with no replay and no extraBufferCapacity -
+     * default SUSPEND - whose single collector runs on Dispatchers.Main, so it is a genuine indefinite
+     * suspension point; state.serverChanged has replay = 1 and so suspends only against a subscriber
+     * that has not consumed. NOT DEMONSTRATED, and the hole is stated rather than papered over: with
+     * ZERO subscribers a SharedFlow emit returns immediately, and a wedged main looper would have
+     * stopped the detector firing - and it fired. An emit park therefore needs a collector that is
+     * subscribed yet not consuming, which THIS FIELD SET CANNOT SHOW. It is the next thing to
+     * instrument, not the next thing to fix.
      * loadAge dates the EPISODE, not one load - see PlayerState.loadEpisodeStartMs for why, and for
      * the over-reporting direction that choice deliberately accepts.
      *
@@ -1100,6 +1368,9 @@ class PlayerEventListener(
             else -> "unknown(${e.stuckType})"
         }
         val graceAge = System.currentTimeMillis() - resolveGraceStart
+        // PROBE - see lastWatchdogArmMs and the armAge block above. A local rather than an inline
+        // template, matching graceAge directly above it.
+        val armAge = if (lastWatchdogArmMs == 0L) -1L else System.currentTimeMillis() - lastWatchdogArmMs
         return "type=$type to=${e.timeoutMs} " +
             // wd is THE field. Everything else is context for whichever branch it selects.
             "wd=${if (bufferingWatchdog?.isActive == true) "live" else "null"} " +
@@ -1108,7 +1379,8 @@ class PlayerEventListener(
             "bufAhead=${player.bufferedPosition - player.currentPosition} " +
             "totalBuf=${player.totalBufferedDuration} loads=${activeLoadCount()} " +
             "loadAge=${loadEpisodeStartMs().let { if (it == 0L) -1L else System.currentTimeMillis() - it }} " +
-            "graceAge=$graceAge wdRetries=$retriedWatchdogCount errRetries=$currentRetries " +
+            "graceAge=$graceAge armAge=$armAge " +
+            "wdRetries=$retriedWatchdogCount errRetries=$currentRetries " +
             probeDetail()
     }
 
@@ -1139,7 +1411,19 @@ class PlayerEventListener(
             delta < 1024 * 1024 -> "<1M"
             else -> "1M+"
         }
-        return "dur=$dur opens=${if (opens > 1) "2+" else "$opens"} bytes=$bytes"
+        // TRACER (2026-10-03). A BOOLEAN, NOT A COUNT, for the cardinality reason spelled out in
+        // armBufferingWatchdog: lastCauses is part of HealthMonitor.report's dedupe signature, so a raw
+        // number here would give every trip a unique signature and defeat the 10-minute cooldown. It is
+        // also stable for the duration of an episode, which is the test that note actually asks for.
+        // WHAT yes MEANS: StreamableMediaSource's posted prepareChildSource found `released` true and
+        // returned, so the load completed, `error` stayed null, and NO child source was ever registered -
+        // the candidate mechanism for the loaded=true/loads=0/opens=0/bytes=0 stall. See
+        // PlayerState.releasedPrepareSkips for why nothing throws in that state.
+        // Rides in probeDetail rather than in the watchdog's own fields so it reaches EVERY recordSkip
+        // site and stuck_detail at once - no new Crashlytics key (the budget is 63 of 64).
+        val relSkip = (releasedPrepareSkips() - relSkipAtItemStart).coerceAtLeast(0)
+        return "dur=$dur opens=${if (opens > 1) "2+" else "$opens"} bytes=$bytes " +
+            "relSkip=${if (relSkip > 0) "yes" else "no"}"
     }
     private var retried404MediaId: String? = null
     private var retriedSocketMediaId: String? = null
@@ -1293,7 +1577,9 @@ class PlayerEventListener(
     private fun Throwable.appExtensionName(): String? {
         var t: Throwable? = this
         while (t != null) {
-            (t as? AppException)?.let { return it.extension.name.scrubbed(MAX_EXT_NAME_LEN) }
+            (t as? AppException)?.let {
+                return it.extension.name.scrubbedForCrashlytics(MAX_EXT_NAME_LEN)
+            }
             t = t.cause
         }
         return null
@@ -1308,14 +1594,13 @@ class PlayerEventListener(
             t.message?.let { last = it }
             t = t.cause
         }
-        return last?.scrubbed(MAX_MSG_LEN)
+        return last?.scrubbedForCrashlytics(MAX_MSG_LEN)
     }
 
-    // The shared guard for any third-party string that reaches Crashlytics: strip URLs (signed CDN tokens
-    // live in them) and hard-cap. Extracted so the extension name gets exactly the same treatment as the
-    // message rather than a second, drifting copy of the rule.
-    private fun String.scrubbed(max: Int) =
-        replace(Regex("https?://\\S+"), "<url>").trim().take(max)
+    // MOVED 2026-10-03: `private fun String.scrubbed(max)` now lives in CrashKeys.kt as the top-level
+    // `scrubbedForCrashlytics`, body unchanged, because App.kt's deezer_gateway key became a third
+    // caller in a third package. Same argument this comment used to make for extracting it out of its
+    // two call sites here - one rule, not a drifting copy per caller - applied one level up.
 
     // Single convergence point for EVERY breaker trip, so one log line here covers all call sites. `outcome`
     // is the caller's intent ("stop" for the error paths, "pause" for the buffering watchdog) — the two end
@@ -1554,6 +1839,68 @@ class PlayerEventListener(
             return
         }
 
+        // A STREAM TIMEOUT HOLDS POSITION. IT DOES NOT SKIP, AND IT DOES NOT TOUCH THE BREAKER.
+        //
+        // ⚠⚠ WHY SKIPPING WAS WRONG, FROM THE FIELD RATHER THAN FROM PRINCIPLE. Measured on
+        // 1112-1113, 2 users, 4 reports, identical every time: timeout -> StuckBuffering ->
+        // StuckBuffering -> breaker -> stop, and then the SAME three failures ~23-26s later after the
+        // user pressed play. The bad condition outlives the track, so skipping cannot reach a good one -
+        // it just burns the queue and stops playback. This is the same argument the isNetworkDown branch
+        // above was built on ("whole-connection, NOT a per-track problem") and the same one the
+        // FileCacheTimeoutException branch makes ("the NEXT track awaits the identical object"). A
+        // stalled CDN or a stalled gateway is a third member of that family and was being handled as a
+        // dead track.
+        //
+        // ⚠⚠ THERE IS NO RETRY LADDER HERE, AND THAT IS DELIBERATE - MEDIA3 HAS ALREADY SPENT
+        // ~43 SECONDS BY THE TIME THIS LINE RUNS. With the A1 rewrap in place (see RawDataSource.open)
+        // a stalled open is retried IN PLACE: 4 attempts x the 10s fuse plus 0/1/2s of backoff, and
+        // Loader.LoadTask.maybeThrowError throws only once errorCount exceeds
+        // getMinimumLoadableRetryCount (3). So onPlayerError fires ONCE, after the budget, not per
+        // attempt.
+        // ⚠️ AND MEDIA3's RETRIES ARE INVISIBLE WHERE OURS WOULD NOT BE. They never touch the
+        // player, so playerError stays null throughout and ShufflePlayer.getPlayerError returns null -
+        // no Android Auto error tile, no notification churn, no re-resolve, no relay/gateway request. A
+        // ladder of ours would need stop() + prepare() per attempt, and stop() PRESERVES playerError
+        // (ExoPlayerImplInternal.stopInternal passes resetError=false - see clearErrorBeforeQueueReplace),
+        // so every attempt would flash an error tile at the driver AND reset media3's errorCount to 0.
+        // The two layers would not stack, they would fight. Do not add one.
+        // ⚠️ SCOPED TO TIMEOUTS ONLY, so a genuinely dead track still skips via the branches
+        // below, exactly as the isNetworkDown branch is scoped to its four connection-level types.
+        // ⚠️ NO recordSkip, SO THE BREAKER IS UNTOUCHED - same reasoning as the cache-timeout
+        // branch above: a stall must not consume the budget that exists for dead tracks.
+        // ⚠️ ORDERED AFTER isNetworkDown AND GUARDED ON IT, which is load-bearing: a real outage
+        // raises UnknownHost/Connect/NoRouteToHost (DNS and connect fail fast, they do not time out) and
+        // must keep the no_internet hold with its own retry budget. Same precedence the socket branch
+        // takes for the same reason.
+        // ⚠️ RECOVERY IS USER-INITIATED AND FREE, which is why no automatic re-attempt is needed:
+        // pause() leaves the player in STATE_IDLE, so play() - from the phone, the notification, an AA
+        // tap or a BT button - reaches ShufflePlayer.play(), which prepares from IDLE. That clears
+        // playerError, which makes getPlayerError return null and resets its identity cache, which is
+        // what makes the AA error tile disappear cleanly rather than linger.
+        // ⚠️ THE REFILL CASE IS THE WATCHDOG's, NOT THIS BRANCH's. ProgressiveMediaPeriod
+        // .configureRetry passes resetErrorCount = madeProgress, so a stall that delivers SOME samples
+        // between failures refills media3's budget and onPlayerError may never fire at all. That shape is
+        // bounded by OPEN_GRACE_MS instead - the watchdog defers 50s, then acts. A wall-clock cap here
+        // would be the wrong instrument: the only per-item clock available (resolveGraceStart) measures
+        // time-since-the-item-became-current, so on a mid-track stall - which is exactly A1's shape,
+        // opens=2+ bytes=1M+ - it is already minutes old and would pause instantly, making this inert.
+        val isStreamStall = !isNetworkDown
+            && (rootCause is SocketTimeoutException || rootCause is TimeoutCancellationException)
+        if (isStreamStall) {
+            Log.d(
+                "GladixPlayback",
+                "onPlayerError: stream stalled for ${mediaItem?.mediaId}, holding (no skip)"
+            )
+            // The MESSAGE is chosen in ExceptionUtils.getTitle, not here: that function has a Context,
+            // so it can read live connectivity and say "No Internet" when the network actually dropped
+            // mid-socket (which surfaces as a timeout rather than a ConnectException). Emitting the raw
+            // cause keeps that decision in one place for every caller instead of fabricating an
+            // exception here to steer the string.
+            scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+            player.pause()
+            return
+        }
+
         if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
             recordSkip(rootCause, error, probeDetail())
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
@@ -1614,6 +1961,15 @@ class PlayerEventListener(
         // 3 x (5s retry + 5s skip) later.
         // The one caveat that DOES survive: at a lowered threshold it can fire on a genuinely slow cold
         // resolve, so it still needs reconciling with RESOLVE_GRACE_MS = 25_000 before the threshold moves.
+        // ⚠⚠ [2026-10-03] NOW UNREACHABLE, AND KEPT ANYWAY - READ THIS BEFORE DELETING IT. The
+        // isStreamStall hold branch above claims both of these types and returns, so `isTimeout` is false
+        // on every input that used to make it true. It is NOT dead code to be tidied: it is the belt for
+        // the case where a future branch above is reordered or narrowed, and the silent-skip family it
+        // feeds is the correct FALLBACK behaviour if that ever happens. Leaving it costs one `is` check.
+        // What it used to do, recorded because it is the defect being fixed: a 10s getContentLength
+        // timeout reached the silent-skip family and skipped the track on the FIRST occurrence, with no
+        // retry at our layer and - because RawDataSource rethrew the CancellationException untouched -
+        // none at media3's either.
         val isTimeout = rootCause is TimeoutCancellationException || rootCause is SocketTimeoutException
 
         // Benign media3 datasource teardown race — suppressed, but counted. The player/cache is torn down

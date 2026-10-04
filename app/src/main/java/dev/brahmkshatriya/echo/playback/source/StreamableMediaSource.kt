@@ -119,6 +119,10 @@ class StreamableMediaSource(
 
                 handler.post {
                     if (released) {
+                        // TRACER - see PlayerState.releasedPrepareSkips. Counted here rather than logged
+                        // only, because this branch is silent on a user's device and the logcat line below
+                        // cannot be captured in the field.
+                        state.releasedPrepareSkips.incrementAndGet()
                         Log.d("GladixPlayback", "handler.post: released, skipping prepareChildSource for ${mediaItem.mediaId}")
                         return@post
                     }

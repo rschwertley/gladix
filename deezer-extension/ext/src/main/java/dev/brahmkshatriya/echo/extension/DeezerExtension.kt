@@ -871,6 +871,9 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         // Chosen over onLogin because this is the chokepoint the host drives - it runs on login, on
         // logout, and on a user switch, whereas onLogin misses the last two.
         session.setCredentialsRejected(false)
+        // RECOMMENDATION_COUNTRY is per account, so the "already pushed" memo cannot survive a user
+        // switch or a logout - see DeezerSession.lastSentCountry.
+        session.setLastSentCountry(null)
         if (user != null) {
             session.updateCredentials(
                 arl = user.extras["arl"] ?: "",

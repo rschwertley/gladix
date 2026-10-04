@@ -12,16 +12,18 @@ import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
+import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.utils.CrashKeys
+import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -283,6 +285,11 @@ data class App(
                         setCustomKey("health_report_type", "none")
                         setCustomKey("player_state", crashPlayerState)
                         setCustomKey("is_playing", crashIsPlaying)
+                        // Deezer gateway refusal detail, or "none". ALWAYS WRITTEN, per doc note 4 in
+                        // CrashKeys: this is a SNAPSHOT, not an accumulator, so a skipped write would
+                        // leave the previous report's refusal attached to an unrelated error. The
+                        // twin "none" write is in HealthMonitor.report for the same reason.
+                        setCustomKey("deezer_gateway", it.deezerGatewayDetail() ?: "none")
                         // Age at THIS instant, not at any checkpoint. See CrashKeys.onReportRecorded for
                         // why the checkpoint keys cannot answer "when did this happen".
                         // ⚠️ HealthMonitor.kt has the OTHER recordException call site; a report arriving
@@ -345,6 +352,61 @@ data class App(
         return null
     }
 
+    /**
+     * Detail of a [DeezerGatewayException] anywhere in the cause chain, for the `deezer_gateway` key;
+     * null when there is none.
+     *
+     * ⚠⚠ WHY THE KEY EXISTS AT ALL: THE EXCEPTION CARRIES ITS CAUSE AND THE REPORT DID NOT.
+     * DeezerGatewayException splits message from detail on purpose - a generic sentence for the user,
+     * `method`/`errorText` for the log - and Crashlytics renders the MESSAGE. So the 1113 issue arrived
+     * as 12 events across 3 users with a fixed string and nothing else: no method, no Deezer sentence,
+     * no way to tell an unsupported gateway LANG from a stale CSRF token from a refused getUserData.
+     * Those need different fixes. This key is the one place the distinction can land.
+     *
+     * ⚠⚠ THE CHAIN WALK IS MANDATORY, NOT STYLISTIC - same reason as [isAuthRejection]. What
+     * reaches this collector is AppException.Other WRAPPING the refusal (ExtensionUtils.get ->
+     * toAppException's `else -> Other(this, extension)`), so a check on the top node can never match.
+     * Fifth recorded instance of the wrong-node type check in this repo.
+     *
+     * ⚠⚠ TWO ARMS, AND THE SECOND IS NOT BELT-AND-BRACES. The typed arm is the real one and is
+     * available because :app has `implementation(project(":deezer-extension"))` and the BUILT-IN Deezer
+     * is constructed directly - ExtensionLoader's `lazy { DeezerExtension() }`, importType BuiltIn - so
+     * its classes are on the app's own classloader and `is` matches. An `is` check also survives R8,
+     * which renames classes but rewrites type checks consistently.
+     * WHAT THE SECOND ARM COVERS: ExtensionParser.loadFrom does `DexLoader(...).loadClass(className)`
+     * for non-built-in import types, so a Deezer extension installed as an APK or file would throw a
+     * same-named class from a DIFFERENT classloader - a distinct runtime type that `is` cannot match.
+     * Without the fallback that user's reports would read "none", which is indistinguishable from "no
+     * gateway error" and would send the next reader after the instrument instead of the bug.
+     * ⚠️ WHY THE FALLBACK MATCHES THE MESSAGE AND NOT THE CLASS NAME: R8 renames classes, so a
+     * `::class.simpleName` comparison breaks per release - measured, tl0 -> ul0 between builds 1109 and
+     * 1110. String LITERALS survive minification, which is what makes a message match stable. Same
+     * technique and the same cross-module coupling as [DEEZER_AUTH_REJECTED_MESSAGE].
+     * ⚠️ THE FALLBACK FORWARDS toString() WHOLE AND PARSES NOTHING, so the exception's field
+     * order is free to change. It renders `DeezerGatewayException(method=..., lang=..., error=...)`,
+     * i.e. the same three values the typed arm formats, in a shape a reader can still scan.
+     *
+     * ⚠️ SCRUBBED BECAUSE errorText IS DEEZER'S OWN TEXT, through the same helper that guards
+     * lastCauses (URLs stripped, length capped). `method` and `lang` are ours and are short, so only
+     * the third field needs it. IT CAPS AND STRIPS URLs; IT DOES NOT STRIP IDENTIFIERS - the two
+     * measured error forms carry none, and page.get's gateway_input carries no user id (the account id
+     * travels as the x-deezer-user HEADER), but that is an observation about today's payloads rather
+     * than a guarantee about Deezer's wording.
+     */
+    private fun Throwable.deezerGatewayDetail(): String? {
+        var t: Throwable? = this
+        while (t != null) {
+            (t as? DeezerGatewayException)?.let {
+                return "gw=${it.method} lang=${it.lang} " +
+                        "err=${it.errorText.scrubbedForCrashlytics(MAX_GATEWAY_ERROR_LEN)}"
+            }
+            if (t.message == DEEZER_GATEWAY_MESSAGE)
+                return t.toString().scrubbedForCrashlytics(MAX_GATEWAY_DETAIL_LEN)
+            t = t.cause
+        }
+        return null
+    }
+
     private fun Throwable.isLoginRequired(): Boolean {
         var t: Throwable? = this
         while (t != null) {
@@ -358,12 +420,31 @@ data class App(
      * A credential REFUSAL from an extension's own login screen. Suppressed from Crashlytics for the
      * same reason as [isLoginRequired]: it is a user mistake, not a fault.
      *
-     * ⚠⚠ MATCHED ON THE MESSAGE TEXT BECAUSE THE TYPE IS UNREACHABLE FROM HERE, NOT AS A
-     * SHORTCUT. DeezerAuthRejectedException lives in the Deezer extension module, so :app has no
-     * compile-time reference to it - there is no `is` check available at any level of care. String
-     * literals survive R8 (it renames classes, not string contents), which is what makes this stable
-     * where a class-name match would not be: the minified name changed tl0 -> ul0 between builds
-     * 1109 and 1110, so every release minted a NEW Crashlytics issue for the same user error.
+     * ⚠⚠ MATCHED ON THE MESSAGE TEXT. String literals survive R8 (it renames classes, not
+     * string contents), which is what makes this stable where a CLASS-NAME STRING match would not be:
+     * the minified name changed tl0 -> ul0 between builds 1109 and 1110, so every release minted a NEW
+     * Crashlytics issue for the same user error.
+     *
+     * ⚠⚠ [CORRECTED 2026-10-03] THIS NOTE SAID THE MESSAGE MATCH WAS USED "BECAUSE THE TYPE IS
+     * UNREACHABLE FROM HERE" - that "DeezerAuthRejectedException lives in the Deezer extension module,
+     * so :app has no compile-time reference to it" and "there is no `is` check available at any level
+     * of care". THAT IS FALSE AGAINST THE CURRENT TREE. app/build.gradle.kts has
+     * `implementation(project(":deezer-extension"))`, and two app files already import the module's
+     * types (ExtensionLoader and LoginFragment both import DeezerExtension). The dependency arrived
+     * with 8f4c2f29, "Converted Deezer extension from submodule to local module", so the claim was
+     * presumably true once and was not re-checked when the note was written.
+     * ⚠️ THE R8 HALF ABOVE IS CORRECT AND IS A DIFFERENT CLAIM. Class RENAMING defeats a
+     * `::class.simpleName` string comparison; it does not defeat an `is` check, which R8 rewrites
+     * consistently. So a typed check was available AND stable, and the reason recorded here for not
+     * using one was wrong even though the code is fine.
+     * ⚠️ NOTHING IS BEING CHANGED HERE ON THE STRENGTH OF THAT. This function suppresses
+     * REPORTING; switching its predicate is a behaviour change on a suppression path and does not
+     * belong in a correction. [deezerGatewayDetail] above is the new code and DOES use the typed check,
+     * with the message match kept only for the dex-classloader case the type cannot reach.
+     * ⚠️ AND THE REASON THIS IS WORTH THE PARAGRAPHS: the false premise was about to be
+     * inherited. deezer_gateway was first scoped as a message-and-toString match for no reason except
+     * that this note said a type check was impossible - a comment asserting something, read as
+     * established because it sits in the tree.
      *
      * ⚠⚠ THE CHAIN WALK IS MANDATORY, NOT STYLISTIC. The throwable that reaches this
      * collector is AppException.Other WRAPPING the refusal (ExtensionUtils.get -> toAppException's
@@ -399,5 +480,21 @@ data class App(
         // only symptom is a Crashlytics issue reappearing per release.
         private const val DEEZER_AUTH_REJECTED_MESSAGE =
             "Deezer did not accept these credentials."
+
+        // Byte-identical to DeezerGatewayException's super-constructor message. Used ONLY by
+        // deezerGatewayDetail's fallback arm, for a Deezer extension loaded through DexLoader rather
+        // than the built-in one; the typed `is` check handles every other case. If the two texts drift
+        // apart, those users' reports read "none" and nothing else breaks - a quieter failure than
+        // DEEZER_AUTH_REJECTED_MESSAGE's, which silently re-enables reporting.
+        private const val DEEZER_GATEWAY_MESSAGE = "Deezer refused this request."
+
+        // Matches the .take(300) on DeezerApi's GATEWAY-ERROR println, so the logcat line and this key
+        // cannot truncate the same sentence differently. Crashlytics caps a key VALUE at 1024 chars;
+        // 300 + the two short labelled fields leaves that untroubled.
+        private const val MAX_GATEWAY_ERROR_LEN = 300
+
+        // The fallback arm scrubs a whole toString() rather than one field, so it gets its own cap:
+        // 300 for the error text plus the method, lang and the type name around them.
+        private const val MAX_GATEWAY_DETAIL_LEN = 400
     }
 }

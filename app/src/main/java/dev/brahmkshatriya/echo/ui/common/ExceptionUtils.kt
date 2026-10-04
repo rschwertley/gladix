@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.common
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.view.View
 import androidx.fragment.app.FragmentActivity
 import dev.brahmkshatriya.echo.MainActivity
@@ -12,12 +13,12 @@ import dev.brahmkshatriya.echo.download.exceptions.DownloaderExtensionNotFoundEx
 import dev.brahmkshatriya.echo.download.tasks.BaseTask.Companion.getTitle
 import dev.brahmkshatriya.echo.extensions.db.models.UserEntity
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
-import dev.brahmkshatriya.echo.extensions.exceptions.capMessage
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionLoadException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionLoaderException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.exceptions.InvalidExtensionListException
 import dev.brahmkshatriya.echo.extensions.exceptions.RequiredExtensionsMissingException
+import dev.brahmkshatriya.echo.extensions.exceptions.capMessage
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -31,19 +32,31 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.Serializer
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
+import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.koin.androidx.viewmodel.ext.android.viewModel
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.UnknownHostException
-import java.nio.channels.UnresolvedAddressException
 
 object ExceptionUtils {
+
+    /**
+     * Whether this device currently believes it has a network. Used only to word a timeout message -
+     * see the timeout arm in [getTitle]. Defaults to TRUE on failure, so an unreadable
+     * ConnectivityManager produces the stalling message rather than a false "No Internet".
+     */
+    private fun Context.hasActiveNetwork() = runCatching {
+        getSystemService(ConnectivityManager::class.java)?.activeNetwork != null
+    }.getOrDefault(true)
 
     private fun Context.getTitle(throwable: Throwable): String? = when (throwable) {
         // Class/library LOAD failure — the extension can't be loaded at all (missing/repackaged class,
@@ -63,6 +76,25 @@ object ExceptionUtils {
         // level failures only — a mid-stream SocketException is not "no internet".
         is UnknownHostException, is UnresolvedAddressException,
         is ConnectException, is NoRouteToHostException -> getString(R.string.no_internet)
+
+        // A stalled connection, not a missing one: the socket opened and then went quiet. Paired with
+        // ErrorCategory.classify's timeout arm (ErrorCategoryTest guards the drift) and with
+        // PlayerEventListener's isStreamStall hold branch, which is what the user is actually seeing when
+        // this string appears - playback paused on the SAME track, nothing skipped.
+        // ⚠⚠ THE CONNECTIVITY READ IS THE POINT, NOT A REFINEMENT. A network that drops
+        // MID-SOCKET surfaces as a timeout rather than a ConnectException, so without this check a real
+        // outage would be described as "stalling" while the phone showed no bars. The hold BEHAVIOUR is
+        // identical either way (hold, no skip, no breaker) - only the wording differs, and the wording is
+        // the whole value of the message.
+        // ⚠️ IT LIVES HERE RATHER THAN AT THE THROW SITE so one decision covers every caller of
+        // getTitle, and so PlayerEventListener does not have to fabricate an exception to steer a string.
+        // ⚠️ activeNetwork, NOT a validated-capability check: the question is "does this device
+        // think it has a network", which is the same read the buffering watchdog's net= probe makes.
+        // runCatching because some OEM builds reject the ConnectivityManager binder call from the system
+        // server (see App's network-callback guard) and a message must never throw.
+        is SocketTimeoutException, is TimeoutCancellationException ->
+            if (hasActiveNetwork()) getString(R.string.playback_stream_stalling)
+            else getString(R.string.no_internet)
 
         // Deferred class-load/instantiate failure carrying extension identity (see ExtensionParser).
         // Root-cause unwrapped so a constructor failure wrapped in InvocationTargetException shows the
@@ -273,11 +305,36 @@ object ExceptionUtils {
     }
 
     private val client = OkHttpClient()
+
+    /**
+     * Uploads [data].trace to paste.rs and returns the paste URL, or a FAILURE the caller can fall
+     * back from. ExceptionFragment.copyException does `getPasteLink(data).getOrElse { data.trace }`,
+     * so a failure here means the user copies the plain error text instead - which is the point.
+     *
+     * ⚠⚠ THE STATUS CHECK IS THE WHOLE FIX. OkHttp DOES NOT THROW ON 4xx/5xx, so without it
+     * runCatching SUCCEEDED on an error response and body.string() returned paste.rs's HTML ERROR
+     * PAGE, which was then handed back as if it were a paste URL and copied to the clipboard.
+     * FIELD REPORT (2026-10-02): a user copying a playback error got an HTML "400: Bad Request" page
+     * footed "Rocket" - paste.rs is a Rocket app - pasted where a link should have been. The 400 had
+     * nothing to do with the error being reported; it arrived later, from this call.
+     * ⚠️ SAME DEFECT CLASS AS THE AppUpdater GITHUB PATH, which checks response.code before
+     * deserialising for exactly this reason. If a response can be an error page, the code must be
+     * read before the body is believed.
+     * ⚠️ isSuccessful RATHER THAN A CODE LIST, DELIBERATELY: there is nothing to say about
+     * WHICH failure, because every outcome is the same fall back to the raw trace. The code goes in
+     * the message only so a report can name it.
+     */
     suspend fun getPasteLink(data: Data) = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("https://paste.rs")
             .post(data.trace.toRequestBody())
             .build()
-        runCatching { client.newCall(request).await().body.string() }
+        runCatching {
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful)
+                    throw IOException("paste.rs returned HTTP ${response.code}")
+                response.body.string()
+            }
+        }
     }
 }

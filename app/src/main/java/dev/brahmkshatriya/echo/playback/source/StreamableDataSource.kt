@@ -74,7 +74,16 @@ class StreamableDataSource(
         }
         val source = factory.value.createDataSource()
         this.source = source
-        return source.open(spec)
+        // See openInFlight below. Wrapped around the DELEGATE call, not around this whole function: the
+        // factory selection above is synchronous and allocation-only, while everything that can BLOCK -
+        // the Deezer HEAD, the ranged GET, an HTTP connect - is inside source.open.
+        openInFlight.incrementAndGet()
+        return try {
+            source.open(spec)
+        } finally {
+            openInFlight.decrementAndGet()
+            lastOpenEndMs.set(System.currentTimeMillis())
+        }
     }
 
     companion object {
@@ -117,6 +126,44 @@ class StreamableDataSource(
         // retired 2026-09-12: the field's own rationale above (bytes is what splits the two stalls that
         // look identical in a report) is a description of a permanent diagnostic, not a temporary one.
         val bytesRead = AtomicLong(0)
+
+        /**
+         * Number of open() calls currently blocked in the delegate, process wide. NOT a probe - the
+         * buffering watchdog's second suppression arm reads it (PlayerEventListener.armBufferingWatchdog,
+         * OPEN_GRACE_MS). Do not remove with the diagnostic counters above it.
+         *
+         * ⚠⚠ IT EXISTS BECAUSE activeLoadCount CANNOT SEE A DATASOURCE-LEVEL RETRY, AND THAT
+         * BLINDNESS WAS DEFEATING THE A1 FIX. activeLoadCount tracks StreamableMediaSource's RESOLVE job,
+         * which has long completed by the time media3's Loader starts retrying open() - so the watchdog's
+         * resolve-in-flight gate read 0, fired at BUFFERING_WATCHDOG_MS (5s), and did stop() + prepare(),
+         * which tears the Loader down and resets its errorCount to 0. media3 would never have reached its
+         * second attempt. This counter is the only signal that an open is pending.
+         * ⚠️ A COUNTER RATHER THAN A FLAG, because concurrent opens are normal (ExoPlayer prepares
+         * the next period while the current one plays), and a flag would be cleared by whichever finished
+         * first while another was still blocked.
+         * ⚠️ INCREMENT-THEN-try/finally, NOT try/finally-around-both: the increment has no
+         * suspension or throw between it and the try, so the finally cannot be skipped.
+         */
+        val openInFlight = AtomicInteger(0)
+
+        /**
+         * Epoch ms at which the most recent open() call RETURNED OR THREW, 0 if none has yet. Read with
+         * [openInFlight] by the buffering watchdog's second suppression arm.
+         *
+         * ⚠⚠ IT EXISTS FOR THE GAPS BETWEEN MEDIA3's RETRIES, WHICH ARE INVISIBLE TO
+         * openInFlight. DefaultLoadErrorHandlingPolicy.getRetryDelayMsFor is
+         * min((errorCount - 1) * 1000, 5000), so between attempts the Loader sleeps with NO open
+         * outstanding and openInFlight reads 0. The watchdog ticks every BUFFERING_WATCHDOG_MS (5s), so
+         * a tick landing in one of those gaps would see an idle counter, fall through, and tear down the
+         * very ladder the arm exists to protect - roughly 3s of gap in a ~43s ladder, i.e. it would
+         * misfire a small fraction of the time, silently, reproducing the exact defect being fixed.
+         * ⚠️ A TIMESTAMP RATHER THAN A SECOND COUNTER, because the question is "was an open
+         * active RECENTLY", which a monotonic count cannot answer without the reader keeping its own
+         * previous sample - and the watchdog Job is recreated on every arm, so it has nowhere to keep
+         * one.
+         * Stamped in the finally beside the decrement, so it covers a throw as well as a return.
+         */
+        val lastOpenEndMs = AtomicLong(0L)
 
         val Streamable.Source.uri
             get() = when (this) {
