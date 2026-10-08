@@ -905,17 +905,35 @@ class PlayerEventListener(
         // have to come out even if it were still 10s.)
         //
         // ⚠️ "WRONG WHEN WRITTEN" IS CHECKED AGAINST THE JUNE TREE, NOT TODAY's, BECAUSE THE
-        // OBVIOUS OBJECTION IS THAT THE STREAM PATH MOVED SINCE. It did not:
+        // OBVIOUS OBJECTION IS THAT THE STREAM PATH MOVED SINCE. It HAD moved - just earlier than the
+        // line, so the verdict holds:
         //   this line and COLD_GRACE_MS (as it then was) both arrived in 8256ca3b, 2026-06-29;
         //   at 8256ca3b the call sat at DeezerTrackClient:156 INSIDE Streamable.InputProvider, and at
-        //     8256ca3b^ - the parent - it sat at :155, same shape;
-        //   the deferred open-time architecture itself predates both, from d95228a0 (2025-06-05,
-        //     "introduce raw source, with Input Stream Provider");
-        //   and of the nine commits that have touched that file since, none moved the call out of the
-        //     lambda - including 286b3f90 (2026-08-03), the one a later note describes phase 2 from.
-        // So an August record that DESCRIBES getContentLength as running inside RawDataSource.open is
-        // describing an arrangement that was already a year old, not a rework that moved it there. Do
-        // not re-derive this as "accurate when written, later overtaken" - it was checked.
+        //     8256ca3b^ - the parent - it sat at :155, same shape. So it was ALREADY open-time when
+        //     the derivation was written, which is the whole claim.
+        //
+        // ⚠⚠ [CORRECTED 2026-10-04] AN EARLIER VERSION OF THIS PARAGRAPH SAID THE OPEN-TIME
+        // ARRANGEMENT "PREDATES BOTH, FROM d95228a0 (2025-06-05)" AND THAT IT WAS "ALREADY A YEAR
+        // OLD, NOT A REWORK". THAT IS FALSE, AND THE REWORK IS OURS:
+        //   d95228a0 (2025-06-05) introduced the InputProvider MECHANISM only - it did NOT put
+        //     getContentLength inside the lambda;
+        //   at 8f4c2f29 (2026-04-22), the commit that imported this extension, the call sat OUTSIDE
+        //     the lambda - RESOLVE time - which is still upstream's arrangement today
+        //     (LuftVerbot/echo-deezer-extension, main, read 2026-10-04);
+        //   95e701f2 (2026-05-09, "playback fixes, persistant paused notification, loudness
+        //     normalization, README updated") MOVED IT INSIDE - seventeen days after the import, and
+        //     seven weeks before the derivation above.
+        // HOW THE ERROR HAPPENED, because the shape will recur: the date was checked against 8256ca3b
+        // and its parent ONLY - two commits that both sit AFTER the move - and "neither one differs"
+        // was read as "nothing ever changed". Verifying a date inside the post-change window cannot
+        // detect the change. git log -S will not catch it either: a MOVE within one file leaves the
+        // string count unchanged. What found it was reading the file AT the import commit.
+        // ⚠️ SO AN AUGUST RECORD DESCRIBING getContentLength AS RUNNING INSIDE
+        // RawDataSource.open IS DESCRIBING A REAL REWORK (95e701f2), NOT A YEAR-OLD ARRANGEMENT. The
+        // earlier instruction here - "do not re-derive this as 'accurate when written, later
+        // overtaken'" - rested on that false premise and is WITHDRAWN. The honest statement is
+        // narrower: wrong when written in 8256ca3b, because the move had already happened three weeks
+        // earlier. The CONCLUSION is unchanged and is now verified across six commits, not two.
         //
         // ⚠️ THE CONSTANT IS UNAFFECTED AND STAYS AT 25_000. Removing that term does not change
         // what the number has to satisfy: the clientNP arithmetic is the reason it is ~25s rather than
