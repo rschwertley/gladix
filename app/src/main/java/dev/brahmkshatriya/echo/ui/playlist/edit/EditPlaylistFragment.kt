@@ -125,9 +125,20 @@ class EditPlaylistFragment : Fragment() {
         observe(vm.dataFlow) { headerAdapter.data = it }
         observe(vm.tabsFlow) { tabAdapter.data = it }
         observe(vm.selectedTabFlow) { tabAdapter.selected = vm.tabsFlow.value.indexOf(it) }
+        // ⚠⚠ DROPPED DURING A DRAG, NOT DEFERRED - AND THE DIRECTION OF STALENESS IS WHY.
+        // This used to park the list in adapter.pendingList and replay it from clearView. Now that
+        // onMove reorders the adapter itself, the ADAPTER holds the order the user is dragging to and
+        // currentTracks is the side catching up, so a replay at drag end overwrites the correct order
+        // with whatever currentTracks accumulated. Dropping is what QueueFragment.submitOrDefer settled
+        // on, for the reason stated there: the adapter's drag-local order is already correct, and
+        // re-submitting after the drag would only replay a stale snapshot.
+        // ⚠️ ACCEPTED COST, STATED RATHER THAN WIDENED: an edit from another source mid-drag -
+        // a swipe-to-remove, say - does not reach the list until the finger lifts and the next emission
+        // arrives. currentTracks is a StateFlow, so that emission carries the latest value; nothing is
+        // lost, it is only late.
         observe(vm.currentTracks) {
-            if (adapter.isDragging) adapter.pendingList = it
-            else adapter.submitList(it)
+            if (adapter.isDragging) return@observe
+            adapter.submitList(it)
         }
 
         val combined = vm.originalList.combine(vm.saveState) { a, b -> a to b }

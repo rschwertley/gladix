@@ -56,13 +56,22 @@ class QueueFragment : Fragment() {
     private var fingerDownY = Float.NaN
     private var fingerY = Float.NaN
 
-    // ⚠⚠ A BOOLEAN, NOT PlaylistTrackAdapter'S pendingList, AND THE DIFFERENCE IS NOT STYLE.
-    // There the observer CARRIES the value (`observe(vm.currentTracks) { ... pendingList = it }`), so the
-    // deferred list has to be stored or it is lost - pendingList is NECESSARY there.
-    // Here submit() takes no argument and reads viewModel.queue and playerState.current fresh at call time,
-    // so storing a snapshot would replay a list that may be several mutations stale by the time the finger
-    // lifts. Recording only THAT a submit was suppressed lets the catch-up read the latest state. Copying
-    // pendingList across would have been the faithful-looking choice and the worse one.
+    // ⚠⚠ A BOOLEAN, AND THE REASON IS THE DIRECTION OF STALENESS, NOT STYLE. submit() takes no
+    // argument and reads viewModel.queue and playerState.current fresh at call time, so storing a
+    // snapshot would replay a list that may be several mutations stale by the time the finger lifts.
+    // Recording only THAT a submit was suppressed lets the catch-up read the latest state.
+    //
+    // ⚠⚠ [CORRECTED 2026-10-07] THIS NOTE USED TO SAY "A BOOLEAN, NOT PlaylistTrackAdapter'S
+    // pendingList" AND THAT "pendingList is NECESSARY there". BOTH HALVES ARE NOW WRONG, AND THE
+    // SECOND WAS WRONG WHEN WRITTEN. pendingList is GONE (removed 2026-10-07 fixing GitHub #3): the
+    // playlist editor had the pre-fix shape of THIS screen - onMove called only the view model and
+    // never reordered the adapter - and its pendingList replay at clearView was restoring the
+    // accumulated order over the correct one. Storing the deferred list was not necessary there; it was
+    // the bug. What that screen needed was this screen's conclusion, carried across.
+    // ⚠️ SO READ THE REASONING, NOT THE COMPARISON. The durable half is: during a drag the
+    // ADAPTER is authoritative, so an external submit should be DROPPED rather than deferred, whatever
+    // the mechanism for dropping is. Whether you need a stored value depends only on whether the
+    // source re-emits - see ManageExtensionsFragment, where it does NOT.
 
     // ⚠⚠ PERMANENT, KEEP WHEN THE PROBE BELOW IS DELETED: ItemTouchHelper CAPTURES
     // mSelectedStartY ONCE AND NEVER RE-CAPTURES IT. Read from recyclerview 1.4.0:

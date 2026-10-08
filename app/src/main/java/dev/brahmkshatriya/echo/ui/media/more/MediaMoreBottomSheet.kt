@@ -341,7 +341,35 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             ) {
                 DeletePlaylistBottomSheet.show(requireActivity(), extensionId, item, loaded)
             } else null,
-            if ((itemContext as? Playlist)?.isEditable == true && item is Track) button(
+            // ⚠⚠ pos != -1 IS A REACHABILITY GUARD, NOT A NULL CHECK - AND -1 IS A VALUE HERE,
+            // NOT AN ABSENCE. show()'s `pos: Int? = null` is written as putInt("pos", pos ?: -1), and
+            // `pos` below reads args.getInt("pos"), so EVERY caller that omits a position supplies -1
+            // indistinguishably from one that meant it. HistoryAdapter does exactly that: it passes
+            // `context = listItem.entity.context` with no pos, because a history entry records WHICH
+            // playlist a track was played from and not WHERE in it. So this button used to be offered
+            // on a history row and then crash.
+            // ⚠️ THE CRASH WAS BUILD 860's FATAL: NullPointerException at
+            // EditPlaylistBottomSheet.removeIndex, whose lazy is
+            // `args.getInt("removeIndex", -1).takeIf { it != -1 }!!` - reached from the vm delegate in
+            // onViewCreated. It was read at the time as the sheet being recreated without its
+            // arguments. IT IS NOT: Fragment arguments are written into FragmentState and survive
+            // rotation and process death, so requireArguments() is safe for anything built via
+            // newInstance. What it needed was simply a caller with no position.
+            // ⚠️ AND -1 CANNOT BE DERIVED AWAY: a playlist may contain the same track twice, so
+            // from history or the player there is no correct index to pass. Hiding an action that
+            // cannot be performed is the honest fix; the playlist page itself still offers it, because
+            // FeedClickListener passes `pos = index`.
+            //
+            // ⚠⚠ DO NOT "FIX" THIS BY SOFTENING removeIndex's !! INSTEAD - IT LOOKS SAFER AND
+            // PRODUCES A SHEET THAT HANGS FOREVER. EditPlaylistViewModel:248 already accepts -1
+            // (`if (removeIndex == -1) return@launch`), so the !! was the ONLY thing rejecting it - but
+            // that early return also means saveFlow never emits, so saveState stays SaveState.Initial,
+            // whose toText is R.string.loading, and EditPlaylistBottomSheet only dismisses on
+            // SaveState.Saved. Drop the !! and the user gets a "Loading" sheet that never closes and
+            // never removes anything - a worse failure than the crash, because it reads as progress.
+            // ⚠️ -1 IS ALSO RecyclerView.NO_POSITION, so this guard additionally covers a
+            // supplying caller whose row was detached when the position was read.
+            if ((itemContext as? Playlist)?.isEditable == true && item is Track && pos != -1) button(
                 "remove_from_playlist", R.string.remove, R.drawable.ic_cancel
             ) {
                 EditPlaylistBottomSheet.newInstance(

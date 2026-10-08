@@ -88,10 +88,21 @@ class ManageExtensionsFragment : Fragment() {
         // REORDER of the same items is a device question, not a source one, and it is the reason this is
         // parked rather than fixed: QueueFragment had a reproduced symptom, this has a mechanism and no
         // report. Do not fix it blind - drag an extension and see whether the drag survives first.
-        // THE FIX, IF IT IS REAL, IS ALREADY WRITTEN TWICE: PlaylistTrackAdapter's isDragging/pendingList,
-        // and QueueFragment's isDragging/submitSuppressed. Prefer pendingList's shape here, because this
-        // observer CARRIES the list - see the note at QueueFragment.submitSuppressed for why that
-        // distinction decides which of the two to copy.
+        // THE FIX, IF IT IS REAL, IS WRITTEN ON BOTH OTHER DRAG SCREENS, AND BOTH NOW AGREE ON THE
+        // SHAPE: reorder the adapter locally in onMove, and DROP external submits while dragging rather
+        // than deferring them. See QueueFragment.onMove / submitOrDefer and
+        // PlaylistTrackAdapter.onMove / EditPlaylistFragment's currentTracks observer.
+        // ⚠️ [CORRECTED 2026-10-07] THIS USED TO SAY "Prefer pendingList's shape here, because
+        // this observer CARRIES the list". pendingList NO LONGER EXISTS - it was removed from
+        // PlaylistTrackAdapter on 2026-10-07 because the deferred replay was itself the defect in
+        // GitHub #3, restoring an accumulated order over the correct one.
+        // ⚠⚠ BUT THE CARRIES-THE-LIST OBSERVATION WAS RIGHT AND STILL MATTERS HERE, SO DO NOT
+        // COPY THE DROP BLINDLY. The editor can drop safely because currentTracks is a
+        // MutableStateFlow - the next emission after the drag carries the latest value, so an emission
+        // is late, never lost. manageExtListFlow (ExtensionsViewModel:79) is a COLD combine of
+        // extensionLoader.all and lastSelectedManageExt with no stateIn, so a dropped emission is gone
+        // until an upstream happens to emit again. On this screen the local reorder is the part that
+        // transfers; the submit side needs either a stateIn upstream or a re-read at drag end.
         val callback = object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {

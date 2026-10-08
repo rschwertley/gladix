@@ -470,12 +470,83 @@ open class MainActivity : AppCompatActivity() {
         // runtime-enable; DEFAULT (=manifest false) and DISABLED both mean "not usable". The fallback is always
         // safe: the toggle only disables MainActivity in the SAME call that ENABLES Back, so whenever Back is not
         // enabled, MainActivity is. runCatching guards the rare case of the query itself failing.
+        //
+        // ⚠⚠ [CORRECTED 2026-10-08] THE PARAGRAPH ABOVE IS KEPT BECAUSE IT IS STILL RIGHT ABOUT Back
+        // AND ABOUT WHY THIS CHOKEPOINT IS THE PLACE TO FIX IT - BUT ITS LAST TWO SENTENCES WERE WRONG, AND
+        // THEY SHIPPED THE SAME FATAL BACK ONE MIRROR OVER. Two claims to retire:
+        //   1. "The fallback is always safe." Never checked - only argued, and the argument is about the
+        //      COMPONENT PAIR (MainActivity is disabled only in the call that enables Back). The old first
+        //      line never consulted the pair: it consulted the PREF and returned early. So the guard covered
+        //      (pref on, Back disabled) and left (pref off, MainActivity DISABLED) wide open. That is the
+        //      build-1114 fatal: ActivityNotFoundException naming MainActivity, from
+        //      ExtensionOpenerActivity.onStart, Android 10, GitHub install. The pref lives in
+        //      SharedPreferences (app data); the component state lives in PackageManager (OUTSIDE app data),
+        //      so clearing app data or losing the prefs XML drops one and keeps the other.
+        //   2. "DEFAULT (=manifest false) ... mean not usable" IS TRUE OF Back ONLY. The two halves have
+        //      OPPOSITE manifest defaults - MainActivity is android:enabled="true" (AndroidManifest, the
+        //      .MainActivity <activity>) - so DEFAULT means USABLE there. Reading that sentence as general is
+        //      how a reader inverts the polarity and makes every healthy install look broken. isUsable takes
+        //      the default as a PARAMETER for exactly that reason: there is no shared constant to get
+        //      backwards, and each call site has to name which half it means.
+        // ⚠️ THE OLD runCatching MADE A FAILED QUERY PICK THE CRASHING BRANCH. A thrown query
+        // became `getOrNull() == ENABLED` -> false -> "Back not enabled" -> return MainActivity, which in the
+        // divergence state is precisely the component that does not resolve. Unknown is now a THIRD state
+        // (null) and never counts as evidence against either half.
+        // ⚠️ BOTH HALVES CARRY category.LAUNCHER (verified 2026-07-20, for the predictive-back
+        // swap), WHICH IS WHY THIS FAILS THE WAY IT DOES. In the divergence state the launcher entry comes
+        // from Back and the app opens normally, so nobody reports "the app is broken" - only these four
+        // getMainActivity() callers break (this opener, PlayerService's session activity, DownloadWorker's
+        // notification, WebViewClientFactory's login). A single stray fatal from an otherwise working install
+        // is the EXPECTED shape here, not evidence that the state was transient.
+        // ⚠️ NO SELF-HEAL, DECIDED 2026-10-08 - RECORDED SO IT IS NOT RE-SCOPED AS AN OVERSIGHT.
+        // This picks a usable target; it does NOT rewrite the component state to match the pref, so a
+        // divergent install stays divergent and keeps working. Writing to a settings-owned area from a read
+        // path reached by a notification builder and a Worker is a different change; if it is wanted it
+        // belongs in SettingsLookFragment.changeEnabledComponent's screen, on its own pass.
+
+        /**
+         * Usability of one half of the launcher pair: true/false when PackageManager answers, null when the
+         * query itself fails. [enabledByManifest] is what COMPONENT_ENABLED_STATE_DEFAULT means for THIS
+         * component - true for MainActivity, false for Back. DISABLED, and the app-level DISABLED_USER /
+         * DISABLED_UNTIL_USED which cannot apply to a component, all read as unusable.
+         */
+        private fun Context.isUsable(
+            clazz: Class<out MainActivity>, enabledByManifest: Boolean
+        ): Boolean? {
+            val state = runCatching {
+                packageManager.getComponentEnabledSetting(ComponentName(this, clazz))
+            }.getOrNull() ?: return null
+            return when (state) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+                PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> enabledByManifest
+                else -> false
+            }
+        }
+
+        // ⚠⚠ RESOLVES ON THE COMPONENT STATE. THE PREF IS A PREFERENCE, NOT A FACT ABOUT
+        // PackageManager - that conflation is what the correction above is about. The order is the whole
+        // design:
+        //   1. pref on AND Back KNOWN usable     -> Back          the feature, working as intended
+        //   2. MainActivity not KNOWN disabled   -> MainActivity  true or unknown; every prior build
+        //   3. MainActivity KNOWN disabled       -> Back          the divergence rescue
+        //   4. both KNOWN disabled               -> MainActivity  unreachable; nothing to pick
+        // Step 2 accepts UNKNOWN deliberately: with no evidence, follow the manifest, which is what every
+        // build before this one did. Step 3 accepts an UNKNOWN Back over a KNOWN-disabled MainActivity
+        // because certain failure loses to possible failure - and by the pair invariant, MainActivity being
+        // disabled means the toggle enabled Back in that same call.
+        // Step 4 is spelled out rather than folded into step 2's else so it is visible that it was
+        // considered: nothing in the app disables both, and if something did there would be no activity to
+        // start and nothing this function could do about it.
         fun Context.getMainActivity(): Class<out MainActivity> {
-            if (!getSettings().getBoolean(BACK_ANIM, false)) return MainActivity::class.java
-            val backEnabled = runCatching {
-                packageManager.getComponentEnabledSetting(ComponentName(this, Back::class.java))
-            }.getOrNull() == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            return if (backEnabled) Back::class.java else MainActivity::class.java
+            val prefersBack = getSettings().getBoolean(BACK_ANIM, false)
+            val backUsable = isUsable(Back::class.java, enabledByManifest = false)
+            val mainUsable = isUsable(MainActivity::class.java, enabledByManifest = true)
+            return when {
+                prefersBack && backUsable == true -> Back::class.java
+                mainUsable != false -> MainActivity::class.java
+                backUsable != false -> Back::class.java
+                else -> MainActivity::class.java
+            }
         }
     }
 }
