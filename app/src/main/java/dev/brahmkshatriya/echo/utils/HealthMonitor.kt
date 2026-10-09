@@ -187,6 +187,30 @@ class HealthMonitor(private val app: App) {
             Scope.PERSISTENT -> prefs.edit { putLong(signature, now) }
             Scope.MEMORY_ONLY -> memoryTimestamps[signature] = now
         }
+        // ⚠⚠ DROP THE SUPERTYPES' <init> FRAMES, KEEP THE MOST-DERIVED ONE. THIS IS WHAT MAKES THE
+        // FAMILY SPLIT ACTUALLY REACH CRASHLYTICS. The 2026-09 split into ConsecutiveSkipStall/Network/
+        // Unavailable/Internal/Error produced five classes and ONE issue anyway: construction runs
+        // HealthException.<init> -> ConsecutiveSkipException.<init> -> <Family>Exception.<init>, so the TOP
+        // frame was a base <init> shared by all five. Observed as Crashlytics issue 17f8c8,
+        // "HealthMonitor$ConsecutiveSkipException.<init>", 21 events / 10 users, holding the subclasses as
+        // VARIANTS - so per-family mute, the entire point of the split, was impossible.
+        // ⚠️ TRIMMING ALL <init> FRAMES IS THE OBVIOUS FIX AND IT DOES NOT WORK. The next frame is
+        // reportAndResetConsecutiveSkips, which is ALSO common to all five families - it swaps one shared
+        // top frame for another. Only the most-derived <init> differs per family, so that is the one to
+        // keep, and everything above it is what gets dropped.
+        // ⚠️ THIS CHANGES THE STACK, NOT THE SIGNATURE, and the distinction is load-bearing: the
+        // note above warns that renaming strands PERSISTENT prefs keys and restarts every cooldown.
+        // `signature` is simpleName + message and is computed before this line, so dedupe and all
+        // cooldowns are untouched. Do not "simplify" this by rebuilding the exception instead.
+        // ⚠️ TWO HONEST LIMITS. Crashlytics' grouping is theirs: this changes the INPUT it keys on,
+        // the rest is their call. And 17f8c8 does NOT retroactively split - new events group fresh and the
+        // old issue stays as history. `health_report_type` already allowed FILTERING by family; it is
+        // MUTING that needed this.
+        exception.stackTrace.let { trace ->
+            var i = 0
+            while (i + 1 < trace.size && trace[i + 1].methodName == "<init>") i++
+            if (i > 0) exception.stackTrace = trace.copyOfRange(i, trace.size)
+        }
         // BuildConfig.HAS_FIREBASE is a compile-time boolean (no Firebase type referenced), so in
         // no-json builds this branch is dead and FirebaseCrashlytics is never loaded.
         //

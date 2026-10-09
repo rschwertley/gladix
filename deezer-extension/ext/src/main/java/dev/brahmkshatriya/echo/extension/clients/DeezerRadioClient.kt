@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -79,11 +80,35 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
                 track.copy(extras = track.extras + mapOf("NEXT" to nextId, "artist_id" to artistId))
             }
         } else {
-            val dataArray: JsonArray = when (kind) {
-                RadioKind.TRACK -> api.mix(radio.id).resultsArray("data") ?: JsonArray(emptyList())
-                RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data") ?: JsonArray(emptyList())
-                RadioKind.FLOW -> api.flow(radio.id).resultsArray("data") ?: JsonArray(emptyList())
-                RadioKind.PLAYLIST, RadioKind.ALBUM -> JsonArray(emptyList())
+            // ⚠⚠ "EMPTY TRACKLIST" ARRIVES AS A THROW AND MUST LEAVE AS AN EMPTY LIST. The `?:`
+            // fallbacks below cannot help: callApi throws DeezerGatewayException on a non-empty gateway
+            // `error`, so resultsArray is never reached. smart.getSmartRadio answers DATA_ERROR
+            // "empty tracklist for artist <id>" for artists with no radio, which is the same ANSWER as "no
+            // tracks" delivered through the error channel - see DeezerGatewayException.isEmptyTracklist for
+            // the measurement (48 events / 8 users on 1116) and why the match is code AND text.
+            // ⚠⚠ WHAT THIS UNLOCKS, AND IT IS THE POINT RATHER THAN A SIDE EFFECT: an empty append
+            // makes PlayerRadio.isThin true, and isThin opens with `!r.failed` - so while this threw, the
+            // Last.fm bridge and the multi-seed escalation were BOTH unreachable. RadioFallback was built
+            // and tested against an empty list and had never once seen this error. Returning empty hands
+            // the station to it.
+            // ⚠️ ACCEPTED, DELIBERATE BEHAVIOUR CHANGE: with failed=false the station counts as SPENT
+            // rather than retryable. That is what stops the loop - a thrown load left the station Loaded so
+            // every track transition retried it (artist 114420502, dozens of events, correlating with
+            // aa_connected=true). Do not "restore" the throw to get retries back; the condition is
+            // permanent and retrying it is what produced the report volume.
+            // ⚠️ ONLY THIS PREDICATE IS SWALLOWED - everything else rethrows. A real refusal (auth,
+            // region, a method that genuinely failed) must still reach the host, or this becomes the
+            // silent-failure hole that the gateway-error reporting was added to close.
+            val dataArray: JsonArray = try {
+                when (kind) {
+                    RadioKind.TRACK -> api.mix(radio.id).resultsArray("data") ?: JsonArray(emptyList())
+                    RadioKind.ARTIST -> api.mixArtist(radio.id).resultsArray("data") ?: JsonArray(emptyList())
+                    RadioKind.FLOW -> api.flow(radio.id).resultsArray("data") ?: JsonArray(emptyList())
+                    RadioKind.PLAYLIST, RadioKind.ALBUM -> JsonArray(emptyList())
+                }
+            } catch (e: DeezerGatewayException) {
+                if (!e.isEmptyTracklist) throw e
+                JsonArray(emptyList())
             }
 
             dataArray.mapIndexed { index, song ->

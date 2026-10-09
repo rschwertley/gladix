@@ -19,10 +19,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class DeezerSearchClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val scope: CoroutineScope, private val history: Boolean, private val parser: DeezerParser) {
 
@@ -236,12 +239,58 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         return searchHomePipeShelves + exploreTabShelves
     }
 
+    /**
+     * pageSearch's `results` with the TRACK section's `data` replaced by pipe GraphQL's track results.
+     *
+     * ⚠⚠ EVERY FAILURE PATH RETURNS `results` UNCHANGED, WHICH IS THE WHOLE CONTRACT: search must
+     * never get WORSE than it is today. JWT exchange down, pipe refusing, GraphQL `errors`, a node we
+     * cannot map, zero usable rows - all of them fall back to the gateway's own TRACK section, i.e.
+     * exactly current behaviour. The only way this changes what a user sees is by ADDING tracks.
+     * ⚠️ CancellationException IS RETHROWN BEFORE THE FALLBACK. runCatching catches Throwable, so
+     * swallowing it here would launder a cancelled search into "pipe found nothing" and then do the
+     * gateway work anyway on a scope that is already going away. Fifth instance of that pattern in this
+     * project; the roll-call is in DeezerParser's note.
+     *
+     * ⚠️ GATED ON `ORDER` CONTAINING "TRACK", AND ORDER IS NEVER MODIFIED. Tabs are built from
+     * ORDER, so a TRACK id that is not in ORDER has no tab to appear in and splicing it would write rows
+     * nobody can reach. STATED CONSEQUENCE: for a query where Deezer returns no TRACK section at all,
+     * pipe results do not surface. Measured 2026-10-09 that the failing queries DO carry TRACK with an
+     * empty data array, so this is an edge case rather than the main path - but if a report ever says
+     * "pipe tracks missing for query X", check ORDER for X first.
+     * ⚠️ The section OBJECT is rebuilt rather than mutated (JsonObject is immutable) and its
+     * siblings are preserved, so anything else reading TRACK's `count`/`total` stays consistent.
+     */
+    private suspend fun withPipeTracks(results: JsonObject, query: String): JsonObject {
+        val order = (results["ORDER"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?: return results
+        if (order.none { it.equals("TRACK", ignoreCase = true) }) return results
+        val data = runCatching { api.searchTracksPipe(query) }
+            .getOrElse { if (it is CancellationException) throw it else null }
+            ?: return results
+        if (data.isEmpty()) return results
+        val existing = results["TRACK"] as? JsonObject
+        val section = buildJsonObject {
+            existing?.forEach { (key, value) -> if (key != "data") put(key, value) }
+            put("data", data)
+            put("count", data.size)
+            put("total", data.size)
+        }
+        return JsonObject(results + ("TRACK" to section))
+    }
+
     suspend fun loadSearchFeedTabs(query: String): List<Tab> {
         deezerExtension.handleArlExpiration()
         query.ifBlank { return emptyList() }
 
         val jsonObject = api.search(query)
-        val resultObject = jsonObject["results"]?.jsonObject
+        // ⚠⚠ THE PIPE SPLICE GOES HERE AND NOWHERE ELSE - THIS IS THE SINGLE POINT BOTH
+        // CONSUMERS READ. `resultObject` feeds (1) `allShelves` below, which is what the "All" tab
+        // serves, and (2) `oldSearch.third`, which loadSearchFeed's per-tab lambda reads for every named
+        // tab. Replacing TRACK's data here fixes both from one edit; doing it in the lambda instead would
+        // leave "All" with no Tracks shelf - and "All" is the tab CombineExtension reads, because it takes
+        // `feed.tabs.firstOrNull()` and ours is Tab("All", "All").
+        val resultObject = jsonObject["results"]?.jsonObject?.let { withPipeTracks(it, query) }
         val orderObject = resultObject?.get("ORDER")?.jsonArray
 
         val tabs = orderObject?.mapNotNull { tab ->

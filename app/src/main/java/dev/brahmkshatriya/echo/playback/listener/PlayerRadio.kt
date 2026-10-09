@@ -419,6 +419,25 @@ class PlayerRadio(
             extension: Extension<*>,
             item: EchoMediaItem,
             itemContext: EchoMediaItem?,
+            // ⚠⚠ THE TRACK THAT WAS PLAYING WHEN THIS STATION WAS BUILT, OR NULL - SUPPLIED BY THE
+            // CALLER AND NOT READ FROM THE PLAYER HERE, BECAUSE ONLY THE CALLER KNOWS IF IT MEANS ANYTHING.
+            // An earlier version of this took `player: Player` and read currentMediaItem inside. That is
+            // wrong for the path it was written for: PlayerCallback.radio calls start() and only THEN does
+            // `player.with { clearMediaItems() }`, so currentMediaItem is the OUTGOING queue's track - an
+            // unrelated song, recorded as this station's seed, suppressing a legitimate track from the new
+            // station. Silent, and in the direction that produces no report.
+            // ⚠️ THE TWO CALLER KINDS NEED OPPOSITE ANSWERS, WHICH IS WHY THIS IS A PARAMETER:
+            //   loadPlaylist (auto-radio)  APPENDS to the live queue, so the playing track stays, plays,
+            //                              advances to the backStack and CAN be re-appended. That is the
+            //                              duplicate this exists to stop - it passes the track.
+            //   PlayerCallback.radio       REPLACES the queue, so the old track is not in the new station
+            //                              at all and cannot duplicate - it passes null.
+            //   .trackRadio / reseedFanOut pass a Track as `item`, already covered by the line below -
+            //                              null.
+            // REQUIRED rather than defaulted, deliberately: a future fifth path must state its intent
+            // instead of silently inheriting one, which is the same reason the recording lives in here at
+            // all (see the note at recordStationSeed below).
+            playingSeed: Track?,
             // Handed the failure BEFORE getOrThrow consumes it, for callers that need to CLASSIFY it
             // rather than merely know it happened. Optional so the four existing call sites are unchanged,
             // and a local `var` at the caller rather than shared state - reseedFanOut runs three starts
@@ -432,6 +451,32 @@ class PlayerRadio(
                 // construction - loadPlaylist, PlayerCallback.radio, PlayerCallback.trackRadio and
                 // reseedFanOut all funnel through start(), and a future fifth path would too.
                 recordStationSeed(radio.id, item)
+                // ⚠⚠ AND AGAIN FOR THE PLAYING TRACK WHEN THE STATION WAS NOT BUILT FROM ONE,
+                // WHICH IS THE WHOLE OF FIX 3 FOR ARTIST STATIONS. recordStationSeed starts with
+                // `(item as? Track) ?: return`, so for an ARTIST, ALBUM or PLAYLIST station it records
+                // NOTHING - and the 2026-09 "stash the seed's key for the life of the station" fix was
+                // built and verified on an ARTIST station, so it never covered the case it was written for.
+                // ⚠️ THE FAILURE IS AFTER THE SEED PLAYS, NOT BEFORE, which is why captures looked
+                // clean. appendDeduped builds `existing` from seedKeys + currentMediaItem + a
+                // DEDUP_WINDOW tail of the LIVE queue, so while the seed is still queued it is excluded by
+                // the window. Once it plays, remove-on-advance moves it to the backStack - out of
+                // currentMediaItem AND out of mediaItemCount - and seedKeys is the only thing left that
+                // could exclude it. Empty for ARTIST, so it came back. The 1099 Frogmen capture
+                // (offered=2 added=1, then added=0) measured the live-queue window working and never
+                // reached the post-advance condition.
+                // ⚠️ WHY NOT JUST ADD THE CURRENT TRACK TO `existing` AT APPEND TIME: that is
+                // ALREADY THERE (appendDeduped's currentMediaItem line) and is exactly what does not help -
+                // it expires the moment the track advances. The key has to be PERSISTED for the station's
+                // life, which is what stationSeeds is.
+                // ⚠️ recordStationSeed IS REUSED RATHER THAN OPEN-CODED so the "ta:" prefixing, the
+                // per-station deque, STATION_SEED_CAP and the LRU touch all come along. Its own note
+                // records that writing a raw recordingKey into that prefixed set silently never matches.
+                // ⚠️ NO PLAYER READ HERE - the main-thread rule for currentMediaItem lives with the
+                // caller that actually has a seed (loadPlaylist wraps it in withContext(Main), the way
+                // resolveSeed does). reseedFanOut's three concurrent starts are fine either way:
+                // recordStationSeed is synchronized on stationSeeds and the deque is capped, so three
+                // seeds just coexist.
+                playingSeed?.let { recordStationSeed(radio.id, it) }
                 val tracks = loadTracks(radio).pagedDataOfFirst()
                 PlayerState.Radio.Loaded(extension.id, radio, null) {
                     extension.get { tracks.loadPage(it) }.getOrThrow(throwableFlow)
@@ -1485,7 +1530,12 @@ class PlayerRadio(
             // startFailure is a LOCAL, not shared state: see the onFailure note at start().
             var startFailure: Throwable? = null
             val loaded = start(
-                throwFlow, extension, item, itemContext, onFailure = { startFailure = it }
+                throwFlow, extension, item, itemContext,
+                // The auto-radio APPENDS, so the playing track stays in the queue and can come back
+                // after it advances - see the playingSeed note at start(). Read on Main per this
+                // file's currentMediaItem rule.
+                playingSeed = withContext(Dispatchers.Main) { player.currentMediaItem?.track },
+                onFailure = { startFailure = it }
             )
             stateFlow.value = loaded?.forQueue(player) ?: PlayerState.Radio.Empty
             settled = true
@@ -1713,7 +1763,9 @@ class PlayerRadio(
                     // for, but it must not be invisible either.
                     try {
                         val ext = extensionList.getExtension(clientId) ?: return@async null
-                        val station = start(throwFlow, ext, seed, null) ?: return@async null
+                        // seed is a Track, so start()'s own recordStationSeed covers it.
+                        val station = start(throwFlow, ext, seed, null, playingSeed = null)
+                            ?: return@async null
                         val page = station.tracks(null) ?: return@async null
                         station to page
                     } catch (e: CancellationException) {

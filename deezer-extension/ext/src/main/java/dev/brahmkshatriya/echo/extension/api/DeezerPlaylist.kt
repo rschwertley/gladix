@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.extension.api
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -65,18 +66,38 @@ class DeezerPlaylist(private val deezerApi: DeezerApi) {
         )
     }
 
+    // ⚠⚠ ERROR_DATA_EXISTS IS SWALLOWED AS SUCCESS, AND THAT IS NOT LENIENCY - THE OPERATION IS
+    // IDEMPOTENT. The gateway answers ERROR_DATA_EXISTS "This song already exists in this playlist", which
+    // describes a playlist already in the state the caller asked for. Returning normally is the honest
+    // result; throwing produced the fixed "Deezer refused this request." string for a successful outcome.
+    // See DeezerGatewayException.isAlreadyInPlaylist for the measurement and for why no message is shown.
+    // ⚠️ THE AMPLIFIER WAS THE MULTI-PLAYLIST SAVE: SaveToPlaylistViewModel loops per playlist and
+    // emits each failure to throwFlow, so one duplicate track saved into N playlists produced N snackbars
+    // and N Crashlytics reports, counted as neither saved nor skipped. With this catch the loop's own
+    // `true` outcome stands, so it now counts as SAVED with no host-side change needed.
+    // ⚠️ THE CATCH IS ON THE PREDICATE ONLY - every other gateway error rethrows. A full playlist,
+    // a revoked token or a playlist that is not editable must still surface.
+    // ⚠️ NOT NARROWED TO SINGLE-TRACK ADDS, AND THE LIMIT IS WORTH KNOWING: `songs` is a batch, so
+    // if ANY track in the batch already exists the gateway may refuse the whole call and the others would
+    // be silently dropped rather than added. Not observed - every 1116 report was a single-track save from
+    // the more-sheet - but if a "saved to playlist but only some tracks appeared" report ever arrives, this
+    // is the first place to look.
     suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>) {
-        deezerApi.callApi(
-            method = "playlist.addSongs",
-            paramsBuilder = {
-                put("playlist_id", playlist.id)
-                put("songs", buildJsonArray {
-                    tracks.forEach { track ->
-                        add(buildJsonArray { add(track.id); add(0) })
-                    }
-                })
-            }
-        )
+        try {
+            deezerApi.callApi(
+                method = "playlist.addSongs",
+                paramsBuilder = {
+                    put("playlist_id", playlist.id)
+                    put("songs", buildJsonArray {
+                        tracks.forEach { track ->
+                            add(buildJsonArray { add(track.id); add(0) })
+                        }
+                    })
+                }
+            )
+        } catch (e: DeezerGatewayException) {
+            if (!e.isAlreadyInPlaylist) throw e
+        }
     }
 
     suspend fun removeFromPlaylist(playlist: Playlist, tracks: List<Track>, indexes: List<Int>) {

@@ -374,6 +374,47 @@ class PlayerEventListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         Log.d("GladixPlayback", "onPlaybackStateChanged: state=$playbackState")
+        // ⚠⚠ THIS ARM IS UNGATED ON playWhenReady, AND IT IS THE ONLY ONE OF THE THREE THAT IS.
+        // onTimelineChanged's arm tests `STATE_BUFFERING && player.playWhenReady`, onPlayWhenReadyChanged's
+        // tests `playWhenReady && STATE_BUFFERING`, and armBufferingWatchdog itself does NOT re-gate - it
+        // stamps the probe baselines and launches. So ANY transition into STATE_BUFFERING arms the
+        // watchdog, paused or not.
+        // ⚠️ WHAT A PAUSED TRIP DOES: the body reads `val wasPlaying = player.playWhenReady` FRESH at
+        // trip time (it is a local, not a latch - there is no field of that name, so nothing can go stale),
+        // reports it as `play=no`, force-skips, and then does NOT resume, because the post-skip resume is
+        // `if (wasPlaying) player.play()`. Correct in isolation; the consequence is that a PAUSED user's
+        // queue advances under them silently.
+        // ⚠️ SO A RUN OF THREE CAUSES MAY NOT BE A RUN OF THREE. Crashlytics 17f8c8/#ef98 (1114,
+        // echo-offline, 6 events / 1 user) carried three StuckBuffering causes reading play=yes, play=yes,
+        // play=no - the first two are the stall under investigation, the third reached the same signature
+        // through THIS arm with no playback in progress. Do not count such a third cause toward stall
+        // frequency. The same report's other fields are weaker than they look for the same kind of reason:
+        // see the field note on the probe about loaded/loads/buf being forced by one another.
+        //
+        // ⚠⚠ DO NOT ADD A playWhenReady GATE HERE WITHOUT READING THE NEXT PARAGRAPH - THE
+        // UNGATED FORM MAY BE LOAD-BEARING. A player left parked in STATE_BUFFERING with nothing watching
+        // it keeps Media3's `isAnySessionUserEngaged` TRUE, which blocks the foreground/idle timeout and
+        // leaves a persistent silent notification with no service teardown. That mechanism is CORROBORATED
+        // in this file - the onPlaybackStateChanged ENDED note records that isAnySessionUserEngaged
+        // "requires READY or BUFFERING" - and AndroidAutoCallback carries the matching half, that making
+        // the 10-minute idle timeout a no-op meant the SERVICE NEVER WENT AWAY.
+        // ⚠️ PROVENANCE, RESOLVED 2026-10-09 - TWO COMMITS, AND CONFLATING THEM IS THE TRAP.
+        // ORIGIN of this line: bac8e604 (2026-04-30, "Bug fixes"), per `git log -S` on this condition.
+        // The Jun 19 "watchdog gap" fix is a DIFFERENT line - the onTimelineChanged PLAYLIST_CHANGED
+        // re-arm above - and it is the record that documents the idle-timeout mechanism. It was briefly
+        // mis-read as the origin of THIS arm; it is not.
+        // ⚠⚠ AND THAT MAKES THIS ARM LOAD-BEARING BY DEPENDENCY, NOT MERELY BY HAZARD. The Jun 19
+        // fix exists BECAUSE this arm can be missed - Media3's ListenerSet can coalesce the
+        // STATE_BUFFERING transition and swallow onPlaybackStateChanged - so it added a SECOND arm on the
+        // assumption that THIS one is the primary, firing on every STATE_BUFFERING. Note what that implies:
+        // the Jun 19 backup is itself gated on playWhenReady. So gating this one too would leave NO arm
+        // covering buffering while paused, which is precisely the unmonitored-BUFFERING state that keeps
+        // isAnySessionUserEngaged true and blocks the idle timeout. The ungated form is not an oversight
+        // that happens to help; it is the only remaining cover for that case.
+        // ⚠️ IF THIS IS EVER NARROWED, THE PAUSED TRIP PROBABLY WANTS stop()/release() RATHER THAN
+        // A SKIP - that ends the engagement instead of advancing a queue nobody is listening to, and it
+        // keeps the idle-timeout protection the ungated arm is here for. Recorded 2026-10-09 as the shape
+        // of the fix, NOT done: behaviour is deliberately unchanged in this pass.
         if (playbackState == Player.STATE_BUFFERING) {
             armBufferingWatchdog()
         } else {
@@ -1549,8 +1590,24 @@ class PlayerEventListener(
         // 2. REFUSED OR GONE. Our own unavailable types, Media3's HTTP/permission/not-found codes, and a
         //    4xx from Media3's own datasource exception. A 4xx is the source declining, not a transport
         //    problem, so it must be tested before the network branch.
-        if (chain.any { it is MediaUnavailableException || it is ExtensionNotFoundException })
-            return SkipFamily.Unavailable
+        // ⚠️ TrackUnavailableException ADDED 2026-10-09, AND THE NOTE ABOVE LOOKS LIKE IT FORBIDS
+        // THIS BUT DOES NOT - READ WHICH FORM IT WARNS ABOUT. It rejects
+        // `cause::class.simpleName == "TrackUnavailableException"`, a STRING match that would also catch
+        // any third-party extension class coincidentally sharing the name and misfile it into a family
+        // that can be muted. An `is` check cannot do that: this type is OURS, declared at
+        // playback/exceptions/TrackUnavailableException.kt, so it satisfies the note's actual rule -
+        // "every test here is against a type we own, the JDK owns, or Media3 owns". onPlayerError already
+        // uses the same type form on this file's rootCause, so the precedent is in here too.
+        // WHY IT MATTERS: StreamableLoader throws it for "No playable source for this track" and
+        // "Playable source no longer available", which were landing in the RESIDUAL Error family -
+        // Crashlytics 17f8c8/#33e5, 15 events / 10 users on 1116, lastExtensionId spotify and
+        // echo_combine. Those are an extension handing us a track with no servers, i.e. refused-or-gone,
+        // not an unrecognised throwable. Leaving them residual hides them among genuinely unanalysed
+        // faults, which is the one thing the residual family exists NOT to do.
+        if (chain.any {
+                it is MediaUnavailableException || it is ExtensionNotFoundException ||
+                    it is TrackUnavailableException
+            }) return SkipFamily.Unavailable
         when (playbackError?.errorCode) {
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,

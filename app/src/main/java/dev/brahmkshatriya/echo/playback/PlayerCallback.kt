@@ -439,7 +439,9 @@ class PlayerCallback(
         val prior = radioFlow.value
         radioFlow.value = PlayerState.Radio.Loading
         val loaded = PlayerRadio.start(
-            throwableFlow, extension, newItem, null
+            // null: this REPLACES the queue a few lines below, so the outgoing track cannot
+            // duplicate in the new station - see the playingSeed note at PlayerRadio.start.
+            throwableFlow, extension, newItem, null, playingSeed = null
         )
         if (loaded == null) {
             radioFlow.value = prior
@@ -595,7 +597,9 @@ class PlayerCallback(
             if (extension != null) {
                 var startFailure: Throwable? = null
                 val loaded = PlayerRadio.start(
-                    throwableFlow, extension, seed, context, onFailure = { startFailure = it }
+                    // seed is a Track, so start()'s own recordStationSeed covers it.
+                    throwableFlow, extension, seed, context, playingSeed = null,
+                    onFailure = { startFailure = it }
                 )
                 if (loaded != null) PlayerRadio.play(
                     player, downloadFlow, app, radioFlow, loaded, extension, source = "trackRadio"

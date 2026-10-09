@@ -107,9 +107,14 @@ class UiViewModel(
         emit(PlayerColors.getDominantColor(drawable.toBitmap()).toDrawable())
     }
 
-    private val navViewInsets = MutableStateFlow(Insets())
+    // ⚠️ PUBLIC FOR THE EditPlaylistInsets PROBE (2026-10-08), AND BOTH REVERT TO private
+    // WITH IT. Widened as READS only - the writers are unchanged and still the single entry points
+    // (setNavInsets for the first, setPlayerInsets for the third). The probe needs the two terms
+    // SEPARATELY: `combined.bottom - systemInsets.bottom` cannot say WHICH of them is missing, and
+    // the two have different causes and different fixes - see the prediction table at the probe.
+    val navViewInsets = MutableStateFlow(Insets())
     private val playerNavViewInsets = MutableStateFlow(Insets())
-    private val playerInsets = MutableStateFlow(Insets())
+    val playerInsets = MutableStateFlow(Insets())
     val systemInsets = MutableStateFlow(Insets())
     val isMainFragment = MutableStateFlow(true)
     var isRail = false
@@ -258,6 +263,51 @@ class UiViewModel(
         if (!isTv && playerState.current.value != null) STATE_COLLAPSED else STATE_HIDDEN
 
     val playerSheetState = MutableStateFlow(getState())
+
+    // ⚠⚠ THE SINGLE WRITER OF playerInsets, AND IT IS A FLOW COLLECTOR BECAUSE THE OLD ONE
+    // WAS A TRANSITION CALLBACK. setPlayerInsets used to be called from exactly one place - inside
+    // onStateChanged, after its `if (!isFinalState(newState)) return` gate. BottomSheetBehavior calls
+    // onStateChanged on a TRANSITION, so if the sheet is laid out already at its resting state the
+    // callback never fires and playerInsets stays Insets() for the WHOLE PROCESS while the mini player
+    // is visibly on screen. changePlayerState writes this flow and NOT the inset, so even a corrected
+    // state left the inset at zero unless the sheet actually moved.
+    // ⚠️ WHAT THAT LOOKED LIKE, AND WHY IT READ AS TWO UNRELATED BUGS: playerInsets is a
+    // term of BOTH [combined] and [getSnackbarInsets], so a zero there puts the playlist editor's
+    // Add-song/Save card AND every error snackbar behind the mini player, app-wide. A rotation cured it
+    // because the sheet is recreated and settles - a real transition - while this ViewModel is
+    // activity-scoped and SURVIVES the config change, so the corrected value persisted for the rest of
+    // the process. That combination (survives restarts, cured by rotation) looked like persistent state
+    // and is not: nothing here is written to disk.
+    // ⚠️ SAME PREDICATE AS THE CALLBACK IT REPLACES (!= STATE_HIDDEN), so this is not a
+    // behaviour change where the callback did fire - it only removes the dependence on whether it
+    // fired at all. Insets is a data class and MutableStateFlow conflates equal values, so a redundant
+    // write costs nothing.
+    // ⚠⚠ WHY THE SEED IS EXACTLY WHAT THIS CLOSES, AND IT IS THE WHOLE POINT. getState()
+    // reads playerState.current.value at CONSTRUCTION. playerState is a Koin process singleton while
+    // this ViewModel is activity-scoped, so an Activity created fresh WHILE A TRACK IS ALREADY LOADED
+    // seeds STATE_COLLAPSED. The phone's sole track-driven sheet driver
+    // (PlayerFragment's playerState.current collector - read its note) then does
+    // `else if (playerSheetState.value == STATE_HIDDEN) changePlayerState(STATE_COLLAPSED)`, which is
+    // FALSE against a COLLAPSED seed - so no state write, and before this collector existed, no inset
+    // write either, because the sheet was laid out at its resting state and fired no transition.
+    // Collecting a StateFlow delivers its CURRENT value on subscribe, so this fires on the seed itself
+    // and the inset is correct with no transition needed.
+    // ⚠️ [CORRECTED 2026-10-08] AN EARLIER VERSION OF THIS NOTE SAID THE RESIDUAL WAS "the
+    // seed says HIDDEN while the sheet peeks", blamed on MainActivity's observe(playerState.current)
+    // being RESUMED-gated. BOTH HALVES WERE WRONG. That observer lives in setupTvMiniPlayer, which
+    // early-returns on `R.id.tvMiniPlayer ?: return` - an id only in layout-land-television - so it has
+    // never run on a phone; PlayerFragment's note records that the same mistake cost debugging time on
+    // 2026-08-23 and says in terms not to reason about phone sheet state from that guard. And the
+    // residual it described is unreachable anyway: a HIDDEN seed means current was null at
+    // construction, i.e. no track and therefore no peek, and the first non-null emission then drives
+    // COLLAPSED through the phone driver, which this collector follows.
+    // ⚠️ context IS A PLAIN CONSTRUCTOR PARAMETER, captured in a coroutine that outlives the
+    // constructor - the same shape `navigation` above already uses for saveToCache. Not a new pattern.
+    init {
+        viewModelScope.launch {
+            playerSheetState.collect { setPlayerInsets(context, it != STATE_HIDDEN) }
+        }
+    }
     // True only on the TV surface (set in setupPlayerBehavior). TV rests at STATE_HIDDEN with a separate
     // mini bar and has no drag gesture, so it must stay isHideable=true (needed to reach HIDDEN, and there
     // is no drag to dismiss). applyPlayerBehaviorState reads this to keep isHideable=false phone-only —
@@ -702,7 +752,11 @@ class UiViewModel(
                         if (newState == STATE_EXPANDED)
                             bottomSheet.findViewById<View>(R.id.tv_track_play_pause)?.requestFocus()
                     }
-                    viewModel.setPlayerInsets(view.context, newState != STATE_HIDDEN)
+                    // ⚠️ setPlayerInsets USED TO BE CALLED HERE AND MUST NOT COME BACK. The
+                    // write now lives in the init collector beside playerSheetState, which this line
+                    // already updates a few lines above - so the inset follows from that write instead
+                    // of from this callback having fired. Re-adding it would restore two writers of one
+                    // value whose whole defect was that this one did not always run.
                     onSlide(view, if (newState == STATE_EXPANDED) 1f else 0f)
                 }
 

@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension
 
+import android.util.Base64
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Album
@@ -26,7 +27,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -83,6 +87,41 @@ class DeezerGatewayException(
     // shape when reading an older stack trace.
     override fun toString() =
         "DeezerGatewayException(method=$method, lang=$lang, error=$errorText)"
+
+    // ⚠⚠ CLASSIFIED HERE, BESIDE THE PARSE, NOT AT THE CALL SITES. callApi is what turns the
+    // gateway's `error` object into [errorText], so this is the only place that knows the shape without
+    // re-parsing it - and the house rule is to classify on an error code WE parse, never on a
+    // third-party exception type. Two call sites already need the same test (artist and track radio), so
+    // a string comparison in a client would have been copied before it was correct twice.
+    //
+    // ⚠️ "empty tracklist" IS NOT A REFUSAL, AND TREATING IT AS ONE COST 48 EVENTS / 8 USERS ON
+    // 1116. `smart.getSmartRadio` answers DATA_ERROR "smart::getSmartRadio : empty tracklist for artist
+    // <id>" when Deezer simply has no radio for that artist. That is the SAME ANSWER as "no tracks",
+    // reported through the error channel - so it threw, surfaced the fixed "Deezer refused this request."
+    // string, and filed a report, for a condition the app already knows how to handle.
+    // ⚠️ AND IT LOOPED, WHICH IS WHY THE COUNT IS SO HIGH. A thrown page load sets
+    // PlayerRadio.PlayResult.failed, whose doc requires a failure to be treated as TRANSIENT - play()
+    // restores the prior Loaded state so the next transition retries. Permanent condition, retry
+    // semantics: one artist (114420502) was re-requested on every track transition, which is also why
+    // these reports correlate with aa_connected=true.
+    // ⚠️ THE MATCH IS DELIBERATELY NARROW - code AND text. DATA_ERROR alone is far too broad
+    // (it is the gateway's general data-layer code), and the text alone would match a future method that
+    // means something else by it. Widen only against an observed error string, never pre-emptively.
+    val isEmptyTracklist: Boolean
+        get() = errorText.contains("DATA_ERROR", ignoreCase = true) &&
+            errorText.contains("empty tracklist", ignoreCase = true)
+
+    // ⚠⚠ ADDING THIS TRACK AGAIN IS NOT A FAILURE - THE USER'S INTENT IS ALREADY SATISFIED.
+    // `playlist.addSongs` answers ERROR_DATA_EXISTS "This song already exists in this playlist", which
+    // describes a playlist that is already in the state the caller asked for. The operation is
+    // idempotent, so the honest result is success.
+    // ⚠️ THE MULTI-PLAYLIST SAVE IS WHY SILENCE BEATS A MESSAGE. SaveToPlaylistViewModel loops
+    // per playlist and emits each failure to throwFlow, so one duplicate track saved into N playlists
+    // produced N "Deezer refused this request." snackbars AND N reports, while the outcome counted as
+    // neither saved nor skipped. An "already in this playlist" toast per playlist would be no better in
+    // a five-playlist save. If it is ever wanted, it belongs in the HOST as a `skipped` reason.
+    val isAlreadyInPlaylist: Boolean
+        get() = errorText.contains("ERROR_DATA_EXISTS", ignoreCase = true)
 }
 
 /**
@@ -148,6 +187,27 @@ class DeezerAuthRejectedException(
 class DeezerApi(private val session: DeezerSession) {
 
     companion object {
+        // ⚠️ BOTH DERIVED FROM ONE MEASURED FACT - the pipe JWT's TTL is ~6 minutes (recorded at
+        // smartTracklistTrackIds before the holder existed). 30s of margin is a twentieth of that; 60s
+        // would be a sixth. The FALLBACK is used only when `exp` will not parse, and is deliberately far
+        // below 6 minutes: an unparseable token is a reason for less confidence, not more, and caching
+        // one past its life is worse than not caching at all. If the TTL is ever re-measured, these two
+        // move together - do not raise either without a new measurement to point at.
+        private const val PIPE_JWT_MARGIN_MS = 30_000L
+        private const val PIPE_JWT_FALLBACK_TTL_MS = 90_000L
+
+        // ⚠️ 30, REPLACING THE GATEWAY'S nb=128 FOR THIS SECTION ONLY, AND THE CEILING IS NOT
+        // ARBITRARY: AndroidAutoCallback.performSearch does take(25), and CombineExtension stops at its
+        // first match, so 25 is the largest number any programmatic consumer reads. 30 leaves headroom.
+        // ⚠️ STATED COST: the phone Tracks tab goes from up to 128 scrollable rows to 30. Pipe
+        // exposes pageInfo.endCursor for paging, but our per-tab lambda does a single loadPage(null), so
+        // nothing consumes a cursor today - restoring depth means teaching that lambda to page.
+        private const val PIPE_SEARCH_TRACKS = 30
+
+        // Deezer picture hashes are 32 lowercase hex. See the ALB_PICTURE note at searchTracksPipe for
+        // why a non-matching id yields no cover instead of a broken one.
+        private val COVER_MD5 = Regex("^[0-9a-f]{32}$")
+
         private val json = Json {
             isLenient = true
             ignoreUnknownKeys = true
@@ -874,31 +934,14 @@ class DeezerApi(private val session: DeezerSession) {
      * DeezerParser.toSmartTracklist already stores the right one. The leading bare-numeric id is the Flow
      * node (the user id), a different type in the same union; it is not handled here.
      *
-     * JWT PER CALL, NOT CACHED. The token's TTL is ~6 minutes, so a cache needs expiry tracking AND a
-     * 401-refresh path — and the 401 path has to exist either way, so the cache adds a second mechanism
-     * without removing the first. Opening a mix is one user action; one extra round-trip is invisible
-     * there. If a second pipe consumer appears, factor a cached holder THEN. Mirrors `lyrics` below.
+     * ⚠️ [CORRECTED 2026-10-09] THIS USED TO READ "JWT PER CALL, NOT CACHED … If a second pipe
+     * consumer appears, factor a cached holder THEN. Mirrors `lyrics` below." BOTH HALVES ARE NOW DONE,
+     * not wrong: pipe track search became the third consumer, so the holder exists and the handshake is
+     * factored out. The exchange, the cache and the "second auth surface" exposure note all live at
+     * [pipeGraphQl] now; its reasoning quotes this note's measured ~6-minute TTL, which is still the
+     * number that constrains the fallback TTL. Nothing about the SELECTION SET below changed.
      */
     suspend fun smartTracklistTrackIds(id: String, first: Int = 100): List<String> {
-        // ⚠⚠ THIS IS A SECOND AUTH SURFACE, NOT THE GATEWAY'S. The pipe/GraphQL path does its
-        // own exchange - ARL + sid cookie POSTed to auth.deezer.com/login/arl, which returns a JWT used as
-        // `Authorization: Bearer` against pipe.deezer.com. callApi never touches that JWT; it sends the
-        // ARL/sid cookie straight to gw-light.php.
-        // ⚠️ SO ONE CAN REFUSE WHILE THE OTHER WORKS, AND THAT IS NOT A CONTRADICTION.
-        // Measured (Crashlytics, 2026-09-12): this handshake returned the body `"Invalid Arl provided"`
-        // while the gateway kept serving tracks, playlists and search on the same ARL, and the tiles
-        // worked again afterwards. Transient, on this surface only. DO NOT READ A PIPE AUTH FAILURE AS
-        // EVIDENCE THAT THE ARL IS BAD - check the gateway before concluding anything.
-        // ⚠️ AND THE HANDSHAKE IS DUPLICATED INLINE in this function and in lyrics, so both
-        // carry this exposure. If a third consumer appears, factor the exchange out THEN - see the caching
-        // note above - and this comment moves with it.
-        val request = Request.Builder()
-            .url("https://auth.deezer.com/login/arl?jo=p&rto=c&i=c")
-            .post(RequestBody.EMPTY)
-            .headers(Headers.headersOf("Cookie", "arl=$arl; sid=$sid"))
-            .build()
-        val jwt = decodeJson(clientNP.newCall(request).await().body.string())["jwt"]
-            ?.jsonPrimitive?.content
         val params = encodeJson {
             put("operationName", "GetSmartTracklist")
             put("query", $$"query GetSmartTracklist($smartTracklistId: String!, $first: Int = 50) { smartTracklist(smartTracklistId: $smartTracklistId) { id tracks(first: $first) { edges { node { id } } } } }")
@@ -907,12 +950,7 @@ class DeezerApi(private val session: DeezerSession) {
                 put("first", first)
             }
         }
-        val pipeRequest = Request.Builder()
-            .url("https://pipe.deezer.com/api")
-            .post(params.toRequestBody())
-            .headers(Headers.headersOf("Authorization", "Bearer $jwt", "Content-Type", "application/json"))
-            .build()
-        val body = decodeJson(clientNP.newCall(pipeRequest).await().body.string())
+        val body = pipeGraphQl(params)
         // GraphQL reports failures in a top-level `errors` array with HTTP 200 and a null data field — the
         // same shape of trap as the gateway's `error` key, so it is read rather than left to surface as an
         // empty list. Same house rule as callApi's GATEWAY-ERROR line: a refusal must not look like "none".
@@ -927,18 +965,9 @@ class DeezerApi(private val session: DeezerSession) {
     }
 
     suspend fun lyrics(id: String): JsonObject {
-        // ⚠️ SECOND AUTH SURFACE - the JWT exchange below is NOT the gateway's ARL/sid path, so
-        // this can fail while the rest of Deezer works. Full note at smartTracklistTrackIds, which repeats
-        // this same handshake inline; the observed failure there was transient and surface-specific.
-        val request = Request.Builder()
-            .url("https://auth.deezer.com/login/arl?jo=p&rto=c&i=c")
-            .post(RequestBody.EMPTY)
-            .headers(Headers.headersOf("Cookie", "arl=$arl; sid=$sid"))
-            .build()
-        val response = clientNP.newCall(request).await()
-        val jsonObject = decodeJson(response.body.string())
-
-        val jwt = jsonObject["jwt"]?.jsonPrimitive?.content
+        // ⚠️ SECOND AUTH SURFACE - pipe is NOT the gateway's ARL/sid path, so this can fail while
+        // the rest of Deezer works. Full note at pipeGraphQl, which now owns the handshake for all three
+        // consumers; the observed failure was transient and surface-specific.
         val params = encodeJson {
             put("operationName", "SynchronizedTrackLyrics")
             put("query", $$"query SynchronizedTrackLyrics($trackId: String!) {\n  track(trackId: $trackId) {\n    id\n    isExplicit\n    lyrics {\n      id\n      copyright\n      text\n      writers\n      synchronizedLines {\n        lrcTimestamp\n        line\n        milliseconds\n        duration\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}")
@@ -946,13 +975,213 @@ class DeezerApi(private val session: DeezerSession) {
                 put("trackId", id)
             }
         }
-        val pipeRequest = Request.Builder()
-            .url("https://pipe.deezer.com/api")
-            .post(params.toRequestBody())
-            .headers(Headers.headersOf("Authorization", "Bearer $jwt", "Content-Type", "application/json"))
+        return pipeGraphQl(params)
+    }
+
+    /**
+     * Track search over pipe GraphQL, returned as GATEWAY-SHAPED song records.
+     *
+     * ⚠⚠ WHY THIS RETURNS SYNTHESISED GATEWAY JSON INSTEAD OF `Track`s. Its one consumer splices
+     * the result into pageSearch's `results["TRACK"]["data"]` before tabs and shelves are built, which is
+     * the ONLY point both the "All" shelf list and the TRACK tab read - one change, no parser edits, and
+     * DeezerParser.toEchoMediaItem/toTrack keep working untouched. Returning `Track`s would mean teaching
+     * two separate consumers about a second representation. Measured 2026-10-09: pipe returns the tracks
+     * the gateway's search index does not - the catalogue was re-issued under new ids (the acoustic single
+     * is 3913168001 on pipe, 1987857917 in the gateway's own album listing) - while gateway ALBUM, ARTIST
+     * and PLAYLIST were as good or better, which is why ONLY the TRACK section is replaced.
+     *
+     * ⚠️ NO TRACK_TOKEN, DELIBERATELY, AND IT IS WHAT MAKES THESE PLAYABLE. Pipe carries no
+     * TRACK_TOKEN / MD5_ORIGIN / FILESIZE_*, so DeezerTrackClient.loadTrack's empty-token self-heal fires,
+     * re-fetches by id and merges the gateway's extras onto this track's display fields. Verified
+     * 2026-10-09 that deezer.pageTrack resolves the new ids WITH a token - without that this whole path
+     * would render correctly and refuse to play. Same split as smartTracklistTrackIds: pipe for identity,
+     * gateway for playback. DO NOT add a token field here.
+     *
+     * ⚠️ NO `VERSION` KEY. Pipe's `title` already contains the version marker ("… (Acoustic)"), and
+     * toTrack APPENDS VERSION to the title - setting both would double the suffix.
+     * ⚠️ NO ARTIST PICTURES. parseArtists reads ART_PICTURE per artist and pipe's contributors
+     * carry none, so artist thumbnails are absent on these rows. Accepted: search rows show the TRACK
+     * cover, which is present.
+     * ⚠️ ALB_PICTURE ONLY WHEN `cover.id` IS A 32-HEX MD5. getCover builds
+     * cdn-images.dzcdn.net/images/cover/<md5>/… from a HASH, not a URL, and it is unverified whether
+     * pipe's cover.id is that same md5. The guard means a non-md5 yields NO cover rather than a broken
+     * image - and a Tracks tab with missing covers is then the signal that it is not an md5, which is the
+     * measurement. Do not strip the check without making that measurement first.
+     *
+     * ⚠️ NO `media { rights … }` IN THE SELECTION, AND IT IS NOT AN OVERSIGHT. Availability was
+     * selected during the 2026-10-09 measurement and is the field that produced TrackMediaNotFoundException
+     * on an "Other Worlds" search. We do not need it - nothing here filters on availability, deliberately:
+     * the 2026-09-12 FILESIZE investigation measured 12/12 against "unplayable" tracks and was refuted two
+     * captures later, so emptiness is not evidence a track cannot play. Adding it back buys a field nobody
+     * reads and a per-node failure mode.
+     *
+     * Returns null ONLY when no rows map, so the caller keeps the gateway's own TRACK section then.
+     * A non-empty `errors[]` alongside usable rows is logged and otherwise ignored - see the body.
+     */
+    suspend fun searchTracksPipe(query: String, first: Int = PIPE_SEARCH_TRACKS): JsonArray? {
+        val params = encodeJson {
+            put("operationName", "Search")
+            put("query", $$"query Search($query: String!, $tracksFirst: Int!) { search(query: $query) { results { tracks(first: $tracksFirst) { edges { node { id title duration isExplicit ISRC album { id displayTitle cover { id } } contributors(first: 3, roles: [MAIN, FEATURED]) { edges { node { ... on Artist { id name } } } } } } } } } }")
+            putJsonObject("variables") {
+                put("query", query)
+                put("tracksFirst", first)
+            }
+        }
+        val body = pipeGraphQl(params)
+        val edges = body["data"]?.jsonObject?.get("search")?.jsonObject
+            ?.get("results")?.jsonObject?.get("tracks")?.jsonObject
+            ?.get("edges") as? JsonArray
+        // ⚠⚠ PARTIAL ERRORS ARE NORMAL HERE AND MUST NOT DISCARD THE ROWS. GraphQL answers HTTP
+        // 200 with BOTH a populated `data` and a non-empty `errors[]` when one field of one node fails to
+        // resolve. Measured 2026-10-09: an "Other Worlds" search returned good track edges alongside a
+        // TrackMediaNotFoundException. An earlier version of this function returned null on ANY `errors`
+        // entry, which would have silently dropped pipe for exactly those queries and fallen back to the
+        // gateway's empty TRACK section - the defect this whole path exists to fix, re-created by its own
+        // error handling. So errors are LOGGED, never fatal; the only fatal condition is "no rows mapped".
+        // ⚠️ THE LOG IS NOT OPTIONAL, because silence from this function is otherwise ambiguous: a
+        // TOTAL refusal (null data + errors) and an honestly empty result both leave by the same
+        // `songs.isEmpty()` return below. `partial=` is what separates them - true means data survived
+        // alongside an error, false means the refusal was total. Same house rule as callApi's
+        // GATEWAY-ERROR line: a refusal must never read as "none".
+        body["errors"]?.let {
+            println(
+                "GladixDeezer SEARCH-GQL partial=${edges != null} " +
+                    "errors=${it.toString().take(300)}"
+            )
+        }
+        if (edges == null) return null
+        val songs = edges.filterIsInstance<JsonObject>()
+            .mapNotNull { (it["node"] as? JsonObject)?.let(::pipeNodeToSong) }
+        return if (songs.isEmpty()) null else buildJsonArray { songs.forEach { add(it) } }
+    }
+
+    private fun pipeNodeToSong(node: JsonObject): JsonObject? {
+        fun JsonObject.s(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
+        val id = node.s("id")?.takeIf { it.isNotBlank() } ?: return null
+        val title = node.s("title") ?: return null
+        val album = node["album"] as? JsonObject
+        val coverId = (album?.get("cover") as? JsonObject)?.s("id")
+        val artists = ((node["contributors"] as? JsonObject)?.get("edges") as? JsonArray)
+            ?.filterIsInstance<JsonObject>()
+            ?.mapNotNull { it["node"] as? JsonObject }
+            .orEmpty()
+        return buildJsonObject {
+            put("__TYPE__", "song")
+            put("SNG_ID", id)
+            put("SNG_TITLE", title)
+            node.s("duration")?.let { put("DURATION", it) }
+            put("EXPLICIT_LYRICS", if (node.s("isExplicit") == "true") "1" else "0")
+            node.s("ISRC")?.let { put("ISRC", it) }
+            album?.s("id")?.let { put("ALB_ID", it) }
+            album?.s("displayTitle")?.let { put("ALB_TITLE", it) }
+            if (coverId != null && COVER_MD5.matches(coverId)) put("ALB_PICTURE", coverId)
+            putJsonArray("ARTISTS") {
+                artists.forEach { artist ->
+                    addJsonObject {
+                        put("ART_ID", artist.s("id").orEmpty())
+                        put("ART_NAME", artist.s("name").orEmpty())
+                    }
+                }
+            }
+        }
+    }
+
+    // ⚠⚠ THE SINGLE PIPE AUTH + TRANSPORT. FACTORED OUT 2026-10-09 BECAUSE THE CODE SAID TO.
+    // The note that used to sit inside smartTracklistTrackIds read: "THE HANDSHAKE IS DUPLICATED INLINE
+    // in this function and in lyrics, so both carry this exposure. If a third consumer appears, factor
+    // the exchange out THEN." Pipe track search is that third consumer, so this is that moment, and the
+    // exposure note moves here with it:
+    // ⚠️ THIS IS A SECOND AUTH SURFACE, NOT THE GATEWAY'S. ARL + sid are POSTed to
+    // auth.deezer.com/login/arl for a JWT used as `Authorization: Bearer` on pipe.deezer.com; callApi
+    // never touches that JWT and sends the ARL/sid cookie straight to gw-light.php. SO ONE CAN REFUSE
+    // WHILE THE OTHER WORKS, AND THAT IS NOT A CONTRADICTION - measured (Crashlytics, 2026-09-12): this
+    // handshake returned `"Invalid Arl provided"` while the gateway kept serving tracks, playlists and
+    // search on the same ARL, and it recovered on its own. DO NOT READ A PIPE AUTH FAILURE AS EVIDENCE
+    // THAT THE ARL IS BAD - check the gateway before concluding anything.
+    //
+    // ⚠⚠ [CORRECTED 2026-10-09] THE OLD DECISION WAS "JWT PER CALL, NOT CACHED", AND ITS
+    // REASONING IS WHY THE CACHE LOOKS LIKE THIS RATHER THAN BEING DROPPED IN NAIVELY. That note said:
+    // the token's TTL is ~6 minutes, a cache needs expiry tracking AND a 401-refresh path, the 401 path
+    // has to exist either way, and one extra round trip is invisible when opening a mix. All still true.
+    // What changed is the THIRD consumer: AndroidAutoCallback.performSearch wraps a whole search in
+    // withTimeout(10_000) covering extension init and a page load, so a cold auth leg per query is how a
+    // working AA search becomes an empty one. The note's own release condition - "if a second pipe
+    // consumer appears, factor a cached holder THEN" - is met.
+    // ⚠️ AND ITS MEASURED NUMBER IS LOAD-BEARING: ~6 MINUTES. A fallback TTL must stay well under
+    // that or we would cache a token past its life, which is worse than not caching. Hence 90s, and a
+    // 30s margin rather than a larger one - 60s would spend a sixth of a 6-minute token.
+    // ⚠️ SO THE MEMO IS A BURST CACHE, NOT A SESSION CACHE. Expect hits within one AA search or a
+    // user retyping, and misses across a session. That is the whole intended benefit; the 401 path below
+    // is what makes it SAFE, and it would have had to exist even with no cache at all.
+    //
+    // ⚠️ FINGERPRINTED ON (arl, sid) RATHER THAN INVALIDATED BY A HOOK. A credential change -
+    // re-login, ARL refresh, session rotation - changes the hash, so the next call re-exchanges with no
+    // invalidate() call anywhere. The alternative meant editing handleArlExpiration and every credential
+    // writer, i.e. touching guards whose reasons are recorded elsewhere, and going silently stale the day
+    // a fourth writer appears. A fingerprint cannot be forgotten.
+    @Volatile
+    private var pipeJwtCache: Triple<String, Long, Int>? = null
+
+    // android.util.Base64, not java.util.Base64: the latter is API 26 and minSdk here is 24.
+    private fun jwtExpiryMs(token: String): Long? = runCatching {
+        val payload = token.split('.').getOrNull(1) ?: return@runCatching null
+        val json = decodeJson(String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_PADDING)))
+        (json["exp"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()?.times(1000)
+    }.getOrNull()
+
+    private suspend fun pipeJwt(force: Boolean = false): String {
+        val fingerprint = (arl to sid).hashCode()
+        val now = System.currentTimeMillis()
+        if (!force) pipeJwtCache?.let { (token, expiresAt, fp) ->
+            if (fp == fingerprint && now < expiresAt) return token
+        }
+        val request = Request.Builder()
+            .url("https://auth.deezer.com/login/arl?jo=p&rto=c&i=c")
+            .post(RequestBody.EMPTY)
+            .headers(Headers.headersOf("Cookie", "arl=$arl; sid=$sid"))
             .build()
-        val pipeResponse = clientNP.newCall(pipeRequest).await()
-        return decodeJson(pipeResponse.body.string())
+        val token = decodeJson(clientNP.newCall(request).await().body.string())["jwt"]
+            ?.jsonPrimitive?.contentOrNull
+            ?: throw Exception("Deezer pipe auth returned no jwt")
+        val expiresAt = jwtExpiryMs(token)?.minus(PIPE_JWT_MARGIN_MS)
+            ?: (now + PIPE_JWT_FALLBACK_TTL_MS)
+        pipeJwtCache = Triple(token, expiresAt, fingerprint)
+        return token
+    }
+
+    /**
+     * One POST to pipe.deezer.com for an already-built GraphQL body.
+     *
+     * ⚠️ TAKES THE BUILT `params`, NOT (name, query, variables), AND THAT IS DELIBERATE. Each
+     * caller keeps its own query literal where it already lives - those strings carry `$` sigils and
+     * escaped newlines, and moving them is how a query silently becomes a different query.
+     *
+     * ⚠️ THE 401 RETRY IS WHY THE MEMO ABOVE IS SAFE, and the old note already required it
+     * independently of any cache. A cached token can expire between our expiry check and the server
+     * reading it - `exp` is the issuer's clock, not ours. One retry, only on 401, only once: that turns
+     * the race into a slow request instead of a failed one. Retrying any other status would retry real
+     * errors, and retrying twice would hide a genuinely dead ARL behind a delay.
+     */
+    private suspend fun pipeGraphQl(params: JsonObject): JsonObject {
+        suspend fun post(token: String) = clientNP.newCall(
+            Request.Builder()
+                .url("https://pipe.deezer.com/api")
+                .post(params.toRequestBody())
+                .headers(
+                    Headers.headersOf(
+                        "Authorization", "Bearer $token",
+                        "Content-Type", "application/json"
+                    )
+                )
+                .build()
+        ).await()
+
+        var response = post(pipeJwt())
+        if (response.code == 401) {
+            response.close()
+            response = post(pipeJwt(force = true))
+        }
+        return response.use { decodeJson(it.body.string()) }
     }
 
     //<============= Util =============>
