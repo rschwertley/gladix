@@ -29,8 +29,41 @@ import kotlinx.serialization.json.put
 
 class DeezerSearchClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val scope: CoroutineScope, private val history: Boolean, private val parser: DeezerParser) {
 
-    @Volatile
-    private var oldSearch: Triple<String, List<Shelf>, JsonObject?>? = null
+    // ⚠⚠ QUERY-KEYED LRU, REPLACING A SINGLE SLOT - AND THE SINGLE SLOT'S FAILURE WAS SILENT
+    // EMPTINESS, NOT STALENESS. It was `Triple(query, shelves, results)` guarded by `takeIf { it.first
+    // == query }`, so any second Deezer search between loadSearchFeed and getPagedData overwrote it and
+    // the lookup missed. Three paths can do that concurrently, none serialised:
+    //   StreamableMediaSource:80 -> StreamableLoader:51 queue PRELOAD of the next item while one plays
+    //   Cached:370                 any other track resolution (detail page, AA browse, radio append)
+    //   SearchFragment:102         the user typing while any of the above runs
+    // StreamableLoader.load is a bare `withContext(Dispatchers.IO)` with no mutex and one shared
+    // instance (StreamableMediaSource:213), so two resolutions really can be in flight at once.
+    // ⚠️ WHY A MISS WAS WORSE THAN A REFETCH: the "All" branch had no fallback and returned an
+    // EMPTY list, while named tabs re-ran api.search. So a clash did not make search slow, it made All
+    // silently empty - and All is the only tab a wrapper extension reads (it takes tabs.firstOrNull()).
+    // ⚠️ SHAPE COPIED FROM PlayerRadio's stationSeeds: LinkedHashMap, access order maintained by
+    // remove-then-reinsert, eviction from the front. Capped because each value holds a whole pageSearch
+    // response (tens of KB) - 4 covers one preload plus one user search plus the item being resolved,
+    // which is the concurrency actually observed above; unbounded would be a real cost on a browse
+    // session, for the same reason recorded at Cached's album-payload note.
+    // Keyed on the QUERY alone: all tabs derive from one response, so a query+tab key would store the
+    // same payload several times.
+    private val searchCache = LinkedHashMap<String, Pair<List<Shelf>, JsonObject?>>()
+
+    private fun cachedSearch(query: String): Pair<List<Shelf>, JsonObject?>? =
+        synchronized(searchCache) {
+            searchCache.remove(query)?.also { searchCache[query] = it }
+        }
+
+    private fun cacheSearch(query: String, shelves: List<Shelf>, results: JsonObject?) {
+        synchronized(searchCache) {
+            searchCache.remove(query)
+            searchCache[query] = shelves to results
+            while (searchCache.size > SEARCH_CACHE_CAP) {
+                searchCache.remove(searchCache.keys.first())
+            }
+        }
+    }
 
     private fun JsonArray?.toQueryList(key: String, historyFlag: Boolean) =
         this?.mapNotNull { item ->
@@ -81,14 +114,26 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         return Feed(loadSearchFeedTabs(query)) { tab ->
             if (tab?.id == "TOP_RESULT") return@Feed emptyList<Shelf>().toFeedData()
 
-            val cached = oldSearch?.takeIf { it.first == query }
+            // ⚠⚠ BOTH MISSES REBUILD THROUGH loadSearchFeedTabs, NOT THROUGH api.search - AND THAT
+            // IS THE WHOLE POINT. loadSearchFeedTabs is the one place that splices pipe's tracks into
+            // results["TRACK"] (see withPipeTracks), so a fallback that called api.search directly would
+            // hand back GATEWAY-ONLY results: the Tracks tab would quietly lose its pipe rows on any cache
+            // miss, which is the defect this whole path exists to fix, re-created by its own fallback.
+            // ⚠️ THE NAMED-TAB BRANCH HAD EXACTLY THAT BUG - it read
+            // `?: api.search(query)["results"]` - so it is fixed here too, not only the All branch.
+            // ⚠️ CALLING loadSearchFeedTabs REBUILDS THE TABS AND THROWS THEM AWAY, and that cost is
+            // accepted deliberately: it is one wasted list construction on a path that is already doing a
+            // network round trip, and it guarantees ONE code path rather than two that must be kept in
+            // step. Its side effect of re-populating the cache is wanted - the next tab in the same feed
+            // then hits.
+            val cached = cachedSearch(query)
+                ?: run { loadSearchFeedTabs(query); cachedSearch(query) }
 
             if (tab?.id == "All") {
-                return@Feed cached?.second?.toFeedData() ?: emptyList<Shelf>().toFeedData()
+                return@Feed cached?.first.orEmpty().toFeedData()
             }
 
-            val resultObject = cached?.third
-                ?: api.search(query)["results"]?.jsonObject
+            val resultObject = cached?.second
 
             val dataArray = resultObject?.get(tab?.id ?: "")?.jsonObject?.get("data")?.jsonArray
 
@@ -286,8 +331,10 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         val jsonObject = api.search(query)
         // ⚠⚠ THE PIPE SPLICE GOES HERE AND NOWHERE ELSE - THIS IS THE SINGLE POINT BOTH
         // CONSUMERS READ. `resultObject` feeds (1) `allShelves` below, which is what the "All" tab
-        // serves, and (2) `oldSearch.third`, which loadSearchFeed's per-tab lambda reads for every named
-        // tab. Replacing TRACK's data here fixes both from one edit; doing it in the lambda instead would
+        // serves, and (2) the cached response (searchCache's second component), which loadSearchFeed's
+        // per-tab lambda reads for every named tab - and which that lambda also REBUILDS through this same
+        // function on a cache miss, so there is exactly one splice site no matter how the data is reached.
+        // Replacing TRACK's data here fixes both from one edit; doing it in the lambda instead would
         // leave "All" with no Tracks shelf - and "All" is the tab CombineExtension reads, because it takes
         // `feed.tabs.firstOrNull()` and ours is Tab("All", "All").
         val resultObject = jsonObject["results"]?.jsonObject?.let { withPipeTracks(it, query) }
@@ -315,7 +362,7 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
                         .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() })
             }
         }
-        oldSearch = Triple(query, allShelves, resultObject)
+        cacheSearch(query, allShelves, resultObject)
         return listOf(Tab("All", "All")) + tabs
     }
 
@@ -332,6 +379,10 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             }
             println("GladixDeezer PAGE[$label] sections: $summary")
         }
+
+        // 4 covers one queue preload plus one user search plus the item being resolved - the
+        // concurrency named at searchCache. Each entry holds a whole pageSearch response.
+        private const val SEARCH_CACHE_CAP = 4
 
         private val SKIP_TAB_IDS =
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")

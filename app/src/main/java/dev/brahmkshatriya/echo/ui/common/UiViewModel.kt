@@ -107,14 +107,9 @@ class UiViewModel(
         emit(PlayerColors.getDominantColor(drawable.toBitmap()).toDrawable())
     }
 
-    // ⚠️ PUBLIC FOR THE EditPlaylistInsets PROBE (2026-10-08), AND BOTH REVERT TO private
-    // WITH IT. Widened as READS only - the writers are unchanged and still the single entry points
-    // (setNavInsets for the first, setPlayerInsets for the third). The probe needs the two terms
-    // SEPARATELY: `combined.bottom - systemInsets.bottom` cannot say WHICH of them is missing, and
-    // the two have different causes and different fixes - see the prediction table at the probe.
-    val navViewInsets = MutableStateFlow(Insets())
+    private val navViewInsets = MutableStateFlow(Insets())
     private val playerNavViewInsets = MutableStateFlow(Insets())
-    val playerInsets = MutableStateFlow(Insets())
+    private val playerInsets = MutableStateFlow(Insets())
     val systemInsets = MutableStateFlow(Insets())
     val isMainFragment = MutableStateFlow(true)
     var isRail = false

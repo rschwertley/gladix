@@ -339,8 +339,25 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // returns the substitute's OWN (un-grafted) record, so replacing wholesale would discard the
                 // graft and show the wrong/old cover in the player (the fullscreen ViewHolder reads the loaded
                 // track). Streaming is unaffected: track.id stays the top-level id and we take fresh's TOKEN.
+                // ⚠⚠ THE COVER IS FILLED FIELD-BY-FIELD, NOT ALL-OR-NOTHING, AND THAT IS A FIX FOR
+                // PIPE-SOURCED TRACKS. The gate above is an OR, so a track with artists and an album but NO
+                // cover takes this branch and used to keep its null cover forever - the fresh fetch's cover
+                // was discarded along with everything else. Pipe search results are exactly that shape, and
+                // the symptom was no art in the player for every Pipe-sourced track.
+                // ⚠️ IT CANNOT DISTURB THE Aug 6 GRAFT CASE THIS BRANCH WAS WRITTEN FOR, and the
+                // reason is the elvis: a FALLBACK-grafted track HAS a cover (the graft copies
+                // artists/album/cover/background from FALLBACK), so `original.cover ?: fresh.cover` keeps
+                // the graft's cover and never reaches fresh's. The fill only engages where there was
+                // nothing to preserve - which is the one case the OR gate let through wrongly.
+                // ⚠️ COVER ONLY, DELIBERATELY. artists and album are NOT filled the same way: the
+                // gate passes when EITHER is non-empty, so filling them would let a grafted track with
+                // artists-but-no-album take the substitute's album - the exact wrong-album bug the graft
+                // exists to prevent. Widen this list only with a case that proves it safe.
                 original.cover != null || original.artists.isNotEmpty() || original.album != null ->
-                    original.copy(extras = original.extras + fresh.extras)
+                    original.copy(
+                        cover = original.cover ?: fresh.cover,
+                        extras = original.extras + fresh.extras
+                    )
                 // Thin recovered track (context-less/bare, e.g. an Android Auto cache-miss): no display
                 // metadata to preserve → use the full fresh fetch.
                 else -> fresh

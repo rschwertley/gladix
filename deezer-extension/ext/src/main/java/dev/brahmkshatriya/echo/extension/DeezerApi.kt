@@ -1021,7 +1021,7 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun searchTracksPipe(query: String, first: Int = PIPE_SEARCH_TRACKS): JsonArray? {
         val params = encodeJson {
             put("operationName", "Search")
-            put("query", $$"query Search($query: String!, $tracksFirst: Int!) { search(query: $query) { results { tracks(first: $tracksFirst) { edges { node { id title duration isExplicit ISRC album { id displayTitle cover { id } } contributors(first: 3, roles: [MAIN, FEATURED]) { edges { node { ... on Artist { id name } } } } } } } } } }")
+            put("query", $$"query Search($query: String!, $tracksFirst: Int!) { search(query: $query) { results { tracks(first: $tracksFirst) { edges { node { id title duration isExplicit ISRC album { id displayTitle cover { id urls(pictureRequest: { width: 500, height: 500 }) } } contributors(first: 3, roles: [MAIN, FEATURED]) { edges { node { ... on Artist { id name } } } } } } } } } }")
             putJsonObject("variables") {
                 put("query", query)
                 put("tracksFirst", first)
@@ -1060,7 +1060,33 @@ class DeezerApi(private val session: DeezerSession) {
         val id = node.s("id")?.takeIf { it.isNotBlank() } ?: return null
         val title = node.s("title") ?: return null
         val album = node["album"] as? JsonObject
-        val coverId = (album?.get("cover") as? JsonObject)?.s("id")
+        val cover = album?.get("cover") as? JsonObject
+        // ⚠⚠ [CORRECTED 2026-10-09] cover.id IS NOT THE MD5 - MEASURED ON DEVICE, NOT INFERRED.
+        // This read `cover.s("id")` and gated it on a 32-hex check, with a note saying a missing cover
+        // would be the signal if that guess was wrong. It was wrong, and the signal arrived exactly as
+        // described: Pipe rows had no thumbnail in search and no art in the player. The note's own
+        // instruction was "do not strip the check without making that measurement first" - the
+        // measurement is now made, and the check STAYS; only the source of the md5 changes.
+        // ⚠️ THE MD5 COMES OUT OF THE URL, WHICH IS WHY NO SCHEMA FIELD WAS NEEDED. `urls` renders
+        // https://cdn-images.dzcdn.net/images/cover/<md5>/500x500-000000-80-0-0.jpg - the same shape
+        // DeezerParser.getCover builds - so the hash is the path segment after "/images/cover/". The repo's
+        // own queries select only `id` and `urls` on that type and its schema excerpt does not reach the
+        // Picture definition, so there is no documented hash field to prefer over this.
+        // ⚠️ BOTH SHAPES HANDLED because the arity of `urls` is not established here: a JsonArray
+        // (take the first entry) or a bare primitive. Guessing one and being wrong is how this field
+        // produced a silent null the first time.
+        val coverUrl = cover?.get("urls").let { urls ->
+            when (urls) {
+                is JsonArray -> (urls.firstOrNull() as? JsonPrimitive)?.contentOrNull
+                is JsonPrimitive -> urls.contentOrNull
+                else -> null
+            }
+        }
+        val coverId = coverUrl
+            ?.substringAfter("/images/cover/", "")
+            ?.substringBefore('/')
+            ?.takeIf { it.isNotEmpty() }
+            ?: cover?.s("id")
         val artists = ((node["contributors"] as? JsonObject)?.get("edges") as? JsonArray)
             ?.filterIsInstance<JsonObject>()
             ?.mapNotNull { it["node"] as? JsonObject }
