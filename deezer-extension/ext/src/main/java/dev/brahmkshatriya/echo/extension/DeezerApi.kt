@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.extension
 
-import android.util.Base64
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Album
@@ -47,6 +46,7 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import okio.BufferedSource
+import okio.ByteString.Companion.decodeBase64
 import java.math.BigInteger
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -1122,11 +1122,23 @@ class DeezerApi(private val session: DeezerSession) {
     @Volatile
     private var pipeJwtCache: Triple<String, Long, Int>? = null
 
-    // android.util.Base64, not java.util.Base64: the latter is API 26 and minSdk here is 24.
+    // ⚠⚠ [CORRECTED 2026-10-09] THIS USED android.util.Base64 WITH A COMMENT EXPLAINING THAT
+    // java.util.Base64 IS API 26 AND minSdk IS 24. BOTH HALVES WERE WRONG, AND THE COMMENT ASSERTED
+    // SOMETHING NOBODY HAD CHECKED. deezer-extension/ext is a PLAIN JVM MODULE - `java-library` plus
+    // `org.jetbrains.kotlin.jvm`, no Android plugin - so there is no android.* on this classpath at all
+    // and minSdk does not apply to it. It failed to compile with "Unresolved reference 'android'".
+    // ⚠️ okio's decodeBase64 IS THE RIGHT TOOL AND IT WAS VERIFIED, NOT ASSUMED: a JWT payload is
+    // base64URL (`-` and `_`), and okio 3.15.0's commonMain/okio/Base64.kt:68-70 reads
+    // `c == '+' || c == '-'` and `c == '/' || c == '_'` - one decoder accepting BOTH alphabets, and
+    // lenient about missing padding, which JWTs also omit. okio arrives transitively with OkHttp.
+    // ⚠️ AND THE PARSE IS NON-SUSPEND ON PURPOSE. decodeJson is `suspend` (it hops to
+    // Dispatchers.IO), which this cannot call and should not want to: the payload is a few dozen bytes
+    // and the hop would cost more than the parse. The companion's own `json` instance parses in place.
     private fun jwtExpiryMs(token: String): Long? = runCatching {
-        val payload = token.split('.').getOrNull(1) ?: return@runCatching null
-        val json = decodeJson(String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_PADDING)))
-        (json["exp"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()?.times(1000)
+        val payload = token.split('.').getOrNull(1)?.decodeBase64()?.utf8()
+            ?: return@runCatching null
+        val claims = json.parseToJsonElement(payload).jsonObject
+        (claims["exp"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()?.times(1000)
     }.getOrNull()
 
     private suspend fun pipeJwt(force: Boolean = false): String {
@@ -1162,7 +1174,10 @@ class DeezerApi(private val session: DeezerSession) {
      * the race into a slow request instead of a failed one. Retrying any other status would retry real
      * errors, and retrying twice would hide a genuinely dead ARL behind a delay.
      */
-    private suspend fun pipeGraphQl(params: JsonObject): JsonObject {
+    // ⚠️ `params` IS THE ENCODED JSON **STRING**, NOT A JsonObject - encodeJson returns String (it
+    // is the same value the gateway path feeds to toRequestBody). Typing it JsonObject compiled nowhere:
+    // all three callers pass encodeJson's result and toRequestBody has no JsonObject overload.
+    private suspend fun pipeGraphQl(params: String): JsonObject {
         suspend fun post(token: String) = clientNP.newCall(
             Request.Builder()
                 .url("https://pipe.deezer.com/api")
