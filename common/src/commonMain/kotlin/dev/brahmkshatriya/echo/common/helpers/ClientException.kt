@@ -11,6 +11,11 @@ import dev.brahmkshatriya.echo.common.clients.LoginClient
  * - [Unauthorized] - When the user is not authorized, will log out the user.
  * - [NotSupported] - When the extension does not support an operation.
  *
+ * For "the requested item is gone from the backend", throw [MediaUnavailableException] instead. It
+ * is deliberately NOT a member of this sealed hierarchy - it carries a user-facing message of its
+ * own and the player classifies it as an Unavailable skip rather than an unrecognised fault (see
+ * PlayerEventListener.skipFamilyOf), whereas everything here routes through AppException first.
+ *
  * @see [LoginClient]
  */
 sealed class ClientException : Exception() {

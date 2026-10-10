@@ -22,6 +22,20 @@ class HealthMonitor(private val app: App) {
      * `throwing_extension_id` crash key, so attribution comes from the report itself rather than from
      * whatever the last throwFlow-routed error happened to leave on the Crashlytics singleton. null
      * where a report genuinely has no extension (the restore-time integrity checks).
+     *
+     * [CORRECTED 2026-10-10] THE FIRST PARAGRAPH WAS FALSE IN EVERY RELEASE BUILD UP TO AND
+     * INCLUDING 1119, AND IS TRUE AGAIN FROM THE NEXT ONE. The claim: these are `val`s rather
+     * than merely values interpolated into [message], so the data can be recovered without
+     * string-parsing a message somebody may have reformatted. What actually shipped: nothing
+     * in-app READS them, so R8 stripped all three ConsecutiveSkipException fields and their
+     * getters - the 1119 release usage.txt lists skipCount, lastExtensionId, lastCauses and
+     * getSkipCount/getLastExtensionId/getLastCauses as removed - leaving the interpolated message
+     * as the only surviving copy, i.e. exactly the situation the paragraph says it prevents. And
+     * it was worse than cosmetic: the stripping is what left the five family subclasses
+     * structurally identical and therefore MERGEABLE, which is the correction on report()'s trim
+     * below. proguard-rules.pro rule 5 keeps the members as of the same day, restoring the claim.
+     * Left standing rather than rewritten: the design was right, and it was only ever wrong about
+     * what the shrinker left of it.
      */
     sealed class HealthException(message: String, val extensionId: String?) : Exception(message)
 
@@ -206,6 +220,41 @@ class HealthMonitor(private val app: App) {
         // the rest is their call. And 17f8c8 does NOT retroactively split - new events group fresh and the
         // old issue stays as history. `health_report_type` already allowed FILTERING by family; it is
         // MUTING that needed this.
+        //
+        // ⚠⚠ [CORRECTED 2026-10-10] THE TRIM BELOW IS A NO-OP IN A RELEASE BUILD, AND THE
+        // MECHANISM THE BLOCK ABOVE NAMES WAS NEVER THE WHOLE FAULT. The claim: five classes produced
+        // one issue because construction runs HealthException.<init> -> ConsecutiveSkipException.<init>
+        // -> <Family>Exception.<init>, so the TOP frame was a base <init> shared by all five, and
+        // keeping only the most-derived <init> is what makes the split reach Crashlytics. Read against
+        // build 1119's release mapping.txt, two things are wrong with that:
+        //      1. THERE ARE NO <init> FRAMES ON THE DEVICE. R8 inlines every family constructor,
+        //         and ConsecutiveSkipException's, into
+        //         PlayerEventListener.reportAndResetConsecutiveSkips, so stackTrace[0].methodName is
+        //         that method (obfuscated), the while loop below exits immediately at i=0, and
+        //         `if (i > 0)` never fires. The two <init> frames a Crashlytics report shows are RETRACE
+        //         EXPANSIONS of one physical frame, rebuilt server-side from the inline table AFTER this
+        //         code has run. Nothing here can reach them.
+        //      2. THERE ARE NO FIVE CLASSES EITHER. Only ConsecutiveSkipErrorException has a class entry
+        //         in that mapping (as "qx1"); the other four families and ConsecutiveSkipException have
+        //         none. One dex class for all five means ONE issue whatever the frames say, and
+        //         health_report_type - the filtering fallback the block above relies on - reads "qx1"
+        //         for every report. Issue 1fc0baac is titled "qx1:" for that reason.
+        // WHY THE ORIGINAL READING LOOKED RIGHT, which is the half worth keeping: per the 2026-09
+        // session record (the user's summaries, not verifiable from this tree) the GitHub APK had
+        // ALWAYS been a DEBUG build until the 2026-09-04/05 distribution audit found it - so every
+        // report behind the 2026-09 split came from an UN-MINIFIED build, where the classes really are
+        // five and the <init> frames really are physical, and the 2026-09-05 triage names a
+        // "ConsecutiveSkipErrorException" issue with 9 events. When GitHub switched to release builds,
+        // R8 began merging the families: 17f8c8, then qx1. R8 and AGP did not change underneath this -
+        // THE BUILD TYPE DID, and the split was never once checked against a release mapping.txt.
+        // THE FIX IS proguard-rules.pro RULE 5 (-keep ... HealthMonitor** { *; }), not more frame
+        // surgery. THE TRIM IS KEPT UNCHANGED, DELIBERATELY: it is correct for an un-minified build
+        // (debug, and any local build with minify off) and inert otherwise, so leaving it costs nothing
+        // while removing it would be a behaviour change for no gain. Whether a release build ALSO needs
+        // a synthesized family-specific top frame is a question the NEXT release mapping answers: if
+        // the family constructors are still inlined into reportAndResetConsecutiveSkips, the innermost
+        // retraced frame is the shared ConsecutiveSkipException.<init> again and only the CLASS NAME
+        // will have split. Decide then, with the mapping in hand; do not pre-build for it.
         exception.stackTrace.let { trace ->
             var i = 0
             while (i + 1 < trace.size && trace[i + 1].methodName == "<init>") i++

@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension.clients
 
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
 import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
@@ -192,7 +193,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             when (quality) {
                 "flac" -> createStreamableForQuality(track, "320", retry)
                 "320" -> createStreamableForQuality(track, "128", retry)
-                else -> throw Exception("Track not available on server")
+                // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
+                // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
+                // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
+                // Exception gave skipFamilyOf nothing to classify - so an exhausted track was filed
+                // in the RESIDUAL Error family rather than Unavailable (Crashlytics 1fc0baac, 1119).
+                // The MESSAGE IS UNCHANGED on purpose: onPlayerError still falls back to matching
+                // "not available" for extensions that cannot name this type.
+                else -> throw MediaUnavailableException("Track not available on server")
             }
         }
     }
@@ -236,7 +244,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     println("GladixDeezer loadStreamableMedia attempt $attempt failed id=$trackId q=$quality: ${e.message}")
                 }
             }
-            resolved ?: throw Exception("Track not available after retries: $trackId", lastError)
+            // Typed for the same reason as the throw above; `lastError` still rides along as the
+            // cause, which is what MediaUnavailableException's optional second parameter exists for.
+            // NOTE the rootCause of this is lastError's OWN deepest node, not this message - which is
+            // why onPlayerError's isRetryExhausted check, which reads rootCause.message, is left alone
+            // here rather than quietly re-pointed.
+            resolved ?: throw MediaUnavailableException(
+                "Track not available after retries: $trackId", lastError
+            )
         } else {
             streamable
         }

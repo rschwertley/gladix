@@ -122,6 +122,34 @@ class DeezerGatewayException(
     // a five-playlist save. If it is ever wanted, it belongs in the HOST as a `skipped` reason.
     val isAlreadyInPlaylist: Boolean
         get() = errorText.contains("ERROR_DATA_EXISTS", ignoreCase = true)
+
+    // ⚠⚠ THE STORED SESSION IS DEAD - THIS IS A SIGN-IN, NOT A REFUSAL. The gateway answers
+    // NEED_USER_AUTH_REQUIRED "Require user auth" when the credentials we sent are no longer
+    // accepted by a method that needs a user. Observed on 1118 (Crashlytics 8eb50552,
+    // gw=deezer.userMenu lang=ru, at app open) where it reached the user as the fixed
+    // "Deezer refused this request." string - a generic error for the one condition that has an
+    // obvious remedy.
+    // ⚠️ MEANING, FROM A COMMUNITY SOURCE RATHER THAN DEEZER DOCS, AND LABELLED AS SUCH:
+    // d-fi/releases issue #50 (github.com/d-fi/releases/issues/50) is titled
+    // "ERROR - NEED_USER_AUTH_REQUIRED,Require user auth logout" and resolves it by supplying a
+    // FRESH ARL, with a follow-up noting ARLs need renewing every 4-6 months. So the code means an
+    // expired/invalid ARL - the stored session, not the request. That is an ISSUE THREAD, not a
+    // source line and not documentation: it corroborates the reading below, it does not establish
+    // the exhaustive account-side meaning. No open-source client was found that branches on the
+    // code in code (searched 2026-10-10).
+    // ⚠️ WHY LoginRequired IS UNAMBIGUOUS HERE, which is what makes the conversion safe: a caller
+    // reaching a gateway method either pre-checks DeezerExtension.handleArlExpiration - which throws
+    // LoginRequired while arl/sid/token are empty - or holds no credentials at all. So both reachable
+    // states want the same affordance: credentials we had stopped working, or there were none.
+    // Neither is recoverable without the user, which is the test the LoginRequired table at
+    // DeezerExtension.handleArlExpiration requires of a new throw site.
+    // ⚠️ MATCHED ON THE CODE ALONE, AND THE CONTRAST WITH isEmptyTracklist ABOVE IS DELIBERATE
+    // rather than inconsistent. That one needs code AND text because DATA_ERROR is the gateway's
+    // general data-layer code; this key names one condition and nothing else. Requiring the sentence
+    // too would let a Deezer rewording silently stop routing to the login prompt - the same argument
+    // DeezerAuthRejectedException's note makes for testing a type rather than a sentence.
+    val isUserAuthRequired: Boolean
+        get() = errorText.contains("NEED_USER_AUTH_REQUIRED", ignoreCase = true)
 }
 
 /**
@@ -596,7 +624,36 @@ class DeezerApi(private val session: DeezerSession) {
                 // what this is avoiding - a typed failure that carries nothing cannot tell "signed out"
                 // from "token went stale", and the whole value of the two captures above was the literal
                 // text "Page type smarttracklist does not exist".
-                throw DeezerGatewayException(method, errorText, langCode)
+                // ⚠⚠ ONE EXIT BEFORE THE GENERIC ONE. It uses the CLASSIFIER rather than a second string
+                // test, so the exception is constructed either way and the rule stays beside the parse - see
+                // isUserAuthRequired for what the code means and where that reading comes from.
+                // ⚠⚠ deezer.getUserData IS EXCLUDED, AND THAT EXCLUSION IS THE WHOLE REASON THIS SHIPS.
+                // It is the LOGIN FLOW'S ONLY GATEWAY METHOD: makeUser calls callApi("deezer.getUserData") and
+                // nothing else in that flow goes through callApi at all (getSid and getArlByEmail build their
+                // own requests, which is why DeezerAuthRejectedException exists separately). Four entry points
+                // reach it - DeezerExtension.onLogin on BOTH branches, webViewRequest.onStop, and
+                // getCurrentUser - and converting there would hand a user who is ALREADY ON THE LOGIN SCREEN,
+                // having just submitted credentials, a snackbar whose action is Sign In: LoginViewModel.afterLogin
+                // emits the failure to throwFlow, and AppException.LoginRequired renders with that action. A
+                // circular prompt replacing a readable error, and it would also suppress the report, because
+                // App.kt skips recordException for anything isLoginRequired() matches.
+                // ⚠️ IT IS NOT A LOCKOUT AND THE DISTINCTION IS WORTH KEEPING STRAIGHT: afterLogin clears
+                // loading on both arms and nothing latches, so 1108 does not repeat. The exclusion is about the
+                // prompt being USELESS there, not about getting trapped.
+                // ⚠️ WHAT THE EXCLUSION COSTS, NAMED: a dead session surfacing through handleArlExpiration ->
+                // makeUser keeps the generic string. That case is already converted when Deezer answers
+                // "Invalid CSRF token" in the branch above, so the gap is narrow and known rather than silent.
+                // ⚠️ TOUCHES NO SESSION STATE. Not credentialsRejected (the CSRF catch above is its only
+                // writer, and its meaning is "a silent re-login was refused", which this is not), and not
+                // isArlExpired (which would drive a re-login on the next call - arguably better, but a separate
+                // decision on the path 1108 came from).
+                // ⚠️ AND IT CANNOT STRAND EXTENSION SELECTION: onExtensionSelected is
+                // `runCatching { handleArlExpiration() }` and swallows everything, so this cannot escape the
+                // Injectable injection block.
+                val gatewayError = DeezerGatewayException(method, errorText, langCode)
+                if (gatewayError.isUserAuthRequired && method != "deezer.getUserData")
+                    throw ClientException.LoginRequired()
+                throw gatewayError
             }
             result
         }

@@ -14,6 +14,7 @@ import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SaveClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.helpers.Page
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
@@ -33,7 +34,6 @@ import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.di.App
-import dev.brahmkshatriya.echo.extensions.exceptions.MediaUnavailableException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
@@ -279,7 +279,39 @@ object Cached {
             // SKIPPED ENTIRELY on this path, not half-refreshed. None of them is displayed for a queue
             // item being resolved for playback, and skipping them is exactly what happens today via the
             // throw — half-refreshing would be new behaviour nobody asked for.
+            // ⚠⚠ A CACHED TRACK WITH NO SERVERS IS TREATED AS A MISS, BECAUSE SUCH A STATE WAS
+            // WRITTEN AS A LEGITIMATE SUCCESS AND THEN SERVED FOREVER. An extension can return a track
+            // with zero streamables WITHOUT THROWING - Spotify did exactly that while it was answering
+            // 403s - and Combine passes that straight through (its loadTrack returns
+            // `metaTrack.copy(streamables = allStreamables)`, and when the metadata extension is also the
+            // preferred stream extension that list is metaTrack.streamables verbatim). So the write below
+            // stored streamables=[] under media-echo_combine-<id>-state as a normal success, and the
+            // no-TTL policy means it outlives the 403s, the Spotify fix, and the extension update.
+            // ⚠️ WHAT IT LOOKED LIKE, MEASURED ON DEVICE 2026-10-10 (GladixPlayback capture): a 4 ms
+            // "loadTrack result servers=[]" - too fast for any extension call, i.e. this line - then
+            // selectServerIndex -1, then StreamableLoader.loadServer throwing TrackUnavailableException
+            // ("No playable source for this track"), then StreamableMediaSource's null/empty-sources arm,
+            // then a SILENT skip, because PlayerEventListener only emits once the breaker trips. The next
+            // track in the same queue, on the same Combine -> Spotify route, got 2 servers and played -
+            // which is what proves the route was healthy and only the remembered state was not.
+            // ⚠⚠ THIS IS NOT THE TTL THE NOTE ABOVE FORBIDS, AND THE DIFFERENCE IS THE WHOLE POINT.
+            // That note protects the OFFLINE restored queue, whose cached states carry REAL servers; this
+            // test is `servers.isEmpty()`, so it fires only on states that are structurally incapable of
+            // producing playback and never on the ones being protected. It asks "can this state possibly
+            // play", never "how old is it" - no age check, no freshness, nothing to re-attempt for a state
+            // that would have worked.
+            // ⚠️ OFFLINE WITH A POISONED ENTRY IS UNCHANGED: loadItem fails fast (offline is a
+            // DNS/connect failure, not a read timeout), and the getOrElse fallback below re-serves the same
+            // empty state, ending in the same skip as before. That fallback is deliberately NOT given this
+            // guard - doing so would surface the extension's error offline instead, which is a separate
+            // decision about what an offline user sees.
+            // ⚠️ IT SELF-HEALS AND NEEDS NO CACHE WIPE: the entry is bypassed on the next play and
+            // then overwritten by the write below when the reload succeeds.
+            // ⚠️ `as?` PLUS `== true` IS DELIBERATE: a non-Track state (album, artist, playlist) has no
+            // servers to test, so the predicate must be FALSE for it and the cache still preferred. A
+            // direct `!servers.isEmpty()` would make every non-Track cache read a miss.
             if (preferCache) getMedia<T>(app, extension.id, state.item.id).getOrNull()
+                ?.takeUnless { (it.item as? Track)?.servers?.isEmpty() == true }
                 ?.let { return@runCatching it }
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()

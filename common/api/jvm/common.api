@@ -338,6 +338,13 @@ public final class dev/brahmkshatriya/echo/common/helpers/Injectable {
 	public final fun value-IoAF18A (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class dev/brahmkshatriya/echo/common/helpers/MediaUnavailableException : java/lang/Exception {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getCause ()Ljava/lang/Throwable;
+	public fun getMessage ()Ljava/lang/String;
+}
+
 public final class dev/brahmkshatriya/echo/common/helpers/Page {
 	public static final field Companion Ldev/brahmkshatriya/echo/common/helpers/Page$Companion;
 	public fun <init> (Ljava/util/List;Ljava/lang/String;)V

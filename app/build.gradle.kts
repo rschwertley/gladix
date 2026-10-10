@@ -391,6 +391,17 @@ tasks.register("verifyExtensionAbi") {
         // across 2.x→4.x. Deliberately NOT an experimental type (v36.0 removed the experimental
         // FieldOrder enum). Anchor added 2026-08-24 (rule 4 was previously unverified).
         "com.google.protobuf.MessageLite",
+        // HealthMonitor report types - dev.brahmkshatriya.echo.utils.HealthMonitor** (rule 5).
+        // THE ONLY NON-ABI ANCHORS HERE, and they are in this list rather than a second one
+        // because the invariant above is about keep rules, not about the ABI: an unanchored keep
+        // rule is unverified whatever it protects. These are kept so Crashlytics can group a
+        // breaker trip per FAMILY. Up to build 1119 they were NOT kept, and R8 merged all five
+        // ConsecutiveSkip* subclasses into one dex class - only ConsecutiveSkipErrorException had
+        // a mapping entry, as "qx1" - so every family reported as one issue and health_report_type
+        // read "qx1". One family anchor is enough: all five are kept by a single pattern, so if it
+        // lapses they lapse together. The outer class is anchored too because the rule keeps it.
+        "dev.brahmkshatriya.echo.utils.HealthMonitor",
+        "dev.brahmkshatriya.echo.utils.HealthMonitor\$ConsecutiveSkipUnavailableException",
     )
     doLast {
         val mappingFiles: List<File> = (mappingRoot.listFiles()?.toList().orEmpty())
@@ -410,8 +421,9 @@ tasks.register("verifyExtensionAbi") {
                         "A -keep rule is missing or not applied. If the class is part of the extension " +
                         "ABI (common.** + kotlin.** + kotlinx.coroutines.** + kotlinx.serialization.** + " +
                         "okhttp3.** + okio.** + com.google.protobuf.**), extensions will fail to load " +
-                        "with NoClassDefFoundError; if it is an XML-instantiated class (rule 5), the " +
-                        "layout naming it will fail to inflate. See app/proguard-rules.pro."
+                        "with NoClassDefFoundError; if it is a HealthMonitor report type (rule 5, NOT " +
+                        "ABI), R8 has merged or renamed the ConsecutiveSkip* families and Crashlytics " +
+                        "will group every breaker trip into one issue again. See app/proguard-rules.pro."
                 )
             }
             println("verifyExtensionAbi: '$variant' kept classes intact (${critical.size} anchors self-mapped).")

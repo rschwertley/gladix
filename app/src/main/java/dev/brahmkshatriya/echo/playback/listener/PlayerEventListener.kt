@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.ExoTimeoutException
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
@@ -32,7 +33,6 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
-import dev.brahmkshatriya.echo.extensions.exceptions.MediaUnavailableException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
@@ -1976,7 +1976,16 @@ class PlayerEventListener(
             return
         }
 
-        if (rootCause is TrackUnavailableException || rootCause.message?.contains("not available", ignoreCase = true) == true) {
+        // ⚠️ THE TYPE AND THE STRING ARE BOTH LOAD-BEARING - DO NOT COLLAPSE THIS TO EITHER HALF.
+        // MediaUnavailableException added 2026-10-10, once the type moved to :common and Deezer could
+        // name it (DeezerTrackClient.createStreamableForQuality and .loadStreamableMedia). It is what
+        // lets recordSkip's skipFamilyOf file this as Unavailable instead of residual Error: the leaf
+        // skipFamilyOf inspects is this rootCause, and a bare Exception carries no identity.
+        // THE STRING MATCH STAYS for every extension that has not adopted the type - dropping it
+        // would stop the SKIP itself, not merely its classification, for all of them.
+        if (rootCause is TrackUnavailableException || rootCause is MediaUnavailableException ||
+            rootCause.message?.contains("not available", ignoreCase = true) == true
+        ) {
             recordSkip(rootCause, error, probeDetail())
             if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
                 reportAndResetConsecutiveSkips(mediaItem?.extensionId, "stop")

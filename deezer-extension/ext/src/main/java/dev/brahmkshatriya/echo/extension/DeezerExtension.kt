@@ -966,10 +966,18 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      *   DeezerApi, getToken 403    the auth endpoint refused the creds    -> sign in
      *   this file, flag branch     already-latched refusal                -> sign in
      *   this file, isArlExpired    creds ABSENT and the ARL is expired    -> sign in
+     *   DeezerApi, gateway auth    NEED_USER_AUTH_REQUIRED, any method    -> sign in  [+2026-10-10]
+     *                              EXCEPT deezer.getUserData - see the exclusion note at that throw
+     * FIVE sites as of 2026-10-10. The "FOUR" above is left as the date stamp on the 2026-09-22
+     * grep rather than silently re-counted. The fifth passes the test this table exists to apply:
+     * reaching a gateway method means handleArlExpiration either let the call through (credentials
+     * present and believed live) or was never consulted (none held), so it cannot mean "recoverable
+     * without the user" - see DeezerGatewayException.isUserAuthRequired.
      * The silently-recoverable case is the THIRD branch below - `runCatching { api.makeUser() }` -
      * which swallows everything and never throws. So no ambiguous LoginRequired can escape, and a
-     * sign-in affordance is now the correct rendering for all four.
-     * ⚠️ IF A FIFTH THROW SITE IS EVER ADDED, CHECK IT AGAINST THIS TABLE FIRST. One that can
+     * sign-in affordance is now the correct rendering for all five (four until 2026-10-10).
+     * ⚠️ IF A SIXTH THROW SITE IS EVER ADDED, CHECK IT AGAINST THIS TABLE FIRST (this read
+     * "a FIFTH" until 2026-10-10, when the fifth was added and checked against it). One that can
      * mean "recoverable without the user" would reopen the August problem, and the consumer of that
      * decision is PagedSource.load - see the note there.
      *

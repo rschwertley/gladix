@@ -145,10 +145,30 @@ object ResumptionUtils {
      * fixing nothing. For an old Unified queue there IS no recoverable sub-extension id, so leave it
      * unstamped: the accessor then throws, Cached.loadMedia's cache fallback serves the previously
      * cached state, and playback continues exactly as it does today.
+     *
+     * PLAYBACK is what that paragraph covers; RADIO is not, and this function now also clears
+     * [Track.isRadioSupported] for that one case. The reasoning is at the branch itself.
      */
     private fun Track.restamped(extensionId: String) = when {
         extras.containsKey(UnifiedExtension.EXTENSION_ID) -> this
-        extensionId == UnifiedExtension.UNIFIED_ID -> this
+        // ⚠⚠ RADIO IS DISABLED FOR THIS CASE, AND ONLY THIS CASE. An unstamped Unified track
+        // cannot be routed to a sub-extension at all, so UnifiedExtension.radio can only ever throw
+        // ExtensionNotFoundException(null) for it. That reached the user as a cold-start snackbar plus
+        // an unactionable non-fatal (Crashlytics 9d0f930f on 1119) every time a restored queue whose
+        // current item was its LAST item triggered auto-radio. Clearing the flag lets
+        // PlayerRadio.start's existing `!item.isRadioSupported` early return skip the station quietly -
+        // no new code path, and the queue simply ends.
+        // ⚠️ THE FLAG IS A FACT HERE, NOT A WORKAROUND. With no recoverable sub-extension id there is
+        // no radio that could be built, so the UI also stops offering a button that could only throw.
+        // ⚠️ IT CANNOT MASK A LIVE DEFECT, AND THAT IS STRUCTURAL RATHER THAN MERELY CAREFUL:
+        // restamped has exactly ONE caller, in recoverTracks, on the RESTORE path. A live unstamped
+        // Unified item - which should be unreachable, since every Unified return goes through
+        // withExtensionId - still arrives at radio() unstamped, still throws, and still reports.
+        // ⚠️ SCOPED TO RADIO, so this does NOT close the missing stamp. loadFeed(track) on a tap
+        // still throws and still reports, which is correct - the user asked for that one - and
+        // loadTrack stays masked by Cached.loadMedia's cache fallback. See the note at
+        // UnifiedExtension.loadTrack.
+        extensionId == UnifiedExtension.UNIFIED_ID -> copy(isRadioSupported = false)
         else -> copy(extras = extras + (UnifiedExtension.EXTENSION_ID to extensionId))
     }
 

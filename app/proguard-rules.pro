@@ -46,6 +46,26 @@
 -keep class com.google.protobuf.** { *; }
 # anchor: com.google.protobuf.MessageLite
 
+# 5. HealthMonitor report types. NOT extension ABI - a different failure mode, kept here because
+#    this file is the only place that can prevent it.
+#    Crashlytics groups a non-fatal on the exception CLASS, so the 2026-09 split of
+#    ConsecutiveSkipException into Stall/Network/Unavailable/Internal/Error families only EXISTS if
+#    each family survives R8 as its own named class. In build 1119 it did not: only
+#    ConsecutiveSkipErrorException had a class entry in mapping.txt (as "qx1"); the other four and
+#    ConsecutiveSkipException had none, their constructors appearing only as frames inlined into
+#    PlayerEventListener.reportAndResetConsecutiveSkips. One dex class for all five families, so
+#    per-family mute - the entire point of the split - was impossible, and health_report_type read
+#    "qx1" for every report.
+#    `{ *; }` IS LOAD-BEARING, NOT HABIT: the merge was enabled by R8 stripping skipCount /
+#    lastExtensionId / lastCauses as unused (nothing in-app reads them - only the message), which
+#    left the five subclasses structurally identical and therefore mergeable. Keeping the members is
+#    what keeps them distinguishable. The OUTER class is kept too, so a nested name cannot drift
+#    from an obfuscated enclosing name.
+#    The previous rule 5 - XML-instantiated OverlapScrollingViewBehavior - went away with that class
+#    in c9649426 (2026-09-07); verifyExtensionAbi's failure message still named it until 2026-10-10.
+-keep class dev.brahmkshatriya.echo.utils.HealthMonitor** { *; }
+# anchor: dev.brahmkshatriya.echo.utils.HealthMonitor, HealthMonitor$ConsecutiveSkipUnavailableException
+
 
 # Preserve generics + all annotation variants + nested/lambda linkage so kotlinx.serialization type
 # resolution and suspend/lambda types crossing the extension classloader boundary still resolve after

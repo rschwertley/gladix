@@ -513,6 +513,22 @@ class UnifiedExtension(
      * ⚠️ OLD QUEUES ARE NOT RETROACTIVELY FIXED. A Unified queue saved before this has no
      * recoverable sub-extension id anywhere, so it stays unstamped and keeps resolving from cache
      * exactly as it did. The accessor still throws for those; that is expected, not a regression.
+     * ⚠⚠ [CORRECTED 2026-10-10] EVERY FACT ABOVE IS RIGHT AND THE FRAMING IS WHAT MISLEADS -
+     * DO NOT READ THAT PARAGRAPH AS "COVERED". "Old queues" and "expected, not a regression" read as
+     * a closed, shrinking population. It is neither:
+     *   PERMANENT PER ITEM. ResumptionUtils.queueSlim keeps the routing key only if the LIVE item
+     *     carries one, so an unstamped restored item is re-saved unstamped, and restamped refuses it
+     *     again on the next restore. The item can NEVER recover. A queue heals only as its items TURN
+     *     OVER; anything the user leaves sitting in the queue stays unstamped for the life of the
+     *     install, which is why this still produces reports on current builds.
+     *   COVERED, AND ONLY THIS: playback, via the cache fallback described above; and, since
+     *     2026-10-10, AUTO-RADIO - ResumptionUtils.restamped clears isRadioSupported for this case, so
+     *     PlayerRadio.start takes its existing !isRadioSupported early return and skips the station
+     *     instead of throwing. That removes the auto-radio PRODUCER behind Crashlytics 9d0f930f
+     *     (1119, cold start, restore window of 1); it does not close the issue - see MUTED, NOT
+     *     RESOLVED below, which applies to this one for the same reason.
+     *   NOT COVERED: loadFeed(track) throws and reports on every tap of such a track - correct for a
+     *     user-initiated action, and the surface that will keep this in triage. THE DEFECT IS OPEN.
      *
      * ⚠⚠ THE CRASHLYTICS ISSUE FOR THIS IS MUTED, NOT RESOLVED (2026-09-23) - SO SILENCE
      * FROM IT IS NOT EVIDENCE OF ANYTHING. Nothing was fixed in the round that produced the notes
@@ -539,6 +555,13 @@ class UnifiedExtension(
      * The same missing stamp surfaces UNCAUGHT on other paths, which is how it was finally found:
      * UnifiedExtension.radio (a non-fatal ExtensionNotFoundException("null") from PlayerRadio.loadPlaylist
      * on a cold start restoring a one-item queue with auto-radio on) and loadFeed(track).
+     * ⚠️ [CORRECTED 2026-10-10] "ONE-ITEM QUEUE" IS THE WRONG CONDITION TO LOOK FOR. The real
+     * one is that the restored CURRENT ITEM WAS THE LAST ENTRY in the saved queue, however long that
+     * queue was. From ResumptionUtils.recoverQueue: the build window is subList(current, end) with
+     * end = min(current + 1 + QUEUE_CAP_UPCOMING, size) and that cap at 2000, so a reported
+     * restore_build_count of 1 forces end == current + 1 == size. Having nothing UPCOMING is what
+     * triggers auto-radio, and that is a property of the current item's POSITION, not of the
+     * queue's length - a 500-track queue resumed on its last track qualifies.
      *
      * ⚠⚠ [2026-09-23] THE PARTIAL FIX THAT EXISTS STAMPS THE WRONG VALUE, AND THIS NOTE
      * PREVIOUSLY SET A TRAP BY NOT SAYING SO. ResumptionUtils.restamped(entry.extensionId) was added
@@ -556,19 +579,48 @@ class UnifiedExtension(
      * (assembleLegacy, TRACKS/EXTENSIONS/CONTEXTS) builds MediaState.Unloaded directly with NO
      * re-stamp. That path is not dead - it runs whenever the composite decode returns null, which
      * includes a CORRUPT OR SIZE-GATED composite and not only genuine pre-composite state.
+     * ⚠⚠ [CORRECTED 2026-10-10] THE MISSING RE-STAMP ON THE LEGACY PATH IS NOT A HOLE FOR THIS
+     * DEFECT, AND LISTING IT AS ONE SENT A LATER INVESTIGATION LOOKING AT THE WRONG PATH. The claim
+     * was that only two of three restore eras are stamped, leaving assembleLegacy exposed. The era it
+     * serves never needed stamping: the TRACKS write was always FAT. 58c164ac (2026-07-07) wrote
+     * `list.map { it.track }` - the full Track, no toSlim() - the composite replaced it in 542b094f
+     * (2026-07-08), and toSlim only began stripping extras at 92af04f5 (2026-07-26). So no TRACKS file
+     * ever held a stripped track, and a legacy-restored Unified track arrives WITH its stamp.
+     * ⚠️ THE SIZE-GATE ROUTING BELOW IS STILL RIGHT AND STILL CANNOT PRODUCE A LEGACY QUEUE TODAY:
+     * ResumptionUtils deletes TRACKS/EXTENSIONS on every successful composite save, so a skipped or
+     * corrupt composite lands on assembleLegacy(null, ...) which returns null at its first line -
+     * recoverTracks then yields NO queue rather than a legacy one. The observed producer is the
+     * COMPOSITE path, via restamped refusing UNIFIED_ID, which is the correct refusal.
      * ⚠️ "SIZE-GATED" IS A DOCUMENTED MECHANISM, NOT A GUESS: the July 2026 queue work is
      * recorded as a "slim + size-gated migration", and getFromQueue/getFromCache take an explicit
      * maxBytes (QUEUE_FILE_MAX_BYTES) which SKIPS AN OVERSIZED FILE UNREAD rather than failing.
      * A skipped composite reads as absent, and absent is exactly what routes to assembleLegacy.
      * So the legacy path has a real trigger on a current install, not just a historical one.
      * ⚠️ WHICH PATH A GIVEN REPORT TOOK IS NOT DETERMINABLE FROM THE CRASH KEYS. A 2026-09-23
-     * report matched this note's predicted shape exactly (radio() on a cold start, one-item queue,
+     * report matched this note's predicted shape exactly (radio() on a cold start, one-item queue
+     * [CORRECTED: read "current was the last entry" - see the one-item-queue note above],
      * auto-radio) but carried restore_build_count 41 against player_media_item_count 1 - a mismatch,
      * where those two normally track each other. Still unresolved - but the size gate above is a
      * CANDIDATE rather than nothing: if an oversized composite were skipped unread, a restore
      * could build from one source and end up with a queue from another, which is the shape of a
      * count mismatch. Do not treat that as established; it is somewhere to look, and it is
      * checkable by comparing the on-disk queue file size against QUEUE_FILE_MAX_BYTES.
+     * ⚠️ [CORRECTED 2026-10-10 - INFERENCE, NOT MEASURED] THAT PAIR MAY NOT BE A MISMATCH AT ALL,
+     * IN WHICH CASE NOTHING NEEDS EXPLAINING AND THE SIZE GATE NEED NOT BE INVOKED FOR IT. The two
+     * keys USUALLY COINCIDE - 954/954 and 20/19 are on record - because they agree whenever current
+     * is near the START of the queue and nothing changes between the restore and the next save. But
+     * they measure DIFFERENT MOMENTS, so a gap needs no anomaly to produce it:
+     *   restore_build_count    CrashKeys.onQueueBuild(window.size), written during RESTORE - the
+     *                          items from CURRENT FORWARD, not the queue size.
+     *   player_media_item_count CrashKeys.onQueueSize(list.size), written by saveQueue - the WHOLE
+     *                          queue as of the last SAVE, which is a later and unrelated moment.
+     * So 41 against 1 is what restoring 41 items forward from current and a subsequent save leaving
+     * one item produces, with nothing anomalous in between.
+     * ⚠️ STATED AS INFERENCE, AND IT REFUTES NOTHING. This is read off the two key-writing call
+     * sites, not measured against a report, and it does not show the size gate is innocent - it
+     * removes the need to reach for it for THIS pair. The paragraph above stands as written: if a
+     * pair ever turns up where no save could have intervened, it is a real mismatch and the gate is
+     * still the first place to look.
      *
      * ⚠⚠ ONE ROOT, THREE SURFACES - ALL toSlim, ALL FIXED BY CARRYING THE RIGHT ID RATHER THAN
      * BY NOT STRIPPING. ⚠⚠ THE STRIPPING IS LOAD-BEARING TWICE OVER, ON TWO DIFFERENT
