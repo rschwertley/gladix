@@ -20,6 +20,8 @@ import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -304,9 +306,15 @@ class UiViewModel(
         }
     }
     // True only on the TV surface (set in setupPlayerBehavior). TV rests at STATE_HIDDEN with a separate
-    // mini bar and has no drag gesture, so it must stay isHideable=true (needed to reach HIDDEN, and there
-    // is no drag to dismiss). applyPlayerBehaviorState reads this to keep isHideable=false phone-only —
-    // otherwise setHideable(false) while Material still reads HIDDEN force-collapses a from-HIDDEN expand.
+    // mini bar and has no drag gesture, which is why getState() returns HIDDEN for it.
+    // ⚠️ [CORRECTED 2026-10-11] THIS NOTE USED TO SAY applyPlayerBehaviorState READS
+    // isTv "to keep isHideable=false phone-only, otherwise setHideable(false) while Material still
+    // reads HIDDEN force-collapses a from-HIDDEN expand". That was true until 2026-10-11 and is the
+    // reason this field had two readers. applyPlayerBehaviorState no longer touches isHideable at all
+    // — hideable is permanently true on every surface now (read its note) — so the only reader
+    // left is getState(). (The phone force-route in setupPlayerBehavior's onStateChanged keys on that
+    // function's own isTV PARAMETER, not this field.) The force-collapse the old note describes is
+    // Material defending against the illegal (HIDDEN, !hideable) pair, which can no longer occur.
     var isTv = false
     val tvMiniPlayerVisible = MutableStateFlow(false)
     val playerSheetOffset = MutableStateFlow(0f)
@@ -369,6 +377,19 @@ class UiViewModel(
         // top. Once laid out, parentHeight is known and the offset is correct regardless of peekHeight
         // (a still-pending inset-corrected peekHeight only shifts it by ~systemInsets.bottom, which
         // BottomSheetBehavior.setPeekHeight re-settles on its own) — so layout is the ONLY gate needed.
+        // ⚠️ [CORRECTED 2026-10-11] THE MECHANISM ABOVE IS WRONG, THE GATE IS STILL
+        // WORTH KEEPING. Read in Material 1.14.0: before the first layout pass viewRef is null (it is
+        // assigned inside onLayoutChild), and BottomSheetBehavior.setState takes the
+        // `viewRef == null -> setStateInternal(state)` arm (BottomSheetBehavior.java:1496-1498), which
+        // stores the state and moves nothing — so a pre-layout write computes NO offset at all. And
+        // even if it did, onLayoutChild recomputes parentHeight and collapsedOffset and re-places the
+        // child on EVERY pass (BottomSheetBehavior.java:640,656), so a parentHeight≈0 offset cannot
+        // survive one frame, let alone persist until an interaction. The real cause of the sheet landing
+        // at screen top was the pair (state == HIDDEN, hideable == false) falling through every branch
+        // of onLayoutChild — see applyPlayerBehaviorState's note, which is also why hideable is now
+        // permanently true. This gate survives because it still avoids a pointless settle on a sheet
+        // nobody has measured yet, and because the STATE_HIDDEN bypass below is load-bearing for its
+        // own reason.
         val view = playerSheetViewRef.get()
         // STATE_HIDDEN parks the sheet fully off-screen; unlike COLLAPSED it has no peek offset to compute
         // against a not-yet-measured parent, so it is safe to apply BEFORE layout — and must be, so a no-track
@@ -389,33 +410,39 @@ class UiViewModel(
         }
     }
 
-    // SOLE owner of behavior.isHideable. Sets it to match the target state SYNCHRONOUSLY with behavior.state,
-    // within this one Main-thread task — never left lagging for the async onStateChanged to correct (that lag
-    // was the drag-dismiss race). A sheet must be hideable to reach HIDDEN, and must NOT be hideable while
-    // shown, or a drag could dismiss it — which this app no longer supports. Going to HIDDEN: enable, then
-    // hide. Going to a shown state: set it (COLLAPSED/EXPANDED are reachable regardless), then disable — so
-    // the instant the bar is draggable, hideable is already false. The only time isHideable stays true is
-    // while genuinely HIDDEN (empty queue), when there is no bar to drag.
+    // ⚠⚠ THIS FUNCTION NO LONGER TOUCHES behavior.isHideable, AND MUST NOT START AGAIN.
+    // hideable is PERMANENTLY TRUE on every surface now (behavior_hideable="true" in all three
+    // activity_main layouts), because BottomSheetBehavior.onLayoutChild (Material 1.14.0,
+    // BottomSheetBehavior.java:657-666) has NO branch for the pair (state == STATE_HIDDEN, hideable ==
+    // false). It dispatches on EXPANDED, HALF_EXPANDED, `hideable && HIDDEN`, COLLAPSED and
+    // DRAGGING/SETTLING, and otherwise leaves the child exactly where parent.onLayoutChild just put it:
+    // top = 0. With fitToContents (our default) that is also precisely the EXPANDED offset, so the sheet
+    // covers the screen while updateCollapsed paints it in mini-bar costume — the "mini player drawn at
+    // the TOP of the screen" bug. It PERSISTS because every later layout pass falls through identically,
+    // and it was never a peek-height or parentHeight-zero miscalculation: onLayoutChild recomputes
+    // parentHeight and collapsedOffset on every pass and then declines to use them.
+    // ⚠️ HOW THE ILLEGAL PAIR WAS REACHABLE AT ALL: Material writes `state` behind our
+    // back and resets `hideable` from XML. onRestoreInstanceState (BottomSheetBehavior.java:484-499)
+    // assigns this.state = ss.state DIRECTLY — no setState, no settle, no callback — while `hideable`
+    // is restored only under SAVE_HIDEABLE and saveFlags defaults to SAVE_NONE
+    // (BottomSheetBehavior.java:224). So every restored launch whose saved state was HIDDEN began life in
+    // the illegal pair, with hideable back at the XML false and nothing having moved the sheet.
+    // ⚠️ WHAT THE REMOVED WRITE WAS FOR, AND WHO OWNS THAT JOB NOW. isHideable=false
+    // arrived in 3d159cbb (2026-07-09, "Mini player is now always visible when a track is loaded..."),
+    // the same commit that flipped both phone layouts from hideable=true to false. Its job was to make a
+    // drag-dismiss of the always-visible mini bar impossible SYNCHRONOUSLY, rather than leaving hideable
+    // lagging for the async onStateChanged to correct (that lag was the drag-dismiss race). That job now
+    // belongs to the phone force-route in setupPlayerBehavior's onStateChanged — read its note — which
+    // bounces any UNINTENDED arrival at HIDDEN straight back to COLLAPSED. The trade is deliberate: the
+    // old guard made dismissal impossible and the layout placement illegal; the new one keeps the
+    // placement always legal and makes a dismissal fling visible-but-reverted for a frame.
     private fun applyPlayerBehaviorState(behavior: BottomSheetBehavior<View>, requested: Int) {
         // Chokepoint guard: setState only accepts STABLE states. If a transient (SETTLING/DRAGGING) ever reaches
         // here — e.g. a mid-drag activity recreation re-applying a stored state — coerce it to the resting default
         // getState() (COLLAPSED if a track is loaded, else HIDDEN), since a recreated activity must place the sheet
         // AT REST, not at a mid-drag position. Final states pass through unchanged, so normal expand/collapse/hide
         // restore is untouched. Makes the "STATE_SETTLING should not be set externally" crash structurally impossible.
-        val state = if (isFinalState(requested)) requested else getState()
-        if (state == STATE_HIDDEN) {
-            behavior.isHideable = true
-            behavior.state = STATE_HIDDEN
-        } else {
-            behavior.state = state
-            // Phone-only: isHideable=false prevents a drag-dismiss of the always-visible mini (COLLAPSED).
-            // On TV there is no drag gesture AND the sheet rests HIDDEN with isHideable=true; setting it false
-            // here — while Material still reads HIDDEN because the expand settle was posted (dirty layout) —
-            // makes setHideable(false) force setState(COLLAPSED), which the TV force-hide branch then turns into
-            // HIDDEN (the "expand collapses to mini" bug). Leaving TV hideable=true expands cleanly and keeps
-            // its HIDDEN-rest/minimize model. Phone still expands from COLLAPSED where isHideable is already false.
-            if (!isTv) behavior.isHideable = false
-        }
+        behavior.state = if (isFinalState(requested)) requested else getState()
     }
 
     private var moreBehaviour = WeakReference<BottomSheetBehavior<View>>(null)
@@ -574,8 +601,21 @@ class UiViewModel(
             activity.onBackPressedDispatcher.addCallback(viewLifecycleOwner, backPress)
         }
 
+        // ⚠⚠ onInvoked EXISTS BECAUSE handleBackInvoked() BRANCHES ON hideable, AND OURS
+        // IS NOW ALWAYS TRUE. BottomSheetBehavior.handleBackInvoked does
+        // `setState(hideable ? STATE_HIDDEN : STATE_COLLAPSED)` on button nav / pre-U, and on U+ picks
+        // finishBackProgressNotPersistent + setStateInternal(STATE_HIDDEN) for a hideable sheet
+        // (Material 1.14.0, BottomSheetBehavior.java:1817-1845). While the player sheet was
+        // hideable=false that read as COLLAPSE; with hideable permanently true it reads as DISMISS, so
+        // back out of the expanded player would drop the mini bar and then be bounced back by the phone
+        // force-route — a full slide-down and a pop-up instead of a collapse. Callers that must not be
+        // dismissed pass onInvoked and get cancelBackProgress() + their own target instead.
+        // ⚠️ THE MORE SHEET DELIBERATELY PASSES NOTHING: setupPlayerMoreBehavior's sheet is
+        // still hideable=false in XML, so handleBackInvoked()'s COLLAPSED arm is still correct there and
+        // its predictive-back finish animation is worth keeping. Do not route it through onInvoked.
         private fun BottomSheetBehavior<View>.backPressCallback(
             onProgress: (Float) -> Unit = {},
+            onInvoked: (() -> Unit)? = null,
         ) = object : OnBackPressedCallback(true) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
                 startBackProgress(backEvent)
@@ -588,7 +628,14 @@ class UiViewModel(
             }
 
             override fun handleOnBackPressed() {
-                handleBackInvoked()
+                // cancelBackProgress() first so the helper's in-flight predictive-back transform is
+                // released before we drive the sheet somewhere of our own choosing; without it the
+                // translation/scale from the gesture stays applied over the new state.
+                if (onInvoked == null) handleBackInvoked()
+                else {
+                    cancelBackProgress()
+                    onInvoked()
+                }
                 onProgress(0f)
             }
 
@@ -675,16 +722,31 @@ class UiViewModel(
         }
 
         fun LifecycleOwner.setupPlayerBehavior(viewModel: UiViewModel, view: View, isTV: Boolean = false, navRailContainer: ViewGroup? = null) {
-            // Set before any expand can occur (setup runs before user interaction) so applyPlayerBehaviorState
-            // keeps isHideable=false phone-only. Uses the real isTV signal, NOT isRail (phone landscape is rail too).
+            // Set before anything can read it (setup runs before user interaction): getState() keys the
+            // resting state on it, so a sheet driven before this line would rest COLLAPSED on TV. Uses the
+            // real isTV signal, NOT isRail (phone landscape is rail too).
             viewModel.isTv = isTV
             val behavior = BottomSheetBehavior.from(view)
             viewModel.playerBehaviour = WeakReference(behavior)
             viewModel.playerSheetViewRef = WeakReference(view)
+            // ⚠⚠ CLEARED HERE BECAUSE pendingPlayerState OUTLIVES THE VIEW IT DESCRIBES.
+            // It is a field on this ViewModel (activity-scoped, so it SURVIVES a configuration change)
+            // but it records a deferral registered with doOnLayout on ONE Activity's sheet view. If that
+            // Activity is destroyed before its first layout — a config change during launch, or an
+            // Activity started in the background and recreated before it is ever measured — the listener
+            // dies unfired and the field stays non-null. changePlayerState then reads alreadyPending ==
+            // true in the NEXT Activity and returns WITHOUT registering a listener on the new view, so
+            // the drive at the end of this function is silently dropped: playerSheetState says COLLAPSED
+            // while the sheet sits wherever onRestoreInstanceState left it, for that whole Activity.
+            // The two known pre-layout requesters are this function's own drive below and MainActivity's
+            // gearhead launch block, which asks for EXPANDED from an async continuation that can resume
+            // before first measurement.
+            viewModel.pendingPlayerState = null
             observe(viewModel.moreSheetState) { behavior.isDraggable = it == STATE_COLLAPSED }
-            viewModel.playerBackPressCallback = behavior.backPressCallback {
-                viewModel.playerBackProgress.value = it
-            }
+            viewModel.playerBackPressCallback = behavior.backPressCallback(
+                onProgress = { viewModel.playerBackProgress.value = it },
+                onInvoked = { viewModel.changePlayerState(STATE_COLLAPSED) },
+            )
 
             val combined =
                 viewModel.run { playerNavViewInsets.combine(systemInsets) { nav, _ -> nav } }
@@ -698,18 +760,47 @@ class UiViewModel(
                 val newHeight = height +
                     if (viewModel.isRail) 0 else viewModel.systemInsets.value.bottom
                 behavior.peekHeight = newHeight
-                if (viewModel.playerSheetState.value != STATE_HIDDEN)
-                    animateTranslation(view, behavior.peekHeight, newHeight)
+                // ⚠️ [CORRECTED 2026-10-11] AN animateTranslation(view, behavior.peekHeight,
+                // newHeight) CALL STOOD HERE AND HAD NEVER DONE ANYTHING. It was meant to slide the
+                // sheet from the old peek to the new one, but it read `behavior.peekHeight` back AFTER
+                // the assignment on the line above, so old == newHeight, the delta was always 0f and it
+                // animated 0 -> 0. Removed rather than repaired: restoring the animation would introduce
+                // sheet motion that has never actually shipped, and this pass exists to REMOVE
+                // unexplained writers of the sheet's Y. If the slide is ever wanted, capture the height
+                // BEFORE assigning it.
             }
             val callback = object : BottomSheetBehavior.BottomSheetCallback() {
                 override fun onStateChanged(bottomSheet: View, newState: Int) {
                     // TV force-route: TV has no collapsed bar, so a COLLAPSED settle means "minimize" → hide.
-                    // Owns its own isHideable (TV-only, atomic with the hide in this same task); the phone owner
-                    // is applyPlayerBehaviorState. Phone (isTV=false) never enters this branch.
+                    // Phone (isTV=false) never enters this branch; it has its own route just below.
+                    // The isHideable=true write is REDUNDANT as of 2026-10-11 (hideable is permanently true
+                    // on every surface now — see applyPlayerBehaviorState) and is kept only so this branch
+                    // still reaches HIDDEN if the XML attribute is ever flipped back. It is not an owner of
+                    // that field any more; nothing writes false.
                     if (isTV && newState == STATE_COLLAPSED) {
                         behavior.isHideable = true
                         behavior.state = STATE_HIDDEN
                         viewModel.playerSheetState.value = STATE_HIDDEN
+                        return
+                    }
+                    // ⚠⚠ PHONE FORCE-ROUTE: THE MIRROR OF THE TV ONE ABOVE, AND THE
+                    // REPLACEMENT FOR applyPlayerBehaviorState's isHideable=false (read its note).
+                    // hideable is permanently true now, so Material WILL honour the two dismissals this
+                    // app does not support: a hard downward fling from the mini bar (dragCallback release
+                    // -> shouldHide -> startSettling(HIDDEN)) and a predictive-back hide. Bounce any
+                    // UNINTENDED arrival at HIDDEN straight back to COLLAPSED.
+                    // ⚠️ THE DISCRIMINATOR IS playerSheetState, AND IT WORKS BECAUSE OF
+                    // WRITE ORDER: changePlayerState writes the flow BEFORE the physical apply, so an
+                    // INTENDED hide (the queue emptied) always arrives here with the flow already at
+                    // HIDDEN, while a fling or a back-hide arrives with it still COLLAPSED/EXPANDED. The
+                    // manual seeding at the end of this function cannot trip it either: it passes
+                    // playerSheetState.value itself.
+                    // ⚠️ RE-ENTRANT BY DESIGN: this setState runs inside Material's own
+                    // callback loop and will call back with STATE_SETTLING, which the final-state gate
+                    // below drops. No recursion is possible because SETTLING is not HIDDEN.
+                    if (!isTV && newState == STATE_HIDDEN &&
+                        viewModel.playerSheetState.value != STATE_HIDDEN) {
+                        behavior.state = STATE_COLLAPSED
                         return
                     }
                     // Track the physical state into the flow — but ONLY final states. SETTLING/DRAGGING are
@@ -717,8 +808,8 @@ class UiViewModel(
                     // recreation re-apply it (setupPlayerBehavior -> changePlayerState -> behavior.state = SETTLING)
                     // and crash. Gating the write keeps playerSheetState's observers (which branch on
                     // EXPANDED/HIDDEN) off transient values too; the smooth drag is tracked separately via onSlide
-                    // -> playerSheetOffset. isHideable is NOT touched here — the phone has no dismiss gesture;
-                    // hideable is owned end-to-end by applyPlayerBehaviorState.
+                    // -> playerSheetOffset. isHideable is NOT touched here, and nothing writes it false any
+                    // more: the phone's no-dismiss rule is enforced by the force-route above instead.
                     if (!isFinalState(newState)) return
                     viewModel.playerSheetState.value = newState
                     if (isTV) {
@@ -770,6 +861,43 @@ class UiViewModel(
             // settles on the first layout pass (HIDDEN applies pre-layout via changePlayerState). TV is excluded
             // because its isTV branch in onStateChanged already moved the sheet during the seeding above.
             if (!isTV) viewModel.changePlayerState(state)
+
+            // ⚠⚠ BACKSTOP FOR A SETTLE THAT COULD NOT FINISH, AND FOR ANY OTHER
+            // DIVERGENCE BETWEEN playerSheetState AND THE PHYSICAL SHEET. Permanent hideable fixes the
+            // no-branch fall-through in onLayoutChild; it does NOT fix the other state that layout
+            // refuses to place from scratch. STATE_SETTLING takes the
+            // `offsetTopAndBottom(child, savedTop - child.getTop())` arm
+            // (Material 1.14.0, BottomSheetBehavior.java:665-666), which RE-PINS the top the child
+            // already has instead of recomputing it — so a settle that never completes freezes the
+            // sheet wherever it was, permanently, through every later layout pass. A settle completes
+            // only via StateSettlingTracker's postOnAnimation runnable
+            // (BottomSheetBehavior.java:2348-2365), and startSettling can run while the window is
+            // invisible — the phone's track-driven driver (PlayerFragment's playerState.current
+            // collector) is deliberately NOT lifecycle-gated and fires with the screen off, e.g. when
+            // Android Auto starts playback. Re-asserting at ON_RESUME is the cheapest point where
+            // frames are guaranteed again.
+            // ⚠️ WHY THIS CANNOT FIGHT A REAL DRAG: STATE_DRAGGING means a finger is down
+            // right now and the release settle owns the sheet, so it is excluded outright. Any other
+            // mismatch is re-driven from playerSheetState, which is the authority by construction
+            // (changePlayerState writes it before the physical apply). A fling released and then
+            // cancelled by backgrounding therefore returns to its pre-drag resting state, which is the
+            // intended outcome for a gesture the user never completed.
+            // ⚠️ WHY IT CANNOT FIGHT THE TV FORCE-ROUTE: it re-applies playerSheetState,
+            // and TV's resting value IS STATE_HIDDEN (getState() returns HIDDEN when isTv), which is
+            // exactly what the force-route drives the sheet to. A match is a no-op; a mismatch is
+            // corrected to the same target the route would pick.
+            // ⚠️ NOT POSTED: at ON_RESUME on a cold start the sheet may not be laid out
+            // yet, and changePlayerState's own layout gate handles that — it defers to doOnLayout. A
+            // matching state is a no-op, so a normal resume costs one comparison.
+            lifecycle.addObserver(object : LifecycleEventObserver {
+                override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                    if (event != Lifecycle.Event.ON_RESUME) return
+                    if (behavior.state == STATE_DRAGGING) return
+                    val wanted = viewModel.playerSheetState.value
+                    if (behavior.state == wanted) return
+                    viewModel.changePlayerState(wanted)
+                }
+            })
         }
 
         fun setupPlayerMoreBehavior(viewModel: UiViewModel, view: View) {

@@ -782,13 +782,26 @@ class PlayerFragment : Fragment() {
         // THE CURRENT TRACK on phone. It is NOT the only caller of changePlayerState — FragmentUtils drives
         // STATE_EXPANDED from notification and intent entry points, and this file does too on user actions —
         // so if you are chasing an unexpected expand, look there first; what this block owns is the
-        // track-driven show/hide. MainActivity's current-observer does NOT participate here — it is TV-only, gated by
+        // track-driven show/hide. The THIRD phone caller is MainActivity's gearhead launch block — a
+        // `referrer?.host == "com.google.android.projection.gearhead"` check that asks for
+        // STATE_EXPANDED from a coroutine after a hasSavedQueue stat, i.e. ASYNCHRONOUSLY and possibly
+        // before the sheet has ever been measured. It is Android-Auto-specific and phone-live, so an
+        // AA-shaped sheet bug belongs there as much as here.
+        // MainActivity's current-observer, by contrast, does NOT participate here — it is TV-only, gated by
         // R.id.tvMiniPlayer (see MainActivity.setupTvMiniPlayer). TV uses PlayerTvFragment + tvMiniPlayer;
         // Android Auto has no Fragment at all. So changes in this block affect phone only.
         // Verified 2026-08-23, with commit references so this is checkable rather than folklore:
         // setupTvMiniPlayer() early-returns on `R.id.tvMiniPlayer ?: return` (that id exists only in
-        // layout-land-television), and it has done so since the method was created in 75501299
-        // (2026-05-26). The RESUMED-gated STATE_COLLAPSED transition inside it was added LATER, in
+        // layout-land-television).
+        // ⚠️ [CORRECTED 2026-10-11] THIS CLAIMED THE OBSERVER HAD BEEN GATED BY THAT
+        // `R.id.tvMiniPlayer ?: return` "since the method was created in 75501299 (2026-05-26)". The
+        // conclusion holds, the anchor did not. 75501299 created TWO methods, and at that commit this
+        // observer (the one carrying the May isRestoringQueue guards) sat in setupTvNowPlaying(), which
+        // early-returns on `R.id.nowPlayingRail ?: return`; it migrated into setupTvMiniPlayer later.
+        // Read at 75501299 directly. So: TV-gated since 2026-05-26, by a DIFFERENT id in a DIFFERENT
+        // method. Chased 2026-10-11 while auditing the "mini player drawn at the top" bug, where the
+        // May guards had to be classified as live or dead and the citation was the only lead.
+        // The RESUMED-gated STATE_COLLAPSED transition inside it was added LATER, in
         // d4c3b9bb (2026-06-08), whose session notes describe it as a PHONE cold-start fix ("blank Now
         // Playing bar") — but it went into the already-TV-gated method, so it has never executed on a
         // phone. Do not reason about phone sheet state from that guard. Approaching from the phone side

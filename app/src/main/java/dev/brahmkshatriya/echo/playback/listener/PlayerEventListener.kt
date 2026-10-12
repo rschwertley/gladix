@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
+import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
@@ -116,6 +117,15 @@ class PlayerEventListener(
     // the window in which a currentPosition of 0 is spurious and must never overwrite the good saved value.
     private val isRestoreSeekArmed: () -> Boolean = { false },
     private val healthMonitor: HealthMonitor? = null,
+    // ⚠⚠ NULL WHENEVER CROSSFADE IS OFF, WHICH IS WHAT MAKES THE FEATURE INERT AT SLIDER 0.
+    // PlayerService constructs the controller only while the slider is > 0, so every call site below
+    // is a field read against null. Supplied as a GETTER rather than a value because the controller is
+    // created and destroyed as the setting changes, long after this listener is built.
+    // ⚠️ THIS LISTENER TELLS THE CONTROLLER; THE CONTROLLER NEVER INFERS. In particular a STALL
+    // hold and a USER pause are indistinguishable from outside: the stall branch calls player.pause()
+    // itself, so media3 reports PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST for both. Inferring it is
+    // how the reference implementation loses the tail on an interruption.
+    private val crossfade: () -> CrossfadeController? = { null },
 ) : Player.Listener {
 
     // CACHED at construction, deliberately not `get() = session.player`.
@@ -296,6 +306,9 @@ class PlayerEventListener(
         // leave the current item in place (radio top-up append, etc.) and our own skips (SEEK) do not. So
         // this marks "a new queue that hasn't played anything yet", arming the removed-extension exhaustion
         // message for the next all-dead run.
+        // A transition ALWAYS aborts and re-arms from scratch - which is what makes a manual
+        // Next/Previous incapable of crossfading. See the class note on CrossfadeController.
+        crossfade()?.onTransition()
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
             resolvedSinceQueueReplace = false
             // Re-arm the once-per-episode 5xx snackbar too: a new queue is a fresh context, so if the user
@@ -303,6 +316,13 @@ class PlayerEventListener(
             // otherwise only re-arms on a successful STATE_READY, i.e. the CDN recovering.)
             serverErrorNotified = false
         }
+    }
+
+    override fun onIsLoadingChanged(isLoading: Boolean) {
+        // The only signal that can make an armed sidecar's cache-only tail readable: the main
+        // player's loadable finishing is what commits the final cache fragment. The controller
+        // re-checks bufferedPosition itself, because isLoading also goes false at a full buffer.
+        if (!isLoading) crossfade()?.onLoadingChanged()
     }
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
@@ -317,7 +337,12 @@ class PlayerEventListener(
         // connected. Re-push so the full layout (incl. the like button the synchronous onConnect seed
         // couldn't include) reaches the connected controller instead of being lost in the connect race.
         // updateCustomLayout no-ops when currentMediaItem is null, so an empty timeline here is safe.
-        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) updateCustomLayout()
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+            updateCustomLayout()
+            // A queue edit can change the NEXT item without changing the current one - and the arm
+            // decision was made against that next item (album adjacency, hasNext). Re-decide.
+            crossfade()?.onQueueEdit()
+        }
         if ((player as? ShufflePlayer)?.isRearranging != true) {
             scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -370,6 +395,20 @@ class PlayerEventListener(
     // This is a MITIGATION, not the fix - it bounds the hang, it does not stop periods failing to prepare.
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) armBufferingWatchdog()
+        // ⚠️ BUILD 1 TREATS BOTH KINDS THE SAME (both abort), so this split costs nothing yet
+        // and exists so Build 2 can act on it - there, an interruption must PAUSE and RESUME the
+        // sidecar while a user pause must abort. KNOWN GAP FOR BUILD 2: our own focus handling pauses
+        // THROUGH the player (ShufflePlayer forces handleAudioFocus=false, so media3 never raises
+        // AUDIO_FOCUS_LOSS itself), so an AudioFocusListener duck-pause arrives here as
+        // USER_REQUEST and lands in onUserPause. Build 2 must take the signal from
+        // AudioFocusListener instead of from this reason code - do not read the split as complete.
+        if (playWhenReady) return
+        val cf = crossfade() ?: return
+        when (reason) {
+            Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+            Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> cf.onInterruptionPause()
+            else -> cf.onUserPause()
+        }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -897,6 +936,9 @@ class PlayerEventListener(
         // by reason), so without the flag the watchdog would steal the latch and the corrective re-seek would
         // never fire (fix 2).
         if (reason == Player.DISCONTINUITY_REASON_SEEK && !internalSeekInFlight) consumeRestoreSeek()
+        // Re-evaluates the arm window. A seek that lands INSIDE or PAST the arm point never crosses
+        // the pending PlayerMessage position, so without this the window is simply missed.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) crossfade()?.onSeek()
         saveCurrentPosGated()
     }
 
@@ -1712,6 +1754,9 @@ class PlayerEventListener(
     }
 
     override fun onPlayerError(error: PlaybackException) {
+        // Abort first: every branch below either skips, holds or re-prepares, and none of them is a
+        // state an armed sidecar should survive into.
+        crossfade()?.onPlayerError()
         val cause = error.cause ?: error
         val rootCause = cause.rootCause
         val mediaItem = player.currentMediaItem
@@ -1966,6 +2011,8 @@ class PlayerEventListener(
                 "GladixPlayback",
                 "onPlayerError: stream stalled for ${mediaItem?.mediaId}, holding (no skip)"
             )
+            // Told explicitly: this pause is OURS, not the user's, and the reason code cannot say so.
+            crossfade()?.onStallHold()
             // The MESSAGE is chosen in ExceptionUtils.getTitle, not here: that function has a Context,
             // so it can read live connectivity and say "No Internet" when the network actually dropped
             // mid-socket (which surfaces as a timeout rather than a ConnectException). Emitting the raw

@@ -15,7 +15,9 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CLOSE_PLAYER
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MAX
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MIN
+import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
+import dev.brahmkshatriya.echo.playback.PlayerService.Companion.TRUE_CROSSFADE_SECONDS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_SILENCE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
@@ -176,6 +178,30 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     // 4 is inside CROSSFADE_DURATION_MIN..MAX (1..5). Mirrored at PlayerService's and
                     // AudioEffectsBottomSheet's getInt defaults.
                     setDefaultValue(4)
+                    addPreference(this)
+                }
+
+                // ⚠⚠ TRUE CROSSFADE, BUILD 1 - INAUDIBLE BY DESIGN. 0 is off and is the
+                // default; above 0 the controller and its sidecar exist and arm, but this build never
+                // overlaps anything. Its own key (TRUE_CROSSFADE_SECONDS), NOT the crossfade_* pair
+                // above, which still belong to Track Fade - see the note at that constant.
+                // ⚠⚠ KEEP IT ADJACENT TO THE TRACK FADE ROWS. Build 2 deletes those and
+                // re-parents the album switch to this one; shipping it anywhere else would make that
+                // a move rather than a deletion.
+                MaterialSliderPreference(
+                    context,
+                    CrossfadeController.FADE_SECONDS_MIN,
+                    CrossfadeController.FADE_SECONDS_MAX
+                ).apply {
+                    key = TRUE_CROSSFADE_SECONDS
+                    title = getString(R.string.true_crossfade)
+                    summary = getString(
+                        R.string.true_crossfade_seconds_summary,
+                        CrossfadeController.FADE_SECONDS_MAX
+                    )
+                    isIconSpaceReserved = false
+                    // Mirrors PlayerService.syncCrossfade's getInt default. Both must stay 0.
+                    setDefaultValue(CrossfadeController.FADE_SECONDS_MIN)
                     addPreference(this)
                 }
 

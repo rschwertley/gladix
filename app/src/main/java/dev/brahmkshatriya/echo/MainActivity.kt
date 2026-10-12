@@ -218,6 +218,15 @@ open class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             false
         }
+        // ⚠⚠ THIS IS A PHONE SHEET DRIVER, AND THE ONLY ANDROID-AUTO-SPECIFIC ONE.
+        // PlayerFragment's playerState.current collector owns the TRACK-DRIVEN show/hide and its note
+        // calls itself the sole driver of that; this block is the other kind — an ENTRY-POINT drive,
+        // like FragmentUtils' notification/intent expands. It matters when chasing an AA-shaped sheet
+        // bug for two reasons: it fires only when gearhead launched us, and it asks for its state
+        // ASYNCHRONOUSLY, from a continuation after the hasSavedQueue stat, so it can land either side
+        // of the sheet's first measurement. A pre-measurement request goes through
+        // UiViewModel.changePlayerState's doOnLayout deferral, which is why UiViewModel's
+        // setupPlayerBehavior clears pendingPlayerState — read its note there.
         if (savedInstanceState == null && isFromGearhead) {
             lifecycleScope.launch {
                 // Stat-only (hasSavedQueue = file exists() checks), NOT recoverTracks() — the latter did a

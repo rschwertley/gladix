@@ -67,6 +67,7 @@ import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
+import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
 import dev.brahmkshatriya.echo.playback.source.StreamableDataSource
@@ -121,6 +122,57 @@ class PlayerService : MediaLibraryService() {
     }
 
     private lateinit var audioFocusListener: AudioFocusListener
+
+    // ⚠⚠ NULL IS THE OFF STATE, AND IT IS THE FIRST OF THE THREE INERTNESS GUARDS. With the
+    // slider at 0 this is null, so no sidecar exists, no PlayerMessage is ever scheduled, and every
+    // hook in PlayerEventListener is a null-check against this field. The other two guards are the
+    // create/teardown in syncCrossfade below and CrossfadeController.schedule's own fadeSeconds==0
+    // return - see the class note there for why one guard is not enough.
+    private var crossfade: CrossfadeController? = null
+    private var crossfadeSessionPlayer: Player? = null
+
+    // Reads the slider and creates or tears down the controller to match. Called once after the
+    // session player exists, and again from the prefs listener. Idempotent.
+    // ⚠️ TEARDOWN RELEASES THE SIDECAR, WHICH IS NOT THE SAME AS THE PER-CROSSFADE REUSE RULE:
+    // the sidecar is reused across transitions and released only here (slider to 0) and in onDestroy.
+    @OptIn(UnstableApi::class)
+    private fun syncCrossfade() {
+        val seconds = app.settings.getInt(TRUE_CROSSFADE_SECONDS, 0)
+            .coerceIn(CrossfadeController.FADE_SECONDS_MIN, CrossfadeController.FADE_SECONDS_MAX)
+        val existing = crossfade
+        if (seconds == 0) {
+            crossfade = null
+            existing?.release()
+            return
+        }
+        if (existing != null) {
+            existing.fadeSeconds = seconds
+            return
+        }
+        val sessionPlayer = crossfadeSessionPlayer ?: return
+        // Own processor: the ramp counters and the per-track gain LUT are per-player mutable state,
+        // so sharing one instance across two players would cross-talk.
+        val sidecar = createExoplayer(
+            AudioEffectsProcessor(),
+            handleAudioBecomingNoisy = false,
+            stuckBufferingTimeoutMs = null,
+        )
+        // ⚠⚠ THE SIDECAR TAKES THE MAIN PLAYER'S SESSION ID, NEVER THE REVERSE. Session effects
+        // (EffectsListener's Equalizer + LoudnessEnhancer, and any system/third-party EQ attached via
+        // broadcastAudioSession) apply to every AudioTrack on a session, so sharing is what stops the
+        // tail sounding different from the head. Setting the MAIN player's id instead would fire
+        // EffectsListener.onAudioSessionIdChanged -> release + rebuild + re-broadcast, mid-playback,
+        // on every crossfade.
+        runCatching { sidecar.setAudioSessionId(exoPlayer.audioSessionId) }
+        crossfade = CrossfadeController(
+            exoPlayer = exoPlayer,
+            sessionPlayer = sessionPlayer,
+            sidecar = sidecar,
+            tail = CacheOnlyTailSource(app.context, cache, state.servers),
+            isRestoring = { state.resumptionApplying },
+            skipFadeOnAlbums = { app.settings.getBoolean(SKIP_FADE_ON_ALBUMS, true) },
+        ).also { it.fadeSeconds = seconds }
+    }
     private lateinit var carConnection: CarConnection
     private var isAndroidAutoConnected = false
     private val carConnectionObserver = Observer<Int> { connectionType ->
@@ -221,7 +273,12 @@ class PlayerService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (key) {
-            SKIP_SILENCE -> exoPlayer.skipSilenceEnabled = prefs.getBoolean(key, true)
+            SKIP_SILENCE -> prefs.getBoolean(key, true).let {
+                exoPlayer.skipSilenceEnabled = it
+                // Mirrored so the tail trims silence the same way the head does.
+                crossfade?.onSkipSilenceChanged(it)
+            }
+            TRUE_CROSSFADE_SECONDS -> syncCrossfade()
             LOUDNESS_NORMALIZATION -> {
                 audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
@@ -346,6 +403,8 @@ class PlayerService : MediaLibraryService() {
                 // (Main; Player.Listener fires on the app looper).
                 isRestoreSeekArmed = { state.pendingRestoreSeek != null },
                 healthMonitor = healthMonitor,
+                // A getter, not a value: the controller is created and destroyed as the slider moves.
+                crossfade = { crossfade },
             )
         )
         player.addListener(
@@ -369,6 +428,11 @@ class PlayerService : MediaLibraryService() {
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
         recomputeRouteState()
         player.addListener(audioFocusListener)
+        // ⚠️ AFTER the listener set, and the sidecar gets NONE of them. Attaching
+        // PlayerEventListener / PlayerRadio / TrackingListener / effects / focus to a second player
+        // would double-fire history, radio top-up and the skip breakers.
+        crossfadeSessionPlayer = player
+        syncCrossfade()
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 app.crashPlayerState = playbackState
@@ -718,6 +782,10 @@ class PlayerService : MediaLibraryService() {
             // — a released player reports an empty timeline, which saveQueueBlocking no-ops on.
             ResumptionUtils.saveQueueBlocking(applicationContext, player)
             audioFocusListener.release()
+            // Before the main player's release: two synchronous releases now share the 500ms
+            // setReleaseTimeoutMs budget this file's note sizes against an onDestroy ANR.
+            crossfade?.release()
+            crossfade = null
             // Synchronous final effect-session CLOSE. MUST precede scope.cancel() below: the runtime CLOSE
             // (broadcastAudioSessionCloseDeferred) posts to this scope, which cancel() would drop — so the
             // teardown close is done synchronously here, while the session is still live and before the
@@ -747,10 +815,14 @@ class PlayerService : MediaLibraryService() {
             .setIsSpeedChangeSupportRequired(true)
             .build()
 
+    // ⚠️ stuckBufferingTimeoutMs IS NULLABLE SO THE SIDECAR CAN OPT OUT. Our 60s backstop
+    // raises StuckPlayerException into onPlayerError, and the sidecar has NO listeners - so on the
+    // sidecar that error would have no owner. The main player's call site is unchanged by the default.
     @OptIn(UnstableApi::class)
     private fun createExoplayer(
         audioEffectsProcessor: AudioEffectsProcessor,
-        handleAudioBecomingNoisy: Boolean = true
+        handleAudioBecomingNoisy: Boolean = true,
+        stuckBufferingTimeoutMs: Int? = 60_000,
     ) = run {
         val audioOffloadPreferences = offloadPreferences()
 
@@ -796,7 +868,7 @@ class PlayerService : MediaLibraryService() {
             // it counts only while STATE_BUFFERING && playWhenReady && no playback suppression, and any
             // change of period uid or buffered position restarts its clock. A paused stall is invisible
             // to it, so this does not bound every hang — only the ones the user is waiting on.
-            .setStuckBufferingDetectionTimeoutMs(60_000)
+            .apply { stuckBufferingTimeoutMs?.let { setStuckBufferingDetectionTimeoutMs(it) } }
             .build()
             .also {
                 it.trackSelectionParameters = it.trackSelectionParameters
@@ -849,6 +921,14 @@ class PlayerService : MediaLibraryService() {
         const val CROSSFADE_DURATION_MAX = 5
 
         const val SKIP_FADE_ON_ALBUMS = "skip_fade_on_albums"
+
+        // ⚠⚠ A FRESH KEY, NOT A REUSE OF crossfade_* - DELIBERATE. The crossfade_* keys hold
+        // Track Fade's on/off and its 1-5s duration, which are STILL LIVE in this build. Reusing them
+        // would make one stored value mean two different features during the overlap between builds,
+        // and would silently inherit Track Fade's on-by-default (d0ad6b93, 2026-09-24) for a feature
+        // that must ship OFF. A separate key makes "off" the honest default for every existing user.
+        // 0 = off, and 0 is the default; range 0..10s (CrossfadeController.FADE_SECONDS_MIN/MAX).
+        const val TRUE_CROSSFADE_SECONDS = "true_crossfade_seconds"
 
         const val CACHE_SIZE = "cache_size"
 
