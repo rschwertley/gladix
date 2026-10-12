@@ -343,6 +343,19 @@ class PlayerEventListener(
             // decision was made against that next item (album adjacency, hasNext). Re-decide.
             crossfade()?.onQueueEdit()
         }
+        // The item's own duration arrives with THIS reason and no other. A progressive source with
+        // no extractor duration and no known length reports C.TIME_UNSET until
+        // ProgressiveMediaPeriod.onLoadCompleted back-fills it (media3 1.11.0,
+        // ProgressiveMediaPeriod.java:799-806) and refreshes the timeline; the early case publishes
+        // it from setSeekMap via maybeFinishPrepare. Both land here as SOURCE_UPDATE.
+        // ⚠️ THE CONTROLLER'S ARM DECISION NEEDS A DURATION, so before this line it simply
+        // never armed on such a track: schedule() ran on transition, seek and slider only, and a
+        // 2026-10-11 capture showed 15 arm lines all reason=noDuration. onSourceInfoRefreshed is the
+        // idempotent entry point for exactly this - it refuses to cancel or re-post anything already
+        // scheduled, so firing it on every SOURCE_UPDATE of a track is safe. Read its note before
+        // routing anything else through it.
+        if (reason == Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
+            crossfade()?.onSourceInfoRefreshed()
         if ((player as? ShufflePlayer)?.isRearranging != true) {
             scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {

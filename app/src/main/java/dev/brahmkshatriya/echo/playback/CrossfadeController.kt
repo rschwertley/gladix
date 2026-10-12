@@ -172,10 +172,61 @@ class CrossfadeController(
         val leadMs = (max(ARM_LEAD_BASE_MS + fadeMs, ARM_LEAD_FLOOR_MS) * speed).toLong()
         val armAt = duration - leadMs
         if (exoPlayer.currentPosition >= armAt) arm()                  // seek-into-window
-        else armMessage = exoPlayer
-            .createMessage { _, _ -> arm() }
-            .setPosition(armAt)
-            .send()
+        else {
+            armMessage = exoPlayer
+                .createMessage { _, _ -> arm() }
+                // ⚠⚠ setLooper IS NOT OPTIONAL, AND IT IS A DELIBERATE DIVERGENCE FROM
+                // EffectsListener.scheduleFadeOut, WHICH CORRECTLY OMITS IT. A PlayerMessage defaults
+                // to the PLAYBACK looper, and ExoPlayerImplInternal.sendMessageToTarget
+                // (media3 1.11.0, ExoPlayerImplInternal.java:2227-2238) delivers in-line on that
+                // thread when message.getLooper() == playbackLooper. Track Fade can live with that
+                // because its target only writes AudioEffectsProcessor.onFadeOutStart's two atomics;
+                // ours calls arm(), whose first statement is exoPlayer.currentMediaItem. Every getter
+                // on ExoPlayerImpl runs verifyApplicationThread, which THROWS (throwsWhenUsingWrongThread
+                // is set true in its constructor and only a package-private setter can clear it), the
+                // IllegalStateException escapes deliverMessage into
+                // ExoPlayerImplInternal.handleMessage's catch(RuntimeException) and becomes
+                // ERROR_CODE_FAILED_RUNTIME_CHECK plus stopInternal(forceResetRenderers = true). Observed
+                // twice on the 2026-10-11 build, each time as a playback error that restarted the track.
+                // ⚠️ AND NOT A handler.post { arm() } INSTEAD: media3's own hop
+                // (sendMessageToTargetThread, ExoPlayerImplInternal.java:2240-2258) posts a runnable that
+                // calls deliverMessage, which re-checks message.isCanceled() at :2261 INSIDE the post. So
+                // an abort() landing between the hop and the run is honoured. Our own post would not be,
+                // and cancelMessages() would silently fail to stop an arm already in flight.
+                .setLooper(exoPlayer.applicationLooper)
+                .setPosition(armAt)
+                .send()
+            probeArm(true, "posted", armAt)
+        }
+    }
+
+    /**
+     * The duration-became-known re-entry, and the ONLY trigger that may run while something is
+     * already scheduled - so it is the one that must neither cancel nor double-post.
+     *
+     * ⚠⚠ WHY IT IS NOT reschedule(): that cancels first, and [armRefusal] then returns
+     * "alreadyArmed" for the same item - which would leave phase ARMED with both messages gone and
+     * [prepareTick] re-posting itself forever on a window that can no longer fire. The IDLE check
+     * below also stops a second armMessage being posted over a live one, which would orphan the
+     * first (the field is overwritten, the pending message still fires) and arm twice.
+     *
+     * ⚠️ WHY THIS HOOK HAS TO EXIST AT ALL. [armRefusal] reads exoPlayer.duration, which
+     * is the current window of playbackInfo.timeline; for a progressive source whose extractor has
+     * no duration and whose length is unknown (MP3 with no Xing/VBRI header is the recorded case -
+     * see PlayerEventListener's lastReadyDurationKnown note), it is C.TIME_UNSET until
+     * ProgressiveMediaPeriod back-fills it from the largest queued timestamp in onLoadCompleted
+     * (media3 1.11.0, ProgressiveMediaPeriod.java:799-806) and refreshes the timeline. Before this
+     * hook, schedule() ran only on transition, seek and slider, and a 2026-10-11 capture caught the
+     * consequence exactly: 15 arm lines, 15 x reason=noDuration, dur=-9223372036854775807, two of
+     * them three minutes into a track.
+     * ⚠️ STATE_READY IS DELIBERATELY NOT ALSO HOOKED. Both ways the duration can arrive
+     * end in a timeline refresh - setSeekMap at prepare goes through maybeFinishPrepare's
+     * onSourceInfoRefreshed, the late case through onLoadCompleted's - so SOURCE_UPDATE carries
+     * every one of them. READY would add buffering-cycle noise and no new information.
+     */
+    fun onSourceInfoRefreshed() {
+        if (phase != Phase.IDLE || armMessage != null) return
+        schedule()
     }
 
     /** Null when nothing refuses; otherwise the closed-set reason for the ARM probe line. */
@@ -265,6 +316,10 @@ class CrossfadeController(
         // Where ACTIVE would be. Build 1 evaluates the gate here, logs it, and stops.
         gateMessage = exoPlayer
             .createMessage { _, _ -> evaluateGate(item) }
+            // Same reason as the arm message in schedule() - read its note. evaluateGate touches
+            // exoPlayer.duration, bufferedPosition, sidecar.playbackState and then abort(), so it is
+            // the same wrong-thread defect one message later.
+            .setLooper(exoPlayer.applicationLooper)
             .setPosition(duration - fadeMs)
             .send()
     }
@@ -346,12 +401,23 @@ class CrossfadeController(
     // grep-able as "CROSSFADE-PROBE" and are the only logging this build adds.
     // Each prints UNCONDITIONALLY on its path, so silence can only mean the path never ran - a
     // refusal-only line would make an empty capture undecidable between "nothing refused" and
-    // "nothing ran". Labels come from closed sets decided by measured facts, never by the
+    // "nothing ran".
+    // ⚠️ [CORRECTED 2026-10-11] THAT WAS FALSE OF THE ARM LINE ON THE DAY IT WAS
+    // WRITTEN, AND IT IS THE EXACT FAILURE IT CLAIMS TO PREVENT. schedule() printed only on
+    // REFUSAL; its success path printed nothing, and the confirming armed=yes lived one hop and up
+    // to 30s later inside arm() - which, being delivered on the playback thread, died on its first
+    // statement before reaching it. So the first capture read as "arm never ran" when schedule()
+    // had in fact succeeded twice, and those two successes were the two wrong-thread crashes. Fixed
+    // by printing reason=posted (with armAt) AT the post site; arm() keeps reason=armed for actually
+    // entering the window. A posted line with no armed line after it is now a readable finding
+    // rather than silence.
+    // Labels come from closed sets decided by measured facts, never by the
     // hypothesis under test, and the gate line carries BOTH of its numbers so its two failure
     // modes (player not finished loading vs bytes not committed) can never be confused.
-    private fun probeArm(armed: Boolean, reason: String) = Log.d(
+    private fun probeArm(armed: Boolean, reason: String, armAt: Long? = null) = Log.d(
         TAG,
         "CROSSFADE-PROBE arm armed=" + (if (armed) "yes" else "no") + " reason=" + reason +
+            (if (armAt == null) "" else " armAt=" + armAt) +
             " fade=" + fadeSeconds + "s id=" + exoPlayer.currentMediaItem?.mediaId +
             " dur=" + exoPlayer.duration + " pos=" + exoPlayer.currentPosition +
             " shuffle=" + sessionPlayer.shuffleModeEnabled + " repeat=" + exoPlayer.repeatMode
