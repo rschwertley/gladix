@@ -617,7 +617,13 @@ class CrossfadeController(
         probeArm(false, reason)
     }
 
-    private fun probeArm(armed: Boolean, reason: String) = Log.d(
+    // ⚠️ `: Unit` IS EXPLICIT AND REQUIRED - DO NOT DELETE IT AS REDUNDANT. Log.d returns Int, so
+    // without the annotation this expression body infers Int, and `return probeArm(...)` in arm()
+    // fails release compilation with "Return type mismatch: expected 'Unit', actual 'Int'". The four
+    // probes below still infer Int; they are only ever called as statements, so they compile - but add
+    // `: Unit` to any of them before writing `return probeX(...)`. (probeRefusal is block-bodied, which
+    // is why the same early-return idiom at tickIdle has always worked.)
+    private fun probeArm(armed: Boolean, reason: String): Unit = Log.d(
         TAG,
         "CROSSFADE-PROBE arm armed=" + (if (armed) "yes" else "no") + " reason=" + reason +
             " fade=" + fadeSeconds + "s id=" + exoPlayer.currentMediaItem?.mediaId +
