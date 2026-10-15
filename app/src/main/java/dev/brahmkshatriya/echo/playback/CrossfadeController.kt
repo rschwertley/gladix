@@ -120,6 +120,17 @@ class CrossfadeController(
     private var armedTailStartMs = 0L
     private var sidecarPrepared = false
 
+    /**
+     * Per-playthrough gate budget. ⚠️ DELIBERATELY NOT CLEARED BY [abort] - abort IS the
+     * failing path, so clearing it there would make the budget unenforceable. Cleared only on a
+     * genuine track change ([onTransition]) and on a completed overlap ([complete]).
+     */
+    private var gateAttempts = 0
+    private var gateAttemptsForMediaId: String? = null
+
+    /** Bounded re-prepare budget for an ENDED sidecar; see [recoverEndedSidecar]. */
+    private var sidecarRePrepares = 0
+
     /** Media ms of overlap decided at ARM and re-derived each tick; the ramp length follows from it. */
     private var effectiveFadeMs = 0L
     private var handoffAtMs = 0L
@@ -176,6 +187,8 @@ class CrossfadeController(
 
     fun onTransition() {
         if (handoffInFlight) return   // our own hand-off; the overlap owns this transition
+        gateAttempts = 0
+        gateAttemptsForMediaId = null
         abort(Abort.TRACK_CHANGE)
         startTick()
     }
@@ -245,7 +258,50 @@ class CrossfadeController(
      */
     fun onPlayerIdle() = abort(Abort.MAIN_RECOVERY)
 
-    fun onQueueEdit() = abort(Abort.QUEUE_EDIT)
+    /**
+     * A queue edit. ⚠⚠ THREE DIFFERENT ANSWERS BY PHASE, AND AN UNCONDITIONAL ABORT
+     * HERE IS WHAT BROKE BUILD 2's FIRST DEVICE TEST. Our own hand-off edits the queue:
+     * ShufflePlayer.advanceForward seeks and then calls pushAndRemove(departing), whose
+     * removeByMediaId is a removeMediaItem - a PLAYLIST_CHANGED timeline change delivered
+     * SYNCHRONOUSLY inside seekToNextMediaItem, i.e. inside [handoff]. [onTransition] and
+     * [onSeek] consult the latch; this hook did not, so every overlap tore itself down ~35 ms
+     * after it started (device test 2026-10-15: two transitions, both reason=QUEUE_EDIT
+     * sidecarState=3, audible as the old track cutting off with no overlap).
+     * ⚠️ THE ~35 ms WAS NOT ASYNCHRONY - DO NOT GO LOOKING FOR A POST. probeHandoff
+     * prints BEFORE the seek in [activate]; the gap is the cost of the seek machinery itself, and
+     * the removal, its onTimelineChanged and the abort all happened INSIDE the bracket.
+     */
+    fun onQueueEdit() {
+        if (handoffInFlight) return
+        when (phase) {
+            Phase.IDLE -> return
+            // Nothing left to re-decide - the incoming item is already current. A removal or
+            // replacement OF it arrives as onMediaItemTransition, which PlayerEventListener routes
+            // to [onTransition] for EVERY reason, so that case aborts there as TRACK_CHANGE.
+            // ⚠️ BUT A CLEARED QUEUE REACHES NEITHER HOOK, which is why this is not a
+            // bare return: PlayerEventListener.onMediaItemTransition returns early on a null item,
+            // and an emptied timeline reports STATE_ENDED rather than STATE_IDLE
+            // (ExoPlayerImplInternal.java:1069, media3 1.11.0 -
+            // `setState(timeline.isEmpty() ? STATE_ENDED : STATE_BUFFERING)`), while our
+            // onPlayerIdle hook fires only on STATE_IDLE. Without this arm the main processor
+            // would stay MUTED once the tail ran out: silence the user cannot clear.
+            Phase.ACTIVE -> if (exoPlayer.currentMediaItem == null) abort(Abort.QUEUE_EDIT)
+            // ⚠⚠ RE-DECIDE WITH THE SAME PREDICATE THE ARM USED, rather than abort.
+            // That is what PlayerEventListener's call site has always asked for ("A queue edit can
+            // change the NEXT item without changing the current one ... Re-decide"); it simply had
+            // no way to say it. An edit matters only if it changed something [armRefusal] reads:
+            // the queue emptied ("noItem"), the next item went away ("noNext"), or the new
+            // neighbour is an intra-album one ("album"). An append PAST the next item (radio
+            // top-up), a 50-item window shift after a seek, a REPEAT_ALL reconstitution and the
+            // removal of some OTHER copy of a duplicated track all leave those three unchanged.
+            // ⚠️ DUPLICATE-SAFE BY CONSTRUCTION, which is why there is no mediaId
+            // bookkeeping here: armRefusal reads nextMediaItemIndex POSITIONALLY and then compares
+            // CONTENT (album id, disc number, order number via [isIntraAlbum]). Nothing on this
+            // path searches the queue for a mediaId, so the Jul 7-8 multiset problem - two
+            // identical items being indistinguishable by id - cannot reach it.
+            Phase.ARMED -> if (armRefusal() != null) abort(Abort.QUEUE_EDIT)
+        }
+    }
 
     /**
      * AA connected while something was armed or overlapping. [armRefusal] keeps a new one from
@@ -294,6 +350,9 @@ class CrossfadeController(
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return abort(Abort.TRACK_CHANGE)
         val position = exoPlayer.currentPosition
+        if (sidecarPrepared &&
+            runCatching { sidecar.playbackState }.getOrNull() == Player.STATE_ENDED
+        ) recoverEndedSidecar()
         if (!sidecarPrepared) maybePrepareSidecar()
         // Gate point, re-derived every tick from the CURRENT duration and speed, so a duration that
         // changes under us (ProgressiveMediaPeriod back-fills it at load completion) moves the gate
@@ -339,6 +398,20 @@ class CrossfadeController(
         // preference. Checked early and cheaply, so an AA session never arms at all.
         if (isAndroidAutoConnected()) return "androidAuto"
         val item = exoPlayer.currentMediaItem ?: return "noItem"
+        // ⚠⚠ THE GATE BUDGET, AND WITHOUT IT THE RETRY IS UNBOUNDED RATHER THAN ABSENT.
+        // [abort] sets phase=IDLE, and tickIdle re-arms the moment position >= duration - leadMs -
+        // which after a gate failure at dur-10 s is still true, so the controller re-armed on the
+        // very next tick. Measured 2026-10-15: a NOT_READY at 16:36:16.885 re-armed at .087 and
+        // gated again at .290, with effFade 9542 instead of ~10000.
+        // ⚠️ MAX_GATE_ATTEMPTS IS 2, NOT 1, AND THE CAPTURE IS THE REASON. The Build 2
+        // spec said a failed gate means no crossfade for that transition - but that second attempt
+        // PASSED, so a budget of 1 would have converted a working crossfade into none, for a 458 ms
+        // shorter fade nobody can hear. It also matches the reference app, which keeps polling and
+        // only gives up ~0.8 s before the end (our LATE_ABORT_MS). What this bounds is the
+        // PATHOLOGICAL case - a gate that can never pass re-arming five times a second for the rest
+        // of the track - not the transient one.
+        if (gateAttempts >= MAX_GATE_ATTEMPTS && item.mediaId == gateAttemptsForMediaId)
+            return "gateAttemptsUsed"
         if (exoPlayer.repeatMode == Player.REPEAT_MODE_ONE) return "repeatOne"
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return "noDuration"
@@ -401,6 +474,7 @@ class CrossfadeController(
         effectiveFadeMs = min(fadeSeconds * 1000L * speed, remaining.toFloat()).toLong()
         phase = Phase.ARMED
         armedMediaId = item.mediaId
+        sidecarRePrepares = 0
         armedTailStartMs = duration - effectiveFadeMs
         probeArm(true, "armed")
         maybePrepareSidecar()
@@ -450,8 +524,15 @@ class CrossfadeController(
         val gate = tail.gate(item)
         val sidecarReady = sidecar.playbackState == Player.STATE_READY
         probeGate(playerReady, sidecarReady, buffered, duration, gate)
-        if (playerReady && gate.ready && sidecarReady) activate(position, duration)
-        else abort(Abort.NOT_READY)
+        if (playerReady && gate.ready && sidecarReady) {
+            activate(position, duration)
+            return
+        }
+        // Increment against the OLD id, THEN adopt the new one - the reverse order makes the
+        // comparison self-referential and the counter never passes 1.
+        gateAttempts = if (item.mediaId == gateAttemptsForMediaId) gateAttempts + 1 else 1
+        gateAttemptsForMediaId = item.mediaId
+        abort(Abort.NOT_READY)
     }
 
     // ── The hand-off ────────────────────────────────────────────────────────────────────────────
@@ -549,6 +630,8 @@ class CrossfadeController(
         phase = Phase.IDLE
         armedMediaId = null
         sidecarPrepared = false
+        gateAttempts = 0
+        gateAttemptsForMediaId = null
         probeAbort(Abort.COMPLETED, sidecarStateBefore)
     }
 
@@ -561,6 +644,39 @@ class CrossfadeController(
         rampStartedAtMs = 0L
         rampMs = 0L
         handoffAtMs = 0L
+    }
+
+    /**
+     * The sidecar reached STATE_ENDED while merely ARMED. It cannot have got there by PLAYING -
+     * [activate] is the only caller of sidecar.play() - so the seekTo in [maybePrepareSidecar]
+     * landed at or past the tail's end.
+     *
+     * ⚠⚠ FIRST SEEN 2026-10-15 (gate fail, sidecarReady=false, sidecarState=4). TWO
+     * HYPOTHESES REMAIN AND THE PROBE DECIDES BETWEEN THEM; neither is asserted here:
+     *   1. the seek overshot the TAIL's own duration. armedTailStartMs comes from the MAIN
+     *      player's duration, and a byte<->time mapping is only exact for CBR - see the
+     *      CacheOnlyTailSource gate note, which records the same caveat for the cached-bytes test.
+     *   2. the seek was issued before the extractor published a duration. [maybePrepareSidecar]
+     *      calls prepare() and seekTo() back to back, so it can resolve as a pending seek against
+     *      an unknown-duration window.
+     * ⚠️ A THIRD HYPOTHESIS IS ALREADY REFUTED, recorded so it is not re-proposed: "the
+     * duration was back-filled at load completion AFTER arm, so armedTailStartMs went stale". The
+     * capture shows dur=168053 on BOTH the arm line and the gate line, so the duration did not
+     * move between them.
+     * ⚠️ AND THE LEFTOVER-SIDECAR HYPOTHESIS IS REFUTED BY THIS FILE: [abort] already
+     * sets sidecarPrepared=false and calls [resetSidecar], whose stop() drives STATE_IDLE - so a
+     * sidecar left over from a previous abort would read state 1, not 4.
+     *
+     * BOUNDED, because if hypothesis 1 is the live one a re-prepare lands in ENDED again: an
+     * unbounded retry would re-prepare five times a second for the rest of the track. Past the
+     * budget the gate simply keeps failing on sidecarReady, which is the correct outcome.
+     */
+    private fun recoverEndedSidecar() {
+        probeSidecarEnded(sidecarRePrepares)
+        if (sidecarRePrepares >= MAX_SIDECAR_REPREPARES) return
+        sidecarRePrepares++
+        resetSidecar()
+        sidecarPrepared = false
     }
 
     private fun resetSidecar() {
@@ -666,6 +782,31 @@ class CrossfadeController(
         TAG, "CROSSFADE-PROBE abort reason=" + reason + " sidecarState=" + sidecarStateBefore
     )
 
+    // Prints on EVERY ENDED-while-ARMED detection, including the ones past the re-prepare budget.
+    // WHAT EACH OUTPUT DECIDES - written before the build, so the capture cannot come out
+    // undecidable (see [recoverEndedSidecar] for the two hypotheses):
+    //   tailDur known AND tailDur < seekTarget  -> hypothesis 1. The seek overshot the tail's own
+    //     end, i.e. the byte<->time mapping differs between the main stream and the cached replay.
+    //     Fix: clamp the seek to tailDur, or re-derive armedTailStartMs from the TAIL's duration.
+    //   tailDur = -9223372036854775807 (C.TIME_UNSET)  -> hypothesis 2. The seek was issued before
+    //     the extractor published a duration. Fix: seek on the sidecar's first READY instead of
+    //     inline after prepare().
+    //   tailDur known AND tailDur >= seekTarget  -> NEITHER. The seek was in range and something
+    //     else ended the tail; look at the tail source, not at this arithmetic.
+    //   mainDur != tailDur  -> corroborates hypothesis 1 independently of the seek target, and is
+    //     the single number worth reading first.
+    //   attempt=  -> 0 and 1 are recoveries; MAX_SIDECAR_REPREPARES means the budget is spent and
+    //     this track will not crossfade. A line with attempt=0 and no attempt=1 after it means the
+    //     re-prepare WORKED.
+    private fun probeSidecarEnded(attempt: Int) {
+        Log.d(
+            TAG,
+            "CROSSFADE-PROBE sidecarEnded seekTarget=" + armedTailStartMs +
+                " tailDur=" + runCatching { sidecar.duration }.getOrDefault(C.TIME_UNSET) +
+                " mainDur=" + exoPlayer.duration + " attempt=" + attempt
+        )
+    }
+
     companion object {
         private const val TAG = "GladixPlayback"
 
@@ -693,6 +834,12 @@ class CrossfadeController(
 
         /** Closer to the end than this at the gate and there is nothing worth handing off. */
         private const val LATE_ABORT_MS = 800L
+
+        /** Gate evaluations allowed per playthrough; see the budget note in [armRefusal]. */
+        private const val MAX_GATE_ATTEMPTS = 2
+
+        /** Re-prepares allowed for an ENDED sidecar; see [recoverEndedSidecar]. */
+        private const val MAX_SIDECAR_REPREPARES = 2
 
         const val FADE_SECONDS_MIN = 0
         const val FADE_SECONDS_MAX = 10
