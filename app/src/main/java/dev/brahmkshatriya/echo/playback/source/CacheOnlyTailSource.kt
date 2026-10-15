@@ -12,7 +12,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import android.content.Context as AndroidContext
 import dev.brahmkshatriya.echo.common.models.Streamable
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.toKey
 import dev.brahmkshatriya.echo.playback.source.StreamableDataSource.Companion.uri
 
 /**
@@ -93,16 +93,36 @@ class CacheOnlyTailSource(
      * direct-file tail path instead. Deliberately not built yet.
      */
     fun gate(item: MediaItem): Gate {
-        val id = item.mediaId
-        val index = item.serverIndex
-        if (index < 0) return Gate(false, "noServerIndex", 0, C.LENGTH_UNSET.toLong())
+        // ⚠⚠ [CORRECTED 2026-10-14] THIS USED TO READ servers[item.mediaId] AND
+        // sources[item.serverIndex], AND serverIndex WAS THE WRONG INDEX SPACE. serverIndex indexes
+        // the TRACK'S SERVERS (MediaItemUtils.toMetaData seeds it from selectServerIndex;
+        // buildServer overrides it), while `sources` belongs to the ONE server already selected and
+        // is indexed by sourceIndex (which is what StreamableMediaSource.prepareSourceInternal uses).
+        // With a non-zero serverIndex against a single-source server, getOrNull returned null and the
+        // gate reported noResolvedSource on a sidecar that had reached STATE_READY through this very
+        // class - observed on the 2026-10-11 build, two gates, both
+        // "sidecarReady=true cacheReason=noResolvedSource". It only ever worked when serverIndex
+        // happened to be 0, which indexes sources[0] by accident.
+        // ⚠⚠ SO THE GATE NOW USES THE RESOLVER'S OWN LOOKUP, BY CONSTRUCTION RATHER
+        // THAN BY AGREEMENT. StreamableResolver.resolveDataSpec decodes the DataSpec uri with toKey
+        // and reads servers[Key.trackId].sources[Key.sourceIndex]; the DataSpec uri comes from this
+        // same item's localConfiguration, so decoding it here asks the identical question of the
+        // identical map and cannot drift. That the capture's resolver hit while the gate missed is
+        // also what proves Key.trackId == mediaId on real data - the id was never the divergence.
+        // ⚠️ AND NOT item.sourceIndex EITHER, WHICH LOOKS LIKE THE ONE-WORD FIX AND IS
+        // NOT. buildSource only runs in prepareSourceInternal's MULTI-source branch, so the extras
+        // field is still -1 for every single-source track - the gate would have traded
+        // noResolvedSource for a negative index. The uri's Key.sourceIndex is always the real one
+        // (the single-source branch passes a literal 0 to buildForSource).
+        val key = item.localConfiguration?.uri?.toString()?.toKey()?.getOrNull()
+            ?: return Gate(false, "noKeyUri", 0, C.LENGTH_UNSET.toLong())
         val source = runCatching {
-            servers[id]?.getOrNull()?.sources?.getOrNull(index)
+            servers[key.trackId]?.getOrNull()?.sources?.getOrNull(key.sourceIndex)
         }.getOrNull() ?: return Gate(false, "noResolvedSource", 0, C.LENGTH_UNSET.toLong())
-        val key = source.uri.toString()
-        val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+        val cacheKey = source.uri.toString()
+        val length = ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
         if (length == C.LENGTH_UNSET.toLong()) return Gate(false, "noContentLength", 0, length)
-        val cached = cache.getCachedBytes(key, 0, length)
+        val cached = cache.getCachedBytes(cacheKey, 0, length)
         return if (cached == length) Gate(true, "committed", cached, length)
         else Gate(false, "incomplete", cached, length)
     }

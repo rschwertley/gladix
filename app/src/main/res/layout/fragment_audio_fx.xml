@@ -256,6 +256,72 @@
             android:valueFrom="1"
             android:valueTo="5" />
 
+        <!--
+            TRUE CROSSFADE. Same key as Settings -> Player (TRUE_CROSSFADE_SECONDS), same 0..10 range,
+            same 0 default; the two screens are two views of one preference, not two settings.
+
+            Deliberately BETWEEN the Track Fade duration above and skipFadeOnAlbums below, mirroring
+            SettingsPlayerFragment's order for the same reason recorded there: Build 2 deletes the
+            Track Fade rows and re-parents the album switch to this slider, and that is a clean
+            deletion in both screens only while this block sits here.
+
+            No switch row, because 0 IS off - so unlike @id/crossfade above there is no click target,
+            hence no ?selectableItemBackground, and one less level of nesting (the Track Fade row only
+            needs its horizontal wrapper to seat the MaterialSwitch). The value label and slider below
+            are copied attribute-for-attribute from crossfadeDurationValue/crossfadeDurationSlider.
+
+            The summary carries a format argument (the 0-10 range), which android:text cannot supply,
+            so FragmentAudioFxBinding.bind sets it from the same string resource the settings screen
+            uses. tools:text here is preview only.
+        -->
+        <LinearLayout
+            android:id="@+id/trueCrossfade"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="24dp"
+            android:gravity="center_vertical"
+            android:minHeight="44sp"
+            android:orientation="vertical"
+            android:paddingVertical="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/true_crossfade"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/trueCrossfadeSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:alpha="0.66"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="Overlap in seconds (0–10), 0 = off" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/trueCrossfadeValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginHorizontal="24dp"
+            android:textColor="?colorPrimary"
+            android:textSize="16sp"
+            tools:text="0s" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/trueCrossfadeSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="8dp"
+            android:layout_marginVertical="8dp"
+            android:stepSize="1"
+            android:value="0"
+            android:valueFrom="0"
+            android:valueTo="10" />
+
         <LinearLayout
             android:id="@+id/skipFadeOnAlbums"
             android:layout_width="match_parent"

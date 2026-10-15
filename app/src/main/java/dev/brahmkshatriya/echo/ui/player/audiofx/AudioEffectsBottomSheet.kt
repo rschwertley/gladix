@@ -20,11 +20,13 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
+import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MAX
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MIN
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
+import dev.brahmkshatriya.echo.playback.PlayerService.Companion.TRUE_CROSSFADE_SECONDS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.BASS_BOOST
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CHANGE_PITCH
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
@@ -152,6 +154,39 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             crossfadeDurationSlider.addOnChangeListener { _, value, _ ->
                 appSettings.edit { putInt(CROSSFADE_DURATION, value.toInt()) }
                 crossfadeDurationValue.text = "${value.toInt()}s"
+            }
+
+            // ⚠⚠ ONE PREFERENCE, TWO SCREENS: appSettings IS THE SAME FILE
+            // SettingsPlayerFragment WRITES. appSettings is Context.getSettings(), i.e.
+            // getSharedPreferences(SETTINGS_NAME, MODE_PRIVATE), and the settings screen sets
+            // preferenceManager.sharedPreferencesName = SETTINGS_NAME with the same mode, so both land
+            // on the one SharedPreferencesImpl the framework caches per (file, mode) per process.
+            // PlayerService registers its OnSharedPreferenceChangeListener on that same instance
+            // (app.settings, the Koin single over getSettings()) and routes TRUE_CROSSFADE_SECONDS to
+            // syncCrossfade, which re-reads the key. So a write HERE reaches
+            // CrossfadeController.fadeSeconds with no wiring of its own, and the settings screen shows
+            // this value next time it binds. Do NOT introduce a second key or a local mirror.
+            // ⚠️ THE RANGE AND DEFAULT ARE READ FROM CrossfadeController, not retyped: the
+            // layout's valueFrom/valueTo and this coerceIn have to agree with syncCrossfade's own
+            // coerceIn, and FADE_SECONDS_MIN is also the off value and the default in both screens.
+            // Writes on every change tick, exactly like the Track Fade slider above and like
+            // MaterialSliderPreference on the settings screen (it persists in addOnChangeListener too,
+            // ignoring byUser) - so dragging produces a run of syncCrossfade calls on both screens
+            // alike, and crossing 0 is what creates or releases the sidecar.
+            trueCrossfadeSummary.text = trueCrossfadeSummary.context.getString(
+                R.string.true_crossfade_seconds_summary, CrossfadeController.FADE_SECONDS_MAX
+            )
+            val trueCrossfadeSeconds = appSettings
+                .getInt(TRUE_CROSSFADE_SECONDS, CrossfadeController.FADE_SECONDS_MIN)
+                .coerceIn(
+                    CrossfadeController.FADE_SECONDS_MIN,
+                    CrossfadeController.FADE_SECONDS_MAX
+                )
+            trueCrossfadeSlider.value = trueCrossfadeSeconds.toFloat()
+            trueCrossfadeValue.text = "${trueCrossfadeSeconds}s"
+            trueCrossfadeSlider.addOnChangeListener { _, value, _ ->
+                appSettings.edit { putInt(TRUE_CROSSFADE_SECONDS, value.toInt()) }
+                trueCrossfadeValue.text = "${value.toInt()}s"
             }
             skipFadeOnAlbums.setOnClickListener {
                 skipFadeOnAlbumsSwitch.isChecked = !skipFadeOnAlbumsSwitch.isChecked

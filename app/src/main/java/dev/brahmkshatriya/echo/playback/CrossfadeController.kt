@@ -64,15 +64,51 @@ class CrossfadeController(
     var fadeSeconds: Int = 0
         set(value) {
             field = value
-            if (value == 0) abort(Abort.SETTING_OFF) else reschedule()
+            // ⚠⚠ THE abort() IS NOT OPTIONAL: EVERY ENTRY THAT CAN RUN MID-WINDOW MUST
+            // RESET TO IDLE FIRST. [reschedule] cancels both messages and then [schedule] consults
+            // [armRefusal], which answers "alreadyArmed" while phase is ARMED for the same item - so
+            // moving the slider inside the arm window used to leave phase ARMED with no armMessage, no
+            // gateMessage, a sidecar still prepared and seeked to the OLD tail start, and nothing left
+            // to abort it until the next transition. Quiet, not spinning (cancelMessages also removes
+            // prepareTick, and only its own run() re-posts it), but the track silently loses its
+            // crossfade - and it loses it on the exact track the user was adjusting the slider during.
+            // [onTransition] and [onSeek] already abort first; this is now the same shape, which makes
+            // the rule one rule instead of a per-caller exemption. [onSourceInfoRefreshed] remains the
+            // single documented exception, and it is safe because it refuses unless phase is IDLE with
+            // no message pending.
+            // ⚠️ WHY NOT EXEMPT "alreadyArmed" FOR THIS CALLER INSTEAD: [arm] would re-run
+            // with the new fade and overwrite armedTailStartMs, but [maybePrepareSidecar] returns early
+            // on sidecarPrepared, so the sidecar would never be re-seeked and would hold a tail cut for
+            // the PREVIOUS fade length. Inaudible in Build 1 (it only skews the gate's sidecarReady) and
+            // an audible wrong-offset tail in Build 2. abort() is what resets sidecarPrepared.
+            // ⚠️ AND abort() IS CORRECT WHEN MERELY SCHEDULED, TOO: it cancels messages
+            // BEFORE its own `phase == IDLE` return, so a slider change while an armMessage is pending
+            // on an IDLE controller cancels cleanly and prints no abort line. After the re-schedule,
+            // a position already inside the window takes [schedule]'s seek-into-window branch and arms
+            // immediately with the new fade, which is what the user expects to hear.
+            // ⚠️ EXPECT A RUN OF THESE WHEN DRAGGING. Both sliders persist on every change
+            // tick, so a sweep across several values inside the window prints one
+            // abort reason=SETTING_CHANGE per value. All of it is local (stop/clearMediaItems then a
+            // cache-only prepare/seek); if it ever proves too noisy the fix is to settle the slider
+            // write on touch-stop, in MaterialSliderPreference and the audio-fx popup together, NOT by
+            // weakening this abort.
+            if (value == 0) abort(Abort.SETTING_OFF)
+            else {
+                abort(Abort.SETTING_CHANGE)
+                reschedule()
+            }
         }
 
     private enum class Phase { IDLE, ARMED }
 
     /** Closed set, so an abort line can never read as free text. */
     private enum class Abort {
-        SETTING_OFF, TRACK_CHANGE, SEEK, USER_PAUSE, INTERRUPTION, STALL_HOLD, ERROR,
-        QUEUE_EDIT, BUILD1_NO_ACTIVE,
+        // SETTING_OFF is the slider reaching 0 (controller torn down); SETTING_CHANGE is any other
+        // slider move, which tears the arm down only to rebuild it at the new fade length. Two
+        // labels, not one, because the two have opposite expectations in a capture: SETTING_OFF
+        // should be followed by nothing at all, SETTING_CHANGE by an immediate re-arm.
+        SETTING_OFF, SETTING_CHANGE, TRACK_CHANGE, SEEK, USER_PAUSE, INTERRUPTION, STALL_HOLD,
+        ERROR, QUEUE_EDIT, BUILD1_NO_ACTIVE,
     }
 
     private var phase = Phase.IDLE
@@ -202,13 +238,39 @@ class CrossfadeController(
 
     /**
      * The duration-became-known re-entry, and the ONLY trigger that may run while something is
-     * already scheduled - so it is the one that must neither cancel nor double-post.
+     * already scheduled.
      *
-     * ⚠⚠ WHY IT IS NOT reschedule(): that cancels first, and [armRefusal] then returns
-     * "alreadyArmed" for the same item - which would leave phase ARMED with both messages gone and
-     * [prepareTick] re-posting itself forever on a window that can no longer fire. The IDLE check
-     * below also stops a second armMessage being posted over a live one, which would orphan the
-     * first (the field is overwritten, the pending message still fires) and arm twice.
+     * ⚠⚠ WHILE IDLE IT CANCELS AND RE-POSTS, SO THE LIVE MESSAGE IS ALWAYS THE ONE
+     * POSTED AFTER THE LATEST TIMELINE CHANGE. This is EffectsListener.scheduleFadeOut's pattern,
+     * copied deliberately: that function opens by cancelling its own pending message and is
+     * re-invoked on transition, on every SOURCE_UPDATE, on a seek discontinuity and on a settings
+     * change, so its live message has never had to outlive a timeline change - and it has never
+     * been late. Ours was posted once and had to survive, and the 2026-10-11 capture split exactly
+     * along that line: the arm posted FROM a SOURCE_UPDATE (Granada, 2.5 s in, after noDuration
+     * ×2) fired on time, while the two posted at the TRANSITION instant (pos 47 ms and 19 ms,
+     * duration already known from the item's own earlier prepare) fired 20 s and 26 s late.
+     * ⚠️ [CORRECTED 2026-10-14] THIS NOTE USED TO SAY THE HOOK "must neither cancel
+     * nor double-post", and that the `armMessage != null` half of the guard was there to stop a
+     * second message being posted over a live one and orphaning it. The orphan risk was real; the
+     * conclusion was wrong. Cancelling FIRST removes the orphan without refusing the re-post, which
+     * is what the sibling above has always done. The other half of the guard is unchanged and is
+     * still load-bearing for its own reason: see below.
+     * ⚠️ THE phase != IDLE REFUSAL STAYS. While ARMED, [reschedule]'s cancel would be
+     * followed by [armRefusal] answering "alreadyArmed", leaving phase ARMED with both messages
+     * gone and the sidecar prepared against the old tail - the dead-armed state the fadeSeconds
+     * setter's note describes. An ARMED window is never re-entered from here.
+     * ⚠️ WHAT THIS DOES AND DOES NOT BUY, from the capture's own numbers. The
+     * mechanism that delayed a transition-posted message is still UNEXPLAINED - media3's
+     * maybeTriggerPendingMessages SKIPS an already-passed position rather than delivering it late
+     * (ExoPlayerImplInternal.java:2325-2332 vs :2336-2340), so the delivery we saw should not have
+     * been possible. What this guarantees is a BOUND: the arm now happens no later than the first
+     * SOURCE_UPDATE after armAt, via [schedule]'s seek-into-window branch. On those two tracks the
+     * next SOURCE_UPDATE was the following item's prepare at dur-17 s and dur-10.2 s, against
+     * observed late arms at dur-15.0 s and dur-8.5 s - so expect roughly 2 s earlier and, more to
+     * the point, DETERMINISTIC. A track with no later SOURCE_UPDATE at all (last in queue, nothing
+     * preparing behind it) still depends on the message's own crossing, so a late armed line in the
+     * next capture is informative rather than surprising, and the onTimelineChanged /
+     * onPositionDiscontinuity probe lines are the agreed next step if it appears.
      *
      * ⚠️ WHY THIS HOOK HAS TO EXIST AT ALL. [armRefusal] reads exoPlayer.duration, which
      * is the current window of playbackInfo.timeline; for a progressive source whose extractor has
@@ -225,8 +287,11 @@ class CrossfadeController(
      * every one of them. READY would add buffering-cycle noise and no new information.
      */
     fun onSourceInfoRefreshed() {
-        if (phase != Phase.IDLE || armMessage != null) return
-        schedule()
+        if (phase != Phase.IDLE) return
+        // reschedule(), not schedule(): the cancel is the whole point. While IDLE the only thing
+        // cancelMessages can find is a pending armMessage (gateMessage and prepareTick exist only
+        // while ARMED), so this is exactly cancel-then-post.
+        reschedule()
     }
 
     /** Null when nothing refuses; otherwise the closed-set reason for the ARM probe line. */
@@ -289,7 +354,11 @@ class CrossfadeController(
         val item = exoPlayer.currentMediaItem ?: return
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return
-        val remaining = duration - exoPlayer.currentPosition
+        // ONE position read, used for both `remaining` and the gate-point comparison below, so the
+        // arithmetic between them is exact rather than drifting by however long the two reads are
+        // apart. It also costs one fewer player getter.
+        val position = exoPlayer.currentPosition
+        val remaining = duration - position
         if (remaining < MIN_REMAINING_MS) {
             probeArm(false, "tooShort")
             return
@@ -314,13 +383,29 @@ class CrossfadeController(
         maybePrepareSidecar()
         if (!sidecarPrepared) handler.postDelayed(prepareTick, PREPARE_POLL_MS)
         // Where ACTIVE would be. Build 1 evaluates the gate here, logs it, and stops.
-        gateMessage = exoPlayer
+        // ⚠⚠ A GATE POINT ALREADY BEHIND THE POSITION MUST BE EVALUATED NOW, NOT
+        // POSTED. A position message only fires when playback CROSSES it
+        // (ExoPlayerImplInternal.maybeTriggerPendingMessages, media3 1.11.0, :2336-2340, needs
+        // resolvedPeriodTimeUs in (old, new]); one already passed is skipped at :2325-2332 and never
+        // delivers. Since fadeMs is coerced to `remaining` just above, duration - fadeMs equals
+        // position + (remaining - fadeMs), so this branch is reachable exactly when the coerce bit -
+        // i.e. when ARM itself happened inside the fade window. A 2026-10-11 capture caught it: an
+        // arm at pos=132233 on a track whose gate point was 130759, which then aborted on
+        // TRACK_CHANGE having never gated. In Build 2 that is a crossfade that arms, prepares a
+        // sidecar and then silently does nothing.
+        // ⚠️ THE 1.5s FLOOR ABOVE IS WHAT KEEPS THIS SANE and is deliberately
+        // unchanged: remaining >= MIN_REMAINING_MS, so the tail this evaluates is never shorter than
+        // that. Same shape as [schedule]'s seek-into-window branch, and as
+        // EffectsListener.scheduleFadeOut's own `if (triggerPosition <= currentPosition)` immediate
+        // call - the sibling that has shipped with this guard all along.
+        if (armedTailStartMs <= position) evaluateGate(item)
+        else gateMessage = exoPlayer
             .createMessage { _, _ -> evaluateGate(item) }
             // Same reason as the arm message in schedule() - read its note. evaluateGate touches
             // exoPlayer.duration, bufferedPosition, sidecar.playbackState and then abort(), so it is
             // the same wrong-thread defect one message later.
             .setLooper(exoPlayer.applicationLooper)
-            .setPosition(duration - fadeMs)
+            .setPosition(armedTailStartMs)
             .send()
     }
 
@@ -373,6 +458,12 @@ class CrossfadeController(
     }
 
     private fun abort(reason: Abort) {
+        // Sampled BEFORE anything here touches the sidecar: the stop() below sets STATE_IDLE
+        // synchronously, so reading playbackState at the probe call reported the outcome of our own
+        // teardown and could only ever print 1. The useful number is what the sidecar had reached
+        // when the abort was decided - which is the same quantity the gate line's sidecarReady
+        // reports, so the two can now be read against each other.
+        val sidecarStateBefore = sidecar.playbackState
         cancelMessages()
         if (phase == Phase.IDLE) return
         phase = Phase.IDLE
@@ -384,7 +475,7 @@ class CrossfadeController(
             sidecar.stop()
             sidecar.clearMediaItems()
         }
-        probeAbort(reason)
+        probeAbort(reason, sidecarStateBefore)
     }
 
     private fun cancelMessages() {
@@ -438,8 +529,8 @@ class CrossfadeController(
             " cacheReason=" + gate.reason
     )
 
-    private fun probeAbort(reason: Abort) = Log.d(
-        TAG, "CROSSFADE-PROBE abort reason=" + reason + " sidecarState=" + sidecar.playbackState
+    private fun probeAbort(reason: Abort, sidecarStateBefore: Int) = Log.d(
+        TAG, "CROSSFADE-PROBE abort reason=" + reason + " sidecarState=" + sidecarStateBefore
     )
 
     companion object {
