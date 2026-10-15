@@ -21,10 +21,6 @@ import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.playback.CrossfadeController
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MAX
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MIN
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.TRUE_CROSSFADE_SECONDS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.BASS_BOOST
@@ -135,27 +131,6 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
 
             loudnessNormalization.isVisible = false
 
-            crossfadeSwitch.isChecked = appSettings.getBoolean(CROSSFADE_ENABLED, true)
-            crossfadeDurationSlider.isEnabled = crossfadeSwitch.isChecked
-            val durationValue = appSettings.getInt(CROSSFADE_DURATION, 4)
-                .coerceIn(CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX)
-            crossfadeDurationSlider.value = durationValue.toFloat()
-            crossfadeDurationValue.text = "${durationValue}s"
-            skipFadeOnAlbums.isVisible = crossfadeSwitch.isChecked
-            skipFadeOnAlbumsSwitch.isChecked = appSettings.getBoolean(SKIP_FADE_ON_ALBUMS, true)
-            crossfade.setOnClickListener {
-                crossfadeSwitch.isChecked = !crossfadeSwitch.isChecked
-            }
-            crossfadeSwitch.setOnCheckedChangeListener { _, isChecked ->
-                appSettings.edit { putBoolean(CROSSFADE_ENABLED, isChecked) }
-                crossfadeDurationSlider.isEnabled = isChecked
-                skipFadeOnAlbums.isVisible = isChecked
-            }
-            crossfadeDurationSlider.addOnChangeListener { _, value, _ ->
-                appSettings.edit { putInt(CROSSFADE_DURATION, value.toInt()) }
-                crossfadeDurationValue.text = "${value.toInt()}s"
-            }
-
             // ⚠⚠ ONE PREFERENCE, TWO SCREENS: appSettings IS THE SAME FILE
             // SettingsPlayerFragment WRITES. appSettings is Context.getSettings(), i.e.
             // getSharedPreferences(SETTINGS_NAME, MODE_PRIVATE), and the settings screen sets
@@ -187,7 +162,12 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             trueCrossfadeSlider.addOnChangeListener { _, value, _ ->
                 appSettings.edit { putInt(TRUE_CROSSFADE_SECONDS, value.toInt()) }
                 trueCrossfadeValue.text = "${value.toInt()}s"
+                // The album switch follows the overlap being on, which is what the deleted Track
+                // Fade switch used to decide. Same key, same meaning, new owner.
+                skipFadeOnAlbums.isVisible = value.toInt() > 0
             }
+            skipFadeOnAlbums.isVisible = trueCrossfadeSeconds > 0
+            skipFadeOnAlbumsSwitch.isChecked = appSettings.getBoolean(SKIP_FADE_ON_ALBUMS, true)
             skipFadeOnAlbums.setOnClickListener {
                 skipFadeOnAlbumsSwitch.isChecked = !skipFadeOnAlbumsSwitch.isChecked
             }

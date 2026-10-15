@@ -36,6 +36,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -152,8 +153,13 @@ class PlayerService : MediaLibraryService() {
         val sessionPlayer = crossfadeSessionPlayer ?: return
         // Own processor: the ramp counters and the per-track gain LUT are per-player mutable state,
         // so sharing one instance across two players would cross-talk.
+        // ⚠⚠ HELD IN A LOCAL AND HANDED TO THE CONTROLLER, NOT DISCARDED. Build 1
+        // constructed it inline and kept no reference, which was fine while nothing ramped; Build 2
+        // drives the tail's fade-out through it, so the controller needs both processors. It lives
+        // exactly as long as the sidecar does - both are created here and released together.
+        val sidecarProcessor = AudioEffectsProcessor()
         val sidecar = createExoplayer(
-            AudioEffectsProcessor(),
+            sidecarProcessor,
             handleAudioBecomingNoisy = false,
             stuckBufferingTimeoutMs = null,
         )
@@ -169,8 +175,14 @@ class PlayerService : MediaLibraryService() {
             sessionPlayer = sessionPlayer,
             sidecar = sidecar,
             tail = CacheOnlyTailSource(app.context, cache, state.servers),
+            mainProcessor = audioEffectsProcessor,
+            sidecarProcessor = sidecarProcessor,
             isRestoring = { state.resumptionApplying },
             skipFadeOnAlbums = { app.settings.getBoolean(SKIP_FADE_ON_ALBUMS, true) },
+            // Not the reason code: see the note at CrossfadeController.onUserPause.
+            isPausedForFocus = { audioFocusListener.pausedForFocus },
+            // Product decision 7: no overlap on AA. Read CrossfadeController.activate's note.
+            isAndroidAutoConnected = { isAndroidAutoConnected },
         ).also { it.fadeSeconds = seconds }
     }
     private lateinit var carConnection: CarConnection
@@ -187,6 +199,10 @@ class PlayerService : MediaLibraryService() {
         // clears the flag so a head-unit resume-on-connect passes through; disconnect sets it when no
         // other external route remains). recompute reads isAndroidAutoConnected, updated just above.
         recomputeRouteState()
+        // Crossfade is disabled on AA (product decision 7, and see
+        // CrossfadeController.activate's note for why detection is not an option). armRefusal keeps
+        // a new overlap from arming; this ends one already in flight on the connect edge.
+        if (!wasConnected && isConnected) crossfade?.onAndroidAutoConnected()
         if (wasConnected && !isConnected) {
             mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
         }
@@ -259,13 +275,6 @@ class PlayerService : MediaLibraryService() {
                     putBoolean("normalization_force_disabled_v1", true)
                 }
             }
-            crossfadeEnabled = app.settings.getBoolean(CROSSFADE_ENABLED, true)
-            // Clamp on READ. The sliders only clamp what they DISPLAY — neither persists the
-            // corrected value (the programmatic `value =` assignment happens before the change
-            // listener is attached), so anyone who stored 6-12 while that was the allowed range
-            // still has it, and without this they get a 12-second fade while both UIs show 5.
-            crossfadeDurationMs = app.settings.getInt(CROSSFADE_DURATION, 4)
-                .coerceIn(CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX) * 1000
             normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
         }
     }
@@ -282,15 +291,6 @@ class PlayerService : MediaLibraryService() {
             LOUDNESS_NORMALIZATION -> {
                 audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
-            }
-            CROSSFADE_ENABLED -> {
-                audioEffectsProcessor.crossfadeEnabled = prefs.getBoolean(key, false)
-                effects.updateCrossfadeSettings()
-            }
-            CROSSFADE_DURATION -> {
-                audioEffectsProcessor.crossfadeDurationMs = prefs.getInt(key, 2)
-                    .coerceIn(CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX) * 1000
-                effects.updateCrossfadeSettings()
             }
         }
     }
@@ -830,7 +830,133 @@ class PlayerService : MediaLibraryService() {
             app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow, healthMonitor
         )
 
+        // ⚠⚠ EXPLICIT LoadControl BECAUSE MEDIA3 CLASSIFIES EVERY GLADIX TRACK AS LOCAL
+        // PLAYBACK, AND IT IS WRONG ABOUT ALL OF THEM. DefaultLoadControl.isLocalPlayback reads the
+        // TIMELINE WINDOW's MediaItem uri and returns true when the scheme is EMPTY or in
+        // LOCAL_PLAYBACK_SCHEMES. Our uri is MediaItemUtils.buildForSource's
+        // Base64.encode(Key(trackId, sourceIndex, extensionId)) - and the Base64 alphabet contains no
+        // colon, so that uri can NEVER carry a scheme. The outer item
+        // (MediaItemUtils.build's setUri(state.item.id), a bare extension-authored track id) is scheme-less
+        // too, so the reading does not fork: Deezer, Spotify and Combine streams were all being
+        // buffered as if they were files on disk.
+        //
+        // WHEN IT STARTED: Media3 1.9.0 introduced isLocalPlayback and the separate
+        // *_FOR_LOCAL_PLAYBACK defaults (verified against DefaultLoadControl.java at tags 1.8.0,
+        // which has none of them, and 1.9.0, which has all six). We went 1.8.0 -> 1.10.1 in
+        // 464d4d3f (2026-06-06, build 868, bumped for the Android 16 ANRs), SKIPPING 1.9.0 - so the
+        // behaviour arrived as an unremarked side effect of that bump. THIS RESTORES THE PRE-JUNE
+        // BEHAVIOUR EXACTLY: the four values below are 1.11.0's own STREAMING defaults
+        // (DEFAULT_MIN_BUFFER_MS / DEFAULT_MAX_BUFFER_MS / DEFAULT_BUFFER_FOR_PLAYBACK_MS /
+        // DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS), applied to both classifications.
+        // ⚠️ THE START/REBUFFER PAIR IS 1_000 / 2_000 AND THAT REALLY IS STOCK - IT IS
+        // NOT 2_500 / 5_000, WHICH IS THE OBVIOUS OBJECTION AND IS WRONG. Checked at both ends:
+        // DefaultLoadControl.java:90 and :102 in the PINNED 1.11.0 sources jar declare 1000 and
+        // 2000, and the same two constants at tag 1.8.0 - the version we actually shipped before
+        // 2026-06-06 - declare 1000 and 2000 as well. 2500 / 5000 are the pre-2.12 ExoPlayer2
+        // values; they have not been media3's defaults at any version this app has ever used, so
+        // setting them here would be a behaviour CHANGE dressed as a restore. Do not "correct"
+        // these upward on the strength of a remembered number - re-read the two lines instead.
+        // (Only the LOCAL afterRebuffer value differs from stock streaming: 1000 at :109 versus
+        // 2000 at :102. That one-second difference is the only part of this pair the
+        // misclassification was changing.)
+        //
+        // ⚠⚠ GENERIC SETTERS ONLY, AND THAT IS THE MECHANISM RATHER THAN A STYLE CHOICE.
+        // setBufferDurationsMs and setPrioritizeTimeOverSizeThresholds write the local fields as well
+        // and leave Builder.onlyGenericConfigurationMethodsCalled true; build() then mirrors every
+        // generic value onto its local counterpart, under its own comment saying so. The
+        // classification therefore stops mattering - it is still computed, it just can no longer
+        // select a different number.
+        // ⚠️ SO DO NOT ADD A *ForLocalPlayback OR *ForStreaming SETTER HERE WITHOUT
+        // READING THIS NOTE. Any one of them sets that flag FALSE, the mirroring in build() stops,
+        // and every streaming track silently goes back to the 1 s floor below. If local tuning is
+        // ever genuinely wanted, note that downloads and the Offline extension are the ONLY items
+        // classified local CORRECTLY (their uri really is file://), and they are already off this
+        // path - StreamableMediaSource.getFactory sends them to the non-cache factories and
+        // StreamableLoader.loadServer short-circuits downloads to Uri.fromFile before any extension
+        // call. A 50 s fill of a local file is one disk read of a few MB.
+        //
+        // WHY min == max, WHICH IS THE WHOLE FIX. In shouldContinueLoading the local defaults give
+        // min 1 s / max 50 s, and the band between them is STICKY - the method's own trailing
+        // comment is "Else don't change the loading state". So the loader stopped at 50 s and did not
+        // resume until the buffer had drained BELOW ONE SECOND, a ~49 s hysteresis. Two things follow,
+        // both measured: loading averaged 1.00x bitrate (1.16x / 0.97x / 0.99x on three tracks -
+        // a drain-to-empty gate produces exactly 1x by construction, which no server-side trickle
+        // would), and load completion scattered across dur-10 s to dur-31 s instead of landing at
+        // dur-50 s. With min == max the band is DEGENERATE and that `else` is unreachable: the loader
+        // stops at 50 s and resumes on the next evaluation below it. Any equal pair has this
+        // property; 50 s is the one with four months of field history behind it.
+        // WHAT THE HYSTERESIS COST, beyond a thin buffer: ProgressiveMediaPeriod's loadable calls
+        // dataSource.open() ONCE, outside its read loop, and parks on loadCondition.block() inside it
+        // - the close is in the OUTER finally. So the HTTP connection was held OPEN AND IDLE for the
+        // whole 50 s -> 1 s drain, with no client-side timer running (RawDataSource.read is not
+        // in flight, so okhttp's readTimeout is not counting). A CDN or NAT dropping that idle socket
+        // surfaces on resume as an IOException, which recovers - at the price of a full Deezer
+        // re-open (HEAD getContentLength + ranged GET + Blowfish prime) inside the buffering path,
+        // with the buffer at one second. See the cost note at CacheOnlyTailSource's class comment.
+        //
+        // WHY targetBufferBytes IS LEFT ALONE AND prioritizeTimeOverSizeThresholds IS FALSE. The byte
+        // cap must stay BINDING, which is the lesson of the August OOM run (builds 1008/1013 queue
+        // OOMs, 1032's unexplained ~200 MB). The local default flips prioritizeTime to TRUE, which
+        // licenses the loader to exceed the byte cap to reach minBuffer; at a 1 s floor that almost
+        // never fired, at a 50 s floor it would become a live licence. False keeps the cap in charge.
+        // The cap itself is DEFAULT_AUDIO_BUFFER_SIZE = 200 * C.DEFAULT_BUFFER_SEGMENT_SIZE, and
+        // C.DEFAULT_BUFFER_SEGMENT_SIZE is 64 * 1024 - so 13_107_200 bytes, i.e. 12.5 MiB or ~13.1 MB
+        // decimal. (It is NOT "12.8 MB": that figure comes from reading 200 x 64 = 12800 KiB and then
+        // dividing by 1000 instead of 1024. Stated because the wrong number was in this note until
+        // 2026-10-15 and the conclusions below turn on it.) Audio is NOT split by classification -
+        // only video is (getDefaultBufferSize) - so this is the cap on either side of the fix.
+        // WHERE IT BINDS, at 13.1 MB, computed rather than estimated:
+        //   320 kbps  (40 kB/s)   50 s = 2.0 MB    cap at 328 s  - never binds on a single track
+        //   FLAC 16/44 (125 kB/s) 50 s = 6.25 MB   cap at 105 s  - never binds AT 50 s
+        //   hi-res FLAC (288 kB/s) 50 s = 14.4 MB  cap at  46 s  - DOES bind, just under 50 s
+        // So at maxBuffer = 50 s the cap is slack for everything Deezer actually serves, and the one
+        // format that reaches it (hi-res, which this app does not currently request) lands in a
+        // BENIGN regime: binding BELOW minBuffer puts shouldContinueLoading in its first branch,
+        // which recomputes isLoading from !targetBufferSizeReached on every call with no stickiness
+        // at all. The cap only becomes a hazard when maxBuffer is raised far enough that a normal
+        // track reaches it ABOVE minBuffer - which is the next note.
+        // ⚠️ AND THAT IS WHY maxBufferMs IS NOT SET TO A WHOLE-TRACK LENGTH. "Buffer the
+        // entire track in one pass, so there is no paused loader to drop a socket" is a real strategy
+        // and it works only if the BYTE cap also exceeds the file. It does at 320 kbps (a 3.5 min
+        // track is ~10.5 MB, inside the 13.1 MB cap) and it cannot at FLAC 16/44 (~26 MB) inside any
+        // memory budget worth defending - so FLAC would stop on the byte cap at 105 s with minBuffer
+        // far below it, which is the same sticky band wearing different numbers. Rejected for that
+        // reason, not on memory grounds alone.
+        //
+        // ⚠️ ONE INSTANCE PER PLAYER, NEVER SHARED. Built inside this function, so the main
+        // player and the crossfade sidecar each get their own (setLoadControl stores it as
+        // `() -> loadControl`, and ExoPlayer's own default is the supplier DefaultLoadControl::new,
+        // i.e. per-player too - so this preserves rather than changes that). Sharing one instance
+        // would share its DefaultAllocator, and DefaultLoadControl.updateAllocator SUMS the target
+        // across registered players - so during a crossfade the sidecar's fill would compete with the
+        // main player's for one budget, at precisely the moment both legs are live.
+        // The sidecar needs the same values even though it reads cache-only: it is misclassified too
+        // (CrossfadeController.maybePrepareSidecar hands tail.factory the main player's current
+        // MediaItem, Base64 uri and all), and it is the one player whose STATE_IDLE is an abort
+        // condition with no listener to report it.
+        //
+        // EXPECTED ON THE NEXT CAPTURE, STATED BEFORE THE BUILD: load completion clustered tightly at
+        // dur-50 s instead of dur-10..-31 s, and the crossfade gate satisfiable BEFORE arming begins
+        // (arm is dur-35 s at fade 10). If completion still scatters, the LoadControl was not the
+        // pacer and the next suspect is the extension's own delivery.
+        // ⚠️ WHAT THIS DOES NOT FIX, SO IT IS NOT READ AS A CURE: the May 10-14 stalls
+        // predate the misclassification entirely (we were on 1.8.0 until 2026-06-06, which has no
+        // isLocalPlayback), so the buffering watchdog, RESOLVE_GRACE_MS and the stuck detector are
+        // deliberately untouched here - they answer a different mechanism.
+        // ⚠️ AND THE ONE COST, STATED: N+1 is enqueued only once the current period is
+        // fully buffered (MediaPeriodQueue.shouldLoadNextMediaPeriod ->
+        // MediaPeriodHolder.isFullyBuffered, which tests getBufferedPositionUs() ==
+        // C.TIME_END_OF_SOURCE). Moving completion from ~dur-17 s to ~dur-50 s therefore starts the
+        // NEXT track's resolve ~33 s earlier and keeps one more stream open for longer against a
+        // shared-account CDN. That is the intended behaviour and it is what upstream's streaming
+        // defaults do, but given the 403/rate-limit history it is the thing to watch first.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(50_000, 50_000, 1_000, 2_000)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build()
+
         ExoPlayer.Builder(this, factory)
+            .setLoadControl(loadControl)
             .setRenderersFactory(RenderersFactory(this, audioEffectsProcessor))
             .setHandleAudioBecomingNoisy(handleAudioBecomingNoisy)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -908,8 +1034,13 @@ class PlayerService : MediaLibraryService() {
         private const val ACTION_CLEAR_QUEUE = "dev.rschwertley.gladix.auto.CLEAR_QUEUE"
         const val SKIP_SILENCE = "skip_silence"
         const val LOUDNESS_NORMALIZATION = "loudness_normalization"
-        const val CROSSFADE_ENABLED = "crossfade_enabled"
-        const val CROSSFADE_DURATION = "crossfade_duration"
+        // ⚠⚠ crossfade_enabled / crossfade_duration ARE GONE AS OF BUILD 2 AND ARE NOT
+        // MIGRATED. They belonged to Track Fade (fade the outgoing track into silence), which the
+        // true crossfade replaced on 2026-10-15; TRUE_CROSSFADE_SECONDS below is the live key and
+        // always was a separate one. The two old entries are ABANDONED IN PLACE on purpose: nothing
+        // reads them, so a stale value costs nothing, and deleting prefs on upgrade is a migration
+        // with a failure mode for no benefit. SKIP_FADE_ON_ALBUMS keeps its key AND its meaning - it
+        // now gates CrossfadeController.armRefusal instead of the old fade.
 
         // Single source of truth for the fade range. It was previously written out separately in the
         // settings slider, the audio-fx sheet's coerceIn, the audio-fx layout XML and the summary
@@ -917,8 +1048,6 @@ class PlayerService : MediaLibraryService() {
         // missed, so the label advertised a range the widgets had stopped allowing. The summary is
         // now formatted from these, so it cannot drift again. The layout XML still hardcodes 1..5 —
         // resource attributes can't reference these, so that one file remains a manual match.
-        const val CROSSFADE_DURATION_MIN = 1
-        const val CROSSFADE_DURATION_MAX = 5
 
         const val SKIP_FADE_ON_ALBUMS = "skip_fade_on_albums"
 

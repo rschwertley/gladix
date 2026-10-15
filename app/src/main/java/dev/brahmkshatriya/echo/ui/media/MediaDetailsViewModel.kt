@@ -32,6 +32,7 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.bustAlbumTracksCache
 import dev.brahmkshatriya.echo.extensions.cache.Cached.bustPlaylistTracksCache
 import dev.brahmkshatriya.echo.extensions.cache.Cached.getFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.getTracks
+import dev.brahmkshatriya.echo.extensions.cache.Cached.tracksRevalidatedFlow
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadItem
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadTracks
@@ -64,6 +65,29 @@ abstract class MediaDetailsViewModel(
     val downloadsFlow = downloader.flow
 
     val refreshFlow = MutableSharedFlow<Unit>()
+
+    // ⚠⚠ THE SWAP-IN TICK, AND IT IS NOT A REFRESH. Cached paints a playlist from the
+    // durable store and revalidates in the background; when that finds a DIFFERENT track list it
+    // writes the store and emits the playlist id. Bumping this re-runs [tracksLoadedFlow] ONLY -
+    // which re-reads the store and returns instantly - instead of going through refreshFlow, which
+    // would re-run loadMedia and fetch the item (and its pagePlaylist) all over again.
+    // ⚠️ THE REVALIDATION ALREADY FILTERS, so this fires at most once per open and
+    // only when the ids actually changed. Do not relax Cached's id-sequence comparison to compensate
+    // for anything here: the re-run blanks the feed for a frame, which is correct for a list that
+    // really changed and visible churn for one that did not.
+    // ⚠⚠ [CHECKED 2026-10-15] THE BLANK CANNOT BE AVOIDED FROM THIS FILE, SO DO NOT
+    // TRY. The obvious optimisation is to skip [tracksLoadedFlow]'s leading emit(null) on a swap,
+    // since it re-reads the durable store and returns instantly. It would change nothing: this flow
+    // is passed to FeedViewModel.getFeedData as an extraLoadFlow (MediaDetailsFragment's
+    // trackFeedData), and FeedData's init collects
+    // merge(current, refreshFlow, usersFlow, extraLoadFlow).debounce(100).collectLatest and sets
+    // cachedState = null and loadedState = null UNCONDITIONALLY before re-pulling. The blank is
+    // produced there, driven by the EMISSION and not by its value, so removing the null here is
+    // invisible. Avoiding it would mean teaching FeedData to tell "new subject" from "same
+    // subject, new content" - the shared engine behind every feed in the app, debounced and
+    // collectLatest'd precisely so intermediate torn-down states never render. That is its own
+    // investigation, not a side effect of a playlist fix.
+    private val tracksSwappedIn = MutableStateFlow(0)
     val cacheResultFlow = MutableStateFlow<Result<MediaState.Loaded<*>>?>(null)
     val itemResultFlow = MutableStateFlow<Result<MediaState.Loaded<*>>?>(null)
 
@@ -108,18 +132,20 @@ abstract class MediaDetailsViewModel(
         })
     }.stateIn(viewModelScope, Eagerly, null)
 
-    val tracksLoadedFlow = extensionItemFlow.transformLatest { (extension, item) ->
-        emit(null)
-        if (!loadFeeds) return@transformLatest
-        extension ?: return@transformLatest
-        item ?: return@transformLatest
-        val feed : Result<Feed<Shelf>?> = trackFeed(item, extension)
-            ?: loadTracks(app, extension, item).map { it?.map { t -> t.toShelf() } }
-        emit(feed.map {
-            it ?: return@map null
-            FeedData.State(extension.id, item, it)
-        })
-    }.stateIn(viewModelScope, Eagerly, null)
+    val tracksLoadedFlow = extensionItemFlow
+        .combine(tracksSwappedIn) { pair, _ -> pair }
+        .transformLatest { (extension, item) ->
+            emit(null)
+            if (!loadFeeds) return@transformLatest
+            extension ?: return@transformLatest
+            item ?: return@transformLatest
+            val feed: Result<Feed<Shelf>?> = trackFeed(item, extension)
+                ?: loadTracks(app, extension, item).map { it?.map { t -> t.toShelf() } }
+            emit(feed.map {
+                it ?: return@map null
+                FeedData.State(extension.id, item, it)
+            })
+        }.stateIn(viewModelScope, Eagerly, null)
 
     val feedCachedFlow = cacheExtensionItemFlow.transformLatest { (extension, item) ->
         emit(null)
@@ -143,6 +169,16 @@ abstract class MediaDetailsViewModel(
             FeedData.State(extension.id, item, it)
         })
     }.stateIn(viewModelScope, Eagerly, null)
+
+    init {
+        viewModelScope.launch {
+            tracksRevalidatedFlow.collect { id ->
+                // Id match only: one instance of this ViewModel exists per open page, and a
+                // revalidation for some other playlist must not rebuild this one's feed.
+                if (id == itemResultFlow.value?.getOrNull()?.item?.id) tracksSwappedIn.value++
+            }
+        }
+    }
 
     fun refresh() = viewModelScope.launch {
         refreshFlow.emit(Unit)

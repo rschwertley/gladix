@@ -18,7 +18,17 @@ class AudioFocusListener(
     private val handler = Handler(context.mainLooper)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    private var pausedForFocus = false
+    // ⚠⚠ READ BY CrossfadeController, AND IT IS THE ONLY RELIABLE DISCRIMINATOR.
+    // ShufflePlayer forces handleAudioFocus=false, so every pause this class makes goes THROUGH the
+    // player and surfaces to other listeners as PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST - a real
+    // user pause and a focus pause are indistinguishable by reason code. This flag is set BEFORE
+    // every auto-resumable pause below (AUDIOFOCUS_LOSS, AUDIOFOCUS_LOSS_TRANSIENT,
+    // AUDIOFOCUS_REQUEST_DELAYED) and pause() flushes its listeners inline on this thread, so a
+    // reader in that callback sees it. AUDIOFOCUS_REQUEST_FAILED deliberately does NOT set it:
+    // focus was denied with no auto-resume, so a crossfade SHOULD abort there.
+    // Read-only outside this class; this class is the only writer.
+    internal var pausedForFocus = false
+        private set
     private var loweringVolume = false
 
     // Mirrors whether commitPauseRunnable is actually queued. cancelCommit() reads it to skip

@@ -19,6 +19,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.cache.Cached.bustPlaylistTracksCache
+import dev.brahmkshatriya.echo.extensions.cache.Cached.writePlaylistTracksCache
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getOrThrow
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -221,6 +222,24 @@ class EditPlaylistViewModel(
                     }
                 }
             }.getOrThrow()
+            // ⚠⚠ WRITE THE ORDER WE JUST COMMITTED, RATHER THAN ASKING FOR IT BACK.
+            // `tracks` is the list the action loop above maintained and sent to the extension, and the
+            // getOrThrow() on the line above means the server accepted every action. So this is the
+            // authoritative post-edit order, and it is strictly better than a refetch: the editor
+            // paints instantly, and a read endpoint that lags the write it just acknowledged cannot
+            // put the pre-edit order back on screen. (Reported 2026-10-15: after a reorder, Deezer's
+            // own site showed the new order immediately while Gladix showed the old one through
+            // repeated refreshes, a force-close and a Clear cache.)
+            // ⚠️ PLACED AFTER THE EDIT CLIENT, BEFORE onExitPlaylistEditor, AND THE
+            // ORDER MATTERS BOTH WAYS. After the edits: a partially applied edit throws above and
+            // never reaches here, so a half-finished list is never cached - the bust at the top of
+            // this block is what covers that case, and it stays. Before the listener: the track edits
+            // are already committed at this point, so the cache matches the server whatever the
+            // listener then does or throws.
+            // ⚠️ ONLY `Move` IS PURELY LOCAL. Add and Remove re-read `tracks` from the
+            // extension inside the loop, so for those this writes a server-sourced list and the fix
+            // is only as current as that read; reorder - the reported case - is fully covered.
+            writePlaylistTracksCache(app, playlist, tracks)
             // .map { } drops the Any? result to Unit so the runCatching stays typed Result<Unit> for
             // SaveState.Saved; the call still runs and still throws on failure (no trailing Unit needed).
             extension.getIf<PlaylistEditorListenerClient, Any?> {

@@ -129,6 +129,16 @@ class StreamableLoader(
                 // Both stay TrackUnavailableException (non-retryable) - the split is the MESSAGE and the
                 // diagnosis, NOT the behaviour. Do not make either retryable without re-reading the
                 // burst/rate-limit reasoning above.
+                // ⚠️ [PARKED 2026-10-15] "RE-RESOLVING CAN NEVER FIX IT" ABOVE IS TRUE
+                // ONLY BECAUSE THE RE-RESOLVE IS CACHE-SERVED, and nothing in that sentence says so.
+                // The generic-tail retry does set loaded=false and does re-enter load() from the top -
+                // but loadTrack above passes preferCache = true, so Cached.loadMedia returns the SAME
+                // cached Track and the index mismatch is identical on every pass. With a FRESH resolve
+                // the mismatch WOULD be fixable, because MediaItemUtils.buildLoaded recomputes
+                // serverIndex from the newly loaded servers. The fix (option C) is parked, with its
+                // risks and its build trigger, at MediaItemUtils.withRetry.
+                // IF IT IS EVER BUILT, CORRECT THE SENTENCE ABOVE rather than leaving it to be read as
+                // unconditional: the non-retryable throw is right today and would stop being right.
                 val streamable = servers.getOrNull(index) ?: throw TrackUnavailableException(
                     if (servers.isEmpty()) "No playable source for this track"
                     else "Playable source no longer available"

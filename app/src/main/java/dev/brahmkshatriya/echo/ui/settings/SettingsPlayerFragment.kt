@@ -12,11 +12,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CACHE_SIZE
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CLOSE_PLAYER
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MAX
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_DURATION_MIN
 import dev.brahmkshatriya.echo.playback.CrossfadeController
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.CROSSFADE_ENABLED
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.TRUE_CROSSFADE_SECONDS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_SILENCE
@@ -145,49 +141,11 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     setDefaultValue(true)
                 }
 
-                SwitchPreferenceCompat(context).apply {
-                    key = CROSSFADE_ENABLED
-                    title = getString(R.string.crossfade)
-                    summary = getString(R.string.crossfade_summary)
-                    layoutResource = R.layout.preference_switch
-                    isIconSpaceReserved = false
-                    // ON by default as of 2026-09-24. This reverses the August decision that shipped
-                    // it OFF at 2s; the default now matches PlayerService's and
-                    // AudioEffectsBottomSheet's reads, and the duration default moved to 4s. FOUR
-                    // PLACES HOLD THIS ONE VALUE - this row, the visibility gate below,
-                    // PlayerService.onSharedPreferenceChanged's re-read, and AudioEffectsBottomSheet.
-                    // Change them together or the sheet and the engine disagree.
-                    setDefaultValue(true)
-                    setOnPreferenceChangeListener { _, newValue ->
-                        skipFadeOnAlbums.isVisible = newValue as Boolean
-                        true
-                    }
-                    addPreference(this)
-                }
-
-                MaterialSliderPreference(
-                    context, CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX
-                ).apply {
-                    key = CROSSFADE_DURATION
-                    title = getString(R.string.crossfade_duration)
-                    summary = getString(
-                        R.string.crossfade_duration_summary,
-                        CROSSFADE_DURATION_MIN, CROSSFADE_DURATION_MAX
-                    )
-                    isIconSpaceReserved = false
-                    // 4 is inside CROSSFADE_DURATION_MIN..MAX (1..5). Mirrored at PlayerService's and
-                    // AudioEffectsBottomSheet's getInt defaults.
-                    setDefaultValue(4)
-                    addPreference(this)
-                }
-
-                // ⚠⚠ TRUE CROSSFADE, BUILD 1 - INAUDIBLE BY DESIGN. 0 is off and is the
-                // default; above 0 the controller and its sidecar exist and arm, but this build never
-                // overlaps anything. Its own key (TRUE_CROSSFADE_SECONDS), NOT the crossfade_* pair
-                // above, which still belong to Track Fade - see the note at that constant.
-                // ⚠⚠ KEEP IT ADJACENT TO THE TRACK FADE ROWS. Build 2 deletes those and
-                // re-parents the album switch to this one; shipping it anywhere else would make that
-                // a move rather than a deletion.
+                // ⚠⚠ TRUE CROSSFADE. Two Track Fade rows stood above this one until Build 2
+                // (2026-10-15) - a crossfade_enabled switch and a 1-5 s crossfade_duration slider -
+                // and they are deleted, not migrated. This slider has always had its own key, so
+                // nothing here changes meaning; see the note at PlayerService's abandoned constants.
+                // 0 is off and is the default.
                 MaterialSliderPreference(
                     context,
                     CrossfadeController.FADE_SECONDS_MIN,
@@ -202,11 +160,17 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     isIconSpaceReserved = false
                     // Mirrors PlayerService.syncCrossfade's getInt default. Both must stay 0.
                     setDefaultValue(CrossfadeController.FADE_SECONDS_MIN)
+                    setOnPreferenceChangeListener { _, newValue ->
+                        // The album switch belongs to whichever fade is live, so it follows this
+                        // slider now rather than the deleted Track Fade switch. > 0 = crossfade on.
+                        skipFadeOnAlbums.isVisible = (newValue as? Int ?: 0) > 0
+                        true
+                    }
                     addPreference(this)
                 }
 
                 skipFadeOnAlbums.isVisible =
-                    preferenceManager.sharedPreferences?.getBoolean(CROSSFADE_ENABLED, true) == true
+                    (preferenceManager.sharedPreferences?.getInt(TRUE_CROSSFADE_SECONDS, 0) ?: 0) > 0
                 addPreference(skipFadeOnAlbums)
 
                 SwitchPreferenceCompat(context).apply {

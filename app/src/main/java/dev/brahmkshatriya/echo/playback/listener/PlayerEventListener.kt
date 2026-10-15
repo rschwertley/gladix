@@ -318,13 +318,6 @@ class PlayerEventListener(
         }
     }
 
-    override fun onIsLoadingChanged(isLoading: Boolean) {
-        // The only signal that can make an armed sidecar's cache-only tail readable: the main
-        // player's loadable finishing is what commits the final cache fragment. The controller
-        // re-checks bufferedPosition itself, because isLoading also goes false at a full buffer.
-        if (!isLoading) crossfade()?.onLoadingChanged()
-    }
-
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
         updateCustomLayout()
     }
@@ -343,19 +336,6 @@ class PlayerEventListener(
             // decision was made against that next item (album adjacency, hasNext). Re-decide.
             crossfade()?.onQueueEdit()
         }
-        // The item's own duration arrives with THIS reason and no other. A progressive source with
-        // no extractor duration and no known length reports C.TIME_UNSET until
-        // ProgressiveMediaPeriod.onLoadCompleted back-fills it (media3 1.11.0,
-        // ProgressiveMediaPeriod.java:799-806) and refreshes the timeline; the early case publishes
-        // it from setSeekMap via maybeFinishPrepare. Both land here as SOURCE_UPDATE.
-        // ⚠️ THE CONTROLLER'S ARM DECISION NEEDS A DURATION, so before this line it simply
-        // never armed on such a track: schedule() ran on transition, seek and slider only, and a
-        // 2026-10-11 capture showed 15 arm lines all reason=noDuration. onSourceInfoRefreshed is the
-        // idempotent entry point for exactly this - it refuses to cancel or re-post anything already
-        // scheduled, so firing it on every SOURCE_UPDATE of a track is safe. Read its note before
-        // routing anything else through it.
-        if (reason == Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
-            crossfade()?.onSourceInfoRefreshed()
         if ((player as? ShufflePlayer)?.isRearranging != true) {
             scheduleSaveQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -408,6 +388,9 @@ class PlayerEventListener(
     // This is a MITIGATION, not the fix - it bounds the hang, it does not stop periods failing to prepare.
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) armBufferingWatchdog()
+        // Resume BEFORE the early return below, and immediately rather than on the next tick: a
+        // focus-driven pause carries the sidecar with it, so the resume has to carry it back.
+        if (playWhenReady) crossfade()?.onResumed()
         // ⚠️ BUILD 1 TREATS BOTH KINDS THE SAME (both abort), so this split costs nothing yet
         // and exists so Build 2 can act on it - there, an interruption must PAUSE and RESUME the
         // sidecar while a user pause must abort. KNOWN GAP FOR BUILD 2: our own focus handling pauses
@@ -426,6 +409,12 @@ class PlayerEventListener(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         Log.d("GladixPlayback", "onPlaybackStateChanged: state=$playbackState")
+        // ⚠⚠ THE MAIN PROCESSOR CAN BE MUTED WHEN THIS FIRES, AND NOTHING ELSE WOULD
+        // LIFT IT. A crossfade mutes the main player across the hand-off seek; if the buffering
+        // watchdog stops and re-prepares it, or an error skip does, or the queue ends, the controller
+        // needs to know so it can un-mute. Seeks and errors already reach it through onSeek /
+        // onPlayerError - STATE_IDLE is the one that does not.
+        if (playbackState == Player.STATE_IDLE) crossfade()?.onPlayerIdle()
         // ⚠⚠ THIS ARM IS UNGATED ON playWhenReady, AND IT IS THE ONLY ONE OF THE THREE THAT IS.
         // onTimelineChanged's arm tests `STATE_BUFFERING && player.playWhenReady`, onPlayWhenReadyChanged's
         // tests `playWhenReady && STATE_BUFFERING`, and armBufferingWatchdog itself does NOT re-gate - it
@@ -908,6 +897,13 @@ class PlayerEventListener(
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        // ⚠⚠ TICK LIFECYCLE ONLY - DO NOT ROUTE A PAUSE THROUGH HERE. isPlaying goes
+        // false while the main player buffers the item it was handed off to, and the crossfade tail
+        // must keep playing through exactly that window. The pause/resume decision travels through
+        // onPlayWhenReadyChanged instead; this only starts and stops the controller's 200 ms tick.
+        // Placed BEFORE the release guard below on purpose: a release that empties the timeline still
+        // has to stop the tick.
+        crossfade()?.onIsPlayingChanged(isPlaying)
         if (player.mediaItemCount == 0) return  // fired during/after player.release(); position is 0
         saveCurrentPosGated()
     }
@@ -2323,6 +2319,15 @@ class PlayerEventListener(
             }
             skipInvoluntarily()
         } else {
+            // ⚠️ [PARKED 2026-10-15] THIS RE-RESOLVES THE STREAM, NOT THE TRACK. withRetry
+            // sets loaded=false so the whole StreamableLoader.load runs again, but its loadTrack goes
+            // through Cached.loadMedia with preferCache = true and gets the SAME cached Track back. So a
+            // stale cached Track - one built by an older extension version, for instance - cannot
+            // self-heal here: it fails identically on every pass until maxSingleItemRetries above skips
+            // it. Workaround for a user hitting it: Clear cache (the kache is in cacheDir).
+            // THE PARKED FIX, ITS RISKS AND ITS BUILD TRIGGER ARE AT MediaItemUtils.withRetry. Do not
+            // re-derive them here, and do not widen this branch's retry budget to compensate - more
+            // passes of an identical resolve cannot help.
             val newItem = MediaItemUtils.withRetry(mediaItem)
             player.replaceMediaItem(index, newItem)
         }

@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.playback.renderer
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.AudioProcessor.StreamMetadata
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
@@ -12,6 +13,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,15 +22,45 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 class AudioEffectsProcessor : BaseAudioProcessor() {
 
-    @Volatile var crossfadeEnabled = false
     @Volatile var normalizationEnabled = false
-    @Volatile var crossfadeDurationMs = 5000
-    @Volatile var skipFade = false
 
+    // ⚠⚠ THE CROSSFADE RAMP, AND IT IS NOT THE OLD TRACK FADE WITH A NEW NAME.
+    // Track Fade was a SINGLE-leg envelope: it used gain = cos²(theta), which for one stream is a
+    // pleasant steep curve and for an OVERLAP of two is a 3 dB hole in the middle
+    // (cos⁴ + sin⁴ = 0.5 at the crossover). An overlap needs EQUAL POWER: gain_out = cos(theta),
+    // gain_in = sin(theta), so gain_out² + gain_in² = 1 for uncorrelated signals. Dropping the
+    // squaring is the whole change to the curve; the counters and their decrement are unchanged.
+    // ⚠️ LENGTH IS PER-RAMP, NOT A SETTING. Track Fade derived the frame count from a
+    // prefs field (crossfadeDurationMs) on every buffer; a crossfade's length is decided once per
+    // hand-off (min(fade, tail that actually exists), floored at 1s) and cannot come from a
+    // global. [startFadeIn] / [startFadeOut] take MILLISECONDS of MEDIA time and convert here,
+    // because only this class knows the sample rate; the speed factor is applied by the caller
+    // (see CrossfadeController, which multiplies by playbackParameters.speed for the same reason
+    // the old scheduleFadeOut did).
     private val fadeInFramesRemaining = AtomicLong(0)
     private val fadeOutFramesRemaining = AtomicLong(0)
-    // audio thread only — no atomic needed
-    private var isPendingFadeIn = false
+    // Frames the CURRENT ramp was armed with. Both legs of one crossfade are armed with the same
+    // number in the same main-thread task, which is what makes the equal-power identity hold.
+    private val rampTotalFrames = AtomicLong(0)
+
+    // ⚠⚠ MUTE AND TOKEN: THE INCOMING-LEG HANDSHAKE, AND onFlush MUST NOT CLEAR THEM.
+    // At hand-off the MAIN player is the INCOMING leg: it is muted, then seeked to the next item,
+    // and the seek FLUSHES this processor. A fade-in armed before the seek would be wiped by that
+    // flush, and an unmuted main player would play the departing track twice (its own buffered
+    // audio and the sidecar's tail) for the 1-2 s the seek takes. So:
+    //   armIncoming(token)  ->  output silence, remember the token;
+    //   onFlush             ->  clears the COUNTERS, keeps muted and pendingToken;
+    //   first post-flush queueInput -> publishes the token (still silent);
+    //   startFadeIn(ms) from the controller -> clears the mute and starts the ramp.
+    // The controller owns every length decision on the main thread; the audio thread only reports
+    // "my first real frame happened". That ordering is why no length arithmetic is needed here.
+    // ⚠️ IDENTITY-COMPARED OBJECT, NOT A BOOLEAN, and the reason is on record: the
+    // Jun 21-26 skipFade fix exists because onQueueEndOfStream runs on the AUDIO thread while the
+    // flag was set from MAIN with no ordering guarantee between them. A fresh object per crossfade,
+    // compared by identity, cannot let a stale previous crossfade arm anything.
+    @Volatile private var muted = false
+    private val pendingToken = AtomicReference<Any?>(null)
+    private val publishedToken = AtomicReference<Any?>(null)
     private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
 
     // LUT infrastructure
@@ -119,19 +151,64 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         }
     }
 
-    fun onFadeOutStart() {
-        if (crossfadeEnabled) fadeOutFramesRemaining.set(crossfadeFrames())
-    }
-
-    fun cancelFades() {
-        fadeInFramesRemaining.set(0)
-        fadeOutFramesRemaining.set(0)
-    }
-
-    private fun crossfadeFrames(): Long {
+    /** Media milliseconds -> frames at the configured rate. 0 when the format cannot be ramped. */
+    private fun framesFor(mediaMs: Long): Long {
         val fmt = configuredFormat
         if (fmt.sampleRate <= 0 || fmt.encoding != C.ENCODING_PCM_16BIT) return 0L
-        return fmt.sampleRate.toLong() * crossfadeDurationMs / 1000L
+        return fmt.sampleRate.toLong() * mediaMs / 1000L
+    }
+
+    /**
+     * Outgoing leg (the sidecar's tail). Armed while the sidecar is still silent, so there is no
+     * gain step when it starts playing.
+     */
+    fun startFadeOut(mediaMs: Long) {
+        val frames = framesFor(mediaMs)
+        rampTotalFrames.set(frames)
+        fadeInFramesRemaining.set(0)
+        fadeOutFramesRemaining.set(frames)
+    }
+
+    /**
+     * Incoming leg (the main player after the hand-off seek). Clears the mute set by
+     * [armIncoming]: the first audible sample is therefore the first sample of the ramp, at gain 0.
+     */
+    fun startFadeIn(mediaMs: Long) {
+        val frames = framesFor(mediaMs)
+        rampTotalFrames.set(frames)
+        fadeOutFramesRemaining.set(0)
+        fadeInFramesRemaining.set(frames)
+        muted = false
+    }
+
+    /** Silence this leg and stage [token]; survives the flush the hand-off seek causes. */
+    fun armIncoming(token: Any) {
+        pendingToken.set(token)
+        publishedToken.set(null)
+        fadeInFramesRemaining.set(0)
+        fadeOutFramesRemaining.set(0)
+        muted = true
+    }
+
+    /**
+     * Non-null once this processor has rendered its first frame since [armIncoming]. The controller
+     * polls it rather than being called back, so every decision that follows stays on the main
+     * thread. Identity-compared against the controller's own token.
+     */
+    fun overlapToken(): Any? = publishedToken.get()
+
+    /**
+     * Full reset: both counters, the mute and the token. Called on every abort and completion, so
+     * a leg can never be left silent or mid-ramp. MUST be reachable without a flush — a hand-off
+     * that is aborted before the seek never produces one.
+     */
+    fun clearRamps() {
+        fadeInFramesRemaining.set(0)
+        fadeOutFramesRemaining.set(0)
+        rampTotalFrames.set(0)
+        pendingToken.set(null)
+        publishedToken.set(null)
+        muted = false
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -139,31 +216,40 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun onQueueEndOfStream() {
-        // Clear the previous track's fade-out at the track boundary so its dying envelope doesn't
-        // bleed into — and silence the opening of — the NEW track. The old track already received
-        // its full fade-out on its own buffers before this point (the envelope is applied in
-        // queueInput, and no old-stream input buffers remain once end-of-stream fires), so this only
-        // stops the leftover countdown from multiplying the next track's first ~1s. No-op on albums
-        // (fade-out is never scheduled there) and when crossfade is off (never armed) — introduces
-        // no fade where there should be none.
+    /**
+     * ⚠⚠ THE ONE PLACE THAT CLEARS A RAMP WITHOUT CLEARING THE MUTE, AND THE
+     * ASYMMETRY IS THE POINT. A seek flushes the sink, so this is where the Jul 1-3 fade-out bleed
+     * would come back: the departing track's half-finished fade-out counter would otherwise survive
+     * into the next track and multiply its opening. onQueueEndOfStream used to be the guard, but a
+     * crossfade hand-off is a SEEK, not an end of stream — it never fires.
+     * ⚠️ muted / pendingToken ARE DELIBERATELY KEPT: they were set BEFORE the seek that
+     * caused this flush, and clearing them here would unmute the incoming leg mid-seek (the
+     * departing track audible twice) and lose the handshake. See the field note.
+     * Overrides the StreamMetadata form, not the deprecated no-arg one.
+     */
+    override fun onFlush(streamMetadata: StreamMetadata) {
+        fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
-        if (crossfadeEnabled && !skipFade) isPendingFadeIn = true
+        rampTotalFrames.set(0)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
 
-        if (skipFade) {
-            // Force full volume for album transitions, regardless of whether isPendingFadeIn
-            // raced ahead of the skipFade flag being set (onQueueEndOfStream runs on the audio
-            // thread, skipFade is set from the main thread — no ordering guarantee between them).
-            isPendingFadeIn = false
-            fadeInFramesRemaining.set(0)
-            fadeOutFramesRemaining.set(0)
-        } else if (isPendingFadeIn) {
-            fadeInFramesRemaining.set(crossfadeFrames())
-            isPendingFadeIn = false
+        // ⚠⚠ MUTED MEANS SILENCE AND A PUBLISHED TOKEN, IN THAT ORDER. This is the
+        // incoming leg between the hand-off and the controller arming its ramp: the buffer is
+        // consumed and replaced with zeros, and the FIRST such buffer publishes the token so the
+        // controller knows a real frame has been rendered. It keeps outputting silence until
+        // startFadeIn clears the mute, which is what lets the controller decide the ramp length on
+        // the main thread (it needs the sidecar position; the audio thread cannot read it). The
+        // silence lasts the seek plus at most one 200 ms tick, and the tail covers all of it.
+        if (muted) {
+            pendingToken.get()?.let { publishedToken.compareAndSet(null, it) }
+            val silence = replaceOutputBuffer(inputBuffer.remaining())
+            while (silence.hasRemaining()) silence.put(0)
+            inputBuffer.position(inputBuffer.limit())
+            silence.flip()
+            return
         }
 
         // Swap in pending LUT if available and generation token still matches
@@ -185,25 +271,28 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
         var currentFi = fadeInFramesRemaining.get()
         var currentFo = fadeOutFramesRemaining.get()
-        val total = crossfadeFrames()
+        val total = rampTotalFrames.get()
         val channelCount = fmt.channelCount
-        val applyFade = crossfadeEnabled && total > 0
+        val applyFade = total > 0
 
         while (inputBuffer.remaining() >= channelCount * 2) {
             // Cosine² fade envelope — computed once per frame, applied to all channels
             val fadeGain: Float
             if (applyFade && (currentFi > 0 || currentFo > 0)) {
+                // Equal power: progress p runs 0 -> 1 across the ramp, in = sin(p*pi/2),
+                // out = cos(p*pi/2), so in² + out² = 1. NOT squared — squaring is the single-leg
+                // Track Fade curve and puts a 3 dB hole in the middle of an overlap.
                 val fadeInGain = if (currentFi > 0) {
-                    val c = cos(currentFi.toFloat() / total * (PI / 2).toFloat())
-                    c * c
+                    val p = 1f - currentFi.toFloat() / total
+                    sin(p * (PI / 2).toFloat())
                 } else 1f
                 val fadeOutGain = if (currentFo > 0) {
-                    val c = cos((1f - currentFo.toFloat() / total) * (PI / 2).toFloat())
-                    c * c
+                    val p = 1f - currentFo.toFloat() / total
+                    cos(p * (PI / 2).toFloat())
                 } else 1f
                 if (currentFi > 0) currentFi--
                 if (currentFo > 0) currentFo--
-                fadeGain = fadeInGain * fadeOutGain
+                fadeGain = fadeInGain * fadeOutGain * OVERLAP_PEDESTAL
             } else {
                 fadeGain = 1f
             }
@@ -226,5 +315,26 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     private companion object {
         const val PASS_A_EXPONENT = 1.0 / 2.5  // 2.5:1 compression ratio, threshold 0.4
+
+        // ⚠⚠ HEADROOM FOR THE SUMMED OVERLAP. 1.0 = none, which is what the
+        // reference ships and what we ship. The numbers behind the choice, measured from
+        // generateDualStageLUT above rather than estimated:
+        //   Pass B (the cubic) is UNCONDITIONAL and maps a full-scale input to f(1.0) = 25/27 =
+        //     0.926. Pass A (2.5:1 above 0.4) runs only when normalization is on, and would take
+        //     it to 0.577 — but normalization is force-disabled (PlayerService writes
+        //     normalization_force_disabled_v1) and its row is hidden in the FX sheet, so 0.926 is
+        //     the live per-leg cap.
+        //   Equal-power legs peak together at 1/sqrt(2) each, so the worst-case sum is
+        //     0.926 * sqrt(2) = 1.31 — 2.34 dB over full scale. That requires the two legs to be
+        //     CORRELATED and both at full scale at the same instant; for uncorrelated music the
+        //     summed RMS is flat at 0.926 and only occasional peaks exceed 1.0.
+        //   0.764 (-2.34 dB) is the value that makes the sum <= 1.0 everywhere. If a listening
+        //     pass finds grit at the crossover, change this one constant — do not touch the curve.
+        // ⚠️ THE RAMP IS APPLIED AFTER THE LUT (see the output stage below) AND MUST
+        // STAY THERE. Ramping before the limiter would feed it an attenuated signal, it would
+        // compress less, and each leg would come out relatively HOTTER — the opposite of the
+        // intent. The limiter is also per-leg and pre-mix, so it cannot see the sum at all; that is
+        // precisely why this constant exists rather than relying on it.
+        const val OVERLAP_PEDESTAL = 1.0f
     }
 }

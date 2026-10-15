@@ -46,6 +46,10 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
@@ -55,22 +59,51 @@ import kotlinx.serialization.Serializable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * ⚠⚠ NEW FIELDS MUST BE DEFAULTED, BECAUSE OLD ENTRIES ON DISK MUST STILL DECODE.
+ * These files live in filesDir and survive an upgrade, a force-close and Android's Clear cache
+ * (see CacheUtils.cacheDir), so there is always a population written by the previous build.
+ * A default means an old entry decodes with writtenByUsAtMs = null, which reads as "not ours" and
+ * simply takes the normal revalidation path - no migration, no version field, nothing to fail.
+ * ⚠️ writtenByUsAtMs IS THE POST-SAVE TRUST WINDOW. Set only by
+ * [Cached.writePlaylistTracksCache], i.e. only when WE committed an edit and know the resulting
+ * order. For TRUST_WINDOW_MS afterwards a revalidation may not replace the list, so a read endpoint
+ * that lags the write it just acknowledged cannot put the user's pre-edit order back on screen.
+ */
 @Serializable
-data class CachedPlaylistTracks(val savedAtMs: Long, val tracks: List<Track>)
+data class CachedPlaylistTracks(
+    val savedAtMs: Long,
+    val tracks: List<Track>,
+    val writtenByUsAtMs: Long? = null,
+)
 
 object Cached {
     class NotFound(id: String) : Exception("Cache not found for $id")
 
     private const val DURABLE_PLAYLIST_FOLDER = "playlist-tracks"
+    // The memo and the durable store are keyed DIFFERENTLY on purpose (canonical vs raw id, see the
+    // note at the coalescedTracks call below), so the prefixes are named once here rather than
+    // spelled out at each of the five sites that touch them.
+    private const val MEMO_PLAYLIST_PREFIX = "playlist:"
     // SEPARATE FOLDER, not a shared one with a prefixed key. Both stores key on "<id>-tracks", and an album
     // id and a playlist id are different namespaces that can collide on the same string - Deezer numbers
     // both. A shared folder would therefore need the key itself to carry the type, which would invalidate
     // every existing playlist entry for no gain. Two folders cost nothing and cannot collide.
     private const val DURABLE_ALBUM_FOLDER = "album-tracks"
+    private const val MEMO_ALBUM_PREFIX = "album:"
     // Shared by both stores: the reasoning is identical (people reopen the same lists across days, and the
     // things that change underneath - a playlist edited elsewhere, an album's catalog metadata - change far
     // more slowly than that). Every in-app mutation busts its own entry, so this bounds only EXTERNAL edits.
-    private const val TRACKS_TTL_MS = 24L * 60 * 60 * 1000  // 24h
+    // ⚠⚠ 24h STILL APPLIES TO ALBUMS, AND NO LONGER TO PLAYLISTS. The Aug 3 decision
+    // was one TTL for both; it was revisited on 2026-10-15 because a playlist is MUTABLE and an album
+    // is not. A user who reorders a playlist and sees the old order for the rest of the day is a bug
+    // report (and was one); an album's track list cannot change from inside this app at all, so the
+    // short-circuit there is pure win and stays. Playlists now paint from the store and revalidate -
+    // see [loadPlaylistTracksCached].
+    private const val TRACKS_TTL_MS = 24L * 60 * 60 * 1000  // 24h, ALBUMS ONLY
+
+    /** How long after our own save a revalidation may refresh nothing. See [CachedPlaylistTracks]. */
+    private const val TRUST_WINDOW_MS = 90L * 1000
 
     // ══ DURABLE-CACHE ELIGIBILITY ══
     // GENERAL RULE: an item that carries its own expiry in `extras` is NOT written to, or read from, a
@@ -134,19 +167,67 @@ object Cached {
     // Invalidate the durable playlist-tracks entry so the next loadTracks re-fetches (via the canonical
     // re-resolve path) instead of short-circuiting within TTL. Wired to pull-to-refresh + edit "reload".
     fun bustPlaylistTracksCache(app: App, playlistId: String) =
-        bustTracksCache(app, playlistId, DURABLE_PLAYLIST_FOLDER)
+        bustTracksCache(app, playlistId, DURABLE_PLAYLIST_FOLDER, MEMO_PLAYLIST_PREFIX)
 
     // Albums have no in-app mutation path (you cannot edit an album's track list), so unlike the playlist
     // one this exists for a single caller: pull-to-refresh. Without it, refreshTracks() would bust nothing
     // on an album page and the gesture would silently do nothing for 24h - the same failure the playlist
     // store had until the mutation sites were wired up.
     fun bustAlbumTracksCache(app: App, albumId: String) =
-        bustTracksCache(app, albumId, DURABLE_ALBUM_FOLDER)
+        bustTracksCache(app, albumId, DURABLE_ALBUM_FOLDER, MEMO_ALBUM_PREFIX)
 
-    private fun bustTracksCache(app: App, id: String, folder: String) {
+    // ⚠⚠ BOTH LAYERS, AND THE MEMO IS THE ONE THAT MADE THE BUST A NO-OP. Deleting
+    // only the file left [coalescedTracks]' 5-minute entry holding the PRE-EDIT list, so the very
+    // next load returned it with no fetch at all - and then [loadPlaylistTracksCached] wrote that
+    // stale list back with a fresh timestamp, RENEWING the 24h lease instead of clearing it. A
+    // reporter saw the old order survive a save, repeated refreshes, a force-close and a Clear cache
+    // (the durable store is in filesDir by design - see CacheUtils.cacheDir - so Clear cache cannot
+    // touch it), until the memo finally aged out. Clearing the memo here is what makes
+    // pull-to-refresh and the editor's "reload" actually reach Deezer.
+    private fun bustTracksCache(app: App, id: String, folder: String, memoPrefix: String) {
         runCatching {
             val dir = CacheUtils.cacheDir(app.context, folder, durable = true)
             File(dir, "$id-tracks".hashCode().toString()).delete()
+        }
+        // canonicalId, because that is what the memo is keyed on - see the note at the
+        // coalescedTracks call in loadPlaylistTracksCached. A raw-id removal would silently miss for
+        // any extension that canonicalizes (YouTube Music's "VL" prefix).
+        inFlightTracks.remove(memoPrefix + canonicalId(id))
+    }
+
+    /**
+     * Write a KNOWN-GOOD track list straight into both layers, bypassing any fetch.
+     *
+     * ⚠⚠ THE ONLY CALLER IS A SUCCESSFUL PLAYLIST SAVE, AND THAT IS THE POINT. The
+     * editor already knows the exact new order (it maintains the list across the action loop and it
+     * is what it sent to the extension), so after the server has accepted the edit there is no reason
+     * to ask anyone what the playlist now looks like - least of all a read endpoint that may lag the
+     * write it just acknowledged. Painting from this is both faster and more correct than a refetch.
+     * ⚠️ BOTH LAYERS, OR IT DOES NOTHING. The durable entry is what the page paints from
+     * on open ([getTracks] reads it age-agnostically); the memo is what [loadPlaylistTracksCached]
+     * consults before fetching. Writing one and not the other just moves which layer serves the
+     * stale copy.
+     * ⚠️ SLIM ON DISK, FULL IN MEMORY, deliberately: the durable store has only ever
+     * held [toPlaylistSlim] forms (the 50 MB cap and the build-1008/1013 fat-Track OOMs are why),
+     * while the memo feeds the live feed and playback and therefore needs the real tracks.
+     * ⚠️ RESPECTS carriesExpiry FOR THE DISK WRITE, same rule as every other writer
+     * here: an item carrying its own expiry is never stored durably. The memo is still seeded, since
+     * it is bounded by MEMORY_TTL_MS anyway.
+     */
+    fun writePlaylistTracksCache(app: App, playlist: Playlist, tracks: List<Track>) {
+        runCatching {
+            if (!playlist.carriesExpiry()) app.context.saveToCache(
+                "${playlist.id}-tracks",
+                CachedPlaylistTracks(
+                    savedAtMs = System.currentTimeMillis(),
+                    tracks = tracks.map { it.toPlaylistSlim() },
+                    // The trust window: for TRUST_WINDOW_MS a revalidation may not replace this.
+                    writtenByUsAtMs = System.currentTimeMillis(),
+                ),
+                DURABLE_PLAYLIST_FOLDER, durable = true
+            )
+            inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(playlist.id)] =
+                System.currentTimeMillis() to CompletableDeferred(tracks)
         }
     }
 
@@ -404,6 +485,32 @@ object Cached {
         }.getOrThrow() as T
     }
 
+    /**
+     * ⚠⚠ THERE IS NO CACHE HERE, AND ITS ABSENCE IS LOAD-BEARING - DO NOT RE-ADD ONE.
+     * Upstream cached every resolved [Streamable.Media] under "media-<extId>-<trackId>-<streamableId>"
+     * and read it back as a failure fallback; that code was present at the fork point (f2108206) and
+     * a401b5e1 (2026-05-08) deleted both halves.
+     * ⚠️ NO REASON IS RECORDED ANYWHERE - not in the commit message, not in any code
+     * comment. The substance of a401b5e1 is the AudioFocusListener rewrite plus
+     * setAudioAttributes(audioAttributes, false); the cache deletion rode along. So treat the cost of
+     * re-adding it as UNKNOWN, not zero.
+     *
+     * RECONSTRUCTION, AND IT IS INFERENCE FROM TODAY'S SOURCE RATHER THAN THE RECORDED REASON. Two
+     * concrete hazards a cached Streamable.Media would carry:
+     *   - [Streamable.Raw] declares its streamProvider @Transient, so a DESERIALIZED Raw media has a
+     *     null provider and NPEs on RawDataSource.open's `streamProvider!!`. Per the note there, a
+     *     non-IOException escaping open() becomes UnexpectedLoaderException - NON-RETRIABLE - and the
+     *     whole track dies.
+     *   - Streamable.Source.Http serializes its request, so a hit replays a possibly-expired signed
+     *     URL into PlayerEventListener.onPlayerError's 401/403 re-resolve.
+     *
+     * ⚠⚠ AND preferCache'S WHOLE SOUNDNESS ARGUMENT DEPENDS ON THIS STAYING EMPTY.
+     * [loadMedia] is allowed to serve an arbitrarily old MediaState.Loaded on the playback path
+     * precisely because "a cached MediaState.Loaded carries NO STREAM URL" - streams are resolved
+     * HERE, fresh, on every play. A cache at this function makes that sentence false and hands an
+     * expired URL to a restored queue. If a stream-media cache is ever wanted again, the preferCache
+     * note has to be re-argued FIRST, not amended afterwards.
+     */
     suspend fun loadStreamableMedia(
         app: App, extension: Extension<*>, track: Track, streamable: Streamable,
     ) = extension.getAs<TrackClient, Streamable.Media> {
@@ -477,9 +584,33 @@ object Cached {
 
     private val inFlightTracks = ConcurrentHashMap<String, Pair<Long, Deferred<List<Track>>>>()
 
+    /**
+     * Emits a playlist id when a background revalidation found a DIFFERENT track list and wrote it.
+     *
+     * ⚠⚠ ONLY ON AN ACTUAL DIFFERENCE, WHICH IS WHAT KEEPS SCROLL POSITION. The page
+     * re-reads the store on each emission, so emitting for an unchanged playlist would rebuild the
+     * feed - and blank it for a frame - on every open. The id-sequence comparison in
+     * [loadPlaylistTracksCached] is therefore load-bearing, not an optimisation.
+     * Replay 0 and a small buffer: a page that is not open has nothing to update, and a missed
+     * emission costs one stale paint that the next open corrects.
+     */
+    private val tracksRevalidated = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val tracksRevalidatedFlow = tracksRevalidated.asSharedFlow()
+
+
+    /**
+     * [fetched] is false when the list came from the 5-minute memo rather than from a real request.
+     *
+     * ⚠⚠ IT GATES THE DURABLE WRITE, AND THAT IS WHY IT EXISTS. Writing a memo hit to
+     * disk re-stamps savedAtMs, which RENEWS the 24h lease on data we did not just verify - so a
+     * bust followed by a load inside the memo window used to cement the stale list for another day
+     * instead of clearing it. Only a real fetch may (re)start the lease.
+     */
+    private class CoalescedTracks(val tracks: List<Track>, val fetched: Boolean)
+
     private suspend fun coalescedTracks(
         app: App, key: String, block: suspend () -> List<Track>,
-    ): List<Track> {
+    ): CoalescedTracks {
         val now = System.currentTimeMillis()
         // Opportunistic sweep. No timer, no eviction thread: the map only ever holds keys somebody asked
         // for recently, and it is swept on every call, so it cannot grow unbounded.
@@ -496,7 +627,7 @@ object Cached {
                 if (cause != null) inFlightTracks.remove(key, fresh)
             }
         }
-        return entry.second.await()
+        return CoalescedTracks(entry.second.await(), created != null)
     }
 
     // Durable SWR on top of the canonical re-resolve. Within TTL: pure short-circuit (no fetch, no
@@ -511,8 +642,35 @@ object Cached {
         val cached = if (!durable) null else app.context.getFromCache<CachedPlaylistTracks>(
             "${item.id}-tracks", DURABLE_PLAYLIST_FOLDER, durable = true
         )
-        if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS)
+        // ⚠⚠ PAINT FROM THE STORE AT ANY AGE, THEN REVALIDATE IN THE BACKGROUND.
+        // This replaced the 24h short-circuit on 2026-10-15. The short-circuit meant no fetch at
+        // all for a day, so a playlist edited elsewhere - or edited HERE through a path that did not
+        // bust the entry - stayed wrong for up to 24h, which is what a reporter saw after a reorder.
+        // The cost of the replacement is bounded by the throttle in [revalidatePlaylistTracks]: at
+        // most one playlist.getSongs per playlist per MEMORY_TTL_MS, and none at all on a library
+        // scroll. ALBUMS KEEP THE 24h RULE - see the note at TRACKS_TTL_MS.
+        // ⚠️ THE PAINT IS STILL INSTANT AND STILL OFFLINE-SAFE. The cached list is
+        // returned synchronously here; the revalidation is a detached job on app.scope whose failure
+        // is swallowed, so "offline = paint and skip" needs no code of its own.
+        // ⚠️ A CHANGE MARKER WOULD MAKE THIS CHEAPER AND IS DELIBERATELY NOT BUILT
+        // YET. Deezer has no snapshot id - verified 2026-10-15 against
+        // music-assistant/deezer-python-gql's schema.graphql, where type Playlist carries
+        // creationDate and lastModificationDate and the only checksum in the whole schema is
+        // TrackMediaChecksums (per track encoding). The gateway equivalent is DATE_MOD, which
+        // deezer.pagePlaylist already returns on every open, so comparing it against a stored copy
+        // could skip the getSongs entirely. TWO THINGS BLOCK IT, both unverified rather than hard:
+        //   1. whether playlist.updateOrder bumps DATE_MOD AT ALL is not established. No
+        //      open-source client documents which mutations touch it, and a reorder is precisely
+        //      the case that matters. One measurement settles it: reorder, then diff the raw
+        //      DATE_MOD from pagePlaylist before and after.
+        //   2. the value is not reachable from here today. DeezerParser.toDate parses
+        //      "yyyy-MM-dd" or "yyyy-MM-dd HH:mm:ss" and DISCARDS the time, so
+        //      Playlist.creationDate is day-granularity and cannot separate two edits on one day.
+        //      A usable marker needs the raw string in Playlist.extras - an extension change.
+        if (cached != null) {
+            revalidatePlaylistTracks(app, extension, item, cached)
             return cached.tracks.toFeed()
+        }
 
         // canonicalId for the MEMORY key, raw item.id for the DURABLE key, and the difference is
         // load-bearing. Some extensions return a canonicalized id from loadItem - YouTube Music strips a
@@ -521,16 +679,88 @@ object Cached {
         // carries the loaded id, so it is self-consistent on the raw value. The memory entry is the one a
         // prefetch warm (unloaded id) and a user tap (loaded id) must BOTH hit, so it has to normalize or
         // every warm would silently miss and the feature would do nothing at all.
-        val tracks = coalescedTracks(app, "playlist:${canonicalId(item.id)}") {
+        val result = coalescedTracks(app, MEMO_PLAYLIST_PREFIX + canonicalId(item.id)) {
             val feed = extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow()
             feed.loadAll()
         }
-        if (durable) app.context.saveToCache(
+        // result.fetched: only a REAL request may write the store or renew the 24h lease. See the
+        // note on CoalescedTracks - a memo hit written here is what turned a bust into a renewal.
+        if (durable && result.fetched) app.context.saveToCache(
             "${item.id}-tracks",
-            CachedPlaylistTracks(System.currentTimeMillis(), tracks.map { it.toPlaylistSlim() }),
+            CachedPlaylistTracks(
+                System.currentTimeMillis(), result.tracks.map { it.toPlaylistSlim() }
+            ),
             DURABLE_PLAYLIST_FOLDER, durable = true
         )
-        return tracks.toFeed()
+        return result.tracks.toFeed()
+    }
+
+    /**
+     * Background re-read of a playlist's tracks, launched from an OPEN of its page and nowhere else.
+     *
+     * ⚠⚠ NEVER FROM [warmPlaylistTracks], AND THAT IS STRUCTURAL RATHER THAN A FLAG.
+     * The Aug 30 library-scroll warm calls [coalescedTracks] directly and never reaches
+     * [loadPlaylistTracksCached], so scrolling past fifty playlists cannot fire fifty getSongs
+     * calls. Do not "tidy" the warm by routing it through the cached loader - that one change
+     * would turn a scroll into a request storm.
+     * ⚠️ THROTTLED BY [coalescedTracks] ITSELF, WHICH IS WHY THERE IS NO SEPARATE
+     * GUARD HERE. A live memo entry (fetched, or in flight, within MEMORY_TTL_MS) is JOINED rather
+     * than replaced, so this cannot issue a second request for the same playlist inside that
+     * window - the worst case stays one getSongs per playlist per 5 minutes however often the page
+     * is opened, which is the whole point of the throttle.
+     * ⚠️ JOINING RATHER THAN SKIPPING IS DELIBERATE, and it closes a case an early
+     * return left open: the Aug 30 library-scroll warm fills the memo WITHOUT writing the durable
+     * store, so a playlist whose stored entry was older than the warm would have painted the older
+     * list while a fresher one sat unused in the memo until it aged out. Joining compares that
+     * fresher list and swaps it in, at no extra request.
+     * ⚠️ THE TRUST WINDOW WINS OVER A FETCH. Inside TRUST_WINDOW_MS of our own save
+     * the list we wrote is authoritative and a fetched one is discarded - see
+     * [CachedPlaylistTracks]. The fetch is still allowed to happen (it warms the memo and costs
+     * nothing extra); only the replacement is suppressed.
+     * ⚠️ SWAPS IN ONLY ON AN ID-SEQUENCE DIFFERENCE, which is deliberate twice over:
+     * it catches a reorder (same set, different order), and it ignores the field-level churn a
+     * re-resolve produces (covers, fallbacks, availability). The second half is what keeps this
+     * cheap: ANY emission reaching FeedData makes it null both of its states and re-pull (see its
+     * init, which collects extraLoadFlow), so an emission for an unchanged list is a visible rebuild
+     * of the feed on every open. The filter belongs here, where the comparison is possible.
+     */
+    private fun revalidatePlaylistTracks(
+        app: App, extension: Extension<*>, item: Playlist, cached: CachedPlaylistTracks,
+    ) {
+        val key = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
+        app.scope.launch {
+            runCatching {
+                val result = coalescedTracks(app, key) {
+                    extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }
+                        .getOrThrow().loadAll()
+                }
+                // ⚠⚠ THIS PATH WRITES WHETHER OR NOT IT FETCHED, UNLIKE THE ONE IN
+                // [loadPlaylistTracksCached], AND THE ASYMMETRY IS INTENDED. There, a write from a
+                // memo hit would renew a 24h READ lease on unverified data - the defect that turned
+                // a bust into a renewal. Here there is no read lease left to renew (playlists no
+                // longer short-circuit on age), and a joined memo list is by construction at least as
+                // fresh as the stored one, so propagating it to disk is the correct outcome. The only
+                // thing savedAtMs still gates for a playlist is [warmPlaylistTracks]' skip, where
+                // suppressing a warm after a real list arrived is also correct.
+                val fresh = result.tracks
+                // An empty result is not evidence of an empty playlist. DeezerPlaylistClient already
+                // refuses to degrade a gateway error into an empty list, but a third-party extension
+                // may not - so an empty fetch never replaces a non-empty cached list.
+                if (fresh.isEmpty() && cached.tracks.isNotEmpty()) return@runCatching
+                if (fresh.map { it.id } == cached.tracks.map { it.id }) return@runCatching
+                val written = cached.writtenByUsAtMs
+                if (written != null && System.currentTimeMillis() - written < TRUST_WINDOW_MS)
+                    return@runCatching
+                app.context.saveToCache(
+                    "${item.id}-tracks",
+                    CachedPlaylistTracks(
+                        System.currentTimeMillis(), fresh.map { it.toPlaylistSlim() }
+                    ),
+                    DURABLE_PLAYLIST_FOLDER, durable = true
+                )
+                tracksRevalidated.emit(item.id)
+            }
+        }
     }
 
     // PREFETCH ENTRY POINT. Fills the shared in-flight / memory layer for a playlist the user has not
@@ -562,7 +792,7 @@ object Cached {
         )
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS) return
         runCatching {
-            coalescedTracks(app, "playlist:${canonicalId(item.id)}") {
+            coalescedTracks(app, MEMO_PLAYLIST_PREFIX + canonicalId(item.id)) {
                 extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow().loadAll()
             }
         }
@@ -591,18 +821,21 @@ object Cached {
         // "album:" prefix for the same reason the folders are separate: coalescedTracks is ONE map, and an
         // album and a playlist sharing an id string would otherwise share an in-flight entry and serve each
         // other's tracks. canonicalId for the same reason as the playlist path.
-        val tracks = coalescedTracks(app, "album:${canonicalId(item.id)}") {
+        val result = coalescedTracks(app, MEMO_ALBUM_PREFIX + canonicalId(item.id)) {
             val feed = extension.getAs<AlbumClient, Feed<Track>?> { loadTracks(item) }.getOrThrow()
                 ?: return@coalescedTracks emptyList()
             feed.loadAll()
         }
-        if (tracks.isEmpty()) return null
-        if (durable) app.context.saveToCache(
+        if (result.tracks.isEmpty()) return null
+        // Same rule as the playlist path above: a memo hit never renews the lease.
+        if (durable && result.fetched) app.context.saveToCache(
             "${item.id}-tracks",
-            CachedPlaylistTracks(System.currentTimeMillis(), tracks.map { it.toAlbumSlim() }),
+            CachedPlaylistTracks(
+                System.currentTimeMillis(), result.tracks.map { it.toAlbumSlim() }
+            ),
             DURABLE_ALBUM_FOLDER, durable = true
         )
-        return tracks.toFeed()
+        return result.tracks.toFeed()
     }
 
     suspend fun getFeed(

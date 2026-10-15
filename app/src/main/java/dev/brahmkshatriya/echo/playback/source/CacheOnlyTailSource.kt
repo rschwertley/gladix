@@ -88,6 +88,22 @@ class CacheOnlyTailSource(
      * when the DataSource closes, and the close happens at LOAD completion
      * (ProgressiveMediaPeriod.ExtractingLoadable.load's finally, :1356) - which for a track with less
      * than 50 s left is well before playback reaches the end.
+     * ⚠⚠ [CORRECTED 2026-10-15] THAT LAST CLAUSE ASSUMED A 50 s BUFFER, AND THE BUFFER
+     * HAD NOT BEEN 50 s SINCE 2026-06-06. "A track with less than 50 s left" is only the moment
+     * of load completion if the loader keeps ~50 s buffered - which is media3's STREAMING
+     * configuration. Since the 1.8.0 -> 1.10.1 bump (464d4d3f) DefaultLoadControl had been
+     * classifying every one of our tracks as LOCAL playback, because our MediaItem uri is
+     * MediaItemUtils.buildForSource's scheme-less Base64 - giving a 1 s minimum buffer and a
+     * sticky 1..50 s band. Measured completion was dur-10 s to dur-31 s (six captures,
+     * 2026-10-14/15), so on the dur-10.2 s case the final commit arrived AT THE FADE POINT and
+     * this gate had ZERO margin, not "well before". Anything later than dur-10 s was a
+     * guaranteed Abort.NOT_READY.
+     * The sentence is true again as written: PlayerService.createExoplayer now installs an
+     * explicit DefaultLoadControl whose generic values mirror onto the local ones, restoring
+     * 50 s and putting completion back at ~dur-50 s - 15 s before arming even starts. READ THE
+     * NOTE AT THAT SITE BEFORE CHANGING ANY BUFFER VALUE, because this gate's margin is
+     * downstream of it: the whole resource must be committed before the fade begins, and what
+     * decides when that happens is minBufferMs.
      * ⚠️ A `file://` SOURCE ALWAYS FAILS HERE and that is correct for this build: downloads bypass
      * the cache entirely (getFactory(source) sends them to the non-cache factories), so they need a
      * direct-file tail path instead. Deliberately not built yet.

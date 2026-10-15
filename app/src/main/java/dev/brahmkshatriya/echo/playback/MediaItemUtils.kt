@@ -143,6 +143,53 @@ object MediaItemUtils {
     }
 
 
+    // ⚠⚠ [PARKED 2026-10-15] THIS RETRY CANNOT HEAL A STALE CACHED TRACK, AND THAT IS
+    // THE ONE THING IT LOOKS LIKE IT SHOULD DO. loaded=false makes
+    // StreamableMediaSource.prepareSourceInternal re-enter StreamableLoader.load FROM THE TOP, so the
+    // whole resolve runs again - but StreamableLoader.loadTrack calls Cached.loadMedia with
+    // preferCache = true, which serves the SAME cached MediaState.Loaded byte for byte. So the retry
+    // re-resolves the STREAM and never the TRACK. A Track cached by an older extension version keeps
+    // being handed back, every pass fails identically, maxSingleItemRetries is burned and the item is
+    // skipped. Driven from PlayerEventListener.onPlayerError's generic tail branch.
+    // OBSERVED ONCE: Combine 18b5da3 -> d8de78e, "Stream has no configured audio provider".
+    // WORKAROUND THAT WORKS TODAY: Clear cache. The kache lives in cacheDir (App.getCache), so
+    // Android's Clear cache reaches it - unlike the durable stores in filesDir, which it cannot touch
+    // (see CacheUtils.cacheDir).
+    //
+    // ⚠️ WE DECIDED NOT TO BUILD THE FIX YET. This is a CLOSED QUESTION, not a queued
+    // task: one report, a workaround that works, and the change sits in the retry + buffering path,
+    // which is the most expensive place in the app to be wrong. WHAT WOULD BRING IT BACK: a SECOND,
+    // UNRELATED report of a stale cached Track. Until then, leave it.
+    //
+    // THE FIX, RECORDED SO IT NEED NOT BE RE-DERIVED (option C):
+    //   - THE RETRY PATH RESOLVES WITH preferCache = false. Thread the flag from here through the
+    //     metadata bundle (alongside "loaded" and "retries") into StreamableLoader.loadTrack's
+    //     Cached.loadMedia call. No new write is needed: loadMedia already overwrites the entry on a
+    //     successful fresh load.
+    //   - RE-ENTER AT StreamableLoader.load WITH loaded = false, which is exactly what this function
+    //     already does. Do NOT wrap loadServer instead: serverIndex is chosen inside
+    //     MediaItemUtils.buildLoaded (via PlayerService.selectServerIndex), so a freshly loaded track
+    //     paired with the OLD index re-creates the out-of-range fault being fixed - see the parked
+    //     note at StreamableLoader.loadServer.
+    //   - TRIGGER ON NON-NETWORK FAILURES ONLY, and gate it OFF extensions whose loadTrack is LOCAL.
+    //     For Offline a forced reload replaces a working cache hit with a slim track and throws; the
+    //     four cases are enumerated at OfflineExtension.loadTrack.
+    //   - ⚠️ PRICE THE RISK BEFORE BUILDING, AND IT IS NOT THE OFFLINE CASE. Clean
+    //     offline is harmless: loadItem fails fast on DNS and Cached.loadMedia's getOrElse re-serves
+    //     the same state, costing one wasted pass. The dangerous case is PRESENT-BUT-BROKEN, e.g. a
+    //     captive portal - Deezer's connect 15s + read 10s then run INSIDE THE BUFFERING PATH against
+    //     StreamableLoader.load's withTimeout(30_000), the 5s buffering watchdog, the 60s stuck
+    //     detector and RESOLVE_GRACE_MS. Avoiding precisely that is why preferCache exists; read the
+    //     note at Cached.loadMedia before writing any of this.
+    //
+    // OPTION D - PUTTING THE EXTENSION VERSION IN THE CACHE KEY - WAS CONSIDERED AND REJECTED, and it
+    // is recorded because it is the obvious idea and it is the worse one. It guarantees a MISS on the
+    // first play after every extension update, which is exactly the offline restore e9cf3b85 added
+    // preferCache to protect (loadMedia's getOrElse fallback reads the same new key, so it does not
+    // soften that); it is BLIND to server-side staleness, which is most of what actually goes stale;
+    // and getMedia/loadMedia are public inline, making it a wide edit carrying the stale-inline hazard
+    // documented at Cached.getMedia. The targeted precedent to copy instead is Cached.loadMedia's
+    // servers.isEmpty() guard: one condition, failure-shaped, no age test.
     fun withRetry(item: MediaItem): MediaItem {
         val bundle = Bundle().apply {
             putAll(item.mediaMetadata.extras!!)

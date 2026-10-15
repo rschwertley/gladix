@@ -126,6 +126,11 @@ class PlayerUiListener(
         // A user seek before the at-rest seed releases must win — null the seed hold. The service re-seek also
         // lands here as a SEEK, but it carries a real (non-zero) position that releases the hold in
         // updateProgress anyway, so nulling here is consistent for both.
+        // ⚠️ A CROSSFADE HAND-OFF ALSO LANDS HERE AS A SEEK (2026-10-15). The overlap
+        // advances the queue with seekToNextMediaItem, so this nulls the seed hold once per crossfaded
+        // transition. Audited and left alone: by the time a track is within one fade length of its end the
+        // at-rest seed has long been released, and the branch is idempotent. If a cold-start restore
+        // ever appears to lose its seed on a crossfaded first track, this line is where to look.
         if (reason == Player.DISCONTINUITY_REASON_SEEK) viewModel.restoreSeedMs = null
         updateProgress("discontinuity")
         viewModel.discontinuity.value = newPosition.positionMs

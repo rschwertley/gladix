@@ -9,21 +9,14 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import androidx.annotation.OptIn
 import androidx.core.content.edit
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.PlayerMessage
-import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.copyTo
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
-import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALBUMS
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
-import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,20 +71,19 @@ class EffectsListener(
     private var effects: Effects = createEffects()
     private val listener = OnSharedPreferenceChangeListener { _, _ -> applyCustomEffects() }
 
-    private var pendingFadeOutMessage: PlayerMessage? = null
-
+    // ⚠⚠ TRACK FADE LIVED HERE AND IS GONE AS OF BUILD 2 (2026-10-15). What this hook
+    // used to own: a PlayerMessage scheduled at `duration - crossfadeMs*speed` that called
+    // AudioEffectsProcessor.onFadeOutStart, re-posted on transition / SOURCE_UPDATE / seek, plus the
+    // skipFade flag that suppressed it on albums. All of it is replaced by CrossfadeController, which
+    // overlaps two players instead of fading one out into silence - so there is nothing to schedule
+    // here any more, and the album rule moved to its armRefusal (same key, SKIP_FADE_ON_ALBUMS,
+    // same meaning).
+    // ⚠️ DO NOT RE-ADD A FADE HOOK ON THE TRANSITION REASON. The crossfade hand-off is
+    // a SEEK, so a reason-keyed fade here would fire in the middle of an overlap. The ramps are
+    // driven by the controller through the two processors; this class owns gain and session effects.
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         applyCustomEffects()
         applyGain(mediaItem)
-        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-            reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
-        ) {
-            audioEffectsProcessor.cancelFades()
-        }
-        val skipForAlbum = mediaItem?.context is Album &&
-            context.getSettings().getBoolean(SKIP_FADE_ON_ALBUMS, true)
-        audioEffectsProcessor.skipFade = skipForAlbum
-        if (!skipForAlbum) scheduleFadeOut()
     }
 
     private fun applyGain(mediaItem: MediaItem?) {
@@ -99,28 +91,6 @@ class EffectsListener(
             mediaItem?.track?.extras?.get("GAIN")?.toFloatOrNull()
         }.getOrNull()
         audioEffectsProcessor.setTrackGain(gainDb, mediaItem?.mediaId)
-    }
-
-    override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        if (reason == Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE) scheduleFadeOut()
-    }
-
-    override fun onPositionDiscontinuity(
-        oldPosition: Player.PositionInfo,
-        newPosition: Player.PositionInfo,
-        reason: Int,
-    ) {
-        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-            audioEffectsProcessor.cancelFades()
-            scheduleFadeOut()
-        }
-    }
-
-    override fun onPlaybackStateChanged(playbackState: Int) {
-        if (playbackState == Player.STATE_IDLE) {
-            pendingFadeOutMessage?.cancel()
-            pendingFadeOutMessage = null
-        }
     }
 
     fun updateNormalizationSettings() {
@@ -131,33 +101,6 @@ class EffectsListener(
         }
     }
 
-    fun updateCrossfadeSettings() {
-        if (!audioEffectsProcessor.crossfadeEnabled) {
-            pendingFadeOutMessage?.cancel()
-            pendingFadeOutMessage = null
-            audioEffectsProcessor.cancelFades()
-        } else {
-            scheduleFadeOut()
-        }
-    }
-
-    private fun scheduleFadeOut() {
-        pendingFadeOutMessage?.cancel()
-        pendingFadeOutMessage = null
-        if (!audioEffectsProcessor.crossfadeEnabled) return
-        val duration = exoPlayer.duration
-        val crossfadeMs = audioEffectsProcessor.crossfadeDurationMs.toLong()
-        if (duration == C.TIME_UNSET || duration <= crossfadeMs) return
-        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
-        val triggerPosition = duration - (crossfadeMs * speed).toLong()
-        if (triggerPosition <= exoPlayer.currentPosition) {
-            audioEffectsProcessor.onFadeOutStart()
-            return
-        }
-        pendingFadeOutMessage = exoPlayer.createMessage(PlayerMessage.Target { _, _ ->
-            audioEffectsProcessor.onFadeOutStart()
-        }).setPosition(triggerPosition).send()
-    }
     override fun onAudioSessionIdChanged(audioSessionId: Int) {
         release()
         context.broadcastAudioSession()

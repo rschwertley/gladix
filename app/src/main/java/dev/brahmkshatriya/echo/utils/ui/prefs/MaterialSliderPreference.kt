@@ -44,6 +44,14 @@ class MaterialSliderPreference(
 
         slider.addOnChangeListener { _, value, byUser ->
             persistInt(value.toInt())
+            // ⚠⚠ NOTIFIED AFTER PERSISTING, AND THE RESULT IS IGNORED ON PURPOSE. The
+            // Preference contract is "ask the listener, persist if it returns true", but the slider has
+            // ALREADY moved by the time this runs - refusing the value would leave the thumb and the
+            // stored value disagreeing. So this is a notification, not a veto, and the three other
+            // MaterialSliderPreference instances (which register no listener) behave exactly as before.
+            // Added 2026-10-15 so Settings -> Player's Crossfade slider can show/hide the album switch
+            // live; without it setOnPreferenceChangeListener on a slider never fires at all.
+            callChangeListener(value.toInt())
             slider.post {
                 runCatching {
                     updateSummary()
