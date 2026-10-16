@@ -79,6 +79,7 @@ import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
+import dev.brahmkshatriya.echo.utils.QualityProbe
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -144,6 +145,8 @@ class PlayerService : MediaLibraryService() {
         if (seconds == 0) {
             crossfade = null
             existing?.release()
+            // QUALITY-PROBE [emits NO line - registration only] registers the OFF state so every other line can say xfade=0.
+            QualityProbe.registerCrossfade(0, null)
             return
         }
         if (existing != null) {
@@ -170,6 +173,9 @@ class PlayerService : MediaLibraryService() {
         // EffectsListener.onAudioSessionIdChanged -> release + rebuild + re-broadcast, mid-playback,
         // on every crossfade.
         runCatching { sidecar.setAudioSessionId(exoPlayer.audioSessionId) }
+        // QUALITY-PROBE [emits NO line - registration only] the sidecar's identity, so QualityProbe.who() can tell the two
+        // players apart in every later line rather than guessing from context.
+        QualityProbe.registerCrossfade(seconds, sidecar)
         crossfade = CrossfadeController(
             exoPlayer = exoPlayer,
             sessionPlayer = sessionPlayer,

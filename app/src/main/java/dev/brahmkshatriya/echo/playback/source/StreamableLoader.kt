@@ -26,6 +26,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.utils.HealthMonitor
+import dev.brahmkshatriya.echo.utils.QualityProbe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -142,6 +143,18 @@ class StreamableLoader(
                 val streamable = servers.getOrNull(index) ?: throw TrackUnavailableException(
                     if (servers.isEmpty()) "No playable source for this track"
                     else "Playable source no longer available"
+                )
+                // QUALITY-PROBE [emits p=4-resolve] RESOLVE ENTRY. The exact streamable.id handed to the extension -
+                // its suffix is what becomes `quality` there - plus which extension instance resolves
+                // it (Deezer direct vs Combine vs Unified), which no other line can show.
+                QualityProbe.log(
+                    "4-resolve", QualityProbe.nextSeq(), mediaItem.mediaId, null,
+                    "serverIndex=" + index + " streamableId=" + streamable.id +
+                        " suffix=" + streamable.id.substringAfterLast(':') +
+                        " title=" + streamable.title + " q=" + streamable.quality +
+                        " ext=" + it.id +
+                        " extInstance=#" + Integer.toHexString(System.identityHashCode(it)) +
+                        " serversSize=" + servers.size
                 )
                 loadStreamableMedia(
                     app, it, mediaItem.track, streamable

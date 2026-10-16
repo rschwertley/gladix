@@ -34,10 +34,58 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     private suspend fun createStreamableForQuality(track: Track, quality: String, retry: Boolean = true): Streamable {
         return try {
             val currentTrackId = track.id
+            // QUALITY-PROBE [emits p=5-branch] BRANCH. "Was the relay attempted at all" - the user's own question.
+            // relay=true means getMediaUrl (the shared server); relay=false means getMP3MediaUrl, i.e.
+            // the user's own 128 account and NO relay request whatsoever.
+            val probeRelay = quality != "128" && quality != "mp3"
+            println("QUALITY-PROBE p=5-branch id=" + currentTrackId + " quality=" + quality + " relay=" + probeRelay)
             val mediaJson =
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
                 else api.getMP3MediaUrl(track, quality == "128")
+            // QUALITY-PROBE [emits p=5-response] RESPONSE, TRUNCATED AND CREDENTIAL-FREE. The response body is
+            // the only thing that separates "relay refused" from "relay returned empty media" from
+            // "relay fine". 160 chars is enough for Deezer's error sentences and far short of any
+            // payload; the media array itself (which carries signed URLs) is reported only as a COUNT.
+            run {
+                val s = mediaJson.toString()
+                val media0 = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("media")?.jsonArray?.firstOrNull()?.jsonObject
+                val mediaCount = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("media")?.jsonArray?.size ?: -1
+                // The field that closes the last open hypothesis: "the relay was asked for 320 and
+                // handed back a 128 stream". EXTRACTED BY KEY, never by truncating the body - media0
+                // also holds `sources`, which carries the signed URL, and that must never be logged.
+                // `cipher` is included because a format is only meaningful alongside it; neither is a
+                // credential. reqFormat mirrors what DeezerMedia actually posts, so a mismatch between
+                // reqFormat and gotFormat is readable on ONE line.
+                val reqFormat =
+                    if (probeRelay) (if (quality == "flac") "FLAC" else "MP3_320")
+                    else (if (quality == "128") "MP3_128" else "MP3_MISC")
+                // [CORRECTED before build] THE BODY IS ONLY LOGGED WHEN THERE IS NO MEDIA, i.e. only
+                // for an ERROR-shaped response. A SUCCESSFUL body is
+                // {"data":[{"media":[{"cipher":{...},"format":"MP3_320","sources":[{"url":"https://...
+                // and the signed URL starts well inside 160 chars, so truncating it unconditionally
+                // WOULD have logged a credential. substringBefore("http") is a second belt for the
+                // error shape, which can still quote a URL back at us.
+                val probeReason =
+                    if (mediaCount > 0) "ok"
+                    else s.take(160).substringBefore("http").replace(Char(10), ' ')
+                println(
+                    "QUALITY-PROBE p=5-response id=" + currentTrackId + " quality=" + quality +
+                        " relay=" + probeRelay + " reqFormat=" + reqFormat +
+                        " gotFormat=" + (media0?.get("format")?.jsonPrimitive?.content ?: "none") +
+                        " cipher=" + (media0?.get("cipher")?.jsonObject
+                            ?.get("type")?.jsonPrimitive?.content ?: "none") +
+                        " mediaCount=" + mediaCount +
+                        " len=" + s.length +
+                        " reason=" + probeReason
+                )
+            }
             val mjString = mediaJson.toString()
+            if (mjString.contains("License token has no sufficient rights on requested media")) {
+                // QUALITY-PROBE [emits p=5-stepdown] licence branch.
+                println("QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " from=" + quality + " trigger=licenceRights")
+            }
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
                 "flac" -> createStreamableForQuality(track, "320", retry)
                 "320" -> createStreamableForQuality(track, "128", retry)
@@ -78,6 +126,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // and only on tracks that were already failing. In the COMMON case the extra call
                     // goes to media.deezer.com and REPLACES the fallback's relay call, so the shared
                     // unauthenticated relay sees no more traffic than before.
+                    // QUALITY-PROBE [emits p=5-stepdown] token/empty-media branch.
+                    println(
+                        "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " from=" + quality +
+                            " trigger=" + (if (mediaIsEmpty) "mediaIsEmpty" else "trackTokenRights")
+                    )
                     val lower = when (quality) {
                         "flac" -> "320"
                         "320" -> "128"
@@ -164,6 +217,13 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // FALLBACK branch fetches FALLBACK_ID, the token branch fetches currentTrackId.
             val isAlternateRecording = fallbackTrack != null && fallbackTrack.id != currentTrackId
 
+            // QUALITY-PROBE [emits p=5-final] FINAL. What the extension actually returns; host only, never the URL.
+            println(
+                "QUALITY-PROBE p=5-final id=" + currentTrackId + " quality=" + quality +
+                    " qValue=" + qualityValue + " title=" + qualityTitle +
+                    " urlHost=" + runCatching { finalUrl.substringAfter("://").substringBefore('/') }.getOrDefault("unparsable") +
+                    " substituted=" + isAlternateRecording
+            )
             Streamable.server(
                 id = finalUrl,
                 quality = qualityValue,
@@ -190,6 +250,15 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 }
             }
 
+            // QUALITY-PROBE [emits p=5-stepdown] thrown branch - the one that fires on a relay failure,
+            // because getMediaUrl throws "Song not available" on a refusal.
+            println(
+                "QUALITY-PROBE p=5-stepdown id=" + track.id + " from=" + quality +
+                    // Same redaction as p=5-response: an okhttp/IO message can quote the request
+                    // URL, so cut at the first "http" before truncating.
+                    " trigger=threw/" +
+                    (e.message ?: "null").substringBefore("http").take(80).replace(Char(10), ' ')
+            )
             when (quality) {
                 "flac" -> createStreamableForQuality(track, "320", retry)
                 "320" -> createStreamableForQuality(track, "128", retry)
@@ -211,6 +280,16 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             val info = streamable.id.removePrefix(placeholderPrefix).split(":")
             val trackId = info[0]
             val quality = info.getOrNull(1) ?: "128"
+            // QUALITY-PROBE [emits p=5-parse] PARSE. The `?: "128"` above is the ONE place a resolve silently
+            // becomes 128 with no relay call at all, so defaulted= is the single most important
+            // field in the whole capture. rawId is printed verbatim: it is a placeholder id, not a
+            // URL, and carries no credential.
+            println(
+                "QUALITY-PROBE p=5-parse id=" + trackId + " rawId=" + streamable.id +
+                    " parts=" + info.size + " quality=" + quality +
+                    " defaulted=" + (info.getOrNull(1) == null) +
+                    " hasToken=" + streamable.extras["TRACK_TOKEN"].isNullOrEmpty().not()
+            )
             val newTrack = Track(
                 id = trackId,
                 title = quality,

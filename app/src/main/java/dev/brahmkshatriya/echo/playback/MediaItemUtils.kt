@@ -25,6 +25,7 @@ import kotlin.contracts.contract
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.selectServerIndex
+import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.utils.Serializer.getSerialized
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
 import dev.brahmkshatriya.echo.utils.Serializer.toData
@@ -420,6 +421,31 @@ object MediaItemUtils {
                 val downloaded =
                     downloads.filter { it.download.trackId == id }
                         .mapNotNull { it.download.finalFile }
+                // QUALITY-PROBE [emits p=1-select] SELECTION. The whole point: `chosen` here vs the suffix the
+                // extension later parses. Prints the full server list because the median is
+                // POSITIONAL - a list of a different size or order moves the answer, and list size is
+                // the one selection input never yet observed for a real failing track.
+                // `setting` is what List.select will actually read on this connection: the extension
+                // override first (default "off" -> falls through), then the app level. Both printed
+                // because the Wi-Fi key falling back to the MOBILE key is a live possibility.
+                run {
+                    val probeSeq = QualityProbe.nextSeq()
+                    val probeChosen = serverIndex
+                        ?: selectServerIndex(app, this@toMetaData.extensionId, servers, downloaded)
+                    QualityProbe.log(
+                        "1-select", probeSeq, item.id,
+                        "ext=" + this@toMetaData.extensionId +
+                            " unmetered=" + app.isUnmetered +
+                            " appUnmeteredQ=" + app.settings.getString("unmetered_stream_quality", "unset") +
+                            " appStreamQ=" + app.settings.getString("stream_quality", "unset") +
+                            " loaded=" + loaded +
+                            " paramIndex=" + serverIndex +
+                            " chosen=" + probeChosen +
+                            " size=" + servers.size +
+                            " downloaded=" + downloaded.size +
+                            " servers=" + QualityProbe.servers(servers)
+                    )
+                }
                 putInt(
                     "serverIndex",
                     // Read extensionId off the MediaState receiver directly. Bare `extensionId` here binds to

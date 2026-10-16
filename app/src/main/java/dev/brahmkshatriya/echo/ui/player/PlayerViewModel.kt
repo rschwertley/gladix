@@ -32,7 +32,9 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
+import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToNextCommand
@@ -290,7 +292,7 @@ class PlayerViewModel(
 
     // `position` is a FULL-queue index (the tap indexes fullQueueFlow). Seek by full index via a
     // custom command handled service-side by ShufflePlayer.seekToFullIndex, which seeks the real
-    // player directly — bypassing the windowed controller seekTo() whose range check crashed on
+    // player directly — bypassing the controller seekTo() whose range check crashed on
     // taps outside the serialized window. Do NOT reconstruct a windowed index here (that desync-prone
     // math was the crash source); the service owns the window.
     fun play(position: Int) {
@@ -416,11 +418,25 @@ class PlayerViewModel(
 
     private fun changeCurrent(newItem: MediaItem) {
         withBrowser { player ->
-            // player is the MediaController: its currentMediaItemIndex is windowed, but the session
-            // applies replaceMediaItem to the full inner timeline. Resolve the current item's FULL
-            // index by mediaId so we replace the actual current track, not the wrong one, in queues > 50.
+            // Resolve the current item's index by mediaId rather than reading currentMediaItemIndex off
+            // the MediaController, so we replace the actual current track.
+            // ⚠️ [CORRECTED 2026-10-16] THIS USED TO SAY "its currentMediaItemIndex is
+            // windowed ... in queues > 50". THERE IS NO WINDOW ANY MORE: b2e30cab (2026-07-06,
+            // "remove ineffective queue windowing") deleted it, and ShufflePlayer overrides neither
+            // getCurrentMediaItemIndex nor getCurrentTimeline today. The mediaId resolution is KEPT
+            // because it is still the right thing — a controller index can lag the session's inner
+            // timeline across an in-flight edit — but do not reason about a 50-item boundary, and do
+            // not cite this comment as evidence that one exists.
             val fullIndex =
                 queue.indexOfFirst { it.mediaId == playerState.current.value?.mediaItem?.mediaId }
+            // QUALITY-PROBE [emits p=2-apply] SHEET APPLY. fullIndex < 0 is a SILENT return today, which would
+            // lose the choice with no symptom - this is the line that would show it.
+            QualityProbe.log(
+                "2-apply", QualityProbe.nextSeq(), newItem.mediaId, player,
+                "fullIndex=" + fullIndex + " queueSize=" + queue.size +
+                    " newServerIndex=" + newItem.serverIndex +
+                    " newItem=" + QualityProbe.itemId(newItem)
+            )
             if (fullIndex < 0) return@withBrowser
             val oldPosition = player.currentPosition
             player.replaceMediaItem(fullIndex, newItem)
@@ -433,7 +449,18 @@ class PlayerViewModel(
         val item = playerState.current.value?.mediaItem ?: return
         val index = item.serverWithDownloads(app.context).indexOf(server).takeIf { it != -1 }
             ?: return
-        changeCurrent(MediaItemUtils.buildServer(item, index))
+        val newItem = MediaItemUtils.buildServer(item, index)
+        // QUALITY-PROBE [emits p=2-sheet] SHEET. Decides "the sheet write was lost" vs "the write landed and the
+        // resolve still returned 128". `was`/`now` are the serverIndex before and after
+        // buildServer; newItemIdentity is what point 3 must then report as the item being prepared.
+        QualityProbe.log(
+            "2-sheet", QualityProbe.nextSeq(), item.mediaId,
+            "picked=" + index + " was=" + item.serverIndex + " now=" + newItem.serverIndex +
+                " oldItem=" + QualityProbe.itemId(item) +
+                " newItem=" + QualityProbe.itemId(newItem) +
+                " sheetList=" + QualityProbe.servers(item.serverWithDownloads(app.context))
+        )
+        changeCurrent(newItem)
     }
 
     fun changeBackground(background: Streamable?) {

@@ -741,29 +741,71 @@ class PlayerFragment : Fragment() {
                 // the shape a commit callback should have.
                 val displayOn = viewPager.context.getSystemService(DisplayManager::class.java)
                     ?.getDisplay(Display.DEFAULT_DISPLAY)?.state == Display.STATE_ON
+                // ⚠⚠ ONE INDEX, TWO USES — `smooth` AND setCurrentItem MUST READ THE SAME
+                // VARIABLE, AND THEY DID NOT UNTIL 2026-10-16. `smooth` is the only thing stopping a far
+                // jump from ANIMATING through every intermediate page, and it was computed from `index`
+                // while the call below passed a DIFFERENT index. Keep them on one name: if a future
+                // change needs a different target, it must flow through `index` so this gate follows it.
                 val smooth = displayOn && isResumed && !isInitialLoad && abs(index - current) <= 1
                 isInitialLoad = false
                 if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
                 else {
                     pendingPageScroll?.let { viewPager.removeCallbacks(it) }
                     val runnable = Runnable {
-                        val liveCurrent = viewModel.playerState.current.value
-                        val liveIndex = liveCurrent?.let { c ->
-                            viewModel.queue.indexOfFirst { it.mediaId == c.mediaItem.mediaId }.takeIf { it != -1 }
-                        } ?: index
-                        // ⚠️ KNOWN HAZARD, left in place deliberately (measured 2026-08-24, never observed
-                        // to fire). `index` is consistent with `submitted`; `liveIndex` is re-derived here
-                        // from viewModel.queue at POST time — a potentially LATER generation — and then
-                        // applied to the adapter's EARLIER list. viewModel.queue advances 50ms after a
-                        // timeline change (emitFullQueue) while the adapter is only re-submitted by
-                        // submit(), so the two can disagree by however many tracks were removed in between.
-                        // Instrumented over eight consecutive screen-off advances: the two always agreed,
-                        // because submit() runs from the ungated `current` collector before the 50ms write
-                        // lands. This is the SAME false step as the reverted 2026-07-30 pre-draw re-commit
-                        // (60ab8d0c), which derived an index from the live queue and applied it to a stale
-                        // adapter list and produced a permanent one-behind. Do not add a third derivation
-                        // here; if this ever needs touching, take `index` and delete the re-derivation.
-                        binding?.viewPager?.setCurrentItem(liveIndex, smooth)
+                        // ⚠⚠ [CORRECTED 2026-10-16] THE HAZARD FIRED. This read
+                        // `viewModel.playerState.current.value`, re-derived a `liveIndex` from
+                        // viewModel.queue at POST time, and passed THAT to setCurrentItem while `smooth`
+                        // above was computed from `index`. The note here called it a KNOWN HAZARD "never
+                        // observed to fire" and told the next reader to "take `index` and delete the
+                        // re-derivation". That is now done.
+                        // HOW IT PRESENTED: the full-screen player scrolled through many covers, sometimes
+                        // BACKWARDS, at crossfade hand-offs on shuffled 97-100 track playlists — manual
+                        // Next was always clean.
+                        // WHY THE CROSSFADE AND NOT Next: a hand-off makes the main player the INCOMING
+                        // leg, so Current changes several times while it buffers (transition, isLoaded,
+                        // isPlaying — see PlayerState.Current), and each one calls submit(). Those submits
+                        // STRADDLE the 50ms emitFullQueue write, which is the only writer of
+                        // viewModel.queue. A manual Next is a single burst that finishes inside the 50ms,
+                        // which is why it always agreed.
+                        // WHY SHUFFLE AND A LONG QUEUE: the old note assumed the generations differ "by
+                        // however many tracks were removed" — i.e. one. After a FRESH SHUFFLE they differ
+                        // by a whole-queue REORDER (ShufflePlayer's rearrange removes and re-adds around
+                        // current, and onTimelineChanged's emitFullQueue is NOT gated by isRearranging),
+                        // so indexOfFirst in the older list returns an essentially arbitrary position in
+                        // 0..96, in either direction. With `smooth` true for the OTHER index, ViewPager2
+                        // animated the whole distance. That is the "many covers, sometimes backwards".
+                        // ⚠️ THE 2026-08-24 "MEASUREMENT" NEVER COVERED THIS, which is why the
+                        // hazard read as benign for seven weeks: it was eight consecutive SCREEN-OFF
+                        // auto-advances — single-burst, inside the 50ms, no reorder, and `smooth` false
+                        // with the display off. An absence of failures on one path was recorded as
+                        // "never observed to fire" on all of them.
+                        //
+                        // ⚠⚠ AND THIS IS NOT THE JUL 13 REVERT BEING RE-ATTEMPTED — CHECKED
+                        // BEFORE APPLYING, BECAUSE IT LOOKS EXACTLY LIKE IT. aecc6700 (Jul 13) shipped this
+                        // same deletion and 25fae92a (Jul 14) reverted it for a one-behind cover on
+                        // auto-advance. The difference is what `index` was: Jul 13 captured it via a
+                        // Current.queueIndex() that PREFERRED Current.index and only fell back to mediaId,
+                        // and the Aug 24-29 record attributes that one-behind to Current.index — on an
+                        // auto-advance Current carries a POST-removal index while viewModel.queue is still
+                        // PRE-removal for ~50ms, so it is off by one, behind. Jul 14 deleted queueIndex()
+                        // and switched the capture to indexOfFirst { mediaId }, which is what submit() does
+                        // today. Nothing in the record attributes that one-behind to removing liveIndex.
+                        // So the reverted configuration was queueIndex() + no liveIndex; this one is
+                        // indexOfFirst + no liveIndex, which has never shipped and does not contain the
+                        // mechanism that was reverted.
+                        // ⚠️ WHAT MAKES `index` SAFE HERE, and the property to preserve: it is
+                        // captured in submit() from `submitted` — the exact list instance handed to
+                        // submitList — and this runnable is posted from INSIDE the commit callback.
+                        // AsyncListDiffer.latchList swaps mList and currentList and dispatches the
+                        // notifyItem* calls BEFORE running that callback (recyclerview 1.4.0,
+                        // AsyncListDiffer.java:360-370), and a superseded diff runs no callback at all
+                        // (:347-353), so `index` provably points into the list the adapter has ALREADY
+                        // committed. That is the Jul 28-30 / Aug 1 one-behind mechanism (an index applied
+                        // to an uncommitted list) being structurally absent, not merely unlikely.
+                        // DO NOT ADD A THIRD DERIVATION HERE. A later Current gets its own submit(),
+                        // which captures a consistent pair and supersedes this runnable via the
+                        // removeCallbacks above.
+                        binding?.viewPager?.setCurrentItem(index, smooth)
                     }
                     pendingPageScroll = runnable
                     viewPager.post(runnable)

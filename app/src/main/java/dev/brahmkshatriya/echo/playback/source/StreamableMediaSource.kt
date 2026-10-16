@@ -23,6 +23,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
+import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.backgroundIndex
@@ -71,6 +72,17 @@ class StreamableMediaSource(
         error = null
         super.prepareSourceInternal(mediaTransferListener)
         Log.d("GladixPlayback", "prepareSourceInternal: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
+        // QUALITY-PROBE [emits p=3-prepare] SOURCE. Which item identity and serverIndex are ACTUALLY being prepared,
+        // and by which player - this is where "the sheet wrote 320 but something else got prepared"
+        // becomes visible, and where a second prepare of the same track shows up.
+        val probeSeq = QualityProbe.nextSeq()
+        QualityProbe.log(
+            "3-prepare", probeSeq, mediaItem.mediaId, null,
+            "serverIndex=" + mediaItem.serverIndex + " sourceIndex=" + mediaItem.sourceIndex +
+                " retries=" + mediaItem.retries + " loaded=" + mediaItem.isLoaded +
+                " item=" + QualityProbe.itemId(mediaItem) +
+                " factory=#" + Integer.toHexString(System.identityHashCode(loader))
+        )
         val handler = Util.createHandlerForCurrentLooper()
         loadJob = scope.launch {
             // 0 -> 1 edge only - see PlayerState.loadEpisodeStartMs for why not every increment.
@@ -166,7 +178,25 @@ class StreamableMediaSource(
     }
 
     override fun canUpdateMediaItem(mediaItem: MediaItem) = run {
+        // QUALITY-PROBE [emits p=3-canUpdate] CAN-UPDATE. Names the field that differed. A serverIndex difference MUST
+        // return false so media3 re-creates the source and re-resolves; if this ever returns true on
+        // a serverIndex change, a sheet choice is silently absorbed with no re-resolve at all.
         this.mediaItem.apply {
+            val differing = when {
+                retries != mediaItem.retries -> "retries"
+                serverIndex != mediaItem.serverIndex -> "serverIndex"
+                this.sourceIndex != mediaItem.sourceIndex -> "sourceIndex"
+                backgroundIndex != mediaItem.backgroundIndex -> "backgroundIndex"
+                subtitleIndex != mediaItem.subtitleIndex -> "subtitleIndex"
+                else -> "none"
+            }
+            QualityProbe.log(
+                "3-canUpdate", QualityProbe.nextSeq(), mediaItem.mediaId, null,
+                "differing=" + differing + " oldServerIndex=" + serverIndex +
+                    " newServerIndex=" + mediaItem.serverIndex +
+                    " oldItem=" + QualityProbe.itemId(this@StreamableMediaSource.mediaItem) +
+                    " newItem=" + QualityProbe.itemId(mediaItem)
+            )
             if (retries != mediaItem.retries) return@run false
             if (serverIndex != mediaItem.serverIndex) return@run false
             if (this.sourceIndex != mediaItem.sourceIndex) return@run false
