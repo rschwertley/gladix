@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.backgroundIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -190,9 +191,22 @@ class StreamableMediaSource(
                 subtitleIndex != mediaItem.subtitleIndex -> "subtitleIndex"
                 else -> "none"
             }
-            QualityProbe.log(
+            // ⚠⚠ SUPPRESSED ONLY FOR *OTHER* QUEUE ITEMS, NEVER FOR THE CURRENT ONE.
+            // media3 asks this per HOLDER when it reuses sources across a playlist update
+            // (MediaSourceList.updateMediaSourcesWithMediaItems), so a 300-item replace would emit
+            // 300 lines of differing=none if ungated.
+            // ⚠️ BUT differing=none ON THE CURRENT ITEM IS THE LINE THAT DECIDES ONE
+            // HYPOTHESIS, so it must survive: "the sheet choice was absorbed with NO re-resolve".
+            // A serverIndex change MUST make this return false and force a fresh prepare; if it
+            // ever returns true on the current item after the sheet wrote a new index, the only
+            // evidence is a differing=none line for that mediaId. Gating on the difference alone
+            // would have deleted exactly that evidence - caught in review, 2026-10-16.
+            val probeIsCurrent =
+                mediaItem.mediaId == state.current.value?.mediaItem?.mediaId
+            if (differing != "none" || probeIsCurrent) QualityProbe.log(
                 "3-canUpdate", QualityProbe.nextSeq(), mediaItem.mediaId, null,
-                "differing=" + differing + " oldServerIndex=" + serverIndex +
+                "differing=" + differing + " current=" + probeIsCurrent +
+                    " oldServerIndex=" + serverIndex +
                     " newServerIndex=" + mediaItem.serverIndex +
                     " oldItem=" + QualityProbe.itemId(this@StreamableMediaSource.mediaItem) +
                     " newItem=" + QualityProbe.itemId(mediaItem)
