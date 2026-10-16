@@ -151,15 +151,40 @@ object MediaItemUtils {
     // re-resolves the STREAM and never the TRACK. A Track cached by an older extension version keeps
     // being handed back, every pass fails identically, maxSingleItemRetries is burned and the item is
     // skipped. Driven from PlayerEventListener.onPlayerError's generic tail branch.
-    // OBSERVED ONCE: Combine 18b5da3 -> d8de78e, "Stream has no configured audio provider".
+    // ⚠⚠ THE ONE OBSERVED CASE, MECHANISM CONFIRMED 2026-10-15 by reading the extension at
+    // both revisions (third-party: github.com/dutixlf/echo-combine-extension, cloned outside this
+    // tree - do not vendor it). Recorded in full because the shape is what a future instance will
+    // look like, and because it is NOT a Combine defect:
+    //   - At 18b5da3, CombineExtension.loadStreamableMedia read `stream_ext_id` and FELL BACK TO THE
+    //     METADATA EXTENSION when it was absent. Only streamables found by SEARCHING another
+    //     extension carried the key; streamables taken from the metadata extension itself got a
+    //     quality bump and no key at all, and the null-fallback made that work.
+    //   - Commit 28bd5ed ("exclude metadata playback and match complete track versions", shipped in
+    //     d8de78e, 2026-10-14) replaced that fallback with require(stream_ext_id matches a
+    //     configured provider). The KEY NAME did not change - "stream_ext_id" is identical at both
+    //     revisions - so this is not a rename; the TOLERANCE for its absence was removed, which was
+    //     the whole point of that commit.
+    //   - So a Track we cached while 18b5da3 was installed, WHOSE STREAM CAME FROM THE METADATA
+    //     EXTENSION, has streamables with no `stream_ext_id`, and the new require() throws
+    //     "Stream has no configured audio provider". PARTIAL by construction: tracks whose stream
+    //     came from a searched extension carry the key and still play, which is why a report of this
+    //     reads as "some tracks" rather than "all".
+    // ⚠️ AND NOTHING OF OURS REFRESHES SUCH AN ENTRY - all four candidates checked:
+    // preferCache has NO TTL by explicit policy (see the note at Cached.loadMedia); Cached.loadMedia's
+    // self-heal tests `servers.isEmpty()` and these entries have FULL servers, just one missing extras
+    // key, so it never fires; TRACKS_SCHEMA versions only the durable playlist/album stores, not the
+    // kache media-state entries; and this retry re-serves the same state, which is the defect above.
     // WORKAROUND THAT WORKS TODAY: Clear cache. The kache lives in cacheDir (App.getCache), so
     // Android's Clear cache reaches it - unlike the durable stores in filesDir, which it cannot touch
     // (see CacheUtils.cacheDir).
     //
-    // ⚠️ WE DECIDED NOT TO BUILD THE FIX YET. This is a CLOSED QUESTION, not a queued
-    // task: one report, a workaround that works, and the change sits in the retry + buffering path,
-    // which is the most expensive place in the app to be wrong. WHAT WOULD BRING IT BACK: a SECOND,
-    // UNRELATED report of a stale cached Track. Until then, leave it.
+    // ⚠️ DECISION 2026-10-15: MUTED, STILL PARKED. A CLOSED QUESTION, not a queued task -
+    // a one-off upstream tightening with a working Clear-cache workaround, against a change that sits
+    // in the retry + buffering path, which is the most expensive place in the app to be wrong.
+    // ⚠⚠ AND CONFIRMING THE MECHANISM DID NOT MEET THE BUILD TRIGGER - read this before
+    // treating the detail above as new evidence. The trigger is a SECOND, UNRELATED report of a stale
+    // cached Track. What happened on 2026-10-15 is that the FIRST report was explained, which makes
+    // the note better and the case for building it no stronger. Still one report.
     //
     // THE FIX, RECORDED SO IT NEED NOT BE RE-DERIVED (option C):
     //   - THE RETRY PATH RESOLVES WITH preferCache = false. Thread the flag from here through the
@@ -190,6 +215,10 @@ object MediaItemUtils {
     // and getMedia/loadMedia are public inline, making it a wide edit carrying the stale-inline hazard
     // documented at Cached.getMedia. The targeted precedent to copy instead is Cached.loadMedia's
     // servers.isEmpty() guard: one condition, failure-shaped, no age test.
+    // ⚠️ IN FAIRNESS, THE OBSERVED CASE IS THE ONE D WOULD HAVE CAUGHT AND C WOULD NOT
+    // CHEAPLY: an extension-version component in the kache key invalidates exactly these entries on
+    // upgrade, with no failure needed to trigger it. The rejection above still stands on its other
+    // grounds, but do not read it as "D has no case" - it has precisely this one.
     fun withRetry(item: MediaItem): MediaItem {
         val bundle = Bundle().apply {
             putAll(item.mediaMetadata.extras!!)

@@ -105,6 +105,26 @@ data class PlayerState(
     // invariant breaks and this must become atomic.
     var resumptionApplying = false
 
+    /**
+     * Set true as the FIRST statement of PlayerService.onDestroy, before the player, the session or
+     * the SimpleCache are released.
+     *
+     * ⚠⚠ IT EXISTS SO A LIFECYCLE-ASSERTION ISE CAN BE TOLD FROM A REAL SOURCE ERROR. The
+     * two are INDISTINGUISHABLE BY STACK TRACE - both arrive as a message-less IllegalStateException
+     * from media3's close() cascade - so PlayerEventListener's isDataSourceTeardownRace needs an
+     * out-of-band "are we actually tearing down" signal. Read the note at that guard before changing
+     * anything here.
+     * ⚠️ @Volatile BECAUSE THE WRITER AND THE READER ARE ON DIFFERENT THREADS, unlike
+     * [resumptionApplying] above: onDestroy runs on Main, while the assertion is raised on a media3
+     * LOADER thread and reaches onPlayerError from there. Never relax this to a plain var on the
+     * "everything is on the app looper" argument that applies to its neighbour - it does not apply
+     * here.
+     * ⚠️ NEVER CLEARED. The service is being destroyed; there is no path back. A new
+     * PlayerService gets a fresh PlayerState from the DI graph.
+     */
+    @Volatile
+    var destroying = false
+
     // Cold-start re-seek latch. Media3 loses the restored startPositionMs when prepare() resolves the
     // deferred StreamableMediaSource's placeholder->real timeline to the default position (0) — traced in
     // ExoPlayerImplInternal.resolvePositionForPlaylistChange. Armed at the restore-apply sites

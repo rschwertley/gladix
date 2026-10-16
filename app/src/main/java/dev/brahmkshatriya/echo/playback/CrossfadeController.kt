@@ -511,7 +511,16 @@ class CrossfadeController(
         if (item.mediaId != armedMediaId) return
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return
-        if (exoPlayer.bufferedPosition < duration) return
+        // ⚠️ TOLERANCE, BECAUSE AN EXACT COMPARISON LOST A CROSSFADE BY 12 ms. Measured
+        // 2026-10-15: buffered=176281 against dur=176293, so this returned and the sidecar never
+        // prepared at all. The two numbers cannot be expected to meet exactly - duration is derived
+        // by ConstantBitrateSeekMap from inputLength/bitrate, while bufferedPosition advances in
+        // WHOLE MP3 FRAMES of 1152 samples (~26.1 ms at 44.1 kHz), so a sub-frame residual is
+        // structural, and encoder padding plus the last partial frame can add another.
+        // BUFFERED_EPSILON_MS is ~5 frames: far above that noise, far below both the fade length and
+        // LATE_ABORT_MS, so it cannot let the gate run on a track that has not genuinely finished
+        // loading. A CONSTANT, not a fraction of duration - the error is per-frame, not proportional.
+        if (exoPlayer.bufferedPosition < duration - BUFFERED_EPSILON_MS) return
         // ⚠⚠ THE START POSITION TRAVELS WITH THE SOURCE - NEVER seekTo() AFTER prepare().
         // This used to be setMediaSource(); prepare(); seekTo(armedTailStartMs), three calls on the
         // app looper with nothing between them, so the seek was PROCESSED AGAINST THE PLACEHOLDER
@@ -534,6 +543,12 @@ class CrossfadeController(
         // had published the real seek map - so it could never tell "duration unknown at the seek"
         // from "known 200 ms later". The fix removes the branch instead of measuring it.
         val ok = runCatching {
+            // ⚠⚠ BELT FOR THE playWhenReady LEAK - see [resetSidecar], which is the
+            // primary fix. Set here too because this is the ONE line that decides whether a prepare
+            // starts playing, and it must hold however the sidecar got into its current state
+            // (a reset we did not run, a future path that stops without resetting, an OEM quirk).
+            // Cheap and idempotent; never remove it as redundant.
+            sidecar.playWhenReady = false
             sidecar.setMediaSource(tail.factory.createMediaSource(item), armedTailStartMs)
             sidecar.prepare()
         }.isSuccess
@@ -545,7 +560,9 @@ class CrossfadeController(
         // Same reason as maybePrepareSidecar: no isLoading term. It is still PRINTED on the probe
         // line, because "was the player still loading something" is useful context - but it is an
         // observation, never a condition.
-        val playerReady = buffered >= duration
+        // Same tolerance as [maybePrepareSidecar], and it has to be the same or the sidecar prepares
+        // and then the gate refuses it for the identical handful of milliseconds.
+        val playerReady = buffered >= duration - BUFFERED_EPSILON_MS
         val gate = tail.gate(item)
         val sidecarReady = sidecar.playbackState == Player.STATE_READY
         probeGate(playerReady, sidecarReady, buffered, duration, gate)
@@ -681,12 +698,22 @@ class CrossfadeController(
     }
 
     /**
-     * The sidecar reached STATE_ENDED while merely ARMED. It cannot have got there by PLAYING -
-     * [activate] is the only caller of sidecar.play() - so the seekTo in [maybePrepareSidecar]
-     * landed at or past the tail's end.
+     * The sidecar reached STATE_ENDED while merely ARMED.
      *
-     * ⚠⚠ [CORRECTED 2026-10-15] HYPOTHESIS 1 IS REFUTED AND HYPOTHESIS 2 IS FIXED, SO
-     * THIS SHOULD NOW BE UNREACHABLE. It is kept as a belt, not as an open question.
+     * ⚠⚠ [CORRECTED 2026-10-15, AGAIN] THE CAUSE WAS FOUND AND IT WAS NONE OF THE FOUR
+     * HYPOTHESES BELOW - IT WAS A LEAKED playWhenReady, and this KDoc previously asserted that very
+     * thing was impossible. The sentence here read "It cannot have got there by PLAYING - [activate]
+     * is the only caller of sidecar.play()". BOTH HALVES WERE TRUE AND THE CONCLUSION WAS WRONG:
+     * activate() is indeed the only caller, but play() sets a FLAG THAT OUTLIVES EVERY RESET - stop()
+     * and clearMediaItems() leave playWhenReady alone (ExoPlayerImpl.stopInternal, 1.11.0,
+     * :2161-2180). So from the second hand-off onwards each prepare() started the tail playing, and it
+     * reached ENDED by doing exactly what the note said it could not do. Fixed at [resetSidecar];
+     * read that note for the three symptoms it explains.
+     * ⚠️ THE LESSON, NOT JUST THE FACT: "X is the only caller of Y" bounds WHO CALLS Y,
+     * never how long Y's EFFECT lasts. A one-shot call that sets persistent state is reachable
+     * forever afterwards. Do not write an impossibility claim about state from a claim about calls.
+     * ⚠⚠ THE FOUR EARLIER HYPOTHESES ARE KEPT BELOW, ALL REFUTED OR FIXED, because the
+     * next reader of an ENDED sidecar will reach for them and all four are dead ends.
      *   1. REFUTED TWICE - "the seek overshot the TAIL's own duration". The capture has
      *      seekTarget=208410 against tailDur=mainDur=218410, in range by ten seconds; and a CBR
      *      byte<->time snap is bounded by ONE MP3 FRAME, ~26 ms at 44.1 kHz
@@ -719,10 +746,32 @@ class CrossfadeController(
         sidecarPrepared = false
     }
 
+    /**
+     * ⚠⚠ CLEARS playWhenReady FIRST, AND THAT LINE IS THE FIX FOR THE WHOLE "BAD
+     * CROSSFADE" FAMILY. stop() does NOT reset playWhenReady - ExoPlayerImpl.stopInternal (1.11.0,
+     * :2161-2180) masks the state to IDLE and touches nothing else - and neither does
+     * clearMediaItems(). So after the first hand-off, where [activate] calls sidecar.play(), the flag
+     * stayed TRUE for the life of the sidecar, and EVERY LATER prepare() started it PLAYING THE TAIL
+     * THE INSTANT IT WAS READY - while the phase was still ARMED and no ramp was armed, i.e. at FULL
+     * GAIN on top of the main player.
+     * ⚠️ WHAT THAT PRODUCED ON DEVICE, 2026-10-15, and it explains three separate
+     * complaints that were being chased as three bugs:
+     *   - "too much of the old song carries over" / "the old song seems to loop or play a wrong
+     *     section": a SECOND COPY of the departing track, audible from ARM, seconds before any fade.
+     *   - STATE_ENDED while merely ARMED, exactly one fade-length after each prepare
+     *     (21:23:33 arm -> 21:23:43 and 21:23:53 ended): it played the ~10 s tail out and finished.
+     *   - every non-zero re-sync offset in the captures (6671 ms, 3665 ms): the sidecar had been
+     *     playing since prepare, so by the hand-off its position had run past armedTailStartMs.
+     * ⚠️ pause() AND the explicit flag write, not one or the other: pause() is the
+     * documented way to drop playWhenReady, and setting the field makes the invariant greppable and
+     * survives a future refactor that reorders these calls.
+     * Reused, never released - releasing per crossfade would re-enter the June "zombie ExoPlayer"
+     * territory and, on a shared audio session, drop session effects on some OEM ROMs.
+     */
     private fun resetSidecar() {
-        // Reused, never released - releasing per crossfade would re-enter the June "zombie ExoPlayer"
-        // territory and, on a shared audio session, drop session effects on some OEM ROMs.
         runCatching {
+            sidecar.pause()
+            sidecar.playWhenReady = false
             sidecar.stop()
             sidecar.clearMediaItems()
         }
@@ -874,6 +923,12 @@ class CrossfadeController(
 
         /** Closer to the end than this at the gate and there is nothing worth handing off. */
         private const val LATE_ABORT_MS = 800L
+
+        /**
+         * Slack on "the main player has buffered the whole track". ~5 MP3 frames; see the note at
+         * [maybePrepareSidecar] for why an exact comparison cannot hold.
+         */
+        private const val BUFFERED_EPSILON_MS = 150L
 
         /** Gate evaluations allowed per playthrough; see the budget note in [armRefusal]. */
         private const val MAX_GATE_ATTEMPTS = 2

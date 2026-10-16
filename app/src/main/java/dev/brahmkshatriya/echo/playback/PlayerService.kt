@@ -388,6 +388,9 @@ class PlayerService : MediaLibraryService() {
                 // >0 while a DataSource open() is blocked (the Deezer HEAD, a ranged GET, an HTTP
                 // connect). The watchdog's second suppression arm - see OPEN_GRACE_MS. Static rather than
                 // PlayerState because the counter lives where the opens happen.
+                // True once onDestroy has begun - gates isDataSourceTeardownRace, so a lifecycle
+                // assertion is absorbed only during a real teardown. See PlayerState.destroying.
+                isDestroying = { state.destroying },
                 openInFlight = { StreamableDataSource.openInFlight.get() },
                 // Epoch ms the last open() finished - covers media3's inter-retry gaps, where
                 // openInFlight is legitimately 0. See OPEN_IDLE_SLACK_MS.
@@ -773,6 +776,12 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        // ⚠⚠ FIRST, BEFORE ANY RELEASE. From here on, a message-less IllegalStateException
+        // out of media3's close() cascade is a genuine teardown race and PlayerEventListener's
+        // isDataSourceTeardownRace may absorb it. Set before the player, the session and the
+        // SimpleCache go away, because the race it licenses is POST-release - moving this line down,
+        // below any release() below, reopens exactly the window it exists to cover.
+        state.destroying = true
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         unregisterReceiver(clearQueueReceiver)

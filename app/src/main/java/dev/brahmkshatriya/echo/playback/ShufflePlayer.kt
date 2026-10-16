@@ -454,6 +454,35 @@ class ShufflePlayer(
     // no prepare() call). Needed because the PlayerViewModel STATE_IDLE guard sees faked
     // STATE_READY and never fires. Both play() and setPlayWhenReady() are overridden because
     // setPlaying() in PlayerViewModel uses the playWhenReady property setter directly, not play().
+    /**
+     * Clear a terminal error so a USER-INITIATED ITEM CHANGE recovers, the way [play] already does.
+     *
+     * ⚠⚠ A SEEK IN STATE_IDLE DOES NOT PREPARE, so Next on a stuck player moved the
+     * index and nothing else. Measured 2026-10-15: after a source error the item advanced (queue
+     * 303 -> 302, metadata updated) while the session stayed ERROR(7) "Can't play this track" at
+     * position 0 with nothing playing. The user could not even press Play, because playWhenReady was
+     * still TRUE in IDLE so the transport showed PAUSE; Pause-then-Play recovered it only because
+     * [play] auto-prepares. Extends the Aug 11 clearErrorBeforeQueueReplace idea from queue
+     * REPLACEMENT to item CHANGES.
+     * ⚠️ GATED ON playerError, NOT ON STATE_IDLE ALONE, and the difference is deliberate.
+     * [play] prepares on any IDLE because the user asked for playback. An item change did not: Next on
+     * a STOPPED queue (IDLE, no error) must stay stopped, and an unconditional prepare() there would
+     * start buffering - and, with playWhenReady true, start PLAYING - a track nobody asked for.
+     * ⚠️ READS THE INNER PLAYER, NEVER getPlaybackState(). This class FAKES STATE_READY on
+     * `IDLE && mediaItemCount > 0 && !playWhenReady` (see [getPlaybackState]), so the override would
+     * hide the very state this needs to see. [play] reads `player.playbackState` for the same reason.
+     * ⚠️ CANNOT LOOP: prepare() clearing an error fires onPlayerErrorChanged(null), NOT
+     * onPlayerError (the Aug 11 finding), so nothing re-enters the error path. And it is a no-op on a
+     * healthy player, which is what keeps it clear of the crossfade hand-off - CrossfadeController
+     * .activate calls seekToNextMediaItem() on a player that is playing normally, so playerError is
+     * null and this does nothing at all.
+     * ⚠️ ANDROID AUTO: this is the path a car's Next button takes, which is the case that
+     * most needs it - a head unit gives the user no way to do the Pause-then-Play dance.
+     */
+    private fun clearErrorForItemChange() {
+        if (player.playerError != null) player.prepare()
+    }
+
     override fun play() {
         if (player.playbackState == STATE_IDLE) player.prepare()
         if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
@@ -499,6 +528,7 @@ class ShufflePlayer(
         if (targetIndex <= current) {                                  // not a forward jump → plain seek
             super.seekTo(targetIndex, 0)
             if (play) playWhenReady = true
+            clearErrorForItemChange()
             return
         }
         val departing = player.currentMediaItem
@@ -512,6 +542,7 @@ class ShufflePlayer(
             isNavigating = false
         }
         if (play) playWhenReady = true
+        clearErrorForItemChange()
     }
 
     // ── Session-only Previous state machine ─────────────────────────────────────────────────
@@ -690,6 +721,8 @@ class ShufflePlayer(
         } finally {
             isNavigating = false
         }
+        // AFTER the index has moved, so the item that gets prepared is the one we advanced TO.
+        clearErrorForItemChange()
     }
 
     // Apple-Music Previous: within the first 3s of the current track, restart it; otherwise pop the
@@ -711,10 +744,12 @@ class ShufflePlayer(
         settlePendingReconstitution()
         if (allowRestart && player.currentPosition > PREVIOUS_RESTART_THRESHOLD_MS) {
             player.seekToDefaultPosition()
+            clearErrorForItemChange()
             return
         }
         val item = backStack.removeLastOrNull() ?: run {
             if (allowRestart) player.seekToDefaultPosition()
+            clearErrorForItemChange()
             return
         }
         isNavigating = true
@@ -725,6 +760,7 @@ class ShufflePlayer(
         } finally {
             isNavigating = false
         }
+        clearErrorForItemChange()
     }
 
     // Shared primitives. pushToBackStack: capped play-history push (Seam 1 jump, advance).

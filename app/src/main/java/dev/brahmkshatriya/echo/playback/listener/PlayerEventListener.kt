@@ -95,6 +95,12 @@ class PlayerEventListener(
     private val loadEpisodeStartMs: () -> Long = { 0L },
     // Live StreamableDataSource.openInFlight (>0 ⇒ a DataSource open() is blocked - the Deezer HEAD, a
     // ranged GET, an HTTP connect). Read by the watchdog's SECOND suppression arm; see OPEN_GRACE_MS.
+    // Live PlayerState.destroying (true once PlayerService.onDestroy has begun). Wired from
+    // PlayerService like activeLoadCount above; this listener is not given PlayerState directly.
+    // Gates isDataSourceTeardownRace - see the note there. Defaults FALSE, which is the safe
+    // default: an un-wired listener classifies every such ISE as a real error and recovers, rather
+    // than silently swallowing one.
+    private val isDestroying: () -> Boolean = { false },
     private val openInFlight: () -> Int = { 0 },
     // Live StreamableDataSource.lastOpenEndMs (epoch ms the last open() returned or threw, 0 if none).
     // Read with openInFlight so media3's inter-retry gaps still count as activity - see
@@ -2135,7 +2141,45 @@ class PlayerEventListener(
         // message == null is load-bearing twice over: media3's bare checkState(boolean) throws a
         // message-less ISE, and it keeps this disjoint from the is401 branch above, which matches an
         // IllegalStateException carrying "HTTP 401"/"HTTP 403" and must keep its retry.
-        val isDataSourceTeardownRace = rootCause is IllegalStateException
+        //
+        // ⚠⚠ [CORRECTED 2026-10-15] GATED ON A TEARDOWN ACTUALLY BEING IN FLIGHT. Until
+        // now the three conditions below were the WHOLE test, so ANY message-less ISE from this
+        // cascade was swallowed - including one raised on a LIVE load, which is not a race and is not
+        // benign. Measured (build 1127, retraced against its own mapping.txt): the user dragged the
+        // seek bar mid-song, which left a cache hole (cachedBytes=4134653 of contentLength=7054105),
+        // played to the end, and the final close() hit
+        // SimpleCache.commitFile's `checkState(cachedContent.isFullyLocked(...))` (SimpleCache.java:411,
+        // inlined into CacheDataSink.closeCurrentOutputStream:278, reached from
+        // ProgressiveMediaPeriod.load's finally). This branch absorbed it, returned, and left the
+        // player sitting in ERROR on "Can't play this track" with NO skip, NO retry and NO report -
+        // only a MEMORY_ONLY count. The guard worked exactly as written; what was wrong is that it
+        // never asked whether a teardown was happening.
+        // ⚠️ THE THREE LEGITIMATE CASES, FROM THIS GUARD'S OWN HISTORY ABOVE, each with the
+        // marker that now names it:
+        //   1. SERVICE DESTROY - the player, session and SimpleCache are released while a load is
+        //      still closing. This is the Jun 17 origin (3c438db6, "SimpleCache teardown race") and
+        //      the scenario PlayerService.getCache's note describes, where spans outlive their files.
+        //      Marker: isDestroying(), set at the TOP of PlayerService.onDestroy.
+        //   2. WATCHDOG stop()+prepare() CHURN - the buffering watchdog re-prepares under a load.
+        //      Marker: internalSeekInFlight, which already brackets exactly that re-prepare.
+        //   3. ERROR-SKIP CHURN - an onPlayerError skip tears a load down mid-close.
+        //      Marker: involuntarySkipInFlight, which already brackets exactly that skip.
+        // Outside those three the ISE falls through to the generic tail below, which is the correct
+        // destination and NOT a new mechanism: replaceMediaItem(withRetry) + prepare() + play().
+        // ⚠️ AND THE FALL-THROUGH IS BOUNDED AND CLEARS THE ERROR, which are the two
+        // things that make it safe to stop swallowing. prepare() clears the player error (the Aug 11
+        // AA fix - a session left in STATE_ERROR is what a head unit gets stuck on), and the retry
+        // cannot loop: withRetry increments `retries`, maxSingleItemRetries is 1, so the SECOND
+        // arrival takes the `retries >= maxSingleItemRetries` arm - recordSkip, breaker check,
+        // skipInvoluntarily - and maxConsecutiveUnavailableSkips (3) stops playback after three such
+        // tracks. One retry per item, three items, then stop.
+        // ⚠️ A RE-READ CAN GENUINELY SUCCEED HERE, which is why retrying is not merely
+        // tidier than stalling: the fall-through re-resolves and re-reads, and a re-read over a holed
+        // cache now fetches the hole from upstream rather than failing on it.
+        val isTeardownInFlight =
+            isDestroying() || internalSeekInFlight || involuntarySkipInFlight
+        val isDataSourceTeardownRace = isTeardownInFlight
+            && rootCause is IllegalStateException
             && rootCause.message == null
             && rootCause.stackTrace.any { it.className in dataSourceRuntimeClassNames }
         if (isDataSourceTeardownRace) {
