@@ -65,6 +65,10 @@ import java.util.concurrent.ConcurrentHashMap
  * (see CacheUtils.cacheDir), so there is always a population written by the previous build.
  * A default means an old entry decodes with writtenByUsAtMs = null, which reads as "not ours" and
  * simply takes the normal revalidation path - no migration, no version field, nothing to fail.
+ * ⚠⚠ [AMENDED 2026-10-15] THE LAST CLAUSE NO LONGER HOLDS - THERE IS NOW A VERSION
+ * FIELD, and it exists because a default could not express the change that needed expressing. A
+ * default handles a NEW field whose absence is meaningful ("not ours"); it cannot handle an entry
+ * whose EXISTING fields were written wrong. [CachedPlaylistTracks.schema] is for the second case.
  * ⚠️ writtenByUsAtMs IS THE POST-SAVE TRUST WINDOW. Set only by
  * [Cached.writePlaylistTracksCache], i.e. only when WE committed an edit and know the resulting
  * order. For TRUST_WINDOW_MS afterwards a revalidation may not replace the list, so a read endpoint
@@ -75,6 +79,21 @@ data class CachedPlaylistTracks(
     val savedAtMs: Long,
     val tracks: List<Track>,
     val writtenByUsAtMs: Long? = null,
+    /**
+     * Entry format version, compared against [Cached.TRACKS_SCHEMA] on every read.
+     *
+     * ⚠⚠ 0 MEANS "WRITTEN BEFORE 2026-10-15" AND MUST BE REJECTED. Schema-0 entries
+     * were written through an extras ALLOWLIST that kept only "NEXT" and "playlist_id"
+     * ("album_id" for albums), so every track in them lost UnifiedExtension's `extension_id` - and
+     * a Unified track without it cannot be routed at all: UnifiedExtension.loadTrack throws
+     * ExtensionNotFoundException(null), "Media item has no extension stamp". These files live in
+     * filesDir and survive Clear cache, so they cannot be waited out - the FIRST cold start after
+     * the upgrade has to refuse them.
+     * ⚠️ REJECTED, NOT DELETED. An entry nobody reads never refreshes its lastModified,
+     * so CacheUtils.saveToCache's oldest-first eviction reclaims schema-0 files as new ones arrive.
+     * No migration pass, and nothing to get wrong on a path that runs before playback.
+     */
+    val schema: Int = 0,
 )
 
 object Cached {
@@ -153,16 +172,71 @@ object Cached {
     private const val EXPIRES_EXTRA = "expires"
     private fun EchoMediaItem.carriesExpiry() = extras.containsKey(EXPIRES_EXTRA)
 
-    // History's toSlim drops ALL extras; a playlist track's NEXT / playlist_id are read by DeezerUtil.log
-    // (play-logging context), so preserve exactly those two while dropping streamables + everything heavy.
-    private fun Track.toPlaylistSlim(): Track =
-        toSlim().copy(extras = extras.filterKeys { it == "NEXT" || it == "playlist_id" })
+    /**
+     * ⚠⚠ ALL EXTRAS ARE KEPT EXCEPT THE TOKEN, AND THE ALLOWLIST THAT USED TO BE HERE
+     * SHIPPED A TOTAL PLAYBACK FAILURE. It kept exactly "NEXT" and "playlist_id" ("album_id" for
+     * albums) - the keys DeezerUtil.log reads - and dropped everything else, including
+     * UnifiedExtension's `extension_id`. Every Unified track served from this store was therefore
+     * unroutable: `extras={}` in the log, ExtensionNotFoundException(null) from
+     * UnifiedExtension.loadTrack, a 25-track queue skipped in under half a second. Introduced
+     * d221f4c2 (2026-08-02); the 2026-10-15 paint-at-any-age change turned it from "broken for 24h
+     * after each open" into permanent, which is when it became reportable.
+     * ⚠️ AN ALLOWLIST CANNOT BE MADE CORRECT HERE, which is why the fix is not "add two
+     * more keys". `extras` is populated by extensions, including third-party ones this repo cannot
+     * read - the YouTube Music and Spotify contracts are unknown here - so any allowlist is a bet
+     * that nobody needs a key we did not think of. Keeping everything removes the bet. NOW KEPT and
+     * previously destroyed: `extension_id` and `cached` (UnifiedExtension routing), GAIN (loudness),
+     * FALLBACK_ID and FILESIZE_MP3_MISC (Deezer's fallback and quality-ladder choice), plus every
+     * third-party key we cannot enumerate.
+     *
+     * ⚠⚠ TRACK_TOKEN IS THE ONE EXCLUSION, AND IT IS AN EXPIRY DECISION RATHER THAN A
+     * SIZE ONE. Since paint-at-any-age these entries never expire, so a stored token can be WEEKS
+     * old - and a stale token is a failure mode with history: it broke queue restore on 2026-05-11,
+     * and since 1115 a token error can STEP DOWN THE QUALITY LADDER
+     * (DeezerTrackClient.createStreamableForQuality's "Track token has no sufficient rights" branch)
+     * instead of refreshing, so the user silently gets a lower bitrate. Omitting it instead routes
+     * Deezer into the loadTrack self-heal it has taken for every cached track since 2026-08-02 -
+     * proven in the field by ten weeks of working Deezer playback, which is exactly why this whole
+     * defect stayed invisible.
+     * ⚠️ THE SELF-HEAL'S COST IS ACCEPTED, NOT OVERLOOKED: one api.track per track per
+     * cached open (the gate at DeezerTrackClient.loadTrack fires on an EMPTY token), and it
+     * re-fetches by TOP-LEVEL id, which overwrites grafted art - see the note at MediaItemUtils'
+     * size block. That is a known, bounded cost on a path that demonstrably works.
+     * ⚠️ REVISIT KEEPING THE TOKEN ONLY AFTER TRACING A STALE ONE END TO END ON DEVICE -
+     * i.e. establishing which branch a weeks-old token actually reaches at stream time, the
+     * refresh branch or the step-down one. It cannot be settled by reading: both branches match on
+     * server-supplied strings. Do not re-add it as an optimisation.
+     *
+     * ⚠️ WHAT KEEPING THE REST COSTS, MEASURED RATHER THAN GUESSED: the 2026-09 capture at
+     * MediaItemUtils' size note puts extras at 0.9 KB of a 6.0 KB item (in-memory chars x2, so
+     * roughly half that as UTF-8 JSON on disk), and TRACK_TOKEN dominated that figure - so dropping
+     * it takes most of the increase back. The folder cap is 50 MB with oldest-first eviction
+     * (CacheUtils.CACHE_FOLDER_SIZE), which at ~1.7-2 KB per track is well over a thousand
+     * twenty-five-track entries either way. The bound was never the thing at risk; `streamables` is
+     * the heavy field and toSlim still drops it.
+     *
+     * ONE FUNCTION, NOT TWO: the old pair differed only in which context key it allowlisted, so the
+     * note claiming the two forms "cannot be merged" expired with the allowlist itself.
+     */
+    private fun Track.toTracksCacheSlim(): Track =
+        toSlim().copy(extras = extras - "TRACK_TOKEN")
 
-    // Album tracks carry "album_id" where playlist tracks carry "playlist_id" (see DeezerAlbumClient's
-    // loadTracks, which stamps it alongside "NEXT"). Keeping the wrong key would silently drop the context
-    // a restored track needs, so the two slim forms cannot be merged.
-    private fun Track.toAlbumSlim(): Track =
-        toSlim().copy(extras = extras.filterKeys { it == "NEXT" || it == "album_id" })
+    /**
+     * Bump when the stored shape changes meaning; see [CachedPlaylistTracks.schema].
+     * internal rather than private so that field's KDoc link resolves.
+     */
+    internal const val TRACKS_SCHEMA = 1
+
+    /**
+     * The ONLY read of either tracks store. ⚠️ EVERY CALLER GOES THROUGH HERE so the
+     * schema check cannot be forgotten at one of the four sites - which is the whole reason this is a
+     * function and not an inline `?.takeIf` repeated four times.
+     */
+    private fun readTracksEntry(
+        app: App, itemId: String, folder: String,
+    ): CachedPlaylistTracks? =
+        app.context.getFromCache<CachedPlaylistTracks>("$itemId-tracks", folder, durable = true)
+            ?.takeIf { it.schema == TRACKS_SCHEMA }
 
     // Invalidate the durable playlist-tracks entry so the next loadTracks re-fetches (via the canonical
     // re-resolve path) instead of short-circuiting within TTL. Wired to pull-to-refresh + edit "reload".
@@ -208,8 +282,9 @@ object Cached {
      * consults before fetching. Writing one and not the other just moves which layer serves the
      * stale copy.
      * ⚠️ SLIM ON DISK, FULL IN MEMORY, deliberately: the durable store has only ever
-     * held [toPlaylistSlim] forms (the 50 MB cap and the build-1008/1013 fat-Track OOMs are why),
-     * while the memo feeds the live feed and playback and therefore needs the real tracks.
+     * held [toTracksCacheSlim] forms (the 50 MB cap and the build-1008/1013 fat-Track OOMs are why),
+     * while the memo feeds the live feed and playback and therefore needs the real tracks - which
+     * includes the TRACK_TOKEN that the disk form deliberately drops.
      * ⚠️ RESPECTS carriesExpiry FOR THE DISK WRITE, same rule as every other writer
      * here: an item carrying its own expiry is never stored durably. The memo is still seeded, since
      * it is bounded by MEMORY_TTL_MS anyway.
@@ -220,9 +295,10 @@ object Cached {
                 "${playlist.id}-tracks",
                 CachedPlaylistTracks(
                     savedAtMs = System.currentTimeMillis(),
-                    tracks = tracks.map { it.toPlaylistSlim() },
+                    tracks = tracks.map { it.toTracksCacheSlim() },
                     // The trust window: for TRUST_WINDOW_MS a revalidation may not replace this.
                     writtenByUsAtMs = System.currentTimeMillis(),
+                    schema = TRACKS_SCHEMA,
                 ),
                 DURABLE_PLAYLIST_FOLDER, durable = true
             )
@@ -530,9 +606,7 @@ object Cached {
             else -> null
         }
         if (durableFolder != null) {
-            val cached = app.context.getFromCache<CachedPlaylistTracks>(
-                "$itemId-tracks", durableFolder, durable = true
-            )
+            val cached = readTracksEntry(app, itemId, durableFolder)
             if (cached != null) return@runCatching cached.tracks.toFeed()
         }
         getFeed<Track>(app, extensionId, "$itemId-tracks") { it }
@@ -639,9 +713,8 @@ object Cached {
         // See carriesExpiry: an item with its own expiry skips BOTH the read and the write below, so it
         // falls through to the coalesced fetch every open and is never served from disk.
         val durable = !item.carriesExpiry()
-        val cached = if (!durable) null else app.context.getFromCache<CachedPlaylistTracks>(
-            "${item.id}-tracks", DURABLE_PLAYLIST_FOLDER, durable = true
-        )
+        val cached = if (!durable) null
+        else readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER)
         // ⚠⚠ PAINT FROM THE STORE AT ANY AGE, THEN REVALIDATE IN THE BACKGROUND.
         // This replaced the 24h short-circuit on 2026-10-15. The short-circuit meant no fetch at
         // all for a day, so a playlist edited elsewhere - or edited HERE through a path that did not
@@ -688,7 +761,9 @@ object Cached {
         if (durable && result.fetched) app.context.saveToCache(
             "${item.id}-tracks",
             CachedPlaylistTracks(
-                System.currentTimeMillis(), result.tracks.map { it.toPlaylistSlim() }
+                savedAtMs = System.currentTimeMillis(),
+                tracks = result.tracks.map { it.toTracksCacheSlim() },
+                schema = TRACKS_SCHEMA,
             ),
             DURABLE_PLAYLIST_FOLDER, durable = true
         )
@@ -754,7 +829,9 @@ object Cached {
                 app.context.saveToCache(
                     "${item.id}-tracks",
                     CachedPlaylistTracks(
-                        System.currentTimeMillis(), fresh.map { it.toPlaylistSlim() }
+                        savedAtMs = System.currentTimeMillis(),
+                        tracks = fresh.map { it.toTracksCacheSlim() },
+                        schema = TRACKS_SCHEMA,
                     ),
                     DURABLE_PLAYLIST_FOLDER, durable = true
                 )
@@ -787,9 +864,7 @@ object Cached {
         // Checked on the RAW id, because that is what the durable store is keyed on. For an extension that
         // canonicalizes (YouTube Music's "VL" prefix) this check can miss and warm unnecessarily, costing
         // one request; the result still lands correctly in the memory layer, which IS canonical-keyed.
-        val cached = app.context.getFromCache<CachedPlaylistTracks>(
-            "${item.id}-tracks", DURABLE_PLAYLIST_FOLDER, durable = true
-        )
+        val cached = readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER)
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS) return
         runCatching {
             coalescedTracks(app, MEMO_PLAYLIST_PREFIX + canonicalId(item.id)) {
@@ -804,7 +879,10 @@ object Cached {
     //     all. That is a structural property, not an empty result, so a null is returned WITHOUT caching:
     //     writing it as an empty list would make "this client does not expose tracks" indistinguishable
     //     from "this album has none", and the 24h TTL would make the confusion sticky.
-    //   toAlbumSlim, not toPlaylistSlim - different context extra (see there).
+    //   [AMENDED 2026-10-15] this line used to read "toAlbumSlim, not toPlaylistSlim - different
+    //     context extra". Both are gone: the two slim forms differed only in which context key their
+    //     extras allowlist kept, and that allowlist is what made every Unified track unplayable. One
+    //     toTracksCacheSlim now serves both, so there is no album/playlist distinction left here.
     //   a separate durable folder - album and playlist ids share a string namespace (see the constants).
     private suspend fun loadAlbumTracksCached(
         app: App, extension: Extension<*>, item: Album,
@@ -812,9 +890,8 @@ object Cached {
         // Same eligibility rule as the playlist path — see carriesExpiry. No album ships an expiry today;
         // it is here so the rule is genuinely general and does not have to be rediscovered when one does.
         val durable = !item.carriesExpiry()
-        val cached = if (!durable) null else app.context.getFromCache<CachedPlaylistTracks>(
-            "${item.id}-tracks", DURABLE_ALBUM_FOLDER, durable = true
-        )
+        val cached = if (!durable) null
+        else readTracksEntry(app, item.id, DURABLE_ALBUM_FOLDER)
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS)
             return cached.tracks.toFeed()
 
@@ -831,7 +908,9 @@ object Cached {
         if (durable && result.fetched) app.context.saveToCache(
             "${item.id}-tracks",
             CachedPlaylistTracks(
-                System.currentTimeMillis(), result.tracks.map { it.toAlbumSlim() }
+                savedAtMs = System.currentTimeMillis(),
+                tracks = result.tracks.map { it.toTracksCacheSlim() },
+                schema = TRACKS_SCHEMA,
             ),
             DURABLE_ALBUM_FOLDER, durable = true
         )

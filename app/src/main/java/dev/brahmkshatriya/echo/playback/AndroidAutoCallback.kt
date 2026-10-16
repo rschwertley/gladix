@@ -62,6 +62,7 @@ import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.futureCatching
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRecentRoot
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.resolveCurrentIndex
 import kotlinx.coroutines.CancellationException
@@ -243,29 +244,64 @@ abstract class AndroidAutoCallback(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
-        if (params?.isRecent == true) return scope.futureCatching {
-            // recoverTracks() decodes the (unbounded) saved queue. onGetLibraryRoot runs on the app looper, so
-            // decode OFF it — a large queue was a synchronous ANR on connect. onGetLibraryRoot already returns
-            // a ListenableFuture; AA awaits the resolved root exactly as before, only the decode location moved.
-            val tracks = context.recoverTracks()
-            val rawIndex = context.recoverIndex() ?: 0
-            // Same repair as recoverPlaylist so the AA resume tile shows the true current, not a skewed one.
-            val index = resolveCurrentIndex(tracks ?: emptyList(), rawIndex, context.recoverCurrentId()) {
-                it.first.item.id
-            }
-            val track = (tracks?.getOrNull(index) ?: tracks?.firstOrNull())?.first?.item
-            LibraryResult.ofItem(
-                if (track != null)
-                    browsableItem(
-                        "recent",
-                        track.title,
-                        track.subtitleWithE,
-                        browsable = true,
-                        artWorkUri = track.cover?.toUri(context)
-                    )
-                else
-                    browsableItem("recent", "", browsable = false),
-                null
+        if (params?.isRecent == true) {
+            // ⚠⚠ [CORRECTED 2026-10-15] THIS USED TO BE `scope.futureCatching { context
+            // .recoverTracks() ... }` WITH THE COMMENT "decode OFF the app looper - a large queue was a
+            // synchronous ANR on connect". THAT FIX TRADED A SLOW ANR FOR A DEADLOCK ANR, and the old
+            // comment is kept here because it reads as the solution and is the trap.
+            // futureCatching launches on Dispatchers.IO and returns an INCOMPLETE SettableFuture, and
+            // the legacy bridge cannot survive one: MediaLibraryServiceLegacyStub.onGetRoot runs on
+            // MAIN, posts getRootOnHandler to the application handler - also main, so it runs INLINE -
+            // then blocks main on `haveRoot.block()` (:98, the NO-TIMEOUT overload,
+            // ConditionVariable:83-88). haveRoot.open() fires from the future's FutureCallback, whose
+            // executor is `this::postOrRunOnApplicationHandler` (:182) - so completing on IO POSTS the
+            // open() back to the thread already blocked waiting for it. The post can never run.
+            // Crashlytics build 1122, Motorola Edge 70 / Android 16, caller
+            // com.motorola.systemui.desk, aa_connected=false: main / ConditionVariable.block /
+            // onGetRoot(:98).
+            // ⚠️ SO THE DURATION OF THE WORK WAS NEVER THE PROBLEM - this deadlocks with a
+            // one-item queue. Both "decode on main" (the original slow ANR) and "decode off main"
+            // (this) hang; the work has to leave this path entirely, which is what the snapshot does.
+            // ⚠⚠ onGetLibraryRoot MUST RETURN AN ALREADY-COMPLETED FUTURE. Nothing here may
+            // await, launch, or read the queue. The gearhead branch below is safe only because
+            // Futures.immediateFuture is already done, so addCallback runs inline on main BEFORE
+            // block() is reached - that is the property to preserve, not an accident.
+            // ⚠ The other three legacy bridge methods are NOT subject to this and must not be
+            // "fixed" to match: onLoadChildren (:256), onLoadItem (:317) and onSearch (:349) all call
+            // result.detach() instead of blocking, so an incomplete future is legitimate there.
+            // onGetRoot is structurally forced to block because MediaBrowserServiceCompat.onGetRoot
+            // has to RETURN a BrowserRoot and has no detach().
+            // ⚠️ RARE BUT DETERMINISTIC, which is why one report is not reassuring. Android
+            // System UI's own resumption does NOT come through here: per MediaSession.Callback
+            // .onPlaybackResumption's KDoc (media3 1.11.0, MediaSession.java:2062-2070) - ours is
+            // PlayerCallback.onPlaybackResumption, both isForPlayback arms - that is the
+            // path for "a media button receiver or the System UI notification", including the
+            // metadata-only query "immediately after reboot of the device for System UI to populate
+            // its playback resumption notification". isRecent reaches us only from a legacy
+            // MediaBrowserCompat client that puts BrowserRoot.EXTRA_RECENT in its root hints
+            // (LegacyConversions:1310 is the only reader) - the pre-Media3 convention, still used by
+            // some OEM shells. For those clients it hung every time.
+            // ⚠️ THE isRecent CHECK PRECEDES THE PACKAGE CHECK, so this is not AA-only - any
+            // legacy browser sending EXTRA_RECENT lands here. Do not reorder them.
+            val track = context.recoverRecentRoot()
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(
+                    if (track != null)
+                        browsableItem(
+                            "recent",
+                            track.title,
+                            track.subtitleWithE,
+                            browsable = true,
+                            artWorkUri = track.cover?.toUri(context)
+                        )
+                    else
+                    // Same answer as "no saved queue" gave before: a non-browsable empty root. Reached
+                    // on a fresh install, on the first launch after this change (no snapshot written
+                    // yet - the next save creates it), and after clearQueue, whose directory wipe
+                    // removes RECENT_ROOT along with everything else.
+                        browsableItem("recent", "", browsable = false),
+                    null
+                )
             )
         }
         if (browser.packageName != "com.google.android.projection.gearhead")

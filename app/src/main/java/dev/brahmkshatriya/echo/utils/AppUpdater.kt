@@ -780,20 +780,48 @@ object AppUpdater {
     ) = runIOCatching {
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).await()
+        // ⚠⚠ STATUS BEFORE BODY, AND THIS FUNCTION DID NOT CHECK IT. The Sep 14-23 fix
+        // added status handling to the METADATA path only (the `response.isSuccessful` arm in
+        // getGithubRelease, alongside its 304 and rate-limit arms); the ASSET download still read
+        // whatever came back. A 404/403/503 body was therefore written into a .apk and failed much
+        // later, at unzipApk or in the installer, as something unrelated to the real cause.
+        // ⚠️ NOT THE CAUSE OF Crashlytics 1122 - recorded so the two are not conflated. A
+        // GitHub error body is small JSON, so `expected` would have been ~100 and matched the bytes
+        // written; it cannot produce "got 0 of 9804420". That was our own temp-dir wipe - see
+        // ContextUtils.cleanupTempApks. This arm closes a DIFFERENT, still-open hole.
+        if (!response.isSuccessful) {
+            response.close()
+            throw IOException("Update download failed: HTTP ${response.code} for $url")
+        }
         val expected = response.body.contentLength()
         val file = context.getTempFile()
-        response.body.byteStream()
+        // ⚠⚠ COUNT WHAT copyTo TRANSFERRED; DO NOT STAT THE FILE AGAIN. This was
+        // `val actual = file.length()` AFTER the copy, and that is a fresh stat() of the PATH - so
+        // anything that unlinked the file mid-download reported 0 bytes transferred when in fact the
+        // whole body had arrived (File.length() returns 0 for a missing file rather than throwing).
+        // copyTo's return value is the real transferred count and cannot be affected by the path
+        // disappearing underneath it.
+        // ⚠️ THIS CHANGE IS ONLY SAFE ALONGSIDE THE AGE GATE IN cleanupTempApks, and that
+        // ordering is the point: on its own, an honest count makes the length check PASS on a file
+        // that no longer exists, and the failure just moves to the installer in a less readable
+        // form. The existence check below is the belt for the one unlinker we cannot stop - Android
+        // reclaiming cacheDir under storage pressure.
+        val actual = response.body.byteStream()
             .use { input -> file.outputStream().use { output -> input.copyTo(output) } }
         // Length check. Note OkHttp already throws on a short FIXED-LENGTH body, so this is not the
         // primary guard and will rarely fire — its value is that when it does, the failure is a
         // readable "incomplete download" instead of an opaque installer parse error, and the
         // truncated file is removed rather than left for the next cleanupTempApks pass. -1 means a
         // chunked/compressed response with no declared length: nothing to compare, accept as before.
-        val actual = file.length()
         if (expected >= 0 && actual != expected) {
             file.delete()
             throw IOException("Incomplete download: got $actual of $expected bytes")
         }
+        // The bytes arrived, but the path may not still be there. A DISTINCT message from the one
+        // above on purpose: "incomplete" means the transfer fell short; this means the transfer
+        // succeeded and something removed the file before the installer could read it. Conflating
+        // the two is what sent a 2026-10 investigation looking for a network fault.
+        if (!file.exists()) throw IOException("Downloaded file was removed before install")
         file
     }
 

@@ -141,7 +141,38 @@ object ContextUtils {
     fun Context.getTempFile(ext: String = "apk"): File =
         File.createTempFile("temp", ".$ext", getTempDir())
 
+    /** Anything older than this in the temp dir is residue; anything newer may be in use. */
+    private const val TEMP_APK_MAX_AGE_MS = 60L * 60 * 1000
+
+    /**
+     * ⚠⚠ AGE-GATED, NEVER RECURSIVE - IT USED TO BE deleteRecursively() AND THAT RACED A
+     * DOWNLOAD IN FLIGHT. THREE INDEPENDENT FLOWS write into this one directory via [getTempFile]:
+     * AppUpdater.downloadUpdate (the app's own APK), ExtensionsViewModel's extension update, and
+     * AddViewModel's add-extension download. Only the extension updater calls this, from
+     * ExtensionsViewModel.update - which runs at STARTUP as well as from the three user entry
+     * points, so it fires in the same first seconds as an offered app update.
+     * ⚠️ WHAT THE WIPE DID, AND WHY IT LOOKED LIKE A NETWORK FAULT (Crashlytics 1122,
+     * sideloaded, Android 14, process_age_s=0, app_update_stage=offered): "Incomplete download: got
+     * 0 of 9804420 bytes". Unlinking an open file on Android leaves the fd valid, so copyTo kept
+     * writing to the orphaned inode and FINISHED NORMALLY - okhttp saw a complete fixed-length body
+     * and raised nothing. Only the follow-up File.length() noticed, because it stats the PATH, and
+     * File.length() returns 0 for a missing file instead of throwing. The 9.8 MB download had
+     * almost certainly succeeded and we threw it away.
+     * ⚠️ SO THE AGE GATE IS THE FIX, not the length check it exposed. One hour is far
+     * longer than any download plus the user's trip through the installer, so a finished APK waiting
+     * to be installed is never removed either - which was the second way a recursive wipe could
+     * bite, with no download in flight at all.
+     * ⚠️ FILES ONLY, AND NON-RECURSIVE BY CONSTRUCTION: listFiles() on this directory,
+     * isFile-gated. Nothing here creates subdirectories (getTempFile is createTempFile), so there is
+     * nothing to recurse into; if that ever changes, do NOT reach for deleteRecursively again.
+     * ⚠️ cacheDir CAN STILL BE WIPED BY ANDROID under storage pressure, which produces the
+     * identical symptom and is not preventable from here. That is why downloadUpdate also checks the
+     * file still exists before handing it to the installer.
+     */
     fun Context.cleanupTempApks() {
-        getTempDir().deleteRecursively()
+        val cutoff = System.currentTimeMillis() - TEMP_APK_MAX_AGE_MS
+        getTempDir().listFiles()?.forEach {
+            if (it.isFile && it.lastModified() < cutoff) it.delete()
+        }
     }
 }

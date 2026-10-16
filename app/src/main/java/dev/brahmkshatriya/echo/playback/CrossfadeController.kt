@@ -486,11 +486,16 @@ class CrossfadeController(
      * before the gate fires prepares not at all and fails the gate on sidecarReady.
      *
      * ⚠⚠ THE PRECONDITION IS "THE MAIN PLAYER FINISHED LOADING", WHICH IS NOT THE SAME MOMENT
-     * AS ARM. The cache-only source can only succeed once the tail is COMMITTED, and the final
-     * fragment commits when the main player's loadable completes
-     * (ProgressiveMediaPeriod.ExtractingLoadable.load's finally -> CacheDataSink.close -> commitFile).
-     * Preparing too early means the cache-only chain opens a hole, gets PlaceholderDataSource's
-     * IOException, burns media3's three load retries and lands in IDLE - with no listener to notice.
+     * AS ARM. It was originally required because the tail had no upstream, so preparing before the
+     * final fragment committed (ProgressiveMediaPeriod.ExtractingLoadable.load's finally ->
+     * CacheDataSink.close -> commitFile) opened a hole, got PlaceholderDataSource's IOException,
+     * burned media3's three load retries and landed in IDLE with no listener to notice.
+     * ⚠️ [AMENDED 2026-10-15] THAT IS NO LONGER WHY IT IS KEPT - the tail now has an
+     * upstream and a hole is fetched rather than fatal. It is kept because it is also what keeps
+     * the sidecar OFF the same cache key while the main player is still writing it, which is the
+     * hole-lock hazard documented at CacheOnlyTailSource's read-only note. Do not relax it to
+     * "prepare at ARM" on the grounds that holes are now survivable: the two players would then
+     * contend on one key and could punch holes into it.
      * ⚠️ bufferedPosition >= duration IS THE TEST, AND IT IS TRUE FOR A SECOND REASON WORTH
      * KNOWING: ExoPlayerImpl.getContentBufferedPosition:1294-1297 short-circuits to the current
      * window's full duration as soon as the LOADING period moves to a different window - which is
@@ -507,10 +512,30 @@ class CrossfadeController(
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return
         if (exoPlayer.bufferedPosition < duration) return
+        // ⚠⚠ THE START POSITION TRAVELS WITH THE SOURCE - NEVER seekTo() AFTER prepare().
+        // This used to be setMediaSource(); prepare(); seekTo(armedTailStartMs), three calls on the
+        // app looper with nothing between them, so the seek was PROCESSED AGAINST THE PLACEHOLDER
+        // TIMELINE - ProgressiveMediaSource has not published a duration yet at that instant. That
+        // routes it through ExoPlayerImplInternal.seekTo, which has two ways to end playback
+        // outright: resolvedSeekPosition == null -> setState(STATE_ENDED) (1.11.0, :1746-1749), and
+        // ProgressiveMediaPeriod.startLoading's pendingResetPositionUs > maxLoadPositionUs ->
+        // loadingFinished = true WITH NO LOAD ISSUED (:1085-1089). Either one leaves the sidecar in
+        // STATE_ENDED having read nothing, which is exactly what the device showed: three
+        // sidecarEnded lines on 2026-10-15 with seekTarget TEN SECONDS INSIDE tailDur.
+        // ⚠️ setMediaSource(source, startPositionMs) AVOIDS BOTH BY CONSTRUCTION, and the
+        // reason is in ExoPlayerImpl: it routes to setMediaSourcesInternal, which hands the position
+        // to internalPlayer.setMediaSources(holders, startWindowIndex, Util.msToUs(startPositionMs),
+        // shuffleOrder) (:2658-2659). The position therefore arrives as part of the PLAYLIST UPDATE
+        // and is resolved against the REAL timeline when it first appears - it never passes through
+        // seekTo's resolver, and it never sets isPendingReset(), which is the precondition for
+        // startLoading's guard. Not a race narrowed; a path removed.
+        // ⚠️ AND IT IS WHY THERE IS NO NEW PROBE HERE. The old probe sampled
+        // sidecar.duration when the TICK NOTICED the ENDED - up to 200 ms late and after prepare()
+        // had published the real seek map - so it could never tell "duration unknown at the seek"
+        // from "known 200 ms later". The fix removes the branch instead of measuring it.
         val ok = runCatching {
-            sidecar.setMediaSource(tail.factory.createMediaSource(item))
+            sidecar.setMediaSource(tail.factory.createMediaSource(item), armedTailStartMs)
             sidecar.prepare()
-            sidecar.seekTo(armedTailStartMs)
         }.isSuccess
         if (ok) sidecarPrepared = true else probeArm(false, "sidecarSourceFailed")
     }
@@ -524,7 +549,16 @@ class CrossfadeController(
         val gate = tail.gate(item)
         val sidecarReady = sidecar.playbackState == Player.STATE_READY
         probeGate(playerReady, sidecarReady, buffered, duration, gate)
-        if (playerReady && gate.ready && sidecarReady) {
+        // ⚠⚠ gate.ready IS NO LONGER A CONDITION, ONLY A PROBE FIELD. It asked "is every
+        // byte committed to the cache", which was the right proxy for "can the tail be read" only
+        // while the tail had no upstream. It now refuses crossfades that would work: two
+        // consecutive tracks on 2026-10-15 failed on cacheReason=incomplete alone (73% and 93%
+        // committed) with the main player reporting the whole track buffered and not loading.
+        // ⚠️ sidecarReady IS THE HONEST SIGNAL: STATE_READY means the sidecar has actually
+        // buffered the tail, whichever side of the cache the bytes came from. KEEP PRINTING
+        // gate.reason - it is how we see whether the upstream fallback is being used, and if
+        // `incomplete` stops appearing entirely the completeness question has answered itself.
+        if (playerReady && sidecarReady) {
             activate(position, duration)
             return
         }
@@ -651,14 +685,20 @@ class CrossfadeController(
      * [activate] is the only caller of sidecar.play() - so the seekTo in [maybePrepareSidecar]
      * landed at or past the tail's end.
      *
-     * ⚠⚠ FIRST SEEN 2026-10-15 (gate fail, sidecarReady=false, sidecarState=4). TWO
-     * HYPOTHESES REMAIN AND THE PROBE DECIDES BETWEEN THEM; neither is asserted here:
-     *   1. the seek overshot the TAIL's own duration. armedTailStartMs comes from the MAIN
-     *      player's duration, and a byte<->time mapping is only exact for CBR - see the
-     *      CacheOnlyTailSource gate note, which records the same caveat for the cached-bytes test.
-     *   2. the seek was issued before the extractor published a duration. [maybePrepareSidecar]
-     *      calls prepare() and seekTo() back to back, so it can resolve as a pending seek against
-     *      an unknown-duration window.
+     * ⚠⚠ [CORRECTED 2026-10-15] HYPOTHESIS 1 IS REFUTED AND HYPOTHESIS 2 IS FIXED, SO
+     * THIS SHOULD NOW BE UNREACHABLE. It is kept as a belt, not as an open question.
+     *   1. REFUTED TWICE - "the seek overshot the TAIL's own duration". The capture has
+     *      seekTarget=208410 against tailDur=mainDur=218410, in range by ten seconds; and a CBR
+     *      byte<->time snap is bounded by ONE MP3 FRAME, ~26 ms at 44.1 kHz
+     *      (ConstantBitrateSeekMap.getSeekPoints returns the SNAPPED frame time, always <= the
+     *      request). It cannot produce the 6671 ms and 3665 ms offsets that were observed, so the
+     *      byte<->time mapping was never the fault here.
+     *   2. FIXED - "the seek was issued before the extractor published a duration".
+     *      [maybePrepareSidecar] no longer seeks after prepare(); the start position travels with
+     *      the source. Read the note there before changing it back.
+     * ⚠️ SO IF THIS EVER FIRES AGAIN, NEITHER RECORDED CAUSE EXPLAINS IT - treat it as a
+     * new finding rather than reaching for these two, and note that the offsets above are still
+     * unexplained: 6.7 s is far too large for any seek-map error and was never accounted for.
      * ⚠️ A THIRD HYPOTHESIS IS ALREADY REFUTED, recorded so it is not re-proposed: "the
      * duration was back-filled at load completion AFTER arm, so armedTailStartMs went stale". The
      * capture shows dur=168053 on BOTH the arm line and the gate line, so the duration did not

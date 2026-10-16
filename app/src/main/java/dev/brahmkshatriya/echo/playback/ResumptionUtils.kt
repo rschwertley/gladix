@@ -69,6 +69,24 @@ object ResumptionUtils {
     // essential pair survives regardless of whether that context would parse.
     private const val QUEUE_ENTRIES = "queue_entries"
 
+    /**
+     * One slim Track: the CURRENT item, for the legacy "recent" browser root.
+     *
+     * ⚠⚠ THIS EXISTS TO KEEP A DECODE OFF THE LEGACY onGetRoot PATH, AND "off it" HAS TO
+     * MEAN SYNCHRONOUS-AND-CHEAP RATHER THAN BACKGROUNDED. AndroidAutoCallback.onGetLibraryRoot used
+     * to answer an isRecent query by decoding the WHOLE queue on Dispatchers.IO and returning the
+     * incomplete future. That deadlocked the main thread - see the note at that override - so the
+     * answer has to be available without a coroutine and without reading the queue. One entry is
+     * ~1.7 KB, which is a sub-millisecond read of a file already in page cache after a save.
+     * ⚠️ A SLIM TRACK RATHER THAN PRE-RENDERED STRINGS, deliberately: the browser root
+     * item wants title + subtitleWithE + cover-as-Uri, and all three of those mappers live in
+     * AndroidAutoCallback (subtitleWithE, the private ImageHolder.toUri). Storing the Track keeps the
+     * rendered tile BYTE-IDENTICAL to what the queue-decode version produced, instead of
+     * re-deriving it here against a different cover mapper (MediaItemUtils uses toUriWithJson, which
+     * is our own scheme and not what a foreign browser was being handed).
+     */
+    private const val RECENT_ROOT = "recent_root"
+
     @Serializable
     private data class QueueEntry(
         val track: Track,
@@ -102,9 +120,13 @@ object ResumptionUtils {
      * ⚠️ RESTORE SIDE, NOT SAVE SIDE, DELIBERATELY. Preserving the key through the slim would only help
      * queues saved AFTER the change; re-stamping here repairs the queues already on disk, using data that
      * is already in the entry. The systematic follow-up — a queue-local slimmer that keeps routing keys,
-     * the way Cached.toPlaylistSlim already keeps NEXT/playlist_id — is parked; it only affects
-     * DeezerUtil.log's play-context telemetry, which is the one other thing toSlim drops that nothing
-     * repopulates.
+     * the way Cached.toTracksCacheSlim does — is parked; it only affects DeezerUtil.log's
+     * play-context telemetry, which is the one other thing toSlim drops that nothing repopulates.
+     * [AMENDED 2026-10-15] that function was called toPlaylistSlim and kept an ALLOWLIST of
+     * NEXT/playlist_id; it now keeps every extra except TRACK_TOKEN, because the allowlist was
+     * dropping `extension_id` and made every cached Unified track unplayable. The parked item is
+     * unchanged - this queue slimmer is still allowlist-shaped, deliberately, for the OOM reasons
+     * below - but Cached is no longer the precedent for an allowlist.
      *
      * Only ADDS the key, never overwrites: a track that somehow kept its own stamp keeps it.
      */
@@ -122,8 +144,9 @@ object ResumptionUtils {
      *   toSlimContext        keeps a Radio's extras, deliberately, because radio re-resolution
      *                        reads kind + seeds from them - it is the single source of truth that
      *                        work depends on.
-     *   Cached.toPlaylistSlim keeps album.id/title/cover so "Go to Album" still works from a
-     *                        cached track.
+     *   Cached.toTracksCacheSlim keeps album.id/title/cover so "Go to Album" still works from a
+     *                        cached track. (Renamed from toPlaylistSlim 2026-10-15; that part comes
+     *                        from toSlim and is unchanged, but it no longer allowlists extras.)
      * Each drops the bulk and keeps one routing or navigation key. So does this.
      * DO NOT widen it to keep extras generally - that IS the re-fatten the two OOMs forbid, and the
      * difference between the two is the whole point: keep a key, never keep a payload.
@@ -302,6 +325,29 @@ object ResumptionUtils {
         return if (end >= size) this else subList(0, end).toList()
     }
 
+    /**
+     * Refresh the "recent" root snapshot. Called from the two savers that already hold the current
+     * [MediaItem]; [saveIndex] deliberately does NOT call it, because it is given only an index and
+     * an id and would have to read the player to get a Track.
+     *
+     * ⚠️ FRESHNESS IS DEBOUNCED, AND THAT IS THE RIGHT TRADE. The snapshot updates on the
+     * debounced saveQueue and on teardown, so between a transition and the next save it names the
+     * previous track. A momentarily stale resume tile is worth far less than a main-thread deadlock,
+     * and writing it per transition would add a file write to every track change.
+     * ⚠️ NO EXTRA queueGeneration CHURN: both call sites already write INDEX / CURRENT_ID /
+     * QUEUE_ENTRIES through [saveToQueue], each of which bumps the counter, so this adds a fourth
+     * bump inside a block that already bumped three times. Do NOT call it from a path that writes
+     * nothing else - queueGeneration keys PlayerState's restore cache, and a bump there would
+     * invalidate that cache for a cosmetic write.
+     */
+    private fun Context.saveRecentRoot(item: MediaItem?) {
+        val track = item?.track ?: return
+        saveToQueue(RECENT_ROOT, track.toSlim())
+    }
+
+    /** The snapshot, or null when nothing has been saved yet (fresh install, post-upgrade, cleared). */
+    fun Context.recoverRecentRoot(): Track? = getFromQueue<Track>(RECENT_ROOT)
+
     fun saveIndex(context: Context, index: Int, currentId: String?) {
         context.saveToQueue(INDEX, index)
         context.saveToQueue(CURRENT_ID, currentId)
@@ -320,10 +366,12 @@ object ResumptionUtils {
         val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId
         val capped = list.capForPersist(currentIndex)   // currentIndex stays valid within capped
+        val currentItem = player.currentMediaItem
         withContext(Dispatchers.IO) {
             context.saveToQueue(INDEX, currentIndex)
             context.saveToQueue(CURRENT_ID, currentId)
             context.writeQueueEntries(capped)
+            context.saveRecentRoot(currentItem)
         }
     }
 
@@ -344,6 +392,7 @@ object ResumptionUtils {
         context.saveToQueue(INDEX, currentIndex)
         context.saveToQueue(CURRENT_ID, player.currentMediaItem?.mediaId)
         context.writeQueueEntries(list.capForPersist(currentIndex))
+        context.saveRecentRoot(player.currentMediaItem)
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {

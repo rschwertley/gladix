@@ -30,6 +30,19 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // (cos⁴ + sin⁴ = 0.5 at the crossover). An overlap needs EQUAL POWER: gain_out = cos(theta),
     // gain_in = sin(theta), so gain_out² + gain_in² = 1 for uncorrelated signals. Dropping the
     // squaring is the whole change to the curve; the counters and their decrement are unchanged.
+    // ⚠⚠ [CHECKED 2026-10-15] THE REFERENCE APP USES THE SAME EQUAL-POWER LAW, SO DO NOT
+    // SWITCH THIS TO LINEAR. Echo Expressive 4.1.2's decompile applies cos/sin via setVolume in
+    // 40 ms steps (PlayerService:863-868) - the same curve, a coarser applicator. This was checked
+    // because a device report of "too much of the old song carries over" at fade=10 led to a
+    // proposal to go linear, on the premise that the reference was linear. THE PREMISE WAS WRONG.
+    // ⚠️ THE NUMBERS, SO THE ARGUMENT DOES NOT HAVE TO BE REDERIVED: equal power holds
+    // the outgoing leg at 0.924 (-0.7 dB) a quarter of the way through and 0.707 (-3.0 dB) at the
+    // midpoint; linear would be 0.750 (-2.5 dB) and 0.500 (-6.0 dB). So linear IS audibly milder -
+    // but it is not what the reference does, and the reference is the thing that sounds right on
+    // this device. The carry-over complaint therefore has to be explained by something else (the
+    // tail starving on cache holes was the other candidate, and it was real); if it survives both
+    // the upstream fix and the ENDED fix, revisit the curve as a deliberate DEPARTURE from the
+    // reference rather than as a correction to it.
     // ⚠️ LENGTH IS PER-RAMP, NOT A SETTING. Track Fade derived the frame count from a
     // prefs field (crossfadeDurationMs) on every buffer; a crossfade's length is decided once per
     // hand-off (min(fade, tail that actually exists), floored at 1s) and cannot come from a

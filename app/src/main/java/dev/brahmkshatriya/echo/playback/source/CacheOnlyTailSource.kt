@@ -18,19 +18,46 @@ import dev.brahmkshatriya.echo.playback.source.StreamableDataSource.Companion.ur
 /**
  * The crossfade sidecar's media source and its readiness gate.
  *
- * ⚠⚠ CACHE-ONLY ON PURPOSE, AND "NO UPSTREAM" IS THE WHOLE DESIGN. The sidecar replays the
+ * ⚠⚠ [CORRECTED 2026-10-15] "NO UPSTREAM" WAS HALF WRONG, AND THE HALF THAT WAS WRONG
+ * STOPPED THE CROSSFADE HAPPENING AT ALL. An upstream is now wired; the WRITE SINK is still
+ * null. Why: the gate requires every byte committed, and on device the cache was only 73% and
+ * 93% committed on two consecutive tracks (2026-10-15, cachedBytes 4154161/5663346 and
+ * 6527021/6986186, both with bufferedEqDuration=true and loading=false), so every gate read
+ * cacheReason=incomplete and the user heard no crossfade. With an upstream the holes are
+ * fetched instead of fatal.
+ * ⚠️ AND THE COST NOTE BELOW OVER-STATED ITSELF: upstream is opened ONLY for bytes
+ * that are missing (CacheDataSource.openNextSource, 1.11.0, :734-751 reads a cached span
+ * directly), so a fully-committed tail still costs zero network - the common case. Only the
+ * holes pay, and they pay a ranged GET rather than a whole second stream.
+ * ⚠️ THE CLASS NAME IS NOW A MISNOMER and is kept only to hold the diff down -
+ * renaming reaches PlayerService and CrossfadeController's constructor. It is cache-FIRST, not
+ * cache-ONLY.
+ * ORIGINAL REASONING, STILL LOAD-BEARING FOR THE WRITE SINK: The sidecar replays the
  * TAIL of a track the main player is already streaming, so every byte it needs has already been
  * fetched and decrypted once. Giving it an upstream would mean a SECOND stream open per crossfade -
  * for Deezer that is RawDataSource.open's runBlocking { HEAD getContentLength + ranged GET +
  * Blowfish prime } on the loader thread, against a shared-account CDN. Reading committed cache
  * bytes costs none of that.
- * ⚠️ AND IT FAILS IN THE RECOVERABLE SHAPE. media3 substitutes PlaceholderDataSource when no
- * upstream factory is set (CacheDataSource.java:558, 1.11.0), whose open() throws
- * IOException("PlaceholderDataSource cannot be opened") - a retriable load error to media3's Loader,
- * NOT the non-IOException class that escapes uncaught (see the note at RawDataSource.open's generic
- * catch). A cache miss therefore degrades; it does not crash.
- * ⚠️ READ-ONLY TOO (no write sink), so the sidecar can never become a second writer on a key the
- * main player's CacheDataSink is already writing. SimpleCache is single-writer per key.
+ * ⚠️ [AMENDED 2026-10-15] THE PlaceholderDataSource PATH IS NO LONGER TAKEN, and it is
+ * recorded because it is what the symptom looked like: with no upstream factory media3
+ * substitutes PlaceholderDataSource (CacheDataSource.java:558, 1.11.0), whose open() throws
+ * IOException("PlaceholderDataSource cannot be opened"). That is retriable rather than fatal,
+ * so a hole degraded instead of crashing - but it degraded by STARVING THE TAIL mid-ramp,
+ * which is the most likely reading of "the old song loops / plays a wrong section". The real
+ * upstream removes the starvation rather than retrying it.
+ * ⚠⚠ READ-ONLY STILL, AND THIS HALF WAS RIGHT - DO NOT ADD A WRITE SINK. SimpleCache is
+ * single-writer per key, and the main player's CacheDataSink owns this key.
+ * ⚠️ THE NULL SINK ALSO KEEPS US OUT OF THE HOLE-LOCK HAZARD, which was checked
+ * before wiring the upstream and is the reason this stays null rather than becoming a second
+ * writer "for symmetry". With a null sink, CacheDataSource.openNextSource takes its :767-771
+ * arm: it calls cache.releaseHoleSpan(nextSpan) IMMEDIATELY and sets nextSpan = null, so the
+ * sidecar never holds a hole-span lock across any I/O. That matters because both players run
+ * flags = 0, hence blockOnCache = false (:542) and startReadWriteNonBlocking (:723) - and a
+ * caller that gets null there BYPASSES THE CACHE WITHOUT WRITING (:728-733) and then suppresses
+ * re-checking it for MIN_READ_BEFORE_CHECKING_CACHE = 100 KB (:403, :774-777). A sidecar holding
+ * hole locks could therefore have PUNCHED the very holes it then failed on. It cannot: the lock
+ * is released inside the same call, and wiring the upstream does not change that arm at all
+ * (:765's `cacheWriteDataSource != null` is false either way).
  *
  * ⚠⚠ THE RESOLVER IS SHARED WITH THE MAIN PLAYER'S CHAIN BY CONSTRUCTION - it is handed the
  * SAME `state.servers` map. That is what makes the sidecar resolve to the identical URL, which is
@@ -49,17 +76,30 @@ class CacheOnlyTailSource(
     private val resolver = StreamableResolver(context, servers)
 
     /**
+     * ⚠️ A FRESH StreamableDataSource.Factory, NOT A SHARED ONE, and that is safe because
+     * the factory is stateless - createDataSource() mints a new source per load. What must NOT be
+     * duplicated is the RESOLVER, and it is not: [resolver] is built over the same `servers` map the
+     * main player uses, so the resolved URL and therefore the cache key stay identical.
+     */
+    private val upstream = StreamableDataSource.Factory(context)
+
+    /**
      * Progressive only, deliberately: the tail is a byte range of an already-open container.
      * Dash/Hls factories are not wired because a sidecar never plays a manifest-based stream - those
-     * arrive as Http sources with their own chunk sources, and the gate below rejects them anyway
-     * (no single whole-resource length to confirm).
+     * arrive as Http sources with their own chunk sources.
+     * ⚠️ [AMENDED 2026-10-15] the old reason ended "and the gate below rejects them anyway
+     * (no single whole-resource length to confirm)" - that is no longer true, because [Gate.ready] is
+     * not a condition any more (see CrossfadeController.evaluateGate). Progressive-only is now the
+     * ONLY thing keeping a manifest source out of the sidecar, so do not wire dash/hls here casually.
      */
     val factory: MediaSource.Factory by lazy {
         DefaultMediaSourceFactory(
             ResolvingDataSource.Factory(
                 CacheDataSource.Factory()
                     .setCache(cache)
-                    // No upstream and no write sink. Both omissions are load-bearing - see the note above.
+                    // Upstream for holes; NO write sink. Only the second omission is load-bearing
+                    // now - see the two class notes.
+                    .setUpstreamDataSourceFactory(upstream)
                     .setCacheWriteDataSinkFactory(null),
                 resolver
             )

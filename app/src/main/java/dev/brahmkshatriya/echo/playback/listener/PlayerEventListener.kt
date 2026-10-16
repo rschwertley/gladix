@@ -2174,7 +2174,18 @@ class PlayerEventListener(
         // circuit breaker: that cap throttles retry-loop storms (CDN/token), whereas skipping a dead-extension
         // track is free. Only the end-of-queue bound below applies, so we skip past e.g. 30 removed-Spotify
         // tracks straight to the live-extension track at 31.
-        val isExtensionRemoved = rootCause is ExtensionNotFoundException
+        // ⚠⚠ GATED ON id != null, AND THAT GATE IS THE FIX FOR A SILENT TOTAL FAILURE.
+        // The type carries two conditions (see its own note): a NON-NULL id is a CONFIG fact - the
+        // user uninstalled an extension - where skipping is free and exempting the breaker is right.
+        // A NULL id is a DATA fault: the item reached us carrying no extension stamp, which means
+        // something in OUR pipeline destroyed it. Those must be COUNTED.
+        // WHAT THE UNGATED VERSION COST, measured 2026-10-15 on build 1126: Cached's slim allowlist
+        // had been dropping `extension_id` from every cached playlist track since d221f4c2, so a
+        // 25-track Unified queue raised ExtensionNotFoundException(null) on every item and raced to
+        // the end in under 0.5 s - with no recordSkip, no breaker trip and no Crashlytics report,
+        // because this line took the exemption written for uninstalled extensions. A total playback
+        // failure produced no evidence at all.
+        val isExtensionRemoved = rootCause is ExtensionNotFoundException && rootCause.id != null
         if (isMissingFile || is401 || isMalformedContent || isTimeout || isExtensionRemoved) {
             if (!isExtensionRemoved) {
                 recordSkip(rootCause, error, probeDetail())
