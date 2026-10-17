@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shuffle-ON glyph for the full-screen player ONLY, and it is the PLAIN arrows on purpose.
+     ic_shuffle_on_40dp - the one this replaces here - is the same arrows wrapped in a full
+     rounded-square OUTLINE, i.e. it carries the on-state as a container of its own. Once the button
+     has a filled tonal circle behind it (drawable/bg_player_transport_circle.xml) that outline sits
+     inside a filled circle and reads as two nested containers, so the container state moves to the
+     circle and the glyph goes back to plain.
+     ⚠️ THIS IS A NEW FILE INSTEAD OF AN EDIT TO ic_shuffle_on_40dp BECAUSE THAT DRAWABLE IS
+     SHIPPED OFF-DEVICE. PlayerCommands.getShuffleButton passes it to
+     CommandButton.setCustomIconResId, which is what Android Auto head units and the media
+     notification render. Editing it would change the car icon as a side effect of an in-app styling
+     pass - the kind of change that only shows up on a head unit. Same reason anim_shuffle is left
+     alone and anim_shuffle_plain.xml exists: anim_shuffle is also used by fragment_player_tv.xml.
+     Geometry is copied from ic_shuffle_40dp unchanged - 28dp at a 960 viewport - because the OFF and
+     ON glyphs must be the same optical size, and because the layout note at trackShuffle records
+     that shuffle's 28dp intrinsic has to stay equal to trackRepeat's app:iconSize of 28dp.
+     ⚠️ CONSEQUENCE WORTH KNOWING: with the arrows identical in both states, shuffle's state is
+     carried by the FILL ALONE. Repeat still has two channels (slash OFF / plain ALL / "1" ONE); this
+     one does not. That is the agreed design for a binary control, not an oversight - if it ever needs
+     a second channel, this file is where the differing glyph goes, and nothing outside the phone
+     player reads it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="#FF000000"
+      android:pathData="M685.33,733.33 L527,575.67 574,528l159.34,158v-81.33q0,-14.17 9.62,-23.75t23.83,-9.58q14.22,0 23.72,9.58 9.5,9.58 9.5,23.75v162q0,14.17 -9.58,23.75 -9.58,9.58 -23.75,9.58L604,800q-14.17,0 -23.75,-9.62 -9.58,-9.62 -9.58,-23.83 0,-14.22 9.58,-23.72 9.58,-9.5 23.75,-9.5h81.33ZM733.33,274L217.33,790q-9.67,9.67 -23.33,9.33 -13.67,-0.33 -23.33,-10Q161,779.67 161,766q0,-13.67 9.67,-23.33l516,-516L604,226.67q-14.17,0 -23.75,-9.62 -9.58,-9.62 -9.58,-23.83 0,-14.22 9.58,-23.72 9.58,-9.5 23.75,-9.5h162.67q14.17,0 23.75,9.58 9.58,9.58 9.58,23.75v162q0,14.17 -9.62,23.75t-23.83,9.58q-14.22,0 -23.72,-9.58 -9.5,-9.58 -9.5,-23.75v-81.33ZM385.67,432.33l-216,-215.67Q160,207 160,193t9.67,-23.67q9.67,-9.67 23.23,-9.67 13.57,0 23.43,9.67L433,385l-47.33,47.33Z"/>
+</vector>

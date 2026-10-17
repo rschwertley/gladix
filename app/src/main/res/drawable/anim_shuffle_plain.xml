@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- trackShuffle's button drawable in the full-screen player. A COPY of anim_shuffle with the ON item
+     re-pointed at ic_shuffle_on_plain_40dp, because anim_shuffle is ALSO fragment_player_tv.xml's
+     tv_track_shuffle and TV is out of scope for this pass. Keeping the two separate is what lets the
+     phone drop the boxed ON glyph without touching the TV player.
+     No <transition> elements, matching anim_shuffle: the states swap rather than morph, and the
+     visible change is now the circle's fill (see bg_player_transport_circle.xml). -->
+<animated-selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/state_on"
+        android:drawable="@drawable/ic_shuffle_on_plain_40dp"
+        android:state_checked="true" />
+
+    <item
+        android:id="@+id/state_off"
+        android:drawable="@drawable/ic_shuffle_40dp"
+        android:state_checked="false" />
+</animated-selector>

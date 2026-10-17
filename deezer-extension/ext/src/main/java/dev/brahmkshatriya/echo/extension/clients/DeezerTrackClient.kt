@@ -31,14 +31,35 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         return source["url"]?.jsonPrimitive?.content
     }
 
-    private suspend fun createStreamableForQuality(track: Track, quality: String, retry: Boolean = true): Streamable {
+    /**
+     * One rung of the quality ladder. `quality` is the rung being ATTEMPTED; [topQuality] is the
+     * rung the ladder STARTED at - what the user's selected placeholder asked for - carried
+     * unchanged through every descent so a SUBSTITUTE can be fetched at that quality instead of at
+     * whatever rung the original happened to run out on. [allowFallback] is false inside a
+     * substitute's own ladder; see the FALLBACK_ID block below for why that is load-bearing.
+     */
+    private suspend fun createStreamableForQuality(
+        track: Track,
+        quality: String,
+        retry: Boolean = true,
+        topQuality: String = quality,
+        allowFallback: Boolean = true,
+    ): Streamable {
+        // QUALITY-PROBE [field role=] role=original is the requested recording's own ladder;
+        // role=fallback is a substitute's ladder, which exists only while allowFallback is false.
+        // Both chains print the same p=5-* lines, so without this field a capture cannot tell
+        // "the original stepped down" from "the substitute stepped down".
+        val probeRole = if (allowFallback) "original" else "fallback"
         return try {
             val currentTrackId = track.id
             // QUALITY-PROBE [emits p=5-branch] BRANCH. "Was the relay attempted at all" - the user's own question.
             // relay=true means getMediaUrl (the shared server); relay=false means getMP3MediaUrl, i.e.
             // the user's own 128 account and NO relay request whatsoever.
             val probeRelay = quality != "128" && quality != "mp3"
-            println("QUALITY-PROBE p=5-branch id=" + currentTrackId + " quality=" + quality + " relay=" + probeRelay)
+            println(
+                "QUALITY-PROBE p=5-branch id=" + currentTrackId + " role=" + probeRole +
+                    " quality=" + quality + " topQuality=" + topQuality + " relay=" + probeRelay
+            )
             val mediaJson =
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
                 else api.getMP3MediaUrl(track, quality == "128")
@@ -71,7 +92,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     if (mediaCount > 0) "ok"
                     else s.take(160).substringBefore("http").replace(Char(10), ' ')
                 println(
-                    "QUALITY-PROBE p=5-response id=" + currentTrackId + " quality=" + quality +
+                    "QUALITY-PROBE p=5-response id=" + currentTrackId + " role=" + probeRole +
+                        " quality=" + quality +
                         " relay=" + probeRelay + " reqFormat=" + reqFormat +
                         " gotFormat=" + (media0?.get("format")?.jsonPrimitive?.content ?: "none") +
                         " cipher=" + (media0?.get("cipher")?.jsonObject
@@ -84,17 +106,26 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             val mjString = mediaJson.toString()
             if (mjString.contains("License token has no sufficient rights on requested media")) {
                 // QUALITY-PROBE [emits p=5-stepdown] licence branch.
-                println("QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " from=" + quality + " trigger=licenceRights")
+                println(
+                    "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " role=" + probeRole +
+                        " from=" + quality + " trigger=licenceRights"
+                )
             }
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
-                "flac" -> createStreamableForQuality(track, "320", retry)
-                "320" -> createStreamableForQuality(track, "128", retry)
+                "flac" -> descend(track, "320", retry, topQuality, allowFallback)
+                "320" -> descend(track, "128", retry, topQuality, allowFallback)
                 else -> throw Exception("Track not available on server")
             }
             val trackJsonData = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
             val mediaIsEmpty = trackJsonData?.get("media")?.jsonArray?.isEmpty() == true
 
-            val (finalUrl, fallbackTrack) = when {
+            // ⚠⚠ ONE VALUE, NOT A Pair, SINCE 2026-10-16. This used to be
+            // `val (finalUrl, fallbackTrack) = when {`, because both substituting branches fell
+            // THROUGH to the Streamable.server call at the end of this function carrying the
+            // substitute's Track. They now `return` a Streamable built by their own recursive
+            // ladder, so nothing below this point can be looking at a substitute - which is what
+            // lets keySourceId and the ALT marker both collapse to one obvious form each.
+            val finalUrl: String = when {
                 mjString.contains("Track token has no sufficient rights on requested media") || mediaIsEmpty -> {
                     // ⚠⚠ STEP DOWN ON THE *SAME TRACK* FIRST. THIS BRANCH USED TO JUMP STRAIGHT
                     // TO FALLBACK_ID, WHICH STREAMS A DIFFERENT RECORDING UNDER THE ORIGINAL'S TITLE.
@@ -120,15 +151,30 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // does send track_tokens, so there it is about ours. Either way the sentence says
                     // "on requested media", i.e. it is about the FORMAT, and stepping down first is
                     // safe under both readings because the fallback is still reached at the bottom.
-                    // ⚠️ BOUNDED AT ONE REQUEST PER QUALITY: the recursion strictly descends
-                    // flac -> 320 -> 128 and the bottom rung has no lower quality, so a track cannot
-                    // revisit a rung. Worst case is +3 requests versus the old immediate substitution,
-                    // and only on tracks that were already failing. In the COMMON case the extra call
-                    // goes to media.deezer.com and REPLACES the fallback's relay call, so the shared
-                    // unauthenticated relay sees no more traffic than before.
+                    // ⚠️ BOUNDED AT ONE REQUEST PER QUALITY PER LADDER, AND AT TWO LADDERS.
+                    // [CORRECTED 2026-10-16, when the substitute gained a ladder of its own] Three
+                    // things bound this, and all three are needed:
+                    //   1. each ladder strictly descends flac -> 320 -> 128 and the bottom rung has no
+                    //      lower quality, so a rung is never revisited WITHIN a ladder;
+                    //   2. allowFallback is false inside the substitute's ladder, so there is no
+                    //      third ladder - a substitute cannot substitute;
+                    //   3. a failure from a nested rung is rethrown rather than re-laddered by the
+                    //      outer catch (see the LadderDescentException note there), which is what
+                    //      stops each level walking the remaining rungs a SECOND time.
+                    // WORST CASE, every rung of both ladders refused by an error-shaped HTTP 200 and
+                    // the user on FLAC: 3 original + 1 api.track(FALLBACK_ID) + 3 substitute = 7
+                    // requests, then one MediaUnavailableException. loadStreamableMedia tries the
+                    // whole thing twice with a 2 s delay, so 14 per resolve, and the substitute ladder
+                    // runs exactly ONCE per attempt. Before point 3 the same case cost 15 per attempt
+                    // with FALLBACK_ID fetched four times, so this is FEWER requests than before the
+                    // substitute ladder existed, not more.
+                    // In the COMMON case (the substitute is available at the requested quality) the
+                    // substitute's first call goes to the relay and SUCCEEDS, replacing the single
+                    // media.deezer.com 128 call that used to happen here - one request either way.
                     // QUALITY-PROBE [emits p=5-stepdown] token/empty-media branch.
                     println(
-                        "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " from=" + quality +
+                        "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " role=" + probeRole +
+                            " from=" + quality +
                             " trigger=" + (if (mediaIsEmpty) "mediaIsEmpty" else "trackTokenRights")
                     )
                     val lower = when (quality) {
@@ -138,35 +184,74 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                         // substitution below is the only remaining option.
                         else -> null
                     }
-                    if (lower != null) return createStreamableForQuality(track, lower, retry)
+                    if (lower != null) return descend(track, lower, retry, topQuality, allowFallback)
 
-                    // ⚠️ BOTTOM RUNG ONLY. The `else` arm that used to live here - a
-                    // getMediaUrl(track.copy(id = fallBackId), quality) for flac/320 - IS GONE RATHER
-                    // THAN KEPT AS A BELT, because the step-down above makes it unreachable and leaving
-                    // it would imply the substitution can still happen at a high quality. It cannot:
-                    // by here `quality` is "128" or "mp3".
+                    // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
+                    // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
+                    // QUALITY.
+                    // [CORRECTED 2026-10-16] The note that stood here said the flac/320 `else` arm,
+                    // removed by 2419867c, "IS GONE RATHER THAN KEPT AS A BELT, because the step-down
+                    // above makes it unreachable and leaving it would imply the substitution can still
+                    // happen at a high quality. It cannot". The reachability claim was correct; the
+                    // consequence was missed. With no arm above 128 the substitute could only ever be
+                    // FETCHED at 128, so a user who selected 320 got a 128 stream OF A DIFFERENT
+                    // RECORDING - and no other part of the chain was wrong.
+                    // MEASURED, QUALITY-PROBE capture 2026-10-16: for the failing tracks Deezer answers
+                    // code 2002 "Track token has no sufficient rights on requested media" at flac, 320
+                    // AND 128 - from the relay and from the user's own account - so every manual pick in
+                    // the quality sheet reached this block, and p=5-final reported quality=128
+                    // substituted=true every time. Selection, the sheet and the resolve path were all
+                    // verified correct in that capture.
+                    // ⚠⚠ SO THE SUBSTITUTE NOW RUNS ITS OWN LADDER FROM topQuality, AND
+                    // 2419867c's RULE IS UNTOUCHED: the original recording is still tried at EVERY rung
+                    // before any substitution, because this block is only reachable once it has been.
+                    // ⚠⚠ allowFallback = false IS WHAT TERMINATES THIS, AND IT IS NOT
+                    // DEFENSIVE. Every descent propagates allowFallback unchanged, so inside a
+                    // substitute's ladder the throw below fires instead of fetching a substitute OF a
+                    // substitute - FALLBACK_ID chains otherwise have no termination condition at all.
+                    if (!allowFallback) throw MediaUnavailableException("Track not available on server")
                     val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
                     val fallbackObject = api.track(fallBackId)
                     val resultOj = fallbackObject["results"]?.jsonObject!!
                     val fallBackTrack = parser.run { resultOj.toTrack() }
-                    val fbMediaJson = api.getMP3MediaUrl(fallBackTrack, true)
-                    val url = extractUrlFromJson(fbMediaJson)!!
-                    url to fallBackTrack
+                    val fbStreamable =
+                        descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
+                    // ⚠⚠ STAMPED HERE BECAUSE THE INNER CALL CANNOT KNOW IT IS A
+                    // SUBSTITUTE. From inside its own ladder the fallback is just a track being
+                    // resolved; it substitutes nothing and so stamps nothing. Without this line the
+                    // marker would never be written at all and the quality sheet's "Alt version"
+                    // label would silently vanish - reintroducing exactly the mislabelling the
+                    // 2026-10 field report was about. THIS IS THE ONLY WRITE SITE for the marker;
+                    // the mechanism is documented at ALT_VERSION_EXTRA in the companion object.
+                    // The Blowfish key needs no equivalent fix: the inner call derives keySourceId
+                    // from its own track id, which IS the fallback's.
+                    return fbStreamable.copy(
+                        extras = fbStreamable.extras + (ALT_VERSION_EXTRA to "1")
+                    )
                 }
 
                 mjString.contains("An error occurred while decoding track token") -> {
+                    // ⚠⚠ SAME RECORDING, FRESH TOKEN - NOT A SUBSTITUTION. api.track is
+                    // called with currentTrackId, not FALLBACK_ID, so no ALT_VERSION stamp belongs on
+                    // the result - and the absence of a stamp here is now the ONLY thing that says so,
+                    // since the id comparison that used to make the distinction is gone. Do not add
+                    // one: see the last paragraph of the ALT_VERSION_EXTRA note in the companion
+                    // object for the mislabelling this prevents.
+                    // ⚠️ AND IT WAS HARD-WIRED TO 128 TOO. getMP3MediaUrl(fallBackTrack,
+                    // true) stood here, so a successfully re-tokenised track dropped to 128 even when
+                    // the user had asked for FLAC - the same defect as the FALLBACK_ID block above, one
+                    // branch over. It now re-enters the ladder at topQuality.
+                    // ⚠⚠ allowFallback = false FOR TERMINATION, and here it stops an
+                    // INFINITE LOOP rather than merely an unbounded chain: a re-fetch whose fresh token
+                    // also fails to decode lands on THIS branch again, with the same id, forever.
+                    if (!allowFallback) throw MediaUnavailableException("Track not available on server")
                     val fallbackObject = api.track(currentTrackId)
                     val resultOj = fallbackObject["results"]?.jsonObject!!
                     val fallBackTrack = parser.run { resultOj.toTrack() }
-                    val fbMediaJson = api.getMP3MediaUrl(fallBackTrack, true)
-                    val url = extractUrlFromJson(fbMediaJson)!!
-                    url to fallBackTrack
+                    return descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
                 }
 
-                else -> {
-                    val url = extractUrlFromJson(mediaJson)!!
-                    url to null
-                }
+                else -> extractUrlFromJson(mediaJson)!!
             }
 
             val qualityValue = when (quality) {
@@ -181,59 +266,65 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 "128" -> "128kbps"
                 else -> "UNKNOWN"
             }
-            val keySourceId = fallbackTrack?.id ?: currentTrackId
-
-            // ⚠⚠ WHEN A SUBSTITUTION HAPPENED, SAY SO - A SILENT SWAP IS THE ACTUAL DEFECT.
-            // fallbackTrack is non-null ONLY on the two substituting branches above, and until now it
-            // was consumed solely for the Blowfish key, so the user had no way to tell that the audio
-            // was a different recording from the title on screen.
-            // ⚠️ IT TRAVELS IN extras BECAUSE THIS FUNCTION CANNOT REACH THE DISPLAY. The Track
-            // the player titles from was built by loadTrack, long before this call, and the Streamable
-            // returned here carries no song metadata - `title` below is the QUALITY label. So the
-            // signal is handed to loadStreamableMedia, which builds the Source that the player's
-            // subtitle pill and the quality sheet read. See the Raw(title = ...) note there.
-            // ⚠️ AND NOT BY CHANGING THE TRACK'S OWN TITLE, which would be the obvious idea and
-            // is the risky one: the knowledge arrives AFTER loadTrack has built the item, and a
-            // mid-play metadata change runs through MediaMetadata.equals (which EXCLUDES extras),
-            // StreamableMediaSource.canUpdateMediaItem's field gate, and PlayerTrackAdapter's
-            // lastBoundMediaId - the three paths that cost several builds of album-art bugs.
-            // ⚠⚠ A PRESENCE MARKER, NOT THE SUBSTITUTE'S TITLE - AND IT CARRIED THE TITLE
-            // UNTIL 2026-10-07. The label can only be read in the quality sheet: the player's pill
-            // uses FormatUtils.getDetailsFormatFirst, which appends source titles LAST by design
-            // (f2b661b0, 2026-08-29: "when the line is cut the codec and bitrate are the part worth
-            // keeping"), and the pill is one line of 12sp inside a 210dp maxWidth - about 30
-            // characters, which toAudioDetails' own "MPEG 128 kbps • 44100 Hz • 2ch" already
-            // fills. So anything appended after it is past the ellipsis NO MATTER HOW SHORT, and a
-            // long label bought nothing the sheet did not already give. Hoisting it in FormatUtils
-            // was scoped and declined - that line is fenced off by the note above it.
-            //
-            // ⚠⚠ GATED ON A DIFFERENT TRACK ID, NOT ON fallbackTrack != null - AND THAT FIXES
-            // A BUG IN THE FIRST CUT OF THIS CODE. fallbackTrack is non-null on TWO branches, and only
-            // one of them is a substitution: the "An error occurred while decoding track token" branch
-            // re-fetches api.track(currentTrackId), i.e. the SAME recording with a fresh token. The
-            // earlier `fallbackTrack?.title` form labelled that as an alternate version, which is a
-            // false claim about the audio - exactly the kind of mislabelling this whole change exists
-            // to remove. A differing id is the honest test, and it is structurally right too: the
-            // FALLBACK branch fetches FALLBACK_ID, the token branch fetches currentTrackId.
-            val isAlternateRecording = fallbackTrack != null && fallbackTrack.id != currentTrackId
+            // ⚠⚠ ALWAYS THIS RUNG'S OWN TRACK ID NOW - A SIMPLIFICATION, NOT A LOSS.
+            // [CORRECTED 2026-10-16] `fallbackTrack?.id ?: currentTrackId` stood here, for the
+            // fall-through shape described above. With both substituting branches returning their
+            // own recursive result, by here no substitution has happened and the key can only be
+            // this track's. The substitute's key is derived the same way ONE FRAME DOWN, from ITS
+            // currentTrackId, which is exactly the id Blowfish needs - which is why the recursion
+            // needed no special handling for the key at all.
+            // ⚠⚠ AND `isAlternateRecording` IS GONE FROM HERE FOR THE SAME REASON. It read
+            // `fallbackTrack != null && fallbackTrack.id != currentTrackId` and would now be
+            // permanently false, which is worse than wrong: it would silently stop marking
+            // substitutions. The marker is written at ONE site instead - the FALLBACK_ID block
+            // above, the only branch that substitutes - and the whole mechanism (why extras, why
+            // not the Track's title, why a presence marker rather than the substitute's title, and
+            // why the decode-token branch must NOT be marked) is recorded at ALT_VERSION_EXTRA in
+            // the companion object, where those notes moved rather than being deleted.
+            val keySourceId = currentTrackId
 
             // QUALITY-PROBE [emits p=5-final] FINAL. What the extension actually returns; host only, never the URL.
             println(
-                "QUALITY-PROBE p=5-final id=" + currentTrackId + " quality=" + quality +
+                "QUALITY-PROBE p=5-final id=" + currentTrackId + " role=" + probeRole +
+                    " quality=" + quality +
                     " qValue=" + qualityValue + " title=" + qualityTitle +
                     " urlHost=" + runCatching { finalUrl.substringAfter("://").substringBefore('/') }.getOrDefault("unparsable") +
-                    " substituted=" + isAlternateRecording
+                    // [CORRECTED 2026-10-16] `substituted=" + isAlternateRecording` stood here
+                    // and would now print false on every line - a field that cannot come out
+                    // either way measures nothing. substituteLadder is the fact this frame
+                    // actually knows: allowFallback is off ONLY inside a ladder entered from one
+                    // of the two re-fetch blocks. Reading the capture: substituteLadder=true with
+                    // an `id=` differing from the original's is a real recording substitution
+                    // (FALLBACK_ID); substituteLadder=true with the SAME id is the decode-token
+                    // re-fetch, which is the same recording and is deliberately NOT marked.
+                    " substituteLadder=" + !allowFallback
             )
             Streamable.server(
                 id = finalUrl,
                 quality = qualityValue,
                 title = qualityTitle,
-                extras = buildMap {
-                    put("key", Utils.createBlowfishKey(keySourceId))
-                    if (isAlternateRecording) put(ALT_VERSION_EXTRA, "1")
-                }
+                // ALT_VERSION is NOT put here any more: see the keySourceId note above. It is
+                // added by the FALLBACK_ID block, to the Streamable its own ladder returned.
+                extras = mapOf("key" to Utils.createBlowfishKey(keySourceId))
             )
         } catch (e: Exception) {
+            // ⚠⚠ A FAILURE RAISED BY A *NESTED* RUNG IS RETHROWN, NOT RE-LADDERED.
+            // Every descent made from inside the try goes through [descend], which tags its failure;
+            // this line unwraps the tag and rethrows the real cause.
+            // WHAT THE `when (quality)` BELOW IS FOR IS UNCHANGED, and that is why this is an unwrap
+            // and not a removal: getMediaUrl THROWS "Song not available" on a relay refusal, so on
+            // that path `mjString` is never reached and this catch is the ONLY place a step-down can
+            // happen. See the p=5-stepdown thrown-branch note below. What the tag removes is the OTHER
+            // case, where the throw arrives from a nested call that has ALREADY walked every lower
+            // rung - indistinguishable here from this rung's own request failing.
+            // ⚠️ MEASURED COST OF THAT DUPLICATION, which is why it is closed in the same
+            // change rather than later: for one flac resolve where every rung is refused by an
+            // error-shaped HTTP 200, the old shape ran T(flac) = 1 + 2*T(320) = 15 requests per
+            // attempt and fetched FALLBACK_ID four times; with the substitute ladder added below it
+            // would have been 39. Unwrapped it is 7, with exactly one substitute ladder. The
+            // duplicate pass was also an UNDECLARED retry - the declared one is loadStreamableMedia's
+            // two attempts with a 2 s delay, which this does not touch.
+            if (e is LadderDescentException) throw e.cause ?: e
             if (e.message?.contains("Song not available") == true) {
                 if (retry) {
                     // Deliberate best-effort fallback: the cause is logged above; rethrowing would change
@@ -241,7 +332,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     @Suppress("SwallowedException")
                     try {
                         deezerExtension.handleArlExpiration()
-                        return createStreamableForQuality(track, quality, false)
+                        return createStreamableForQuality(track, quality, false, topQuality, allowFallback)
                     } catch (retryEx: Exception) {
                         // Best-effort: proceed to quality fallback. Log so a failing ARL-refresh retry
                         // (a token issue) isn't invisible — control flow unchanged.
@@ -253,15 +344,19 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // QUALITY-PROBE [emits p=5-stepdown] thrown branch - the one that fires on a relay failure,
             // because getMediaUrl throws "Song not available" on a refusal.
             println(
-                "QUALITY-PROBE p=5-stepdown id=" + track.id + " from=" + quality +
+                "QUALITY-PROBE p=5-stepdown id=" + track.id + " role=" + probeRole +
+                    " from=" + quality +
                     // Same redaction as p=5-response: an okhttp/IO message can quote the request
                     // URL, so cut at the first "http" before truncating.
                     " trigger=threw/" +
                     (e.message ?: "null").substringBefore("http").take(80).replace(Char(10), ' ')
             )
             when (quality) {
-                "flac" -> createStreamableForQuality(track, "320", retry)
-                "320" -> createStreamableForQuality(track, "128", retry)
+                // DELIBERATELY NOT [descend]: a throw from here already propagates out of this catch,
+                // so there is no second ladder to suppress - and tagging it would only hide the cause
+                // from the frame above.
+                "flac" -> createStreamableForQuality(track, "320", retry, topQuality, allowFallback)
+                "320" -> createStreamableForQuality(track, "128", retry, topQuality, allowFallback)
                 // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
                 // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
                 // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
@@ -273,6 +368,39 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             }
         }
     }
+
+    /**
+     * A ladder descent: calls [createStreamableForQuality] for a LOWER rung, or for a substitute,
+     * and tags any failure so the CALLER's catch rethrows it instead of walking the same rungs a
+     * second time. Used for every recursive call made from INSIDE the try block; the catch block's
+     * own step-downs call [createStreamableForQuality] directly.
+     *
+     * ⚠️ CancellationException is rethrown UNWRAPPED, which keeps today's behaviour
+     * exactly: the caller's `catch (e: Exception)` still sees it and still steps down. Wrapping it
+     * would make cancellation propagate properly instead - a better behaviour, and a separate
+     * change.
+     */
+    private suspend fun descend(
+        track: Track,
+        quality: String,
+        retry: Boolean,
+        topQuality: String,
+        allowFallback: Boolean,
+    ): Streamable = try {
+        createStreamableForQuality(track, quality, retry, topQuality, allowFallback)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw LadderDescentException(e)
+    }
+
+    /**
+     * Marks "a rung BELOW this one already failed", so a catch can tell that apart from "this
+     * rung's own request failed". The two are otherwise identical at the catch and need opposite
+     * handling. Private, and it never crosses more than one frame: the catch that recognises it
+     * rethrows its cause, so [descend] one level up wraps that cause afresh rather than nesting.
+     */
+    private class LadderDescentException(cause: Throwable) : Exception(cause)
 
     suspend fun loadStreamableMedia(streamable: Streamable): Streamable.Media {
         deezerExtension.handleArlExpiration()
@@ -505,9 +633,45 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     private val placeholderPrefix = "dzp:"
 
     companion object {
-        // Hand-off key for a substituted recording's title, written by createStreamableForQuality and
-        // read by loadStreamableMedia. Internal to this file - it never reaches a Track's extras, so it
-        // cannot collide with the TRACK_TOKEN / FALLBACK_ID keys that do.
+        // Hand-off key for a substituted recording, written by createStreamableForQuality's
+        // FALLBACK_ID block and read by loadStreamableMedia. Internal to this file - it never
+        // reaches a Track's extras, so it cannot collide with the TRACK_TOKEN / FALLBACK_ID keys
+        // that do.
+        //
+        // ⚠⚠ WHEN A SUBSTITUTION HAPPENED, SAY SO - A SILENT SWAP IS THE ACTUAL DEFECT.
+        // The substitute's Track used to be consumed solely for the Blowfish key, so the user had
+        // no way to tell that the audio was a different recording from the title on screen.
+        // (These notes MOVED HERE on 2026-10-16 from createStreamableForQuality's
+        // `isAlternateRecording`, which no longer exists: the substituting branch now returns the
+        // result of its own recursive ladder and stamps this key on it directly, so the marker has
+        // exactly one write site and this is the only place the mechanism is described.)
+        // ⚠️ IT TRAVELS IN extras BECAUSE createStreamableForQuality CANNOT REACH THE
+        // DISPLAY. The Track the player titles from was built by loadTrack, long before the stream
+        // is resolved, and the Streamable returned carries no song metadata - its `title` is the
+        // QUALITY label. So the signal is handed to loadStreamableMedia, which builds the Source
+        // that the player's subtitle pill and the quality sheet read. See the Raw(title = ...) note
+        // there.
+        // ⚠️ AND NOT BY CHANGING THE TRACK'S OWN TITLE, which would be the obvious idea
+        // and is the risky one: the knowledge arrives AFTER loadTrack has built the item, and a
+        // mid-play metadata change runs through MediaMetadata.equals (which EXCLUDES extras),
+        // StreamableMediaSource.canUpdateMediaItem's field gate, and PlayerTrackAdapter's
+        // lastBoundMediaId - the three paths that cost several builds of album-art bugs.
+        // ⚠⚠ A PRESENCE MARKER, NOT THE SUBSTITUTE'S TITLE - AND IT CARRIED THE TITLE
+        // UNTIL 2026-10-07. The label can only be read in the quality sheet: the player's pill uses
+        // FormatUtils.getDetailsFormatFirst, which appends source titles LAST by design (f2b661b0,
+        // 2026-08-29: "when the line is cut the codec and bitrate are the part worth keeping"), and
+        // the pill is one line of 12sp inside a 210dp maxWidth - about 30 characters, which
+        // toAudioDetails' own "MPEG 128 kbps • 44100 Hz • 2ch" already fills. So anything
+        // appended after it is past the ellipsis NO MATTER HOW SHORT, and a long label bought
+        // nothing the sheet did not already give. Hoisting it in FormatUtils was scoped and
+        // declined - that line is fenced off by the note above it.
+        // ⚠⚠ ONLY THE FALLBACK_ID BRANCH MARKS - AND THAT FIXES A BUG IN THE FIRST CUT
+        // OF THIS CODE. TWO branches re-fetch a Track, and only one is a substitution: the "An
+        // error occurred while decoding track token" branch re-fetches api.track(currentTrackId),
+        // i.e. the SAME recording with a fresh token. An earlier `fallbackTrack?.title` form
+        // labelled that as an alternate version, a false claim about the audio - exactly the kind
+        // of mislabelling this marker exists to remove. The test used to be "the re-fetched id
+        // differs"; it is now structural, since only the FALLBACK_ID block stamps the key.
         private const val ALT_VERSION_EXTRA = "ALT_VERSION"
 
         // ⚠️ HARDCODED ENGLISH, CONSISTENT WITH THIS MODULE. The extension has no resources

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The full-screen player's play/pause disc. Phone only - fragment_player_tv.xml and
+     fragment_player_mini_tv.xml keep ripple_68dp and are deliberately untouched.
+     56dp DISC INSIDE THE EXISTING 72dp BOX, via an 8dp inset rather than by resizing the view. The
+     box stays 72dp because PlayerFragment measures item_player_controls into
+     uiViewModel.playerColors' sibling uiViewModel.playerControlsHeight, which PlayerTrackAdapter
+     writes onto item_player_track.xml's player_controls_placeholder, which is what the collapse
+     morph's toMoveY is computed from. Changing the box moves the morph; insetting the drawing does
+     not. The touch target also stays 72dp, which is the other reason not to shrink the view.
+     ⚠️ 56dp IS ALSO THE CLEARANCE FOR playingIndicator. That CircularProgressIndicator is a
+     sibling in the same FrameLayout at indicatorSize=64dp, so the ring occupies roughly 60-64dp and
+     the disc stops at 56dp - a 4dp gap each side. Growing this disc past 60dp swallows the ring, and
+     that ring is the LAST buffering affordance left in the app (the full-screen and TV seek bars lost
+     theirs in 1055; see the bufferBar note in item_player_controls.xml).
+     FILL IS ?attr/colorPrimary, NOT PlayerColors.accent, AND THAT IS THE POINT OF THE WHOLE CONTROL.
+     accent is a raw Palette swatch (PlayerColors.getColorsFrom: lightVibrantSwatch ?: vibrantSwatch
+     ?: lightMutedSwatch, else titleTextColor) with NO paired on-colour anywhere in PlayerColors, and
+     color/button_player_heart.xml already records what that costs: accent is acceptable on a glyph
+     "precisely because a muted accent makes the heart SUBTLE, never illegible - unlike a container
+     fill, where the same fallback would erase the element." A 56dp disc is exactly that container
+     fill. ?attr/colorPrimary comes with ?attr/colorOnPrimary guaranteed to contrast with it, and
+     under isPlayerColor() + isDynamic() the theme has ALREADY been re-seeded from the artwork accent
+     (PlayerFragment's playerColors observer recreates the activity for it), so the disc is still
+     artwork-derived in that mode - with an on-colour, which accent cannot supply.
+     Theme attributes in drawable XML resolve against the inflating view's theme from API 21; minSdk
+     is 24. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/ripple_player_on_primary"
+    android:radius="28dp">
+    <item>
+        <inset android:inset="8dp">
+            <shape android:shape="oval">
+                <solid android:color="?attr/colorPrimary" />
+            </shape>
+        </inset>
+    </item>
+</ripple>

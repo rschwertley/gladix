@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pressed-state ripple for the full-screen player's play/pause disc ONLY.
+     KEYED TO THE ON-FILL COLOUR, NOT TO THE PLAYER FOREGROUND, and that is the whole reason this
+     file exists rather than reusing button_player_ripple. That one is amoled_fg at 33% - pure black
+     in light, pure white in night - which is correct over the TRANSPARENT background every other
+     transport button has, and wrong over an opaque ?attr/colorPrimary disc: in one of the two themes
+     the ripple matches the fill closely enough to be invisible, and in the other it reads as a hole.
+     colorOnPrimary is the glyph colour on that same disc, so it is guaranteed to contrast with the
+     fill by the theme's own pairing - the property a ripple needs and the one amoled_fg cannot offer
+     against an artwork- or theme-derived fill.
+     android:alpha on a <item> needs API 23; minSdk is 24 (app/build.gradle.kts), and
+     color/button_player.xml already relies on it. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:alpha="0.33" android:color="?attr/colorOnPrimary" />
+</selector>

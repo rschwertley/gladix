@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PRE-COLOUR DEFAULT ONLY for the tonal circle behind shuffle / previous / next / repeat in the
+     full-screen player. PlayerFragment's playerColors observer replaces this with 12% of
+     PlayerColors.onBackground - the Palette-paired foreground the title, artist and timestamps
+     already use - so the circle cannot drift from the text beside it. This file is what the circles
+     show for the frame or two before that observer first delivers, which is why it is a NEUTRAL
+     rather than a guess at an artwork colour.
+     12% IS THE SAME CONSTANT THE CODEC PILL USES (PlayerFragment's pillScrim, 0x1F = 12.2%), and
+     deliberately so: the pill and these circles are the two scrims in the lower player, and one
+     number for both is what stops them reading as two different materials.
+     ⚠️ IT IS APPLIED AS A TINT, SO THE SHAPE IT TINTS MUST BE OPAQUE. The oval in
+     drawable/bg_player_transport_circle.xml is solid white for exactly this reason: AppCompat's
+     background tint is a SRC_IN colour filter, so result alpha = tint alpha x shape alpha. Give the
+     shape its own 12% and the two alphas MULTIPLY to ~1.4% and the circle silently disappears. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:alpha="0.12" android:color="@color/amoled_fg" />
+</selector>

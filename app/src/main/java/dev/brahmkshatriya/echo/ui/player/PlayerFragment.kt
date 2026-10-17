@@ -61,6 +61,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Artist
@@ -1057,8 +1058,22 @@ class PlayerFragment : Fragment() {
 
         binding.playerControls.trackRepeat.icon =
             drawables[repeatModes.indexOf(viewModel.repeatMode.value)]
+        // Seeded next to the icon, and for the same reason that line exists: the observer below
+        // delivers on the next main-loop dispatch, so without this the circle shows its OFF tone
+        // for a frame on a queue that was restored with repeat already on.
+        binding.playerControls.trackRepeat.isActivated =
+            viewModel.repeatMode.value != REPEAT_MODE_OFF
 
         fun changeRepeatDrawable(repeatMode: Int) = binding.playerControls.trackRepeat.run {
+            // ⚠️ THE TONAL CIRCLE'S ON-STATE, AND IT HAS TO BE SET IMPERATIVELY.
+            // trackRepeat is a MaterialButton with THREE modes, so there is no view state that
+            // tracks "repeat is doing something" the way state_checked tracks a checkbox. Driving
+            // android:state_activated from here is what lets the COLOUR stay declarative, in the
+            // playerColors observer's state lists, instead of needing the current PlayerColors
+            // held in a field and re-read on every mode change.
+            // The glyph still carries all three states on its own (slash OFF / plain ALL / "1"
+            // ONE) - see the note at trackRepeat in item_player_controls.xml.
+            isActivated = repeatMode != REPEAT_MODE_OFF
             val index = repeatModes.indexOf(repeatMode)
             icon = animatedVectorDrawables[index]
             (icon as Animatable).start()
@@ -1318,6 +1333,92 @@ class PlayerFragment : Fragment() {
                     arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                     intArrayOf(colors.accent, colors.onBackground)
                 )
+                // ⚠⚠ THE TRANSPORT ROW IS PlayerColors.onBackground NOW, NOT amoled_fg,
+                // AND THAT IS A CONTRAST FIX RATHER THAN A RESTYLE. amoled_fg is pure black or
+                // white chosen by NIGHT MODE, while everything it sits on is artwork-derived:
+                // bgImage is the blurred cover and bgGradient is tinted with colors.background,
+                // which is a Palette swatch. Those two inputs are independent, so a pale cover in
+                // dark mode gave white glyphs on a light ground - and no scrim fixes that, because
+                // the mismatch is in the pairing, not the opacity.
+                // onBackground is bgSwatch.bodyTextColor, i.e. a contrast Palette computed AGAINST
+                // colors.background, and it is already what trackTitle, trackArtist and both
+                // timestamps use below. Taking it here means the row cannot drift from the text
+                // beside it, per device or per track.
+                // ⚠️ THIS IS NOT A REVERSAL OF THE "NEUTRAL BY DESIGN" DECISION ABOVE.
+                // That one is about the SEEK ROW - the wave, the thumb and the pill - and its
+                // argument is that artwork COLOUR must not land where contrast has to be. These are
+                // not artwork colour: onBackground is the artwork's own paired FOREGROUND, and the
+                // accent still goes nowhere near this row.
+                // ⚠⚠ colorPrimary / colorOnPrimary FOR THE ON-STATE, NEVER colors.accent.
+                // accent has no paired on-colour anywhere in PlayerColors and its fallback chain
+                // bottoms out in a muted swatch - acceptable on a glyph, fatal on a fill, which is
+                // the finding already recorded at color/button_player_heart.xml. The theme pair is
+                // still artwork-derived under isPlayerColor() + isDynamic(), because that path
+                // recreates the activity with the accent seeded into the theme (see the top of this
+                // observer) - so this buys the guarantee without giving up the artwork.
+                // THE TWO LISTS ARE SHARED BY ALL FOUR BUTTONS BY DESIGN: one shuffle checkbox, one
+                // activated-driven repeat button and two plain skip buttons, whose states simply do
+                // not overlap (shuffle is never activated, repeat is never checked, the skips are
+                // neither). -enabled is FIRST so a disabled skip dims even if some future state is
+                // added above it.
+                val transportFill = MaterialColors.getColor(
+                    requireContext(),
+                    androidx.appcompat.R.attr.colorPrimary,
+                    colors.onBackground
+                )
+                val transportOnFill = MaterialColors.getColor(
+                    requireContext(),
+                    com.google.android.material.R.attr.colorOnPrimary,
+                    colors.background
+                )
+                val transportGlyph = ColorStateList(
+                    arrayOf(
+                        intArrayOf(-android.R.attr.state_enabled),
+                        intArrayOf(android.R.attr.state_checked),
+                        intArrayOf(android.R.attr.state_activated),
+                        intArrayOf()
+                    ),
+                    intArrayOf(
+                        // 0x61 = 38%, Material's own disabled emphasis and what
+                        // color/button_player.xml's material_emphasis_disabled entry gave these
+                        // buttons before. It MUST be carried over: trackPrevious and trackNext
+                        // start disabled and are toggled by the previousEnabled/nextEnabled
+                        // observers, so a flat list would make an unusable skip look usable.
+                        ColorUtils.setAlphaComponent(colors.onBackground, 0x61),
+                        transportOnFill,
+                        transportOnFill,
+                        colors.onBackground
+                    )
+                )
+                val transportCircle = ColorStateList(
+                    arrayOf(
+                        intArrayOf(android.R.attr.state_checked),
+                        intArrayOf(android.R.attr.state_activated),
+                        intArrayOf()
+                    ),
+                    intArrayOf(
+                        transportFill,
+                        transportFill,
+                        // 0x1F = 12%, THE SAME CONSTANT AS pillScrim BELOW and deliberately not a
+                        // second number: the pill and these circles are the two scrims in the lower
+                        // player, and one value is what stops them reading as two materials. The
+                        // ceiling argument there does NOT apply here, though - the pill's fill and
+                        // TEXT are the same token so its contrast falls as alpha rises, whereas
+                        // these circles sit behind a glyph that is onBackground at FULL opacity.
+                        ColorUtils.setAlphaComponent(colors.onBackground, 0x1F)
+                    )
+                )
+                // trackPlayPause is deliberately absent: its glyph is ?attr/colorOnPrimary in XML
+                // because it is the only one drawn on an opaque fill, and theme pairing already
+                // guarantees that contrast. A Palette colour there could only break it.
+                trackShuffle.buttonTintList = transportGlyph
+                trackShuffle.backgroundTintList = transportCircle
+                trackRepeat.iconTint = transportGlyph
+                trackRepeat.backgroundTintList = transportCircle
+                trackPrevious.iconTint = transportGlyph
+                trackPrevious.backgroundTintList = transportCircle
+                trackNext.iconTint = transportGlyph
+                trackNext.backgroundTintList = transportCircle
                 // ⚠⚠ THE PILL IS NEUTRAL, NOT ARTWORK-TINTED, AND BOTH HALVES COME FROM THE SAME
                 // TOKEN AS THE WAVE AND THUMB. It used to take PlayerColors.background with
                 // onBackground text - correct while the wave and thumb were artwork-tinted too, and

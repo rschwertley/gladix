@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tonal circle behind shuffle / previous / next / repeat in the full-screen player. Phone only;
+     the TV layout keeps ripple_60dp.
+     NEW FILE RATHER THAN CONTENT ADDED TO ripple_60dp, because that drawable is shared by seven
+     sites including trackHeart and three TV controls, and it is deliberately CONTENTLESS - a bare
+     <ripple> with no <item> draws nothing at rest. Adding an oval to it would put a circle behind the
+     heart and behind the TV transport row as a side effect.
+     48dp CIRCLE INSIDE A 64dp BOX, from the same 8dp inset the 72dp play/pause disc uses - so one
+     inset value yields the two diameters and the 56dp-vs-48dp hierarchy is a consequence of the box
+     sizes rather than a second number to keep in step. previous/next were wrap_content before this
+     and are now pinned to 64dp for the same reason: a circle needs a known box. 64dp is below the
+     row's 72dp play/pause container, so the ConstraintLayout's wrap_content height - and therefore
+     playerControlsHeight and the collapse morph - is unchanged.
+     ⚠️ THE OVAL IS OPAQUE WHITE ON PURPOSE. Both the resting and the ON colour arrive as a
+     background TINT (android:backgroundTint here, PlayerFragment's playerColors observer at runtime),
+     and AppCompat applies that as a SRC_IN colour filter: result alpha = tint alpha x shape alpha.
+     A shape carrying its own 12% would multiply with the tint's 12% to ~1.4%. See the note at
+     color/player_transport_circle_off.xml.
+     ⚠️ MaterialButton LOGS A WARNING FOR android:background AND IT IS PRE-EXISTING, NOT NEW:
+     previous/next/repeat already set ripple_60dp this way. The consequence that matters is that
+     MaterialButtonHelper then does NOT wrap the background in its own InsetDrawable, so the 8dp
+     inset above is the only inset in play and the circle really is 48dp. Decoded from the 1.14.0
+     AAR: MaterialButton.setBackgroundTintList is unconditional (it calls setSupportBackgroundTintList
+     directly, with no isUsingOriginalBackground branch), so tinting an overwritten background works
+     through AppCompat for all three widget types here. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/button_player_ripple"
+    android:radius="24dp">
+    <item>
+        <inset android:inset="8dp">
+            <shape android:shape="oval">
+                <solid android:color="@android:color/white" />
+            </shape>
+        </inset>
+    </item>
+</ripple>

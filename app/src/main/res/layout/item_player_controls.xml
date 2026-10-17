@@ -277,8 +277,14 @@
              would add the same drift risk flagged on collapsed_end_controls_width for no gain.
              Ellipsis is the right outcome when it does happen - merged servers contribute one source
              title each, video streams add a whole segment - because the full string is one tap away in
-             QualitySelectionBottomSheet. minHeight keeps that tap target at 48dp while the visual pill
-             stays short via the background's vertical inset.
+             QualitySelectionBottomSheet. minHeight is what keeps that tap target a target at all,
+             while the visual pill stays short via the background's vertical inset.
+             [CORRECTED 2026-10-16] THIS SENTENCE SAID "minHeight keeps that tap target at 48dp".
+             IT IS 40dp, AND HAS BEEN SINCE THE AUGUST PASS - see the minHeight paragraph directly
+             below, which explains at length why 48dp was given up (a bottom-gravity 48dp box
+             occupies 80-120dp of the 120dp seek FrameLayout and touches the 44dp thumb). The two
+             halves of this comment contradicted each other, with the wrong number stated first.
+             The decision stands; only the sentence was wrong.
              minHeight is 40dp, NOT the usual 48dp: the seek FrameLayout is exactly widgetThickness tall
              (BaseSlider sizes to max(minWidgetThickness, max(trackThickness, thumbHeight) + paddingTop +
              paddingBottom) = 44 + 76 = 120dp here), the wave band is centred so it occupies 48-72dp, and a
@@ -324,31 +330,58 @@
         android:layout_marginTop="8dp"
         android:paddingHorizontal="4dp">
 
+        <!-- SHUFFLE LEFT, REPEAT RIGHT (2026-10-16). These two were the other way round and this
+             player was the only surface in the app that had them inverted: fragment_player_tv.xml's
+             transport row is already "shuffle | prev | play/pause | next | repeat", and the Android
+             Auto / notification custom layout is already built shuffle-first in Kotlin
+             (PlayerCallback.onConnect's seed and PlayerEventListener.updateCustomLayout both list
+             getShuffleButton before getRepeatButton). So this is the phone catching up with its own
+             app, not a new convention - and it is layout-only, since every listener binds by id.
+             THE SWAP IS FOUR ATTRIBUTES, NOT TWO: the bias here and on trackRepeat, PLUS the chain
+             references on trackPrevious and trackNext. Those two are constrained BETWEEN the outer
+             buttons and the centre, so leaving their old targets in place collapses the row.
+             backgroundTint here is only the pre-colour default; PlayerFragment's playerColors
+             observer replaces it with a state list (checked -> colorPrimary, else 12% of
+             PlayerColors.onBackground). See bg_player_transport_circle.xml.
+             anim_shuffle_plain, NOT anim_shuffle: the boxed ON glyph would nest inside the filled
+             circle, and anim_shuffle is shared with the TV player. -->
         <com.google.android.material.checkbox.MaterialCheckBox
             android:id="@+id/trackShuffle"
             android:layout_width="64dp"
             android:layout_height="64dp"
-            android:background="@drawable/ripple_60dp"
-            android:button="@drawable/anim_shuffle"
+            android:background="@drawable/bg_player_transport_circle"
+            android:backgroundTint="@color/player_transport_circle_off"
+            android:button="@drawable/anim_shuffle_plain"
             android:contentDescription="@string/shuffle"
             android:elevation="2dp"
             android:outlineProvider="none"
             app:buttonTint="@color/button_player"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintHorizontal_bias="1.0"
+            app:layout_constraintHorizontal_bias="0.0"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <!-- ⚠️ PINNED TO 64dp, WHICH IT HAD TO BE TO CARRY A CIRCLE. It was
+             wrap_content, and a tonal background needs a known box or the circle tracks the glyph's
+             measured width. 64dp matches trackShuffle and trackRepeat, so all four satellites draw
+             the same 48dp circle from bg_player_transport_circle.xml's single 8dp inset.
+             ROW HEIGHT IS UNCHANGED, which is the constraint that matters here: this
+             ConstraintLayout is wrap_content and playPauseContainer is 72dp, so 64dp stays under
+             the tallest child and nothing propagates to uiViewModel.playerControlsHeight,
+             player_controls_placeholder, or the collapse morph's toMoveY.
+             The glyph stays 40dp with ~21dp of ink (ic_skip_previous_40dp's paths span 9.2-30.9 of
+             a 40 viewport), so it sits comfortably inside the 48dp circle; iconSize was left alone
+             deliberately rather than retuned by eye. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackPrevious"
             style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/ripple_60dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:background="@drawable/bg_player_transport_circle"
+            android:backgroundTint="@color/player_transport_circle_off"
             android:contentDescription="@string/previous"
             android:enabled="false"
-
             android:outlineProvider="none"
             app:elevation="1dp"
             app:icon="@drawable/ic_skip_previous_40dp"
@@ -356,7 +389,7 @@
             app:iconTint="@color/button_player"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toStartOf="@+id/playPauseContainer"
-            app:layout_constraintStart_toEndOf="@+id/trackRepeat"
+            app:layout_constraintStart_toEndOf="@id/trackShuffle"
             app:layout_constraintTop_toTopOf="parent" />
 
         <FrameLayout
@@ -376,24 +409,46 @@
                 android:indeterminate="true"
                 app:indicatorSize="64dp" />
 
+            <!-- ⚠⚠ THE FOCAL CONTROL: A 56dp FILLED DISC IN AN UNCHANGED 72dp BOX.
+                 The fill, the inset geometry and the playingIndicator clearance are all argued at
+                 bg_player_play_pause.xml; the two things that live here are the tint and the glyph.
+                 buttonTint is ?attr/colorOnPrimary - the ONE transport glyph that is not
+                 PlayerColors.onBackground, because it is the only one drawn on top of an opaque
+                 fill rather than on the artwork. It is also the only one PlayerFragment's
+                 playerColors observer leaves alone, deliberately: theme pairing already guarantees
+                 its contrast against the disc, so a Palette colour here could only break it.
+                 ⚠️ THE GLYPH STAYS anim_play_pause_48dp, AND 48dp IS THE BOX, NOT THE INK.
+                 Measured before deciding: ic_play_48dp's path spans 320-720 x 252-728 of a 960
+                 viewport and ic_pause_48dp's spans 230-730 x 200-760, so the drawn glyph is about
+                 25-28dp - already the "~32dp" the design asked for, with 14dp of clear disc around
+                 it. Forcing a 32dp INTRINSIC would have shrunk the ink to ~19dp and cost four new
+                 duplicated vectors (the animated-selector's two states plus two transitions), so
+                 the smaller number would have been both more work and visually worse. If this is
+                 ever revisited, change the ink, not the box. -->
             <com.google.android.material.checkbox.MaterialCheckBox
                 android:id="@+id/trackPlayPause"
                 android:layout_width="72dp"
                 android:layout_height="72dp"
-                android:background="@drawable/ripple_68dp"
+                android:background="@drawable/bg_player_play_pause"
                 android:button="@drawable/anim_play_pause_48dp"
                 android:checked="true"
                 android:contentDescription="@string/play"
-                app:buttonTint="@color/button_player"
+                app:buttonTint="?attr/colorOnPrimary"
                 tools:ignore="DuplicateSpeakableTextCheck" />
         </FrameLayout>
 
+        <!-- Pinned to 64dp for the same reason as trackPrevious; see the note there.
+             constraintEnd_toStartOf is now trackRepeat, and it keeps the "@+id" form because
+             trackRepeat is declared AFTER this view in the file - a forward reference without the
+             plus does not resolve. trackPrevious's new target, trackShuffle, is declared earlier,
+             so that one is a plain "@id". -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackNext"
             style="?attr/materialIconButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/ripple_60dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:background="@drawable/bg_player_transport_circle"
+            android:backgroundTint="@color/player_transport_circle_off"
             android:contentDescription="@string/next"
             android:enabled="false"
             android:outlineProvider="none"
@@ -402,22 +457,40 @@
             app:iconSize="40dp"
             app:iconTint="@color/button_player"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/trackShuffle"
+            app:layout_constraintEnd_toStartOf="@+id/trackRepeat"
             app:layout_constraintStart_toEndOf="@id/playPauseContainer"
             app:layout_constraintTop_toTopOf="parent" />
 
         <!-- trackRepeat and trackShuffle are BOTH 64dp boxes but size their glyphs by different
              mechanisms, which is why they looked mismatched: trackShuffle is a MaterialCheckBox whose
-             glyph comes from the button drawable's INTRINSIC size (anim_shuffle -> ic_shuffle_40dp, 28dp),
+             glyph comes from the button drawable's INTRINSIC size (anim_shuffle_plain -> ic_shuffle_40dp
+             / ic_shuffle_on_plain_40dp, both 28dp - it was anim_shuffle until 2026-10-16),
              while this is a MaterialButton sizing its icon explicitly via app:iconSize. The 12dp padding
              was never the cause - iconSize was 32dp against shuffle's 28dp. Keep these two numbers equal;
              changing padding will not fix a glyph-size mismatch on a MaterialButton. -->
+        <!-- Moved to the END (bias 1.0) - see the swap note at trackShuffle.
+             ⚠⚠ REPEAT'S ON-STATE IS CARRIED TWICE, AND IT HAS TO BE, BECAUSE IT HAS
+             THREE STATES AND A FILL ONLY HAS TWO. The circle separates OFF from on; the glyph
+             separates all three, and that distinction is already in the drawables rather than
+             something added here: ic_repeat_off_40dp is ic_repeat_40dp plus a visible diagonal
+             slash, and ic_repeat_one_40dp is the same glyph plus a "1" (its slash is present at
+             strokeAlpha=0 purely so ic_repeat_to_repeat_one_40dp can morph it). So: slash = OFF,
+             plain = ALL, "1" = ONE, and the fill answers only "is repeat doing anything".
+             ⚠️ THE FILL IS DRIVEN BY android:state_activated, NOT state_checked.
+             This is a MaterialButton, not a checkbox - repeat mode is not a view state - so
+             PlayerFragment's changeRepeatDrawable sets isActivated = (mode != REPEAT_MODE_OFF) and
+             the colour lives entirely in the playerColors observer's state lists. Do not convert
+             this to a checkbox to "simplify" it: a two-state widget cannot represent three modes,
+             which is why it is a button in the first place.
+             iconTint stays @color/amoled_fg as the pre-colour default only; the observer replaces
+             it with a PlayerColors.onBackground state list. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackRepeat"
             style="?attr/materialIconButtonStyle"
             android:layout_width="64dp"
             android:layout_height="64dp"
-            android:background="@drawable/ripple_60dp"
+            android:background="@drawable/bg_player_transport_circle"
+            android:backgroundTint="@color/player_transport_circle_off"
             android:contentDescription="@string/repeat"
             android:elevation="2dp"
             android:outlineProvider="none"
@@ -427,7 +500,7 @@
             app:iconTint="@color/amoled_fg"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintHorizontal_bias="1.0"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
