@@ -79,6 +79,15 @@
         android:theme="@style/Default"
         android:usesCleartextTraffic="true"
         tools:targetApi="33">
+
+        <!-- Cast framework configuration. The VALUE IS AN OPAQUE STRING to AGP, so it generates
+             no keep rule for the class it names - see rule 6 in proguard-rules.pro and the anchor
+             in verifyExtensionAbi. Nothing reads this until CastContext.getSharedInstance runs,
+             which CastAvailability only does when the quality sheet is opened: this meta-data
+             alone starts nothing at launch. -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="dev.brahmkshatriya.echo.cast.CastOptionsProvider" />
         <receiver
             android:name=".widget.WidgetVertical"
             android:exported="false"

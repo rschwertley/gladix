@@ -35,6 +35,127 @@
             android:layout_marginEnd="-24dp"
             android:indeterminate="true" />
 
+        <!-- OUTPUT ROW + CAST SLOT. Above the format line and the server chips, matching the
+             reference layout. The row is a LABEL PLUS A HAND-OFF, not a switcher: there is no
+             in-app device selection, the tap opens system settings (AudioOutput
+             .openSystemOutputSettings) and the volume half is media3's deviceVolume. Nothing in
+             this block touches the player. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/outputRow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/shape_rounded_item_corner"
+                android:backgroundTint="?attr/colorSurfaceContainerHigh"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp">
+
+                <ImageView
+                    android:id="@+id/outputIcon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginEnd="12dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_speaker_24dp" />
+
+                <TextView
+                    android:id="@+id/outputLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    tools:text="@string/phone_speaker" />
+
+                <!-- clickable/focusable are turned OFF and ensureMinTouchTargetSize with them: a
+                     Chip is clickable by default and would swallow the row's tap, and its 48dp
+                     minimum touch target would force the row taller than its 56dp. This is a
+                     status pill, not a control. -->
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/outputStateChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:checkable="false"
+                    android:clickable="false"
+                    android:focusable="false"
+                    android:text="@string/connected"
+                    android:textSize="12sp"
+                    app:chipMinHeight="24dp"
+                    app:ensureMinTouchTargetSize="false" />
+
+                <ImageView
+                    android:id="@+id/outputVolumeIcon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="12dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_volume_up_24dp" />
+
+                <TextView
+                    android:id="@+id/outputVolumePercent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:maxLines="1"
+                    tools:text="62%" />
+            </LinearLayout>
+
+            <!-- THE RESERVED SLOT, NOW THE ROUTE BUTTON (Build 1, 2026-10-16). Same id, same
+                 48dp box, so the row's geometry is unchanged from when it was a placeholder.
+                 ⚠⚠ STARTS invisible AND IS ONLY SHOWN ONCE CastContext INITIALISES.
+                 After that MediaRouteButton manages its OWN visibility from route discovery, so
+                 it hides itself again when no receiver is on the network - that is the library's
+                 behaviour and it is correct; do not force it visible.
+                 ⚠️ NO contentDescription AND NO TINT ATTRIBUTE, BOTH DELIBERATE.
+                 MediaRouteButton supplies its own content description ("Cast" / "Stop casting")
+                 from mediarouter's strings, which is better than ours and stays localised. And
+                 app:mediaRouteButtonTint is NOT set because mediarouter is a brand-new
+                 dependency whose AAR is not in the Gradle cache yet - per
+                 .claude/rules/ResourceLinking.md an unverified attribute is a resource-linking
+                 failure waiting to happen. Add the tint once the AAR can be inspected. -->
+            <androidx.mediarouter.app.MediaRouteButton
+                android:id="@+id/castSlot"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:background="@android:color/transparent"
+                android:visibility="invisible" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="8dp"
+            android:text="@string/volume"
+            android:textStyle="bold" />
+
+        <!-- SYSTEM MEDIA VOLUME (STREAM_MUSIC), via media3's deviceVolume - NEVER player.volume.
+             See the note at PlayerViewModel.deviceVolume. labelBehavior=gone because the value is
+             already shown as a percentage in the row above. -->
+        <com.google.android.material.slider.Slider
+            android:id="@+id/volumeSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/volume"
+            android:stepSize="1"
+            android:value="0"
+            android:valueFrom="0"
+            android:valueTo="1"
+            app:labelBehavior="gone" />
+
         <TextView
             android:id="@+id/streamableInfo"
             android:layout_width="match_parent"

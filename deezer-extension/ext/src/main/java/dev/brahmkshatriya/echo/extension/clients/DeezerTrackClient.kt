@@ -210,6 +210,44 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // substitute's ladder the throw below fires instead of fetching a substitute OF a
                     // substitute - FALLBACK_ID chains otherwise have no termination condition at all.
                     if (!allowFallback) throw MediaUnavailableException("Track not available on server")
+                    // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
+                    // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
+                    // absence looks like an oversight and is a choice, and because "declined" is a
+                    // closed question where "parked" would read as a queued task forever.
+                    // FALLBACK_ID is Deezer's own pointer and it demonstrably points at a DIFFERENT
+                    // recording sometimes - the 2026-10 field report quoted in the step-down note
+                    // above is exactly that (two Pretty Reckless "- Acoustic" tracks played the
+                    // standard versions). The step-down made that rarer; it did not make the
+                    // substitute correct when it does happen.
+                    // THE CHECK THAT WOULD WORK, so nobody has to re-derive it: ISRC identifies a
+                    // RECORDING, so an alternate release of the same master shares it while a
+                    // re-recording does not - precisely the distinction that failed. Both halves are
+                    // already parsed: DeezerParser.toTrack sets `isrc = data.str("ISRC")` and ISRC is
+                    // in the gateway song-record key set documented there, so fallBackTrack.isrc is
+                    // FREE - api.track(fallBackId) is already being called below. Duration is free the
+                    // same way and is the weaker variant: a remaster differs by seconds and an
+                    // acoustic can coincidentally match.
+                    // THE ONE ASYMMETRY, and it is the whole cost: the ORIGINAL's isrc is not here.
+                    // `track` is the placeholder loadStreamableMedia synthesises, which carries only
+                    // id + TRACK_TOKEN + FALLBACK_ID. Closing that is a no-request change - loadTrack
+                    // holds the real parsed Track when it builds the streamables, so threading
+                    // "ISRC" through the same extras map that already carries those two keys is all
+                    // it takes. Re-fetching the original instead would add a gateway call to a track
+                    // that has already failed three times; prefer the threading.
+                    // WHY IT WAS DECLINED, which is the part that is not a mechanism question:
+                    // a mismatch has to DO something, and both answers are bad in a way source
+                    // reading cannot rank. Refusing turns tracks that play today - wrongly, but
+                    // audibly - into MediaUnavailableException, which feeds the Unavailable skip
+                    // family and the consecutiveUnavailableSkips breaker. And ISRC is nullable here
+                    // (`data.str("ISRC")`), so the null policy decides a population size nobody has
+                    // measured: fail open and incomplete records keep today's behaviour, fail closed
+                    // and they all lose substitution. Silent-wrong versus silent-skip is a product
+                    // call, not a correctness one, and it was not worth a build on its own.
+                    // WHAT WOULD BRING IT BACK: a field report of a substituted recording that is
+                    // audibly the wrong song, now that the step-down has made substitution rare - at
+                    // which point the mismatch policy is being chosen against a real case instead of
+                    // in the abstract. The implementation above is the whole design; it is ~6 lines
+                    // and no new requests.
                     val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
                     val fallbackObject = api.track(fallBackId)
                     val resultOj = fallbackObject["results"]?.jsonObject!!
@@ -466,10 +504,41 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // ⚠⚠ Raw(...) IS CONSTRUCTED DIRECTLY INSTEAD OF VIA toSource(), AND ONLY TO CARRY A
         // TITLE. InputProvider.toSource(id, isVideo, isLive) does not forward one, so every Deezer
         // Source has title == null - which is why FormatUtils.sourceTitles' own comment says Deezer
-        // contributes "a single short title or nothing". Setting it here is what makes a substituted
-        // recording visible, in two surfaces that already exist and that YouTube Music already uses:
-        //   PlayerFragment's subtitle pill, via FormatUtils.getDetailsFormatFirst; and
-        //   QualitySelectionBottomSheet's source chip, `it.title ?: getString(quality_x, it.quality)`.
+        // contributes "a single short title or nothing".
+        //
+        // ⚠⚠ [CORRECTED 2026-10-16] THE LABEL IS UNREACHABLE ON DEEZER AND ALWAYS HAS
+        // BEEN. THIS NOTE CLAIMED: "Setting it here is what makes a substituted recording visible, in
+        // two surfaces that already exist and that YouTube Music already uses: PlayerFragment's
+        // subtitle pill, via FormatUtils.getDetailsFormatFirst; and QualitySelectionBottomSheet's
+        // source chip, `it.title ?: getString(quality_x, it.quality)`." BOTH EXPRESSIONS ARE QUOTED
+        // CORRECTLY AND NEITHER ONE RUNS FOR US. Traced end to end on 2026-10-16 against a capture
+        // where the substitute ladder provably worked (Sleep Walk, original refused at 320 and 128,
+        // fallback played at 320, p=5-final role=fallback substituteLadder=true) and no label
+        // appeared. Source.toMedia() is `Server(listOf(this), false)` - ONE source, merged = false -
+        // and that single fact defeats both readers independently:
+        //   THE CHIP: QualitySelectionBottomSheet's generic applyChips opens with
+        //     `val visible = list.size > 1` and applies it to the label AND the ChipGroup, so with one
+        //     source the whole Sources row is hidden and the text lambda is never called. (The SERVER
+        //     row just above it overrides this with an explicit isVisible = true; the source row does
+        //     not.)
+        //   THE PILL AND THE SHEET'S INFO LINE: FormatUtils.sourceTitles takes the non-merged branch,
+        //     `sources.getOrNull(index ?: -1)?.title`, where index is MediaItem.sourceIndex. That key is
+        //     written ONLY by MediaItemUtils.buildSource, i.e. only when the user explicitly picks a
+        //     source in the sheet, and its accessor defaults to -1 - so on every normal resolve
+        //     getOrNull(-1) returns null and the title is dropped. The `merged` branch, which ignores
+        //     the index, is the one we never take.
+        // ⚠️ NOT A REGRESSION - THE GATES PREDATE THE MARKER BY A YEAR. git log -S puts
+        // `val visible = list.size > 1` in 1cc44e6e (2025-03-02, "player ui") and
+        // `sources.getOrNull(index ?: -1)?.title` in c88e0349 (2025-08-22, upstream). The marker was
+        // built in 2026-10 against two upstream gates nobody read, which is why it has never been
+        // seen on a device. THE SIGNATURE TO RECOGNISE: the extension side is verifiable from the
+        // QUALITY-PROBE capture alone, so "substituteLadder=true and no label" is this, not a
+        // resolve bug - do not re-investigate the extension.
+        // WHAT IS STILL TRUE AND WHY THIS CODE STAYS: the title costs nothing, it is correct, and it
+        // is what a fix consumes. Making it visible is an APP-SIDE change (the size>1 gate, or
+        // sourceTitles' index handling, or a surface that does not go through either) and that is
+        // where the work belongs - not here. YouTube Music is unaffected: it MERGES, so it has
+        // several sources and takes the index-free branch.
         // ⚠️ DO NOT "TIDY" THIS BY ADDING A title PARAMETER TO toSource(). That function is in
         // :common, and an optional parameter with a default is BINARY-INCOMPATIBLE there - Kotlin
         // compiles the old signature away, so every already-built extension breaks. Constructing Raw
@@ -665,6 +734,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // appended after it is past the ellipsis NO MATTER HOW SHORT, and a long label bought
         // nothing the sheet did not already give. Hoisting it in FormatUtils was scoped and
         // declined - that line is fenced off by the note above it.
+        // ⚠️ [CORRECTED 2026-10-16] "THE LABEL CAN ONLY BE READ IN THE QUALITY SHEET"
+        // OVERSTATES IT: ON DEEZER IT CANNOT BE READ ANYWHERE. The pill reasoning above is sound as
+        // far as it goes and is kept, but it assumes the sheet shows the title - and the sheet hides
+        // the whole Sources row when there is one source, which is always, for us. The full trace is
+        // at loadStreamableMedia's Raw(...) note; read it before acting on anything in this
+        // paragraph.
         // ⚠⚠ ONLY THE FALLBACK_ID BRANCH MARKS - AND THAT FIXES A BUG IN THE FIRST CUT
         // OF THIS CODE. TWO branches re-fetch a Track, and only one is a substitution: the "An
         // error occurred while decoding track token" branch re-fetches api.track(currentTrackId),

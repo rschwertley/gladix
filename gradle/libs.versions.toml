@@ -15,6 +15,10 @@ sqlite = "2.7.0"
 firebase-bom = "34.18.0"
 koinAndroid = "4.2.2"
 media3 = "1.11.0"
+# Cast. NOT version.ref'd to media3: play-services-cast-framework has its own release train,
+# and media3-cast 1.11.0 declares 22.3.1 (which in turn hard-pins play-services-cast to
+# [22.3.1] - a RANGE, so that one must not be declared here or the pin fights the catalogue).
+play-services-cast = "22.3.1"
 # ⚠️ DO NOT GO BELOW 3.6.0. It ships a shrinker rule inside coil-core that this app needs:
 #   -keep class * extends coil3.target.GenericViewTarget { *; }
 # Without it, R8 9.0+ vertically merges GenericViewTarget into its subclasses and SILENTLY DROPS the
@@ -75,6 +79,8 @@ media3-session = { module = "androidx.media3:media3-session", version.ref = "med
 media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 media3-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "media3" }
 media3-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
+media3-cast = { module = "androidx.media3:media3-cast", version.ref = "media3" }
+play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version.ref = "play-services-cast" }
 
 coil = { module = "io.coil-kt.coil3:coil", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }

@@ -108,7 +108,9 @@ class CrossfadeController(
         //   so its mute has to be lifted by force.
         // MAIN_RECOVERY: the main player was stopped, re-prepared or seeked under us (buffering
         //   watchdog, error retry) while ACTIVE.
-        // ANDROID_AUTO: AA connected mid-crossfade; see [onAndroidAutoConnected].
+        // ANDROID_AUTO: AA connected mid-crossfade; see [onAndroidAutoConnected]. SUSPENDED FOR A
+        //   CAR TEST (2026-10-16) - unreachable while AA_CROSSFADE_GATE is false, kept so the
+        //   restore is one boolean. Do not prune it as a dead label.
         NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, ANDROID_AUTO,
         // The one non-abort member, so the success path prints a line too: a capture with `ramp` and
         // nothing after it would be undecidable between "it worked" and "the tick stopped".
@@ -308,6 +310,11 @@ class CrossfadeController(
      * starting; this ends the one already in flight. Edge-triggered from PlayerService's
      * carConnectionObserver rather than polled in the tick, because that observer is the sole
      * writer of the flag it reads - there is no path to AA-connected that does not pass through it.
+     *
+     * ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16): its only caller is now gated on
+     * [AA_CROSSFADE_GATE], so nothing calls this while the flag is false. The function is kept
+     * intact - not deleted - because it is half of a one-boolean restore. [Abort.ANDROID_AUTO]
+     * stays in the enum for the same reason.
      */
     fun onAndroidAutoConnected() = abort(Abort.ANDROID_AUTO)
 
@@ -396,7 +403,12 @@ class CrossfadeController(
         // Product decision 7: no overlap on Android Auto. Read the note at [activate] before
         // touching this - the reason is a failure we can neither prevent nor detect, not a
         // preference. Checked early and cheaply, so an AA session never arms at all.
-        if (isAndroidAutoConnected()) return "androidAuto"
+        // ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16) VIA [AA_CROSSFADE_GATE], WHICH IS
+        // CURRENTLY false - so this arm never fires and AA sessions DO arm. The condition is left
+        // whole rather than removed so the restore is one boolean; see the flag's note for what
+        // the test is and why the premise is in doubt. The probe's aa= field records which
+        // transitions happened with AA connected, since that is now the variable.
+        if (AA_CROSSFADE_GATE && isAndroidAutoConnected()) return "androidAuto"
         val item = exoPlayer.currentMediaItem ?: return "noItem"
         // ⚠⚠ THE GATE BUDGET, AND WITHOUT IT THE RETRY IS UNBOUNDED RATHER THAN ABSENT.
         // [abort] sets phase=IDLE, and tickIdle re-arms the moment position >= duration - leadMs -
@@ -608,8 +620,14 @@ class CrossfadeController(
      *   10.  the next tick arms BOTH ramps with ONE length (see [startRamps]).
      *
      * ⚠⚠ ANDROID AUTO: CROSSFADE IS DISABLED WHILE AA IS CONNECTED, AND THAT IS THE
-     * WHOLE GUARD. See [armRefusal]'s "androidAuto" arm and [onAndroidAutoConnected]. The reasoning,
-     * because it went through two wrong answers first:
+     * WHOLE GUARD. See [armRefusal]'s "androidAuto" arm and [onAndroidAutoConnected].
+     * ⚠⚠ SUSPENDED FOR A CAR TEST, 2026-10-16 - [AA_CROSSFADE_GATE] is false, so
+     * EVERYTHING IN THIS PARAGRAPH DESCRIBES THE RESTORED STATE, NOT THE CURRENT ONE. The argument
+     * below is kept in full and unedited because it is what the test is testing, and because its
+     * last clause - that re-enabling needs a car and someone listening - is the reason the flag
+     * exists rather than a rewrite. If the drive shows silence, flip the flag and this note is
+     * simply true again; if it does not, THAT is when this gets rewritten, with the date of the
+     * drive. The reasoning, because it went through two wrong answers first:
      *   Every other skip path takes `if (isAndroidAutoConnected()) { player.pause(); delay(50) }`
      *   before advancing (a14a8bc7, 2026-05-11, "Android Auto silent playback after skip fix"), and
      *   the hand-off IS a skip. But pause() is not available to us here: a USER_REQUEST pause with
@@ -832,7 +850,12 @@ class CrossfadeController(
             "CROSSFADE-PROBE arm armed=" + (if (armed) "yes" else "no") + " reason=" + reason +
                 " fade=" + fadeSeconds + "s id=" + exoPlayer.currentMediaItem?.mediaId +
                 " dur=" + exoPlayer.duration + " pos=" + exoPlayer.currentPosition +
-                " shuffle=" + sessionPlayer.shuffleModeEnabled + " repeat=" + exoPlayer.repeatMode
+                " shuffle=" + sessionPlayer.shuffleModeEnabled + " repeat=" + exoPlayer.repeatMode +
+                // The car test's only variable, on the two lines that matter: aa=yes on an arm and
+                // on a hand-off is what makes a silent transition attributable afterwards. This is
+                // also what keeps isAndroidAutoConnected a USED parameter while the gate is
+                // suspended, so the restore needs no re-wiring in PlayerService.
+                " aa=" + (if (isAndroidAutoConnected()) "yes" else "no")
         )
     }
 
@@ -857,7 +880,8 @@ class CrossfadeController(
         TAG,
         "CROSSFADE-PROBE handoff pos=" + position + " sidecarPos=" + sidecarPos +
             " offset=" + offset + " resync=" + (if (resync) "yes" else "no") +
-            " effFade=" + effectiveFadeMs + " remaining=" + remaining
+            " effFade=" + effectiveFadeMs + " remaining=" + remaining +
+            " aa=" + (if (isAndroidAutoConnected()) "yes" else "no")
     )
 
     private fun probeRamp(trigger: String, afterHandoffMs: Long, length: Long, tailRemaining: Long) =
@@ -898,6 +922,31 @@ class CrossfadeController(
 
     companion object {
         private const val TAG = "GladixPlayback"
+
+        /**
+         * ⚠⚠ THE AA GATE, SUSPENDED FOR A CAR TEST (2026-10-16). false means crossfade
+         * RUNS on Android Auto. Set it back to true to restore the shipped behaviour - that is the
+         * whole restore, because both halves of the gate read this one flag: [armRefusal]'s
+         * "androidAuto" arm and PlayerService's carConnectionObserver call to
+         * [onAndroidAutoConnected].
+         * ⚠️ A FLAG RATHER THAN DELETED CODE, DELIBERATELY. The gate is not known to be
+         * unnecessary - it is UNTESTED since the conditions it was written for changed. Keeping both
+         * arms live and readable means the restore is one boolean under time pressure (in a car,
+         * with the symptom happening), not an archaeology exercise. Expect a "condition is always
+         * false" warning at both sites; that is the flag working, not a defect.
+         * ⚠⚠ WHAT THE TEST IS FOR, so the result can be recorded against it: the May
+         * symptom (a14a8bc7, 2026-05-11, on media3 1.8.0) was silence after an UN-PAUSED
+         * seekToNextMediaItem while AA was connected, and the hand-off is that same call. Since then
+         * audio offload went from a user-toggleable setting to unconditionally DISABLED (7c6b37d1,
+         * 2026-07-13, "Disable audio offload to fix silent playback on gapless auto-advance") and
+         * media3 went 1.8.0 -> 1.11.0. Neither is proof: the cause was NEVER IDENTIFIED (see
+         * [activate]'s note - it was downstream of us, in the AA AudioTrack), so only a drive can
+         * settle it. THE EAR IS THE INSTRUMENT; the probe only timestamps the hand-off.
+         * ⚠️ THE FIVE ERROR-PATH AA GUARDS IN PlayerEventListener ARE UNTOUCHED and must
+         * stay that way for this test to mean anything - they are the May workaround itself
+         * (pause -> delay(50) -> skip), and removing them would change two variables at once.
+         */
+        const val AA_CROSSFADE_GATE = false
 
         /** Thresholds carried from the reference implementation; see crossfade-status.md. */
         private const val ARM_LEAD_BASE_MS = 25_000L

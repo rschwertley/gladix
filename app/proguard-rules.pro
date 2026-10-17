@@ -67,6 +67,18 @@
 # anchor: dev.brahmkshatriya.echo.utils.HealthMonitor, HealthMonitor$ConsecutiveSkipUnavailableException
 
 
+# 6. The Cast OptionsProvider, instantiated BY REFLECTION from the manifest's
+#    com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME meta-data. AGP derives keep
+#    rules from manifest android:name attributes; a meta-data android:value is an opaque STRING, so
+#    nothing tells R8 this class is reachable and it is free to rename or remove it. The resulting
+#    failure is release-only, and CastAvailability catches it - so it would present as a missing
+#    Cast button with one logcat line, not as a crash. Anchored in verifyExtensionAbi so R8 renaming
+#    it fails the build instead.
+#    Narrow on purpose: this is one reflectively-named class, not an ABI sweep, so no `.** { *; }`.
+-keep class dev.brahmkshatriya.echo.cast.CastOptionsProvider { <init>(); }
+# anchor: dev.brahmkshatriya.echo.cast.CastOptionsProvider
+
+
 # Preserve generics + all annotation variants + nested/lambda linkage so kotlinx.serialization type
 # resolution and suspend/lambda types crossing the extension classloader boundary still resolve after
 # shrinking (proguard-android-optimize keeps *Annotation* but NOT Signature/InnerClasses/EnclosingMethod).

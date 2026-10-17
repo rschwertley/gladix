@@ -208,7 +208,14 @@ class PlayerService : MediaLibraryService() {
         // Crossfade is disabled on AA (product decision 7, and see
         // CrossfadeController.activate's note for why detection is not an option). armRefusal keeps
         // a new overlap from arming; this ends one already in flight on the connect edge.
-        if (!wasConnected && isConnected) crossfade?.onAndroidAutoConnected()
+        // ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16). AA_CROSSFADE_GATE is false, so an AA
+        // connect no longer aborts an overlap in flight - the other half of the same switch is
+        // CrossfadeController.armRefusal's "androidAuto" arm. Flip that one constant to restore
+        // both. The flag is referenced here rather than the call being commented out so this line
+        // stays compiled and greppable.
+        if (CrossfadeController.AA_CROSSFADE_GATE && !wasConnected && isConnected) {
+            crossfade?.onAndroidAutoConnected()
+        }
         if (wasConnected && !isConnected) {
             mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
         }

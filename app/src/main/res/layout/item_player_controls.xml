@@ -372,7 +372,13 @@
              player_controls_placeholder, or the collapse morph's toMoveY.
              The glyph stays 40dp with ~21dp of ink (ic_skip_previous_40dp's paths span 9.2-30.9 of
              a 40 viewport), so it sits comfortably inside the 48dp circle; iconSize was left alone
-             deliberately rather than retuned by eye. -->
+             deliberately rather than retuned by eye.
+             ⚠️ padding 12dp IS THE CENTRING ARITHMETIC, same rule as trackRepeat's 18dp:
+             12 + 40 + 12 = 64 = the width. Without it these inherited
+             Widget.Material3.Button.IconButton's 10dp (m3_btn_icon_only_default_padding), giving
+             10 + 40 + 10 = 60 and a 2dp leftward shift - small enough to pass unnoticed next to
+             trackRepeat's 6dp, and wrong for the same reason. See the full mechanism at
+             trackRepeat. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackPrevious"
             style="?attr/materialIconButtonStyle"
@@ -383,6 +389,7 @@
             android:contentDescription="@string/previous"
             android:enabled="false"
             android:outlineProvider="none"
+            android:padding="12dp"
             app:elevation="1dp"
             app:icon="@drawable/ic_skip_previous_40dp"
             app:iconSize="40dp"
@@ -401,13 +408,30 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent">
 
+            <!-- ⚠⚠ indicatorSize AND indicatorInset ARE ONE SETTING HERE, NOT TWO.
+                 CircularDrawingDelegate.getSize() decodes to `indicatorSize + 2 * indicatorInset`
+                 (1.14.0 AAR) and indicatorInset defaults to 4dp, so the old indicatorSize=64dp gave
+                 a preferred size of 72dp - exactly this view - and drew the ring at diameter 56 to
+                 64dp. That is precisely where the 56dp disc's edge was, so the two were flush and
+                 the 64dp disc would have covered the ring entirely (trackPlayPause is the later
+                 child, so it paints on top).
+                 72dp + 0dp keeps getSize() at 72 and scale at 1.0 while moving the ring to diameter
+                 64 to 72dp, just outside the disc. RAISING indicatorSize ALONE DOES NOT WORK: with
+                 the 4dp inset still in place getSize() becomes 80, the delegate scales by 72/80, and
+                 the ring shrinks back over the disc.
+                 LAYOUT IS UNAFFECTED by either value: this view is match_parent inside a FIXED 72dp
+                 FrameLayout, so its MeasureSpec is EXACTLY 72dp and ProgressBar.onMeasure's
+                 resolveSizeAndState returns the spec. indicatorSize only feeds the drawing delegate,
+                 and adjustCanvas scales by bounds/preferred, so the drawable can never force the
+                 view larger. playerControlsHeight and the collapse morph are therefore untouched. -->
             <com.google.android.material.progressindicator.CircularProgressIndicator
                 android:id="@+id/playingIndicator"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clickable="false"
                 android:indeterminate="true"
-                app:indicatorSize="64dp" />
+                app:indicatorInset="0dp"
+                app:indicatorSize="72dp" />
 
             <!-- ⚠⚠ THE FOCAL CONTROL: A 56dp FILLED DISC IN AN UNCHANGED 72dp BOX.
                  The fill, the inset geometry and the playingIndicator clearance are all argued at
@@ -417,20 +441,27 @@
                  fill rather than on the artwork. It is also the only one PlayerFragment's
                  playerColors observer leaves alone, deliberately: theme pairing already guarantees
                  its contrast against the disc, so a Palette colour here could only break it.
-                 ⚠️ THE GLYPH STAYS anim_play_pause_48dp, AND 48dp IS THE BOX, NOT THE INK.
-                 Measured before deciding: ic_play_48dp's path spans 320-720 x 252-728 of a 960
-                 viewport and ic_pause_48dp's spans 230-730 x 200-760, so the drawn glyph is about
-                 25-28dp - already the "~32dp" the design asked for, with 14dp of clear disc around
-                 it. Forcing a 32dp INTRINSIC would have shrunk the ink to ~19dp and cost four new
-                 duplicated vectors (the animated-selector's two states plus two transitions), so
-                 the smaller number would have been both more work and visually worse. If this is
-                 ever revisited, change the ink, not the box. -->
+                 ⚠⚠ THE GLYPH IS 55dp SO THE INK-TO-DISC RATIO SURVIVED THE 56 -> 64dp
+                 DISC. 48/56 = 0.857, and 64 x 0.857 = 54.86, so 55dp. In ink: ic_pause_48dp's path
+                 spans 230-730 x 200-760 of a 960 viewport, i.e. 58% of its box, which was 28dp of
+                 ink in a 56dp disc (0.50) and is now 32dp in a 64dp disc (0.50). ic_play's path
+                 spans 320-720 x 252-728, so the play triangle goes ~24dp -> ~27dp.
+                 ⚠️ 55dp IS AN INTRINSIC, WHICH IS WHY IT COSTS FILES. CompoundButton sizes
+                 a button drawable from its INTRINSIC size, and no wrapper drawable can raise an
+                 intrinsic without shrinking the child by the same amount - InsetDrawable and
+                 LayerDrawable both move the reported size and the child's bounds in OPPOSITE
+                 directions, so there is no XML magnifier. Hence anim_play_pause_55dp and its four
+                 vectors, which are width/height-only copies of the 48dp set.
+                 ⚠️ THE 48dp SET IS STILL LIVE AND MUST NOT BE DELETED: it is
+                 fragment_player_tv.xml's and fragment_player_mini_tv.xml's glyph, which is the whole
+                 reason this is a copy instead of an edit. Keep the two sets in step if a path ever
+                 changes - there is no include mechanism for vectors. -->
             <com.google.android.material.checkbox.MaterialCheckBox
                 android:id="@+id/trackPlayPause"
                 android:layout_width="72dp"
                 android:layout_height="72dp"
                 android:background="@drawable/bg_player_play_pause"
-                android:button="@drawable/anim_play_pause_48dp"
+                android:button="@drawable/anim_play_pause_55dp"
                 android:checked="true"
                 android:contentDescription="@string/play"
                 app:buttonTint="?attr/colorOnPrimary"
@@ -452,6 +483,7 @@
             android:contentDescription="@string/next"
             android:enabled="false"
             android:outlineProvider="none"
+            android:padding="12dp"
             app:elevation="1dp"
             app:icon="@drawable/ic_skip_next_40dp"
             app:iconSize="40dp"
@@ -483,7 +515,23 @@
              this to a checkbox to "simplify" it: a two-state widget cannot represent three modes,
              which is why it is a button in the first place.
              iconTint stays @color/amoled_fg as the pre-colour default only; the observer replaces
-             it with a PlayerColors.onBackground state list. -->
+             it with a PlayerColors.onBackground state list.
+             ⚠⚠ padding 18dp IS GEOMETRY, NOT BREATHING ROOM, AND IT IS WHAT CENTRES THE
+             GLYPH. 18 + 28 + 18 = 64 = the width. An icon-only MaterialButton is centred ONLY when
+             paddingLeft + iconSize + paddingRight equals the width, because MaterialButton does no
+             centring of its own: updateIconPosition (1.14.0 AAR) sets iconLeft = 0 and returns for
+             ICON_GRAVITY_START - the default - handing the icon to TextView as a compound drawable,
+             and TextView draws a LEFT compound drawable at paddingLeft, vertically centred.
+             AT THE OLD 12dp IT WAS 6dp LEFT OF CENTRE: 12 + 28 + 12 = 52, so the glyph sat at
+             x 12..40 of 64 (centre 26 against the circle's 32) - reported from a 1132 screenshot and
+             most visible in the OFF state, whose slash is the widest ink in the family (80% of the
+             box against 67% for ALL/ONE, since ONE's slash is strokeAlpha=0). The drawables are NOT
+             at fault: all three repeat vectors measure cx = cy = 20.00 in their own 40x40 viewport
+             with no translate or scale anywhere.
+             ⚠️ trackShuffle NEEDS NO EQUIVALENT because it is a MaterialCheckBox, and
+             MaterialCheckBox.onDraw centres the button drawable itself when the text is empty
+             (centerIfNoText: it translates the canvas by (width - intrinsicWidth) / 2). That is the
+             whole reason shuffle and play/pause looked right while these three did not. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackRepeat"
             style="?attr/materialIconButtonStyle"
@@ -494,7 +542,7 @@
             android:contentDescription="@string/repeat"
             android:elevation="2dp"
             android:outlineProvider="none"
-            android:padding="12dp"
+            android:padding="18dp"
             app:icon="@drawable/ic_repeat_to_repeat_one_40dp"
             app:iconSize="28dp"
             app:iconTint="@color/amoled_fg"

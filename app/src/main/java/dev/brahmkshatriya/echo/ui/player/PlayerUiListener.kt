@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.player
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C.TIME_UNSET
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -28,6 +29,34 @@ class PlayerUiListener(
             shuffleMode.value = player.shuffleModeEnabled
             repeatMode.value = player.repeatMode
         }
+        updateDeviceVolume()
+    }
+
+    /**
+     * System media volume for the quality sheet's output row. BOTH callbacks route here because
+     * they change different halves of the same reading: onDeviceVolumeChanged moves the value
+     * (including from a hardware key - media3 owns that broadcast), onDeviceInfoChanged moves the
+     * RANGE, which happens when the output route changes. Reading one without the other leaves a
+     * value outside its own min..max, which is what makes a Slider throw.
+     */
+    override fun onDeviceVolumeChanged(volume: Int, muted: Boolean) = updateDeviceVolume()
+
+    override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) = updateDeviceVolume()
+
+    // runCatching around the reads, not around the write: a MediaController whose commands are
+    // not yet negotiated logs and returns defaults rather than throwing, but deviceInfo is read
+    // through the session and a disconnect mid-read is the one case that can. Falling back to the
+    // default DeviceVolume() reports available=false, which every consumer already gates on.
+    private fun updateDeviceVolume() {
+        viewModel.deviceVolume.value = runCatching {
+            val info = player.deviceInfo
+            PlayerViewModel.DeviceVolume(
+                volume = player.deviceVolume,
+                min = info.minVolume,
+                max = info.maxVolume,
+                muted = player.isDeviceMuted,
+            )
+        }.getOrDefault(PlayerViewModel.DeviceVolume())
     }
 
     private fun updateList() {

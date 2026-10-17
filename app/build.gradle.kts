@@ -303,6 +303,23 @@ dependencies {
     implementation(libs.bundles.koin)
     implementation(libs.androidx.car.app)
     implementation(libs.bundles.media3)
+    // ⚠⚠ CAST IS DELIBERATELY NOT IN THE media3 BUNDLE. The bundle is the core
+    // playback set that every build needs; these two are one feature and must stay removable in
+    // one place. media3-cast already brings play-services-cast-framework transitively at compile
+    // scope, but it is declared explicitly because we call CastContext / CastOptions /
+    // CastButtonFactory DIRECTLY - depending on a transitive for a direct API use is how a
+    // library bump silently removes your compile classpath.
+    // ⚠️ THE COMPOSE SUB-TREE IS NOT EXCLUDED, BY DECISION (2026-10-16).
+    // media3-cast declares androidx.compose.material3 at RUNTIME scope via compose-bom
+    // 2026.05.00, and this project has no Compose plugin and only the two
+    // compose.runtime:runtime-annotation artifacts. The reference fork (Echo Expressive 4.1.2)
+    // ships those same artifacts' META-INF version files with ZERO Compose classes surviving
+    // R8, so the cost is expected to be metadata rather than code. THE CHECK IS THE APK DELTA:
+    // build 1132 release was 9,822,056 bytes. If classes.dex grows far beyond what
+    // cast-framework alone explains, revisit with
+    //   implementation(libs.media3.cast) { exclude(group = "androidx.compose.material3") }
+    implementation(libs.media3.cast)
+    implementation(libs.play.services.cast.framework)
     implementation(libs.bundles.coil)
 
     implementation(libs.zxing.core)
@@ -402,6 +419,15 @@ tasks.register("verifyExtensionAbi") {
         // lapses they lapse together. The outer class is anchored too because the rule keeps it.
         "dev.brahmkshatriya.echo.utils.HealthMonitor",
         "dev.brahmkshatriya.echo.utils.HealthMonitor\$ConsecutiveSkipUnavailableException",
+        // Cast OptionsProvider - dev.brahmkshatriya.echo.cast.CastOptionsProvider (rule 6).
+        // Added WITH its keep rule, per the invariant above, rather than after a crash. It is
+        // reached only by reflection from the manifest's OPTIONS_PROVIDER_CLASS_NAME meta-data,
+        // which AGP does NOT turn into a keep rule (it generates those from android:name, and a
+        // meta-data value is just a string). Without the keep, R8 renames it and CastContext
+        // .getSharedInstance fails in RELEASE ONLY - and CastAvailability catches that, so the
+        // symptom would be a silently missing Cast button rather than a crash. This anchor is
+        // what turns that into a build failure instead.
+        "dev.brahmkshatriya.echo.cast.CastOptionsProvider",
     )
     doLast {
         val mappingFiles: List<File> = (mappingRoot.listFiles()?.toList().orEmpty())

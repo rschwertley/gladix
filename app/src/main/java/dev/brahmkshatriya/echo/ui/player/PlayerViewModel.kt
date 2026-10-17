@@ -52,6 +52,7 @@ import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -836,6 +837,61 @@ class PlayerViewModel(
     val previousEnabled = MutableStateFlow(false)
     val repeatMode = MutableStateFlow(0)
     val shuffleMode = MutableStateFlow(false)
+
+    /**
+     * ⚠⚠ SYSTEM MEDIA VOLUME (STREAM_MUSIC). THIS IS NOT player.volume AND MUST
+     * NEVER BECOME IT. media3 draws the line itself - Player.getDeviceVolume's javadoc says
+     * "this method returns the volume of the device. To check the current stream volume, use
+     * getVolume()" - and C.STREAM_TYPE_DEFAULT is STREAM_TYPE_MUSIC (C.java:411, 1.11.0), so
+     * deviceVolume is the system media stream. player.volume is a per-player gain whose SOLE
+     * writer is AudioFocusListener (ducking); a second writer there would fight it silently.
+     * ⚠️ WE REGISTER NOTHING FOR LIVE UPDATES, AND DO NOT NEED TO. media3's
+     * StreamVolumeManager already listens for "android.media.VOLUME_CHANGED_ACTION" itself
+     * (StreamVolumeManager.java:51-52, its own comment: "Copied from
+     * AudioManager#VOLUME_CHANGED_ACTION") and re-reads the stream, so hardware key presses
+     * arrive as Player.Listener.onDeviceVolumeChanged. Do not add a ContentObserver or the
+     * hidden broadcast - it would be a second source of the same truth.
+     * ⚠️ NO SESSION CHANGE WAS NEEDED: PlayerCallback.onConnect already passes
+     * MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS, which is
+     * Player.Commands.Builder().addAllCommands() (MediaSession.java:2452), so
+     * COMMAND_GET_DEVICE_VOLUME and COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS are already
+     * available to this controller. Android Auto's command surface is untouched.
+     */
+    val deviceVolume = MutableStateFlow(DeviceVolume())
+
+    /**
+     * [available] is false until the controller reports a usable range - a Slider with
+     * valueFrom == valueTo throws, so every consumer must gate on it rather than on the
+     * volume value.
+     */
+    data class DeviceVolume(
+        val volume: Int = 0,
+        val min: Int = 0,
+        val max: Int = 0,
+        val muted: Boolean = false,
+    ) {
+        val available get() = max > min
+        fun percentFor(value: Int) =
+            if (!available) 0 else ((value - min) * 100f / (max - min)).roundToInt()
+        val percent get() = percentFor(volume)
+    }
+
+    /**
+     * ⚠⚠ WRAPPED BECAUSE media3 DOES NOT WRAP IT. StreamVolumeManager.setVolume
+     * (1.11.0, :166-171) calls audioManager.setStreamVolume straight through with no try/catch,
+     * inside a background state update - and setStreamVolume throws SecurityException while Do
+     * Not Disturb is active unless the app holds ACCESS_NOTIFICATION_POLICY, which we do not.
+     * An uncaught throw off the main thread is fatal, so this catch is the only thing between a
+     * DND volume drag and a crash. The catch may not cover a throw raised on media3's own
+     * handler; if a DND crash is ever reported, that is the shape to look for.
+     * Flags are 0 deliberately: no system volume UI, no beep - the sheet is already showing the
+     * value and a system panel over a bottom sheet is two volume UIs at once.
+     */
+    fun setDeviceVolume(volume: Int) {
+        withBrowser { controller ->
+            runCatching { controller.setDeviceVolume(volume, 0) }
+        }
+    }
 
     // Tracks STAMPED with the mediaId they belong to. Written only by PlayerUiListener, which reads both
     // halves in one expression. The stamp turns "are these tracks for the item on screen?" from a timing

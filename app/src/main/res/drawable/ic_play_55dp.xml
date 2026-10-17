@@ -1,0 +1,21 @@
+<!-- ⚠️ PHONE-ONLY 55dp COPY OF ic_play_48dp. THE ONLY DIFFERENCE FROM THAT FILE IS
+     android:width / android:height, 48dp -> 55dp; the viewport, the paths are byte-identical.
+     WHY A COPY RATHER THAN AN EDIT: the 48dp set is reached from fragment_player_tv.xml and
+     fragment_player_mini_tv.xml through anim_play_pause_48dp, and TV is out of scope. A VectorDrawable
+     scales to its BOUNDS, but CompoundButton sizes a button drawable from its INTRINSIC size, and no
+     wrapper can raise an intrinsic without shrinking the child by the same amount (InsetDrawable and
+     LayerDrawable both move the two in opposite directions) - so the intrinsic has to be declared, and
+     that means a file.
+     55dp KEEPS THE INK-TO-DISC RATIO THE 56dp DISC HAD: 48/56 = 0.857, and 64 x 0.857 = 54.86.
+     ⚠️ KEEP IN STEP WITH ic_play_48dp. If a path there changes, change it here too; there is no
+     include mechanism for vectors. Nothing else in the app should reference the 55dp set - it exists
+     for item_player_controls.xml's trackPlayPause alone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="55dp"
+    android:height="55dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="#FF000000"
+      android:pathData="M320,702v-450q0,-14 9,-22t21,-8q4,0 8,1t8,3l354,226q7,5 10.5,11t3.5,14q0,8 -3.5,14T720,502L366,728q-4,2 -8,3t-8,1q-12,0 -21,-8t-9,-22Z"/>
+</vector>

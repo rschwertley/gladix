@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ PHONE-ONLY 55dp TWIN OF anim_play_pause_48dp, which stays in place for
+     fragment_player_tv.xml and fragment_player_mini_tv.xml. Same four entries, same two transitions -
+     the play<->pause morph is preserved, which is the reason the two _anim files were copied rather
+     than dropped - only the referenced drawables differ.
+     The glyph is 55dp so that the 64dp disc in bg_player_play_pause.xml keeps the ink-to-disc ratio
+     the 56dp/48dp pair had (0.857 of the disc, ~0.50 in ink). See the note at trackPlayPause. -->
+<animated-selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/state_on"
+        android:drawable="@drawable/ic_pause_55dp"
+        android:state_checked="true" />
+
+    <item
+        android:id="@+id/state_off"
+        android:drawable="@drawable/ic_play_55dp"
+        android:state_checked="false" />
+
+    <transition
+        android:drawable="@drawable/ic_pause_to_play_55dp_anim"
+        android:fromId="@+id/state_on"
+        android:toId="@+id/state_off" />
+
+    <transition
+        android:drawable="@drawable/ic_play_to_pause_55dp_anim"
+        android:fromId="@+id/state_off"
+        android:toId="@+id/state_on" />
+</animated-selector>

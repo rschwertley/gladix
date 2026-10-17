@@ -516,4 +516,13 @@
     <string name="export_settings_summary">Export settings to a file</string>
     <string name="import_settings">Import Settings</string>
     <string name="import_settings_summary">Import settings from a file</string>
+    <!-- Quality sheet: output row and system media volume -->
+    <string name="volume">Volume</string>
+    <string name="connected">Connected</string>
+    <string name="phone_speaker">Phone speaker</string>
+    <string name="bluetooth_audio">Bluetooth</string>
+    <string name="wired_headphones">Wired headphones</string>
+    <string name="usb_audio">USB audio</string>
+    <string name="audio_output">Audio output</string>
+    <string name="percent_x">%1$d%%</string>
 </resources>
