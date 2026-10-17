@@ -377,7 +377,7 @@ class LocalMediaServer(
             respondStatus(output, 500, "Internal Server Error")
             return
         }
-        if (remaining != C.LENGTH_UNSET) {
+        if (remaining != LENGTH_UNSET) {
             val measured = start + remaining
             lengths[key] = measured
             known = measured
@@ -462,14 +462,14 @@ class LocalMediaServer(
         // position + returned = the whole-resource length. Passing the client's bounded length instead
         // would make open() return just that window and the Content-Range denominator unknowable. The
         // response is still truncated to what was asked - see the write loop.
-        .setLength(C.LENGTH_UNSET)
+        .setLength(LENGTH_UNSET)
         .build()
 
     private fun measureLength(key: String): Long? {
         val source = dataSourceFactory.createDataSource()
         val length = runCatching { source.open(specFor(key, 0L)) }.getOrNull()
         runCatching { source.close() }
-        if (length == null || length == C.LENGTH_UNSET) return null
+        if (length == null || length == LENGTH_UNSET) return null
         lengths[key] = length
         return length
     }
@@ -626,6 +626,19 @@ class LocalMediaServer(
         // be right; the Cast receiver DOES care, so stage 3 has to carry a real type per source rather
         // than inherit this.
         private const val MIME = "audio/mpeg"
+
+        /**
+         * ⚠️ C.LENGTH_UNSET IS DECLARED `int`, AND EVERY LENGTH IN THIS FILE IS Long.
+         * C.java:79 (media3 1.11.0) is `public static final int LENGTH_UNSET = -1` - while
+         * C.TIME_UNSET seventeen lines above it is a `long`. So `someLong != C.LENGTH_UNSET` does
+         * not compile, and neither does passing it to DataSpec.Builder.setLength(long). Three
+         * sites here were written that way and failed the release build (2026-10-17).
+         * Widened ONCE here instead of `.toLong()` at each use, so a fourth use cannot repeat it.
+         * NOT a `const val`: a const initializer must be a compile-time constant and
+         * `.toLong()` is a call, so this is a companion `val` - which also keeps the tie to
+         * media3's own constant rather than hardcoding -1L here.
+         */
+        private val LENGTH_UNSET: Long = C.LENGTH_UNSET.toLong()
 
         private const val BUFFER = 64 * 1024
         private const val BACKLOG = 8
