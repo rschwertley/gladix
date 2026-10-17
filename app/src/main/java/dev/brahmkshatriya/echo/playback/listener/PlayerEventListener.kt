@@ -38,7 +38,6 @@ import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getLikeButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getRepeatButton
@@ -54,7 +53,6 @@ import dev.brahmkshatriya.echo.ui.common.ErrorCategory
 import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
-import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.utils.Serializer.rootCause
 import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import java.io.FileNotFoundException
@@ -293,28 +291,6 @@ class PlayerEventListener(
         } else {
             currentFlow.value = null
         }
-    }
-
-    // QUALITY-PROBE [emits p=6-format] GROUND TRUTH, AND THE ONLY LINE HERE THAT MEASURES RATHER THAN REPORTS.
-    // Every other point prints an INTENT (a chosen index, a suffix, a branch); this prints what the
-    // decoder was actually handed. Both earlier investigations of this symptom were misled by the
-    // quality sheet, whose chip only reflects serverIndex - so the sheet is never evidence about
-    // bytes. Format.bitrate is -1 (Format.NO_VALUE) for a container that does not declare one, in
-    // which case averageBitrate or sampleMimeType is the readable signal; print all of them rather
-    // than picking one, because which is populated is itself unknown for Deezer MP3.
-    override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-        val audio = tracks.groups.firstOrNull {
-            it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO && it.isSelected
-        }
-        val fmt = audio?.let { g -> (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let(g::getTrackFormat) }
-        QualityProbe.log(
-            "6-format", QualityProbe.nextSeq(), player.currentMediaItem?.mediaId, player,
-            "bitrate=" + (fmt?.bitrate ?: -1) + " avgBitrate=" + (fmt?.averageBitrate ?: -1) +
-                " peakBitrate=" + (fmt?.peakBitrate ?: -1) +
-                " sampleRate=" + (fmt?.sampleRate ?: -1) + " ch=" + (fmt?.channelCount ?: -1) +
-                " mime=" + fmt?.sampleMimeType + " codecs=" + fmt?.codecs +
-                " serverIndex=" + player.currentMediaItem?.serverIndex
-        )
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {

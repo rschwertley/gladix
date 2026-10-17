@@ -45,72 +45,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         topQuality: String = quality,
         allowFallback: Boolean = true,
     ): Streamable {
-        // QUALITY-PROBE [field role=] role=original is the requested recording's own ladder;
-        // role=fallback is a substitute's ladder, which exists only while allowFallback is false.
-        // Both chains print the same p=5-* lines, so without this field a capture cannot tell
-        // "the original stepped down" from "the substitute stepped down".
-        val probeRole = if (allowFallback) "original" else "fallback"
         return try {
             val currentTrackId = track.id
-            // QUALITY-PROBE [emits p=5-branch] BRANCH. "Was the relay attempted at all" - the user's own question.
-            // relay=true means getMediaUrl (the shared server); relay=false means getMP3MediaUrl, i.e.
-            // the user's own 128 account and NO relay request whatsoever.
-            val probeRelay = quality != "128" && quality != "mp3"
-            println(
-                "QUALITY-PROBE p=5-branch id=" + currentTrackId + " role=" + probeRole +
-                    " quality=" + quality + " topQuality=" + topQuality + " relay=" + probeRelay
-            )
             val mediaJson =
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
                 else api.getMP3MediaUrl(track, quality == "128")
-            // QUALITY-PROBE [emits p=5-response] RESPONSE, TRUNCATED AND CREDENTIAL-FREE. The response body is
-            // the only thing that separates "relay refused" from "relay returned empty media" from
-            // "relay fine". 160 chars is enough for Deezer's error sentences and far short of any
-            // payload; the media array itself (which carries signed URLs) is reported only as a COUNT.
-            run {
-                val s = mediaJson.toString()
-                val media0 = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
-                    ?.get("media")?.jsonArray?.firstOrNull()?.jsonObject
-                val mediaCount = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
-                    ?.get("media")?.jsonArray?.size ?: -1
-                // The field that closes the last open hypothesis: "the relay was asked for 320 and
-                // handed back a 128 stream". EXTRACTED BY KEY, never by truncating the body - media0
-                // also holds `sources`, which carries the signed URL, and that must never be logged.
-                // `cipher` is included because a format is only meaningful alongside it; neither is a
-                // credential. reqFormat mirrors what DeezerMedia actually posts, so a mismatch between
-                // reqFormat and gotFormat is readable on ONE line.
-                val reqFormat =
-                    if (probeRelay) (if (quality == "flac") "FLAC" else "MP3_320")
-                    else (if (quality == "128") "MP3_128" else "MP3_MISC")
-                // [CORRECTED before build] THE BODY IS ONLY LOGGED WHEN THERE IS NO MEDIA, i.e. only
-                // for an ERROR-shaped response. A SUCCESSFUL body is
-                // {"data":[{"media":[{"cipher":{...},"format":"MP3_320","sources":[{"url":"https://...
-                // and the signed URL starts well inside 160 chars, so truncating it unconditionally
-                // WOULD have logged a credential. substringBefore("http") is a second belt for the
-                // error shape, which can still quote a URL back at us.
-                val probeReason =
-                    if (mediaCount > 0) "ok"
-                    else s.take(160).substringBefore("http").replace(Char(10), ' ')
-                println(
-                    "QUALITY-PROBE p=5-response id=" + currentTrackId + " role=" + probeRole +
-                        " quality=" + quality +
-                        " relay=" + probeRelay + " reqFormat=" + reqFormat +
-                        " gotFormat=" + (media0?.get("format")?.jsonPrimitive?.content ?: "none") +
-                        " cipher=" + (media0?.get("cipher")?.jsonObject
-                            ?.get("type")?.jsonPrimitive?.content ?: "none") +
-                        " mediaCount=" + mediaCount +
-                        " len=" + s.length +
-                        " reason=" + probeReason
-                )
-            }
             val mjString = mediaJson.toString()
-            if (mjString.contains("License token has no sufficient rights on requested media")) {
-                // QUALITY-PROBE [emits p=5-stepdown] licence branch.
-                println(
-                    "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " role=" + probeRole +
-                        " from=" + quality + " trigger=licenceRights"
-                )
-            }
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
                 "flac" -> descend(track, "320", retry, topQuality, allowFallback)
                 "320" -> descend(track, "128", retry, topQuality, allowFallback)
@@ -171,12 +111,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // In the COMMON case (the substitute is available at the requested quality) the
                     // substitute's first call goes to the relay and SUCCEEDS, replacing the single
                     // media.deezer.com 128 call that used to happen here - one request either way.
-                    // QUALITY-PROBE [emits p=5-stepdown] token/empty-media branch.
-                    println(
-                        "QUALITY-PROBE p=5-stepdown id=" + currentTrackId + " role=" + probeRole +
-                            " from=" + quality +
-                            " trigger=" + (if (mediaIsEmpty) "mediaIsEmpty" else "trackTokenRights")
-                    )
                     val lower = when (quality) {
                         "flac" -> "320"
                         "320" -> "128"
@@ -321,22 +255,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // the companion object, where those notes moved rather than being deleted.
             val keySourceId = currentTrackId
 
-            // QUALITY-PROBE [emits p=5-final] FINAL. What the extension actually returns; host only, never the URL.
-            println(
-                "QUALITY-PROBE p=5-final id=" + currentTrackId + " role=" + probeRole +
-                    " quality=" + quality +
-                    " qValue=" + qualityValue + " title=" + qualityTitle +
-                    " urlHost=" + runCatching { finalUrl.substringAfter("://").substringBefore('/') }.getOrDefault("unparsable") +
-                    // [CORRECTED 2026-10-16] `substituted=" + isAlternateRecording` stood here
-                    // and would now print false on every line - a field that cannot come out
-                    // either way measures nothing. substituteLadder is the fact this frame
-                    // actually knows: allowFallback is off ONLY inside a ladder entered from one
-                    // of the two re-fetch blocks. Reading the capture: substituteLadder=true with
-                    // an `id=` differing from the original's is a real recording substitution
-                    // (FALLBACK_ID); substituteLadder=true with the SAME id is the decode-token
-                    // re-fetch, which is the same recording and is deliberately NOT marked.
-                    " substituteLadder=" + !allowFallback
-            )
             Streamable.server(
                 id = finalUrl,
                 quality = qualityValue,
@@ -379,16 +297,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 }
             }
 
-            // QUALITY-PROBE [emits p=5-stepdown] thrown branch - the one that fires on a relay failure,
-            // because getMediaUrl throws "Song not available" on a refusal.
-            println(
-                "QUALITY-PROBE p=5-stepdown id=" + track.id + " role=" + probeRole +
-                    " from=" + quality +
-                    // Same redaction as p=5-response: an okhttp/IO message can quote the request
-                    // URL, so cut at the first "http" before truncating.
-                    " trigger=threw/" +
-                    (e.message ?: "null").substringBefore("http").take(80).replace(Char(10), ' ')
-            )
             when (quality) {
                 // DELIBERATELY NOT [descend]: a throw from here already propagates out of this catch,
                 // so there is no second ladder to suppress - and tagging it would only hide the cause
@@ -446,16 +354,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             val info = streamable.id.removePrefix(placeholderPrefix).split(":")
             val trackId = info[0]
             val quality = info.getOrNull(1) ?: "128"
-            // QUALITY-PROBE [emits p=5-parse] PARSE. The `?: "128"` above is the ONE place a resolve silently
-            // becomes 128 with no relay call at all, so defaulted= is the single most important
-            // field in the whole capture. rawId is printed verbatim: it is a placeholder id, not a
-            // URL, and carries no credential.
-            println(
-                "QUALITY-PROBE p=5-parse id=" + trackId + " rawId=" + streamable.id +
-                    " parts=" + info.size + " quality=" + quality +
-                    " defaulted=" + (info.getOrNull(1) == null) +
-                    " hasToken=" + streamable.extras["TRACK_TOKEN"].isNullOrEmpty().not()
-            )
             val newTrack = Track(
                 id = trackId,
                 title = quality,
@@ -531,9 +429,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // `val visible = list.size > 1` in 1cc44e6e (2025-03-02, "player ui") and
         // `sources.getOrNull(index ?: -1)?.title` in c88e0349 (2025-08-22, upstream). The marker was
         // built in 2026-10 against two upstream gates nobody read, which is why it has never been
-        // seen on a device. THE SIGNATURE TO RECOGNISE: the extension side is verifiable from the
-        // QUALITY-PROBE capture alone, so "substituteLadder=true and no label" is this, not a
-        // resolve bug - do not re-investigate the extension.
+        // seen on a device. THE SIGNATURE TO RECOGNISE: the extension side was VERIFIED CORRECT in
+        // the 2026-10-16 QUALITY-PROBE capture (now removed) - substituteLadder=true with a differing
+        // id, and the marker written - so a missing "Alt version" label is this, not a resolve bug.
+        // Do not re-investigate the extension, and note that the capture that proved it is gone: a
+        // re-check means re-instrumenting, which is a reason to trust this note rather than redo it.
         // WHAT IS STILL TRUE AND WHY THIS CODE STAYS: the title costs nothing, it is correct, and it
         // is what a fix consumes. Making it visible is an APP-SIDE change (the size>1 gate, or
         // sourceTitles' index handling, or a surface that does not go through either) and that is

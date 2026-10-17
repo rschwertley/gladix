@@ -71,6 +71,7 @@ import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
 import dev.brahmkshatriya.echo.playback.renderer.RenderersFactory
+import dev.brahmkshatriya.echo.playback.source.LocalMediaServer
 import dev.brahmkshatriya.echo.playback.source.StreamableDataSource
 import dev.brahmkshatriya.echo.playback.source.StreamableMediaSource
 import dev.brahmkshatriya.echo.ui.common.ErrorCategory
@@ -79,7 +80,6 @@ import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
 import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
-import dev.brahmkshatriya.echo.utils.QualityProbe
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -145,8 +145,6 @@ class PlayerService : MediaLibraryService() {
         if (seconds == 0) {
             crossfade = null
             existing?.release()
-            // QUALITY-PROBE [emits NO line - registration only] registers the OFF state so every other line can say xfade=0.
-            QualityProbe.registerCrossfade(0, null)
             return
         }
         if (existing != null) {
@@ -165,6 +163,9 @@ class PlayerService : MediaLibraryService() {
             sidecarProcessor,
             handleAudioBecomingNoisy = false,
             stuckBufferingTimeoutMs = null,
+            // No second StreamVolumeManager and no second VOLUME_CHANGED_ACTION receiver for a
+            // player whose device volume nothing reads - see the signature's note.
+            deviceVolumeControl = false,
         )
         // ⚠⚠ THE SIDECAR TAKES THE MAIN PLAYER'S SESSION ID, NEVER THE REVERSE. Session effects
         // (EffectsListener's Equalizer + LoudnessEnhancer, and any system/third-party EQ attached via
@@ -173,9 +174,6 @@ class PlayerService : MediaLibraryService() {
         // EffectsListener.onAudioSessionIdChanged -> release + rebuild + re-broadcast, mid-playback,
         // on every crossfade.
         runCatching { sidecar.setAudioSessionId(exoPlayer.audioSessionId) }
-        // QUALITY-PROBE [emits NO line - registration only] the sidecar's identity, so QualityProbe.who() can tell the two
-        // players apart in every later line rather than guessing from context.
-        QualityProbe.registerCrossfade(seconds, sidecar)
         crossfade = CrossfadeController(
             exoPlayer = exoPlayer,
             sessionPlayer = sessionPlayer,
@@ -187,8 +185,6 @@ class PlayerService : MediaLibraryService() {
             skipFadeOnAlbums = { app.settings.getBoolean(SKIP_FADE_ON_ALBUMS, true) },
             // Not the reason code: see the note at CrossfadeController.onUserPause.
             isPausedForFocus = { audioFocusListener.pausedForFocus },
-            // Product decision 7: no overlap on AA. Read CrossfadeController.activate's note.
-            isAndroidAutoConnected = { isAndroidAutoConnected },
         ).also { it.fadeSeconds = seconds }
     }
     private lateinit var carConnection: CarConnection
@@ -205,17 +201,10 @@ class PlayerService : MediaLibraryService() {
         // clears the flag so a head-unit resume-on-connect passes through; disconnect sets it when no
         // other external route remains). recompute reads isAndroidAutoConnected, updated just above.
         recomputeRouteState()
-        // Crossfade is disabled on AA (product decision 7, and see
-        // CrossfadeController.activate's note for why detection is not an option). armRefusal keeps
-        // a new overlap from arming; this ends one already in flight on the connect edge.
-        // ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16). AA_CROSSFADE_GATE is false, so an AA
-        // connect no longer aborts an overlap in flight - the other half of the same switch is
-        // CrossfadeController.armRefusal's "androidAuto" arm. Flip that one constant to restore
-        // both. The flag is referenced here rather than the call being commented out so this line
-        // stays compiled and greppable.
-        if (CrossfadeController.AA_CROSSFADE_GATE && !wasConnected && isConnected) {
-            crossfade?.onAndroidAutoConnected()
-        }
+        // ⚠️ NOTHING HERE TOUCHES THE CROSSFADE ANY MORE. An AA connect used to abort an
+        // overlap in flight (product decision 7); crossfade on AA was made permanent on 2026-10-17
+        // after the drive recorded at CrossfadeController.activate, so the abort and the arm refusal
+        // both went. `wasConnected` survives for the disconnect-edge pause just below.
         if (wasConnected && !isConnected) {
             mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
         }
@@ -798,6 +787,14 @@ class PlayerService : MediaLibraryService() {
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         unregisterReceiver(clearQueueReceiver)
+        // Before the player's release below: stop() closes the accept socket and shuts the workers
+        // down, so no request can open a DataSource against a cache that is about to be released.
+        // Safe when never started - stop() on an unstarted server is a no-op, and touching the lazy
+        // here only constructs the object.
+        // ⚠️ WIDEN THIS GUARD IN STAGE 3. It is correct only while the TEST FLAG is the
+        // sole thing that can start the server; once a Cast session can, this must stop it with no
+        // flag in the condition, or a session started without the flag would leak the socket.
+        if (LocalMediaServer.PLAY_THROUGH_LOCAL_SERVER) localServer.stop()
         mediaSession?.run {
             // Flush the debounced queue save synchronously BEFORE releasing the player and cancelling
             // the scope (which would drop a pending scheduleSaveQueue). Must run before player.release()
@@ -824,6 +821,30 @@ class PlayerService : MediaLibraryService() {
 
     private val cache by inject<SimpleCache>()
 
+    /**
+     * The Cast serving layer. Lazy, so constructing it costs nothing until something asks - and
+     * with LocalMediaServer.PLAY_THROUGH_LOCAL_SERVER off, nothing ever does.
+     *
+     * ⚠⚠ NOTHING HERE BINDS A SOCKET. ONE REQUEST FOR A STREAM URL DOES.
+     * There is no start() call at app launch, at service creation, or anywhere on the launch
+     * path: LocalMediaServer.urlFor binds on first use, so a normal run opens no listening
+     * socket, and neither does a test build in which nothing is ever played. The `lazy` here is
+     * the second half of that - with the flag off, the object itself is never even constructed,
+     * because R8 removes the only two branches that touch it.
+     * ⚠️ AND THE ONLY STOP SITE IS onDestroy, WHICH IS LESS THAN WAS ASKED FOR.
+     * An earlier release point was wanted ("stop it when no longer needed") and there is no safe
+     * one in this stage: a MediaSource created while the server was up holds a tokenised URL, and
+     * LocalMediaServer.stop clears the token registry - so stopping while that source is still in
+     * the timeline turns its next seek into a 404 and kills playback. Pausing, going idle and
+     * clearing the queue all leave such a source reachable. The release point that IS safe is the
+     * one stage 3 needs - a Cast session ending, where the whole remote player is torn down
+     * anyway - so the mechanism is here and the trigger lands with it.
+     * ⚠️ SHARES state.servers WITH THE PLAYER'S OWN CHAIN, which is what makes the
+     * cache keys match - see the class note. It can only serve a track whose server is already
+     * resolved; StreamableResolver puts it there, and nothing here resolves.
+     */
+    private val localServer by lazy { LocalMediaServer(app.context, cache, state.servers) }
+
     private val mediaChangeFlow = MutableSharedFlow<Pair<MediaItem, MediaItem>>()
 
     @OptIn(UnstableApi::class)
@@ -837,6 +858,30 @@ class PlayerService : MediaLibraryService() {
             .setIsSpeedChangeSupportRequired(true)
             .build()
 
+    // ⚠⚠ deviceVolumeControl EXISTS BECAUSE THE QUALITY SHEET'S VOLUME SLIDER READ 0%
+    // AND DID NOTHING, AND THE CAUSE IS A MEDIA3 DEFAULT. ExoPlayer.Builder's
+    // deviceVolumeControlEnabled field is declared uninitialised (ExoPlayer.java:282, 1.11.0) so it
+    // DEFAULTS TO false, and two things follow from that in ExoPlayerImpl:
+    //   :360-364  all five device-volume commands are addIf(COMMAND_*, deviceVolumeControlEnabled),
+    //             so COMMAND_GET/SET_DEVICE_VOLUME were simply not available - which is why
+    //             MediaController.setDeviceVolume was dropped and the slider did nothing;
+    //   :462-473  streamVolumeManager is only CONSTRUCTED when the flag is true, else null, and
+    //             :1983-1990 getDeviceVolume() returns 0 when it is null - hence 0%.
+    // ⚠⚠ AND IT CHANGES NOTHING FOR ANDROID AUTO OR THE NOTIFICATION. The question is
+    // whether the legacy session flips to REMOTE volume handling now that the commands exist, and
+    // it cannot: MediaSessionLegacyStub.createVolumeProviderCompat (:2076-2079) returns null when
+    // `player.getDeviceInfo().playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL` - BEFORE it looks at
+    // any command - and onDeviceInfoChanged then calls setPlaybackToLocal. Our ExoPlayer is always
+    // LOCAL, so no VolumeProviderCompat is installed and the car's and the notification's volume
+    // behaviour is byte-identical. The only observable change is that controllers see the five
+    // commands and getDeviceVolume returns the real STREAM_MUSIC value.
+    // ⚠️ THE SIDECAR PASSES false, FOR THE SAME REASON IT OPTS OUT OF THE STUCK
+    // BACKSTOP. Enabling it builds a second StreamVolumeManager, which registers its own
+    // VOLUME_CHANGED_ACTION receiver (StreamVolumeManager.java:51-52) - two receivers and two
+    // managers reporting the same system stream, on a player nothing reads the volume of.
+    // The stream is the one the audio attributes name: StreamVolumeManager is constructed with
+    // audioAttributes.getVolumeControlStream(), which for musicAudioAttributes is STREAM_MUSIC -
+    // a second route to the same conclusion as C.STREAM_TYPE_DEFAULT in PlayerViewModel's note.
     // ⚠️ stuckBufferingTimeoutMs IS NULLABLE SO THE SIDECAR CAN OPT OUT. Our 60s backstop
     // raises StuckPlayerException into onPlayerError, and the sidecar has NO listeners - so on the
     // sidecar that error would have no owner. The main player's call site is unchanged by the default.
@@ -845,11 +890,17 @@ class PlayerService : MediaLibraryService() {
         audioEffectsProcessor: AudioEffectsProcessor,
         handleAudioBecomingNoisy: Boolean = true,
         stuckBufferingTimeoutMs: Int? = 60_000,
+        deviceVolumeControl: Boolean = true,
     ) = run {
         val audioOffloadPreferences = offloadPreferences()
 
         val factory = StreamableMediaSource.Factory(
-            app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow, healthMonitor
+            app, scope, state, extensions, cache, downloadFlow, mediaChangeFlow, healthMonitor,
+            // Resolved per media source, not captured once: the server may not have been up when
+            // this player was built, and urlFor returning null is the "use the normal chain" answer.
+            proxyUrl = if (LocalMediaServer.PLAY_THROUGH_LOCAL_SERVER) {
+                { key -> localServer.urlFor(key) }
+            } else null
         )
 
         // ⚠⚠ EXPLICIT LoadControl BECAUSE MEDIA3 CLASSIFIES EVERY GLADIX TRACK AS LOCAL
@@ -983,6 +1034,9 @@ class PlayerService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(handleAudioBecomingNoisy)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(musicAudioAttributes, false)
+            // See the note at this function's signature: false is media3's default and it is what
+            // made the quality sheet's volume slider inert and its readout 0%.
+            .setDeviceVolumeControlEnabled(deviceVolumeControl)
             // 500 ms = Media3's own default, restored deliberately. The 150 ms here came from 464d4d3f
             // (2026-06-06), the same commit that made onDestroy call mediaSession.release() then
             // player.release() — the latter is SYNCHRONOUS ON THE MAIN THREAD, and the tight budget was

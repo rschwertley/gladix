@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain tintable circle. Solid WHITE so android:backgroundTint replaces the colour outright
+     (AppCompat's tint is a SRC_IN filter: result = tint colour at tint alpha x shape alpha, so an
+     opaque shape is what lets a tint with its own alpha mean what it says - the same reasoning as
+     color/player_transport_circle_off.xml).
+     No ripple and no inset: this is decoration behind an icon, not a control. For the transport
+     buttons' tappable circle use drawable/bg_player_transport_circle.xml instead. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@android:color/white" />
+</shape>

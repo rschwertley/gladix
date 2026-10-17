@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
@@ -23,12 +24,10 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
-import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.backgroundIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -73,17 +72,6 @@ class StreamableMediaSource(
         error = null
         super.prepareSourceInternal(mediaTransferListener)
         Log.d("GladixPlayback", "prepareSourceInternal: ${mediaItem.mediaId} \"${mediaItem.mediaMetadata.title}\"")
-        // QUALITY-PROBE [emits p=3-prepare] SOURCE. Which item identity and serverIndex are ACTUALLY being prepared,
-        // and by which player - this is where "the sheet wrote 320 but something else got prepared"
-        // becomes visible, and where a second prepare of the same track shows up.
-        val probeSeq = QualityProbe.nextSeq()
-        QualityProbe.log(
-            "3-prepare", probeSeq, mediaItem.mediaId, null,
-            "serverIndex=" + mediaItem.serverIndex + " sourceIndex=" + mediaItem.sourceIndex +
-                " retries=" + mediaItem.retries + " loaded=" + mediaItem.isLoaded +
-                " item=" + QualityProbe.itemId(mediaItem) +
-                " factory=#" + Integer.toHexString(System.identityHashCode(loader))
-        )
         val handler = Util.createHandlerForCurrentLooper()
         loadJob = scope.launch {
             // 0 -> 1 edge only - see PlayerState.loadEpisodeStartMs for why not every increment.
@@ -178,39 +166,16 @@ class StreamableMediaSource(
         if (::actualSource.isInitialized) actualSource.releasePeriod(mediaPeriod)
     }
 
+    /**
+     * ⚠⚠ A serverIndex DIFFERENCE MUST RETURN false, AND THAT IS THE WHOLE CONTRACT.
+     * Returning true tells media3 to keep this source and swap the MediaItem on it, with no fresh
+     * prepare and therefore NO RE-RESOLVE - so a true here on a serverIndex change absorbs a
+     * quality-sheet choice silently, with the chip showing the new server and the old bytes still
+     * playing. Every field below is in the list for the same reason: it changes what would be
+     * resolved or demuxed, so it cannot be applied in place.
+     */
     override fun canUpdateMediaItem(mediaItem: MediaItem) = run {
-        // QUALITY-PROBE [emits p=3-canUpdate] CAN-UPDATE. Names the field that differed. A serverIndex difference MUST
-        // return false so media3 re-creates the source and re-resolves; if this ever returns true on
-        // a serverIndex change, a sheet choice is silently absorbed with no re-resolve at all.
         this.mediaItem.apply {
-            val differing = when {
-                retries != mediaItem.retries -> "retries"
-                serverIndex != mediaItem.serverIndex -> "serverIndex"
-                this.sourceIndex != mediaItem.sourceIndex -> "sourceIndex"
-                backgroundIndex != mediaItem.backgroundIndex -> "backgroundIndex"
-                subtitleIndex != mediaItem.subtitleIndex -> "subtitleIndex"
-                else -> "none"
-            }
-            // ⚠⚠ SUPPRESSED ONLY FOR *OTHER* QUEUE ITEMS, NEVER FOR THE CURRENT ONE.
-            // media3 asks this per HOLDER when it reuses sources across a playlist update
-            // (MediaSourceList.updateMediaSourcesWithMediaItems), so a 300-item replace would emit
-            // 300 lines of differing=none if ungated.
-            // ⚠️ BUT differing=none ON THE CURRENT ITEM IS THE LINE THAT DECIDES ONE
-            // HYPOTHESIS, so it must survive: "the sheet choice was absorbed with NO re-resolve".
-            // A serverIndex change MUST make this return false and force a fresh prepare; if it
-            // ever returns true on the current item after the sheet wrote a new index, the only
-            // evidence is a differing=none line for that mediaId. Gating on the difference alone
-            // would have deleted exactly that evidence - caught in review, 2026-10-16.
-            val probeIsCurrent =
-                mediaItem.mediaId == state.current.value?.mediaItem?.mediaId
-            if (differing != "none" || probeIsCurrent) QualityProbe.log(
-                "3-canUpdate", QualityProbe.nextSeq(), mediaItem.mediaId, null,
-                "differing=" + differing + " current=" + probeIsCurrent +
-                    " oldServerIndex=" + serverIndex +
-                    " newServerIndex=" + mediaItem.serverIndex +
-                    " oldItem=" + QualityProbe.itemId(this@StreamableMediaSource.mediaItem) +
-                    " newItem=" + QualityProbe.itemId(mediaItem)
-            )
             if (retries != mediaItem.retries) return@run false
             if (serverIndex != mediaItem.serverIndex) return@run false
             if (this.sourceIndex != mediaItem.sourceIndex) return@run false
@@ -226,19 +191,44 @@ class StreamableMediaSource(
         actualSource.updateMediaItem(mediaItem)
     }
 
+    /**
+     * [proxy] and [proxyUrl] are BOTH null unless LocalMediaServer.PLAY_THROUGH_LOCAL_SERVER is
+     * on, which is the whole of the Cast serving layer's reach into normal playback.
+     */
     data class Factories(
         val dash: Lazy<MediaSource.Factory>,
         val hls: Lazy<MediaSource.Factory>,
         val default: Lazy<MediaSource.Factory>,
+        val proxy: Lazy<MediaSource.Factory>? = null,
+        val proxyUrl: ((String) -> String?)? = null,
     ) {
         fun create(mediaItem: MediaItem, index: Int, source: Streamable.Source?): MediaSource {
+            val new = MediaItemUtils.buildForSource(mediaItem, index, source)
+            // ⚠⚠ THE TEST HOOK, AND IT IS A DIVERSION RATHER THAN AN ADDITION: with the
+            // flag on, the local player reads the SAME bytes over http from LocalMediaServer
+            // instead of through the resolving/caching chain, so the thing being verified is the
+            // server and not a parallel path that merely coexists with the real one.
+            // ⚠️ THREE CONSEQUENCES OF THE DIVERSION, STATED BECAUSE NONE IS A BUG:
+            // (1) nothing writes the SimpleCache while it is on - the caching chain is no longer
+            // in the local player's path and LocalMediaServer has a null write sink;
+            // (2) the uri now carries an `http` scheme, so DefaultLoadControl.isLocalPlayback
+            // flips to false for the first time ever on this codebase - harmless only because
+            // PlayerService.createExoplayer's explicit LoadControl gives BOTH classifications the
+            // same four values, which is the reason that block exists;
+            // (3) dash/hls are bypassed. A manifest source would be served as one progressive
+            // resource and fail, which is correct for a test hook and is stage 3's problem.
+            val diverted = proxyUrl?.let { lookup ->
+                new.localConfiguration?.uri?.toString()?.let(lookup)
+            }
+            if (diverted != null && proxy != null) return proxy.value.createMediaSource(
+                new.buildUpon().setUri(diverted).build()
+            )
             val type = (source as? Streamable.Source.Http)?.type
             val factory = when (type) {
                 Streamable.SourceType.DASH -> dash
                 Streamable.SourceType.HLS -> hls
                 Streamable.SourceType.Progressive, null -> default
             }
-            val new = MediaItemUtils.buildForSource(mediaItem, index, source)
             return factory.value.createMediaSource(new)
         }
     }
@@ -252,6 +242,12 @@ class StreamableMediaSource(
         downloadFlow: StateFlow<List<Downloader.Info>>,
         private val changeFlow: MutableSharedFlow<Pair<MediaItem, MediaItem>>,
         healthMonitor: HealthMonitor,
+        /**
+         * Key uri -> LocalMediaServer URL, or null for "use the ordinary chain". Null by default
+         * and non-null only from PlayerService.createExoplayer with the test flag on, so every
+         * other construction of this Factory is untouched.
+         */
+        private val proxyUrl: ((String) -> String?)? = null,
     ) : MediaSource.Factory {
 
         private val loader = StreamableLoader(app, extensions.music, downloadFlow, healthMonitor)
@@ -269,14 +265,32 @@ class StreamableMediaSource(
             dataSourceFactory, streamableResolver
         )
 
+        /**
+         * ⚠⚠ A PLAIN DataSource, DELIBERATELY NOT [dataSource] OR [cacheDataSource].
+         * Pointing a RESOLVING factory at the proxy URL would send it through
+         * StreamableResolver (whose toKey() fails on an http uri, so it would pass through) and
+         * then CacheDataSource, which would cache the proxy's response under a SECOND key - a
+         * duplicate copy on disk, and a replay that never touches the server being tested.
+         * DefaultDataSource covers http/https; the proxy is the only thing it is ever given.
+         * Declared ABOVE [cacheFactories] because Kotlin initialises properties in source order
+         * and both createFactories calls read it.
+         */
+        private val proxyFactory = if (proxyUrl == null) null else lazily {
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(app.context))
+        }
+
         private val cacheFactories = createFactories(cacheDataSource)
 
         private val factories = createFactories(dataSource)
 
+        // Both sets get the hook: which one a given item uses is StreamableMediaSource.getFactory's
+        // call, and the diversion has to be independent of that choice.
         private fun createFactories(dataSource: ResolvingDataSource.Factory) = Factories(
             lazily { DashMediaSource.Factory(dataSource) },
             lazily { HlsMediaSource.Factory(dataSource) },
-            lazily { DefaultMediaSourceFactory(dataSource) }
+            lazily { DefaultMediaSourceFactory(dataSource) },
+            proxyFactory,
+            proxyUrl
         )
 
         private var drmSessionManagerProvider: DrmSessionManagerProvider? = null

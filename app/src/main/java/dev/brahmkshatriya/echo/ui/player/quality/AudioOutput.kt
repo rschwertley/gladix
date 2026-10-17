@@ -3,9 +3,12 @@ package dev.brahmkshatriya.echo.ui.player.quality
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -117,6 +120,36 @@ object AudioOutput {
         AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE,
         AudioDeviceInfo.TYPE_USB_ACCESSORY -> R.drawable.ic_usb_24dp
         else -> R.drawable.ic_speaker_24dp
+    }
+
+    /**
+     * Route-change notifications for as long as a caller wants them. Returns false if the
+     * AudioManager is unavailable, in which case the caller simply stays on its last reading -
+     * there is nothing here worth failing a screen for.
+     *
+     * ⚠⚠ THE MAIN LOOPER IS PASSED DELIBERATELY, SO CALLBACKS CAN TOUCH VIEWS.
+     * registerAudioDeviceCallback's handler decides the callback thread; without one it uses the
+     * thread's own Looper, which is a trap waiting for the first caller that registers off the
+     * main thread.
+     * ⚠️ REGISTRATION ITSELF FIRES onAudioDevicesAdded WITH THE CURRENT DEVICE LIST.
+     * That is documented AudioManager behaviour, so a caller gets an immediate callback it did
+     * not cause - which is harmless here (it re-resolves to the same output) but means the
+     * callback must be idempotent, and that a caller cannot use "was I called?" to mean "did
+     * something change?".
+     */
+    fun registerDeviceCallback(context: Context, callback: AudioDeviceCallback): Boolean {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return false
+        return runCatching {
+            audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+            true
+        }.getOrDefault(false)
+    }
+
+    fun unregisterDeviceCallback(context: Context, callback: AudioDeviceCallback) {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return
+        runCatching { audioManager.unregisterAudioDeviceCallback(callback) }
     }
 
     // API 30+ in AOSP and NOT IN THE SDK - javap on android-37's android.jar shows Settings$Panel

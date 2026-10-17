@@ -2,7 +2,6 @@ package dev.brahmkshatriya.echo.playback
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -77,7 +76,6 @@ class CrossfadeController(
     private val isRestoring: () -> Boolean,
     private val skipFadeOnAlbums: () -> Boolean,
     private val isPausedForFocus: () -> Boolean,
-    private val isAndroidAutoConnected: () -> Boolean,
 ) {
 
     /** Slider value in seconds; 0 = off. Written on the app looper from PlayerService's prefs listener. */
@@ -108,14 +106,15 @@ class CrossfadeController(
         //   so its mute has to be lifted by force.
         // MAIN_RECOVERY: the main player was stopped, re-prepared or seeked under us (buffering
         //   watchdog, error retry) while ACTIVE.
-        // ANDROID_AUTO: AA connected mid-crossfade; see [onAndroidAutoConnected]. SUSPENDED FOR A
-        //   CAR TEST (2026-10-16) - unreachable while AA_CROSSFADE_GATE is false, kept so the
-        //   restore is one boolean. Do not prune it as a dead label.
-        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, ANDROID_AUTO,
-        // The one non-abort member, so the success path prints a line too: a capture with `ramp` and
-        // nothing after it would be undecidable between "it worked" and "the tick stopped".
-        COMPLETED,
+        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY,
     }
+
+    // ⚠️ `reason` IS NOW WRITE-ONLY, AND THE ENUM IS KEPT ANYWAY. Every value above
+    // used to be read by a probe line that printed it; the probes are gone (2026-10-17) and nothing
+    // consumes the label any more. It stays because it is the only record of WHY each of the twelve
+    // [abort] call sites aborts - `abort(Abort.STALL_HOLD)` says at the call site what a bare
+    // `abort()` would not - and because a future diagnostic wants exactly this set back. Expect an
+    // "unused parameter" warning on [abort]; that is this decision, not rot.
 
     private var phase = Phase.IDLE
     private var armedMediaId: String? = null
@@ -269,9 +268,10 @@ class CrossfadeController(
      * [onSeek] consult the latch; this hook did not, so every overlap tore itself down ~35 ms
      * after it started (device test 2026-10-15: two transitions, both reason=QUEUE_EDIT
      * sidecarState=3, audible as the old track cutting off with no overlap).
-     * ⚠️ THE ~35 ms WAS NOT ASYNCHRONY - DO NOT GO LOOKING FOR A POST. probeHandoff
-     * prints BEFORE the seek in [activate]; the gap is the cost of the seek machinery itself, and
-     * the removal, its onTimelineChanged and the abort all happened INSIDE the bracket.
+     * ⚠️ THE ~35 ms WAS NOT ASYNCHRONY - DO NOT GO LOOKING FOR A POST. The number
+     * came from a probe line (removed 2026-10-17) that printed BEFORE the seek in [activate]: the
+     * gap is the cost of the seek machinery itself, and the removal, its onTimelineChanged and the
+     * abort all happened INSIDE the bracket.
      */
     fun onQueueEdit() {
         if (handoffInFlight) return
@@ -305,19 +305,6 @@ class CrossfadeController(
         }
     }
 
-    /**
-     * AA connected while something was armed or overlapping. [armRefusal] keeps a new one from
-     * starting; this ends the one already in flight. Edge-triggered from PlayerService's
-     * carConnectionObserver rather than polled in the tick, because that observer is the sole
-     * writer of the flag it reads - there is no path to AA-connected that does not pass through it.
-     *
-     * ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16): its only caller is now gated on
-     * [AA_CROSSFADE_GATE], so nothing calls this while the flag is false. The function is kept
-     * intact - not deleted - because it is half of a one-boolean restore. [Abort.ANDROID_AUTO]
-     * stays in the enum for the same reason.
-     */
-    fun onAndroidAutoConnected() = abort(Abort.ANDROID_AUTO)
-
     fun onSkipSilenceChanged(enabled: Boolean) {
         sidecar.skipSilenceEnabled = enabled
     }
@@ -340,8 +327,8 @@ class CrossfadeController(
 
     private fun tickIdle() {
         if (fadeSeconds == 0) return
-        val refusal = armRefusal()
-        if (refusal != null) return probeRefusal(refusal)
+        // The string is now documentation only - see [armRefusal]. Non-null means "do not arm".
+        if (armRefusal() != null) return
         val duration = exoPlayer.duration
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         // Lead scaled by speed because a position threshold is MEDIA time while "25 seconds of
@@ -397,18 +384,18 @@ class CrossfadeController(
 
     // ── Arm / prepare / gate ────────────────────────────────────────────────────────────────────
 
-    /** Null when nothing refuses; otherwise the closed-set reason for the ARM probe line. */
+    /**
+     * Null when nothing refuses; otherwise a reason, which since 2026-10-17 is READ ONLY AS
+     * NON-NULL - the strings used to label a probe line and are kept because they name the
+     * conditions at the point that tests them, which a bare `false` would not.
+     *
+     * ⚠️ THERE IS NO ANDROID AUTO ARM HERE ANY MORE. One stood second in this list
+     * from 2026-05 to 2026-10-17; see [activate]'s note for the decision and the drive that
+     * settled it. If AA ever needs excluding again this is where it goes, and it must be checked
+     * early and cheaply as that one was.
+     */
     private fun armRefusal(): String? {
         if (isRestoring()) return "restore"
-        // Product decision 7: no overlap on Android Auto. Read the note at [activate] before
-        // touching this - the reason is a failure we can neither prevent nor detect, not a
-        // preference. Checked early and cheaply, so an AA session never arms at all.
-        // ⚠⚠ SUSPENDED FOR A CAR TEST (2026-10-16) VIA [AA_CROSSFADE_GATE], WHICH IS
-        // CURRENTLY false - so this arm never fires and AA sessions DO arm. The condition is left
-        // whole rather than removed so the restore is one boolean; see the flag's note for what
-        // the test is and why the premise is in doubt. The probe's aa= field records which
-        // transitions happened with AA connected, since that is now the variable.
-        if (AA_CROSSFADE_GATE && isAndroidAutoConnected()) return "androidAuto"
         val item = exoPlayer.currentMediaItem ?: return "noItem"
         // ⚠⚠ THE GATE BUDGET, AND WITHOUT IT THE RETRY IS UNBOUNDED RATHER THAN ABSENT.
         // [abort] sets phase=IDLE, and tickIdle re-arms the moment position >= duration - leadMs -
@@ -481,14 +468,13 @@ class CrossfadeController(
         if (duration == C.TIME_UNSET) return
         val position = exoPlayer.currentPosition
         val remaining = duration - position
-        if (remaining < MIN_REMAINING_MS) return probeArm(false, "tooShort")
+        if (remaining < MIN_REMAINING_MS) return
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         effectiveFadeMs = min(fadeSeconds * 1000L * speed, remaining.toFloat()).toLong()
         phase = Phase.ARMED
         armedMediaId = item.mediaId
         sidecarRePrepares = 0
         armedTailStartMs = duration - effectiveFadeMs
-        probeArm(true, "armed")
         maybePrepareSidecar()
     }
 
@@ -564,29 +550,31 @@ class CrossfadeController(
             sidecar.setMediaSource(tail.factory.createMediaSource(item), armedTailStartMs)
             sidecar.prepare()
         }.isSuccess
-        if (ok) sidecarPrepared = true else probeArm(false, "sidecarSourceFailed")
+        if (ok) sidecarPrepared = true
     }
 
     private fun evaluateGate(item: MediaItem, position: Long, duration: Long) {
         val buffered = exoPlayer.bufferedPosition
-        // Same reason as maybePrepareSidecar: no isLoading term. It is still PRINTED on the probe
-        // line, because "was the player still loading something" is useful context - but it is an
-        // observation, never a condition.
-        // Same tolerance as [maybePrepareSidecar], and it has to be the same or the sidecar prepares
-        // and then the gate refuses it for the identical handful of milliseconds.
+        // Same reason as maybePrepareSidecar: no isLoading term, and no tolerance of its own -
+        // same tolerance as [maybePrepareSidecar], or the sidecar prepares and then the gate
+        // refuses it for the identical handful of milliseconds.
         val playerReady = buffered >= duration - BUFFERED_EPSILON_MS
-        val gate = tail.gate(item)
         val sidecarReady = sidecar.playbackState == Player.STATE_READY
-        probeGate(playerReady, sidecarReady, buffered, duration, gate)
-        // ⚠⚠ gate.ready IS NO LONGER A CONDITION, ONLY A PROBE FIELD. It asked "is every
+        // ⚠⚠ [CORRECTED 2026-10-17] THIS NO LONGER CALLS tail.gate(item) AT ALL, AND
+        // THE PARAGRAPH BELOW IS WHY. The call's only remaining consumer was the removed probe
+        // line, so it had become per-tick content-index I/O feeding nothing. CacheOnlyTailSource
+        // .gate and its Gate type now have NO CALLERS - left in place rather than deleted here
+        // because deciding that is a separate call, and because the next cache question wants it.
+        // ⚠⚠ gate.ready WAS NO LONGER A CONDITION EVEN BEFORE THAT. It asked "is every
         // byte committed to the cache", which was the right proxy for "can the tail be read" only
         // while the tail had no upstream. It now refuses crossfades that would work: two
         // consecutive tracks on 2026-10-15 failed on cacheReason=incomplete alone (73% and 93%
         // committed) with the main player reporting the whole track buffered and not loading.
-        // ⚠️ sidecarReady IS THE HONEST SIGNAL: STATE_READY means the sidecar has actually
-        // buffered the tail, whichever side of the cache the bytes came from. KEEP PRINTING
-        // gate.reason - it is how we see whether the upstream fallback is being used, and if
-        // `incomplete` stops appearing entirely the completeness question has answered itself.
+        // ⚠️ sidecarReady IS THE HONEST SIGNAL, AND IS NOW THE ONLY ONE: STATE_READY
+        // means the sidecar has actually buffered the tail, whichever side of the cache the bytes
+        // came from. The old note asked to keep printing gate.reason to see whether the upstream
+        // fallback was being used; that question is answered - the 2026-10-17 drive crossfaded five
+        // times with the upstream in place - so the reading is no longer needed.
         if (playerReady && sidecarReady) {
             activate(position, duration)
             return
@@ -619,39 +607,58 @@ class CrossfadeController(
      *   9.   the main player's first post-flush frame publishes the token, still silent;
      *   10.  the next tick arms BOTH ramps with ONE length (see [startRamps]).
      *
-     * ⚠⚠ ANDROID AUTO: CROSSFADE IS DISABLED WHILE AA IS CONNECTED, AND THAT IS THE
-     * WHOLE GUARD. See [armRefusal]'s "androidAuto" arm and [onAndroidAutoConnected].
-     * ⚠⚠ SUSPENDED FOR A CAR TEST, 2026-10-16 - [AA_CROSSFADE_GATE] is false, so
-     * EVERYTHING IN THIS PARAGRAPH DESCRIBES THE RESTORED STATE, NOT THE CURRENT ONE. The argument
-     * below is kept in full and unedited because it is what the test is testing, and because its
-     * last clause - that re-enabling needs a car and someone listening - is the reason the flag
-     * exists rather than a rewrite. If the drive shows silence, flip the flag and this note is
-     * simply true again; if it does not, THAT is when this gets rewritten, with the date of the
-     * drive. The reasoning, because it went through two wrong answers first:
-     *   Every other skip path takes `if (isAndroidAutoConnected()) { player.pause(); delay(50) }`
-     *   before advancing (a14a8bc7, 2026-05-11, "Android Auto silent playback after skip fix"), and
-     *   the hand-off IS a skip. But pause() is not available to us here: a USER_REQUEST pause with
-     *   pausedForFocus=false makes AudioFocusListener ABANDON AUDIO FOCUS
-     *   (AudioFocusListener.onPlayWhenReadyChanged), and the sidecar shares this audio session, so
-     *   the guard would silence the tail mid-overlap and hand focus to another app.
-     * ⚠️ AND RAMP_TIMEOUT DOES NOT COVER IT - THAT ARGUMENT WAS WRONG AND IS RECORDED
-     * HERE SO IT IS NOT MADE AGAIN. The May symptom is "the next track appeared to play (progress
-     * moving) but produced no audio on any output": progress moving means frames WERE reaching the
-     * processor, so the overlap token would publish normally, the ramps would run, and nothing in
-     * this class would notice. The silence was downstream of us, in the AA AudioTrack. A failure we
-     * can neither prevent nor detect is a failure we must not risk, so the overlap simply does not
-     * happen on AA.
-     * ⚠️ RE-ENABLING THIS NEEDS A DELIBERATE CAR TEST, NOT A CODE REVIEW. It cannot be
-     * reasoned to: the question is whether an un-paused seek still kills the AA AudioTrack on
-     * current head units and current media3, and the only instrument for that is a car, a
-     * crossfaded transition, and someone listening. Until then this arm stays.
+     * ⚠⚠ ANDROID AUTO: CROSSFADE RUNS ON AA. DECIDED 2026-10-17, ON A DRIVE.
+     * There is no AA arm in [armRefusal], no AA abort hook, and no flag. From 2026-05-11 to
+     * 2026-10-17 the overlap was refused outright whenever AA was connected; it is not, now, and
+     * this paragraph is the record of why the change was allowed to be permanent.
+     *
+     * WHAT THE GUARD WAS FOR, because it was not a preference and the reason still has teeth.
+     * The May symptom (a14a8bc7, 2026-05-11, "Android Auto silent playback after skip fix", on
+     * media3 1.8.0) was "the next track appeared to play - progress moving - but produced no audio
+     * on any output". Every other skip path answers it with
+     * `if (isAndroidAutoConnected()) { player.pause(); delay(50) }` before advancing, and the
+     * hand-off IS a skip - but that pause was never available here: a USER_REQUEST pause with
+     * pausedForFocus=false makes AudioFocusListener ABANDON AUDIO FOCUS
+     * (AudioFocusListener.onPlayWhenReadyChanged), and the sidecar shares this audio session, so
+     * the guard would have silenced the tail mid-overlap and handed focus to another app. So the
+     * overlap was refused instead.
+     *
+     * ⚠️ AND RAMP_TIMEOUT NEVER COVERED IT - THAT ARGUMENT WAS WRONG AND IS KEPT HERE
+     * SO IT IS NOT MADE AGAIN. Progress moving means frames WERE reaching the processor, so the
+     * overlap token publishes normally, the ramps run, and nothing in this class notices. The
+     * silence was downstream of us, in the AA AudioTrack. That is why the question could not be
+     * closed by reading code: a failure we can neither prevent nor detect is only ever settled by
+     * someone listening to it.
+     *
+     * ⚠⚠ THE DRIVE, 2026-10-17, DESKTOP HEAD UNIT - what was actually observed, since
+     * this is the whole basis for the decision. FIVE crossfades with AA connected, every one
+     * COMPLETED; re-sync offset 0 on all five; no audio-focus loss; the audio indistinguishable
+     * from the same transitions on the phone. Next, Previous and Pause pressed MID-CROSSFADE each
+     * aborted cleanly and playback recovered. So the hand-off's un-paused seek does not kill the
+     * AA AudioTrack on a current head unit and current media3 - which is the one thing the guard
+     * existed to avoid and the one thing no amount of reading could establish.
+     *
+     * ⚠️ WHAT WOULD REOPEN IT, stated so a report is not mistaken for something else.
+     * A user describing "the next track plays with no sound" ON AA, with progress moving. That is
+     * the May symptom exactly, and it would mean the 1.8.0 failure is back or the head unit above
+     * is not representative - one drive on one unit is what this rests on. The fix is then the arm
+     * refusal, back in [armRefusal] as the second check.
+     * ⚠️ TWO THINGS THAT WERE NOT THE VARIABLE, so a re-test does not credit them: audio
+     * offload went from user-toggleable to unconditionally DISABLED (7c6b37d1, 2026-07-13,
+     * "Disable audio offload to fix silent playback on gapless auto-advance") and media3 went
+     * 1.8.0 -> 1.11.0 between the symptom and the drive. Either could be why it now works, and
+     * nothing distinguishes them - the May cause was NEVER IDENTIFIED, so this is a behavioural
+     * result, not an explained one.
+     * ⚠⚠ THE FIVE ERROR-PATH AA GUARDS IN PlayerEventListener ARE UNTOUCHED, AND THAT
+     * IS LOAD-BEARING FOR THE RESULT ABOVE. They are the May workaround itself (pause ->
+     * delay(50) -> skip) and they still run on every error-driven skip. The drive tested the
+     * hand-off WITH those guards in place; removing them would invalidate it.
      */
     private fun activate(position: Long, duration: Long) {
         val expected = armedTailStartMs + (position - (duration - effectiveFadeMs))
         val before = runCatching { sidecar.currentPosition }.getOrDefault(0L)
         val offset = before - expected
         val resync = abs(offset) > RESYNC_TOLERANCE_MS
-        probeHandoff(position, before, offset, resync, duration - position)
         runCatching {
             if (resync) sidecar.seekTo(expected)
             sidecar.volume = exoPlayer.volume
@@ -688,12 +695,10 @@ class CrossfadeController(
         rampStartedAtMs = System.currentTimeMillis()
         if (!ended) sidecarProcessor.startFadeOut(rampMs)
         mainProcessor.startFadeIn(rampMs)
-        probeRamp("queueInput", rampStartedAtMs - handoffAtMs, rampMs, tailRemaining)
     }
 
     /** The overlap ran its course: tear the sidecar down and return to IDLE for the new item. */
     private fun complete() {
-        val sidecarStateBefore = runCatching { sidecar.playbackState }.getOrDefault(-1)
         clearRampState()
         resetSidecar()
         phase = Phase.IDLE
@@ -701,7 +706,6 @@ class CrossfadeController(
         sidecarPrepared = false
         gateAttempts = 0
         gateAttemptsForMediaId = null
-        probeAbort(Abort.COMPLETED, sidecarStateBefore)
     }
 
     private fun clearRampState() {
@@ -757,7 +761,6 @@ class CrossfadeController(
      * budget the gate simply keeps failing on sidecarReady, which is the correct outcome.
      */
     private fun recoverEndedSidecar() {
-        probeSidecarEnded(sidecarRePrepares)
         if (sidecarRePrepares >= MAX_SIDECAR_REPREPARES) return
         sidecarRePrepares++
         resetSidecar()
@@ -799,155 +802,19 @@ class CrossfadeController(
      * ⚠⚠ ALWAYS SAFE TO CALL, FROM ANY PHASE, AND IT ALWAYS UN-MUTES. Item 4 of the Build 2
      * spec in one function: whatever hits the main player - watchdog stop/prepare, an error skip, a
      * user seek, a queue edit - the main processor comes out of it unmuted with both ramps cleared.
-     * The probe line is suppressed when there was nothing to abort, so an IDLE controller does not
-     * print on every hook.
+     *
+     * ⚠️ [reason] IS NOT READ - see the note on [Abort]. It documents the call site.
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun abort(reason: Abort) {
-        // Sampled BEFORE anything here touches the sidecar: the stop() below sets STATE_IDLE
-        // synchronously, so reading playbackState at the probe call would report the outcome of our
-        // own teardown. The useful number is what the sidecar had reached when the abort was decided -
-        // the same quantity the gate line's sidecarReady reports, so the two read against each other.
-        val sidecarStateBefore = runCatching { sidecar.playbackState }.getOrDefault(-1)
-        val wasIdle = phase == Phase.IDLE
         clearRampState()
         phase = Phase.IDLE
         armedMediaId = null
         sidecarPrepared = false
-        lastRefusal = null
-        lastRefusalId = null
         resetSidecar()
-        if (!wasIdle) probeAbort(reason, sidecarStateBefore)
-    }
-
-    // ── PROBE (2026-10-15), APPROVED FOR THE BUILD 2 TEST PERIOD ────────────────────────────────
-    // ⚠️ REMOVE ALL FIVE LINES IN ONE COMMIT once a capture shows an ARM verdict on every
-    // eligible track, a gate pass rate matching prediction, a re-sync offset distribution that says
-    // whether the re-sync can ever be dropped, and trigger=queueInput on every hand-off. They are
-    // grep-able as "CROSSFADE-PROBE".
-    // Each prints UNCONDITIONALLY on its path. The one exception is the arm REFUSAL line, which is
-    // edge-triggered per (item, reason): the tick evaluates it five times a second, so printing
-    // every time would bury the capture. A refusal therefore prints when it STARTS applying, which
-    // is the event; silence after it means "still the same reason", not "nothing ran".
-    // Labels come from closed sets decided by measured facts, never by the hypothesis under test.
-    private var lastRefusal: String? = null
-    private var lastRefusalId: String? = null
-
-    private fun probeRefusal(reason: String) {
-        val id = exoPlayer.currentMediaItem?.mediaId
-        if (reason == lastRefusal && id == lastRefusalId) return
-        lastRefusal = reason
-        lastRefusalId = id
-        probeArm(false, reason)
-    }
-
-    // ⚠️ BLOCK BODY, REQUIRED: any probe called as `return probeX(...)` must be block-bodied, because
-    // an expression body on Log.d infers Int and `return <Int>` from a Unit function does not compile.
-    // An explicit `: Unit = Log.d(...)` does NOT fix it - Kotlin coerces to Unit in lambdas, not in
-    // expression bodies - so the four probes below stay as they are only while they remain statements.
-    private fun probeArm(armed: Boolean, reason: String) {
-        Log.d(
-            TAG,
-            "CROSSFADE-PROBE arm armed=" + (if (armed) "yes" else "no") + " reason=" + reason +
-                " fade=" + fadeSeconds + "s id=" + exoPlayer.currentMediaItem?.mediaId +
-                " dur=" + exoPlayer.duration + " pos=" + exoPlayer.currentPosition +
-                " shuffle=" + sessionPlayer.shuffleModeEnabled + " repeat=" + exoPlayer.repeatMode +
-                // The car test's only variable, on the two lines that matter: aa=yes on an arm and
-                // on a hand-off is what makes a silent transition attributable afterwards. This is
-                // also what keeps isAndroidAutoConnected a USED parameter while the gate is
-                // suspended, so the restore needs no re-wiring in PlayerService.
-                " aa=" + (if (isAndroidAutoConnected()) "yes" else "no")
-        )
-    }
-
-    private fun probeGate(
-        playerReady: Boolean,
-        sidecarReady: Boolean,
-        buffered: Long,
-        duration: Long,
-        gate: CacheOnlyTailSource.Gate,
-    ) = Log.d(
-        TAG,
-        "CROSSFADE-PROBE gate gate=" + (if (playerReady && gate.ready && sidecarReady) "pass" else "fail") +
-            " bufferedEqDuration=" + playerReady + " buffered=" + buffered + " dur=" + duration +
-            " loading=" + exoPlayer.isLoading + " sidecarReady=" + sidecarReady +
-            " cachedBytes=" + gate.cachedBytes + " contentLength=" + gate.contentLength +
-            " cacheReason=" + gate.reason
-    )
-
-    private fun probeHandoff(
-        position: Long, sidecarPos: Long, offset: Long, resync: Boolean, remaining: Long,
-    ) = Log.d(
-        TAG,
-        "CROSSFADE-PROBE handoff pos=" + position + " sidecarPos=" + sidecarPos +
-            " offset=" + offset + " resync=" + (if (resync) "yes" else "no") +
-            " effFade=" + effectiveFadeMs + " remaining=" + remaining +
-            " aa=" + (if (isAndroidAutoConnected()) "yes" else "no")
-    )
-
-    private fun probeRamp(trigger: String, afterHandoffMs: Long, length: Long, tailRemaining: Long) =
-        Log.d(
-            TAG,
-            "CROSSFADE-PROBE ramp trigger=" + trigger + " afterHandoff=" + afterHandoffMs +
-                " rampMs=" + length + " tailRemaining=" + tailRemaining
-        )
-
-    private fun probeAbort(reason: Abort, sidecarStateBefore: Int) = Log.d(
-        TAG, "CROSSFADE-PROBE abort reason=" + reason + " sidecarState=" + sidecarStateBefore
-    )
-
-    // Prints on EVERY ENDED-while-ARMED detection, including the ones past the re-prepare budget.
-    // WHAT EACH OUTPUT DECIDES - written before the build, so the capture cannot come out
-    // undecidable (see [recoverEndedSidecar] for the two hypotheses):
-    //   tailDur known AND tailDur < seekTarget  -> hypothesis 1. The seek overshot the tail's own
-    //     end, i.e. the byte<->time mapping differs between the main stream and the cached replay.
-    //     Fix: clamp the seek to tailDur, or re-derive armedTailStartMs from the TAIL's duration.
-    //   tailDur = -9223372036854775807 (C.TIME_UNSET)  -> hypothesis 2. The seek was issued before
-    //     the extractor published a duration. Fix: seek on the sidecar's first READY instead of
-    //     inline after prepare().
-    //   tailDur known AND tailDur >= seekTarget  -> NEITHER. The seek was in range and something
-    //     else ended the tail; look at the tail source, not at this arithmetic.
-    //   mainDur != tailDur  -> corroborates hypothesis 1 independently of the seek target, and is
-    //     the single number worth reading first.
-    //   attempt=  -> 0 and 1 are recoveries; MAX_SIDECAR_REPREPARES means the budget is spent and
-    //     this track will not crossfade. A line with attempt=0 and no attempt=1 after it means the
-    //     re-prepare WORKED.
-    private fun probeSidecarEnded(attempt: Int) {
-        Log.d(
-            TAG,
-            "CROSSFADE-PROBE sidecarEnded seekTarget=" + armedTailStartMs +
-                " tailDur=" + runCatching { sidecar.duration }.getOrDefault(C.TIME_UNSET) +
-                " mainDur=" + exoPlayer.duration + " attempt=" + attempt
-        )
     }
 
     companion object {
-        private const val TAG = "GladixPlayback"
-
-        /**
-         * ⚠⚠ THE AA GATE, SUSPENDED FOR A CAR TEST (2026-10-16). false means crossfade
-         * RUNS on Android Auto. Set it back to true to restore the shipped behaviour - that is the
-         * whole restore, because both halves of the gate read this one flag: [armRefusal]'s
-         * "androidAuto" arm and PlayerService's carConnectionObserver call to
-         * [onAndroidAutoConnected].
-         * ⚠️ A FLAG RATHER THAN DELETED CODE, DELIBERATELY. The gate is not known to be
-         * unnecessary - it is UNTESTED since the conditions it was written for changed. Keeping both
-         * arms live and readable means the restore is one boolean under time pressure (in a car,
-         * with the symptom happening), not an archaeology exercise. Expect a "condition is always
-         * false" warning at both sites; that is the flag working, not a defect.
-         * ⚠⚠ WHAT THE TEST IS FOR, so the result can be recorded against it: the May
-         * symptom (a14a8bc7, 2026-05-11, on media3 1.8.0) was silence after an UN-PAUSED
-         * seekToNextMediaItem while AA was connected, and the hand-off is that same call. Since then
-         * audio offload went from a user-toggleable setting to unconditionally DISABLED (7c6b37d1,
-         * 2026-07-13, "Disable audio offload to fix silent playback on gapless auto-advance") and
-         * media3 went 1.8.0 -> 1.11.0. Neither is proof: the cause was NEVER IDENTIFIED (see
-         * [activate]'s note - it was downstream of us, in the AA AudioTrack), so only a drive can
-         * settle it. THE EAR IS THE INSTRUMENT; the probe only timestamps the hand-off.
-         * ⚠️ THE FIVE ERROR-PATH AA GUARDS IN PlayerEventListener ARE UNTOUCHED and must
-         * stay that way for this test to mean anything - they are the May workaround itself
-         * (pause -> delay(50) -> skip), and removing them would change two variables at once.
-         */
-        const val AA_CROSSFADE_GATE = false
-
         /** Thresholds carried from the reference implementation; see crossfade-status.md. */
         private const val ARM_LEAD_BASE_MS = 25_000L
         private const val ARM_LEAD_FLOOR_MS = 30_000L

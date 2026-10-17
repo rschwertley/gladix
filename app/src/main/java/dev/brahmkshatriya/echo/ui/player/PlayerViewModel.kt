@@ -32,9 +32,7 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
-import dev.brahmkshatriya.echo.utils.QualityProbe
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToNextCommand
@@ -430,14 +428,13 @@ class PlayerViewModel(
             // not cite this comment as evidence that one exists.
             val fullIndex =
                 queue.indexOfFirst { it.mediaId == playerState.current.value?.mediaItem?.mediaId }
-            // QUALITY-PROBE [emits p=2-apply] SHEET APPLY. fullIndex < 0 is a SILENT return today, which would
-            // lose the choice with no symptom - this is the line that would show it.
-            QualityProbe.log(
-                "2-apply", QualityProbe.nextSeq(), newItem.mediaId, player,
-                "fullIndex=" + fullIndex + " queueSize=" + queue.size +
-                    " newServerIndex=" + newItem.serverIndex +
-                    " newItem=" + QualityProbe.itemId(newItem)
-            )
+            // ⚠️ A SILENT RETURN THAT LOSES THE USER'S PICK, RECORDED RATHER THAN
+            // FIXED. If the current item is not in the controller's queue the chosen server is
+            // dropped with no snackbar, no retry and no log - the sheet closes and nothing changes,
+            // which reads as "the quality setting does not work". Left as-is because the 2026-10-16
+            // capture never saw fullIndex < 0 on a real pick, so there is no evidence it fires; if a
+            // report of a dead quality sheet ever arrives with no resolve in the log, THIS LINE IS
+            // THE FIRST SUSPECT.
             if (fullIndex < 0) return@withBrowser
             val oldPosition = player.currentPosition
             player.replaceMediaItem(fullIndex, newItem)
@@ -451,16 +448,6 @@ class PlayerViewModel(
         val index = item.serverWithDownloads(app.context).indexOf(server).takeIf { it != -1 }
             ?: return
         val newItem = MediaItemUtils.buildServer(item, index)
-        // QUALITY-PROBE [emits p=2-sheet] SHEET. Decides "the sheet write was lost" vs "the write landed and the
-        // resolve still returned 128". `was`/`now` are the serverIndex before and after
-        // buildServer; newItemIdentity is what point 3 must then report as the item being prepared.
-        QualityProbe.log(
-            "2-sheet", QualityProbe.nextSeq(), item.mediaId,
-            "picked=" + index + " was=" + item.serverIndex + " now=" + newItem.serverIndex +
-                " oldItem=" + QualityProbe.itemId(item) +
-                " newItem=" + QualityProbe.itemId(newItem) +
-                " sheetList=" + QualityProbe.servers(item.serverWithDownloads(app.context))
-        )
         changeCurrent(newItem)
     }
 

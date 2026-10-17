@@ -55,7 +55,18 @@ class StreamableDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         openCount.incrementAndGet()
-        Log.d("GladixPlayback", "StreamableDataSource.open: ${dataSpec.uri}")
+        // ⚠⚠ SCHEME + HASH, NEVER THE URI. At this point the RESOLVER HAS ALREADY RUN
+        // (StreamableResolver is above this in the chain), so dataSpec.uri is the RESOLVED one -
+        // for Streamable.Source.Http that is the extension's signed CDN URL, with its token and
+        // expiry in the query string. This line printed it in full on every open until
+        // 2026-10-17. The scheme is kept because it is the diagnostically useful half (raw:// vs
+        // https vs file:// tells you which arm of the `when` below was taken) and carries nothing
+        // secret; the hash makes repeat opens of the same resource comparable across lines.
+        val probeUri = dataSpec.uri.toString()
+        Log.d(
+            "GladixPlayback", "StreamableDataSource.open: " +
+                (dataSpec.uri.scheme ?: "?") + ":" + Integer.toHexString(probeUri.hashCode())
+        )
         val result = dataSpec.customData as? Result<*>
         val (factory, spec) = when (result) {
             null -> defaultDataSourceFactory to dataSpec

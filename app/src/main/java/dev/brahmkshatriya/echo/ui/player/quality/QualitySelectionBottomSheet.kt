@@ -1,6 +1,9 @@
 package dev.brahmkshatriya.echo.ui.player.quality
 
 import android.annotation.SuppressLint
+import android.content.res.ColorStateList
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.os.Bundle
 import android.text.TextUtils
 import android.util.Log
@@ -9,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.annotation.OptIn
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -20,6 +24,7 @@ import com.google.android.gms.cast.framework.CastStateListener
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.cast.CastAvailability
@@ -72,6 +77,14 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             val item = current?.mediaItem ?: return@observe
             val track = item.track
             binding.run {
+                // ⚠⚠ THIS CHIP REFLECTS serverIndex, NOT THE AUDIO BEING DECODED, AND
+                // IT IS NEVER EVIDENCE ABOUT BYTES. It shows which server was SELECTED; what the
+                // decoder was handed is the Format on the selected track group, which is a different
+                // thing whenever the extension steps a quality down on its own (DeezerTrackClient
+                // .createStreamableForQuality does exactly that, at three rungs). Recorded here
+                // because TWO investigations of "320 selected, 128 plays" were misled by reading
+                // this chip as the answer - the 2026-10-16 capture settled it only once a decoder
+                // Format was printed beside the chip and the two disagreed.
                 applyChips(
                     item.serverWithDownloads(requireContext()),
                     streamableServer, streamableServerGroup, item.serverIndex
@@ -136,6 +149,7 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
 
     private var castContext: CastContext? = null
     private var castStateListener: CastStateListener? = null
+    private var audioDeviceCallback: AudioDeviceCallback? = null
 
     /**
      * BUILD 1: DISCOVERY AND LOGGING ONLY. Nothing here plays, queues or resolves - the button
@@ -179,7 +193,16 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
     // Paired with bindCast. The CastContext is a process singleton, so the listener outlives this
     // sheet unless it is removed here - and the sheet is opened repeatedly, so leaking one per
     // open would multiply the log lines and hold a reference to a destroyed fragment.
+    // ⚠️ EVERYTHING HERE HAPPENS BEFORE super.onDestroyView(), AND THE ORDER IS
+    // LOAD-BEARING FOR THE AUDIO CALLBACK. AutoClearedValue clears `binding` from an onDestroy
+    // observer that runs as the view lifecycle is destroyed; unregistering first is what keeps a
+    // route change arriving during teardown from reaching a cleared binding. applyOutputIfAlive's
+    // guard covers the already-posted case that unregistering cannot.
     override fun onDestroyView() {
+        audioDeviceCallback?.let { callback ->
+            AudioOutput.unregisterDeviceCallback(requireContext(), callback)
+        }
+        audioDeviceCallback = null
         castStateListener?.let { listener ->
             runCatching { castContext?.removeCastStateListener(listener) }
         }
@@ -194,19 +217,37 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
      * STREAM_MUSIC system volume), never player.volume - see the note at
      * PlayerViewModel.deviceVolume.
      *
-     * ⚠️ THE OUTPUT LABEL IS READ ONCE, AT BIND. It is not observed, because the
-     * sheet is modal and short-lived - a route change while it is open is rare enough that a
-     * stale label costs less than an AudioDeviceCallback registration and its unregister. The
-     * VOLUME half IS live, because hardware keys are pressed while the sheet is open all the
-     * time. If route changes ever need to be live, that is an AudioDeviceCallback here, not a
-     * change to AudioOutput.
+     * ⚠⚠ [CORRECTED 2026-10-17] THE OUTPUT LABEL IS LIVE. THIS SAID IT WAS READ
+     * ONCE AT BIND AND THAT A ROUTE CHANGE WHILE THE SHEET IS OPEN WAS "RARE ENOUGH THAT A
+     * STALE LABEL COSTS LESS THAN AN AudioDeviceCallback REGISTRATION AND ITS UNREGISTER".
+     * That judgement was wrong on the frequency: connecting or disconnecting Bluetooth with the
+     * sheet open left the previous device named on screen, which is worse than a missing label
+     * because it reads as a fact. The registration is in [bindOutput] and the unregister in
+     * [onDestroyView], which is what the old note was weighing the cost of.
      */
     private fun bindOutput() {
-        val output = AudioOutput.current(requireContext())
-        binding.outputIcon.setImageResource(output.icon)
-        binding.outputLabel.text = output.name ?: getString(output.label)
+        applyOutput()
         binding.outputRow.setOnClickListener {
             AudioOutput.openSystemOutputSettings(requireContext())
+        }
+
+        // ⚠⚠ BOTH SIGNALS ARE REGISTERED BECAUSE NEITHER COVERS THE OTHER'S CASE,
+        // AND THAT IS NOT BELT-AND-BRACES. AudioDeviceCallback fires when a device APPEARS OR
+        // DISAPPEARS - plugging in headphones, a Bluetooth connect or drop. It does NOT fire when
+        // the ACTIVE ROUTE moves between devices that are all already present, which is exactly
+        // what the system output switcher does: nothing is added or removed, so the label would
+        // stay wrong. That case arrives instead as a DeviceInfo change on the player, which the
+        // deviceVolume observer below already collects - so the refresh there is the only cover
+        // for it.
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) =
+                applyOutputIfAlive()
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) =
+                applyOutputIfAlive()
+        }
+        if (AudioOutput.registerDeviceCallback(requireContext(), callback)) {
+            audioDeviceCallback = callback
         }
 
         // Write on STOP only. Each write is a cross-process setStreamVolume, so a per-pixel
@@ -225,10 +266,26 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             if (fromUser) binding.outputVolumePercent.text = getString(
                 R.string.percent_x, viewModel.deviceVolume.value.percentFor(value.toInt())
             )
+            updateVolumeLabelTint(value)
         }
+        // The first pass needs a laid-out overlay: updateVolumeLabelTint reads its measured
+        // width, which is 0 during onViewCreated, and nothing would re-trigger it afterwards
+        // for a volume that never changes while the sheet is open.
+        binding.volumeLabelOverlay.doOnLayout { updateVolumeLabelTint(binding.volumeSlider.value) }
 
         observe(viewModel.deviceVolume) { volume ->
             binding.volumeSlider.isEnabled = volume.available
+            // The second route signal - see the note at the AudioDeviceCallback above. AHEAD OF
+            // THE EARLY RETURN BELOW, DELIBERATELY: the route is not the slider's range, so a
+            // drag in progress or a not-yet-available range must not stop the label updating.
+            // This flow carries BOTH onDeviceVolumeChanged and onDeviceInfoChanged
+            // (PlayerUiListener routes them to one place), and it is the DeviceInfo half that
+            // means "the route moved".
+            // They are indistinguishable here, so this also re-resolves on every volume key
+            // press - one getAudioDevicesForAttributes binder call each. Cheap, and bounded by
+            // the sheet being open; if it ever shows in a trace, gate it on min/max having
+            // changed rather than dropping it, since that is the half that matters.
+            applyOutput()
             binding.outputVolumePercent.text =
                 getString(R.string.percent_x, volume.percent)
             // ⚠⚠ WIDEN, SET, THEN NARROW - AND THAT ORDER IS THE WHOLE POINT.
@@ -254,7 +311,69 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
                 binding.volumeSlider.valueFrom = low
                 binding.volumeSlider.valueTo = high
             }
+            // Explicit rather than relying on the change listener above: a RANGE change with an
+            // unchanged value fires no onValueChange but does move the active edge.
+            updateVolumeLabelTint(binding.volumeSlider.value)
         }
+    }
+
+    private fun applyOutput() {
+        val output = AudioOutput.current(requireContext())
+        binding.outputIcon.setImageResource(output.icon)
+        binding.outputLabel.text = output.name ?: getString(output.label)
+    }
+
+    /**
+     * ⚠⚠ THE GUARD IS NOT DEFENSIVE - binding THROWS AFTER onDestroyView.
+     * AutoClearedValue.getValue raises IllegalStateException once its onDestroy observer has
+     * nulled the value, and unregisterAudioDeviceCallback does not drain callbacks ALREADY
+     * POSTED to the main looper - so a Bluetooth event landing in the same frame as a dismiss
+     * can reach this after the views are gone. `view == null` is the cheap test for that;
+     * runCatching is the belt for anything that slips between the check and the read.
+     */
+    private fun applyOutputIfAlive() {
+        if (view == null) return
+        runCatching { applyOutput() }
+    }
+
+    /**
+     * Flips the in-track "Volume" label between the on-active and on-inactive foregrounds, so it
+     * stays legible when the active portion no longer reaches it.
+     *
+     * ⚠⚠ THE BOUNDARY IS MEASURED, NOT THE -18dp CONSTANT RESTATED. The track's
+     * extent is taken as the overlay's PARENT width, because the slider's negative margin is
+     * tuned so the track spans that FrameLayout exactly - so if that constant is off, this
+     * threshold is off by the same amount and in the same direction rather than independently
+     * wrong. Reading the thumb's pixel position would be the direct way and Slider exposes no
+     * getter for it.
+     * ⚠️ THE 8dp CLEARANCE IS WHAT STOPS IT FLICKERING. Without it the flip happens
+     * exactly as the active edge touches the label's last pixel, which during a drag means
+     * switching back and forth on adjacent frames and a half-contrast label at the crossover.
+     * Requiring the edge to clear the label by 8dp makes the transition happen while the label
+     * is already comfortably inside.
+     * ⚠️ RTL: the active track grows from the layout START, so the distance that
+     * matters is from the start edge to the overlay's far edge - which is `right` in LTR and
+     * `parentWidth - left` in RTL. Using `right` unconditionally would invert the behaviour.
+     */
+    private fun updateVolumeLabelTint(value: Float) {
+        val overlay = binding.volumeLabelOverlay
+        val parentWidth = (overlay.parent as? View)?.width ?: return
+        if (parentWidth <= 0 || overlay.width <= 0) return
+        val slider = binding.volumeSlider
+        val span = slider.valueTo - slider.valueFrom
+        val fraction = if (span <= 0f) 0f else
+            ((value - slider.valueFrom) / span).coerceIn(0f, 1f)
+        val isRtl = overlay.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val labelFarEdge = if (isRtl) parentWidth - overlay.left else overlay.right
+        val clearance = 8f * resources.displayMetrics.density
+        val onActive = parentWidth * fraction >= labelFarEdge + clearance
+        val colour = MaterialColors.getColor(
+            overlay,
+            if (onActive) com.google.android.material.R.attr.colorOnPrimary
+            else com.google.android.material.R.attr.colorOnSurfaceVariant
+        )
+        binding.volumeLabelIcon.imageTintList = ColorStateList.valueOf(colour)
+        binding.volumeLabelText.setTextColor(colour)
     }
 
     @OptIn(UnstableApi::class)

@@ -373,12 +373,15 @@
              The glyph stays 40dp with ~21dp of ink (ic_skip_previous_40dp's paths span 9.2-30.9 of
              a 40 viewport), so it sits comfortably inside the 48dp circle; iconSize was left alone
              deliberately rather than retuned by eye.
-             ⚠️ padding 12dp IS THE CENTRING ARITHMETIC, same rule as trackRepeat's 18dp:
-             12 + 40 + 12 = 64 = the width. Without it these inherited
-             Widget.Material3.Button.IconButton's 10dp (m3_btn_icon_only_default_padding), giving
-             10 + 40 + 10 = 60 and a 2dp leftward shift - small enough to pass unnoticed next to
-             trackRepeat's 6dp, and wrong for the same reason. See the full mechanism at
-             trackRepeat. -->
+             ⚠⚠ [CORRECTED 2026-10-17] CENTRING IS iconGravity=textStart, NOT PADDING.
+             THIS NOTE SAID "padding 12dp IS THE CENTRING ARITHMETIC ... 12 + 40 + 12 = 64 = the
+             width". That arithmetic was wrong and the mechanism was the wrong one; the padding is
+             gone again and these take the style's 10dp. The full decode is at trackRepeat - read
+             it there, not here. What matters locally: with textStart the position is
+             paddingStart + (width - iconSize - paddingStart - paddingEnd)/2, which for these is
+             14 + (64 - 40 - 14 - 14)/2 = 14 - 2 = 12, i.e. the 40dp glyph spans 12..52 and is
+             centred on 32 - INDEPENDENT OF THE PADDING, which is why restoring it costs nothing.
+             -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/trackPrevious"
             style="?attr/materialIconButtonStyle"
@@ -389,9 +392,10 @@
             android:contentDescription="@string/previous"
             android:enabled="false"
             android:outlineProvider="none"
-            android:padding="12dp"
             app:elevation="1dp"
             app:icon="@drawable/ic_skip_previous_40dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="40dp"
             app:iconTint="@color/button_player"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -483,9 +487,10 @@
             android:contentDescription="@string/next"
             android:enabled="false"
             android:outlineProvider="none"
-            android:padding="12dp"
             app:elevation="1dp"
             app:icon="@drawable/ic_skip_next_40dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="40dp"
             app:iconTint="@color/button_player"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -516,18 +521,51 @@
              which is why it is a button in the first place.
              iconTint stays @color/amoled_fg as the pre-colour default only; the observer replaces
              it with a PlayerColors.onBackground state list.
-             ⚠⚠ padding 18dp IS GEOMETRY, NOT BREATHING ROOM, AND IT IS WHAT CENTRES THE
-             GLYPH. 18 + 28 + 18 = 64 = the width. An icon-only MaterialButton is centred ONLY when
-             paddingLeft + iconSize + paddingRight equals the width, because MaterialButton does no
-             centring of its own: updateIconPosition (1.14.0 AAR) sets iconLeft = 0 and returns for
-             ICON_GRAVITY_START - the default - handing the icon to TextView as a compound drawable,
-             and TextView draws a LEFT compound drawable at paddingLeft, vertically centred.
-             AT THE OLD 12dp IT WAS 6dp LEFT OF CENTRE: 12 + 28 + 12 = 52, so the glyph sat at
-             x 12..40 of 64 (centre 26 against the circle's 32) - reported from a 1132 screenshot and
-             most visible in the OFF state, whose slash is the widest ink in the family (80% of the
-             box against 67% for ALL/ONE, since ONE's slash is strokeAlpha=0). The drawables are NOT
-             at fault: all three repeat vectors measure cx = cy = 20.00 in their own 40x40 viewport
-             with no translate or scale anywhere.
+             ⚠⚠ CENTRING IS app:iconGravity="textStart" PLUS app:iconPadding="0dp".
+             THE PADDING IS IRRELEVANT TO IT AND IS BACK TO ITS PRE-6c7a3fdd VALUE.
+             [CORRECTED 2026-10-17] THIS NOTE SAID "padding 18dp IS GEOMETRY ... 18 + 28 + 18 = 64
+             = the width. An icon-only MaterialButton is centred ONLY when paddingLeft + iconSize +
+             paddingRight equals the width". THAT SHIPPED IN 6c7a3fdd AND HAD NO VISIBLE EFFECT ON
+             DEVICE. Two things were wrong with it. First the arithmetic omitted the INSETS:
+             MaterialButtonHelper.loadFromAttributes ends with setPaddingRelative(paddingStart +
+             insetLeft, paddingTop + insetTop, paddingEnd + insetRight, paddingBottom +
+             insetBottom), and Widget.Material3.Button.IconButton sets android:insetLeft/insetRight
+             to m3_btn_inset = 4dp - so the effective padding is android:padding + 4dp per side and
+             18dp made the CONTENT BOX 20dp for a 28dp icon. Second, and the reason more arithmetic
+             was the wrong answer: the default ICON_GRAVITY_START does not position the icon by the
+             content box at all, so no padding value centres it reliably.
+             HOW textStart ACTUALLY CENTRES IT, decoded from the 1.14.0 bytecode so the next reader
+             does not have to:
+               updateIconPosition takes the early return - iconLeft = 0, no centring - only when
+                 canUpdateWithoutTextAlignment(iconGravity) is true, and that returns true
+                 UNCONDITIONALLY for ICON_GRAVITY_START (1) and _END (3), but for _TEXT_START (2)
+                 only when the text alignment is ALIGN_NORMAL.
+               Ours is ALIGN_CENTER: getActualTextAlignment maps the default
+                 TEXT_ALIGNMENT_GRAVITY through getGravityTextAlignment, which returns ALIGN_CENTER
+                 for CENTER_HORIZONTAL - and Base.Widget.AppCompat.Button, four parents up the
+                 materialIconButtonStyle chain, sets android:gravity=center_vertical|center_horizontal.
+               So textStart SKIPS the early return and getIconLeft runs:
+                 available = width - textLayoutWidth - paddingEnd - iconSize - secondaryIconSize
+                             - iconPadding - paddingStart, halved for ALIGN_CENTER.
+                 With no text that is (64 - 16 - 28 - 0 - 0 - 16)/2 = 2, and the glyph is drawn at
+                 paddingLeft + iconLeft = 16 + 2 = 18, spanning 18..46, centred on 32. The padding
+                 CANCELS OUT - it appears once positively and once inside `available` - which is
+                 why 12dp and 18dp look identical and why the sign is correct in RTL too
+                 (getIconLeft negates when isLayoutRTL() != (gravity == TEXT_END)).
+             ⚠️ app:iconPadding="0dp" IS PART OF THE FIX, NOT TIDYING: it is subtracted
+             inside `available`, so a non-zero value shifts the glyph by half of it. The
+             IconButton style already sets m3_btn_icon_only_icon_padding = 0dp, so this is a pin
+             against a future style change rather than a correction.
+             ⚠️ AND THE RUNTIME ICON SWAP CANNOT UNDO IT. setIcon(Drawable) calls
+             updateIconPosition itself (verified in the 1.14.0 bytecode - the call is inside
+             setIcon, not only in onLayout), so every repeat-state change RE-DERIVES iconLeft from
+             the current width. It also re-applies iconTint from the field and re-bounds the
+             drawable to app:iconSize, which is why the 40dp repeat vectors draw at 28dp and never
+             at their intrinsic size.
+             THE DRAWABLES WERE NEVER AT FAULT: all three repeat vectors measure cx = cy = 20.00 in
+             their own 40x40 viewport with no translate or scale. The OFF state is the one that
+             SHOWS a shift, because its slash is the widest ink in the family (80% of the box
+             against 67% for ALL/ONE, since ONE's slash is strokeAlpha=0).
              ⚠️ trackShuffle NEEDS NO EQUIVALENT because it is a MaterialCheckBox, and
              MaterialCheckBox.onDraw centres the button drawable itself when the text is empty
              (centerIfNoText: it translates the canvas by (width - intrinsicWidth) / 2). That is the
@@ -542,8 +580,10 @@
             android:contentDescription="@string/repeat"
             android:elevation="2dp"
             android:outlineProvider="none"
-            android:padding="18dp"
+            android:padding="12dp"
             app:icon="@drawable/ic_repeat_to_repeat_one_40dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="28dp"
             app:iconTint="@color/amoled_fg"
             app:layout_constraintBottom_toBottomOf="parent"
