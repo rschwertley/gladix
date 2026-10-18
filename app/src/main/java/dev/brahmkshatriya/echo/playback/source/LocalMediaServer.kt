@@ -14,12 +14,17 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import dev.brahmkshatriya.echo.common.models.Streamable
+import dev.brahmkshatriya.echo.cast.CastPlan
+import dev.brahmkshatriya.echo.cast.CastStreamStore
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.net.Inet4Address
 import java.net.ServerSocket
+import java.net.HttpURLConnection
 import java.net.Socket
+import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -95,6 +100,11 @@ class LocalMediaServer(
     private val context: Context,
     cache: SimpleCache,
     servers: MutableMap<String, Result<Streamable.Media.Server>>,
+    /**
+     * Supplies the finished file for a [CastPlan.Materialise] token. Null for a server used only
+     * by the debug hook, which materialises nothing.
+     */
+    private val store: CastStreamStore? = null,
 ) {
 
     private val resolver = StreamableResolver(context, servers)
@@ -148,6 +158,21 @@ class LocalMediaServer(
      */
     private val lengths = ConcurrentHashMap<String, Long>()
 
+    /**
+     * token -> how to serve it, for Cast. Deliberately SEPARATE from [tokens] rather than one map
+     * of a union type: a plan is minted per cast LOAD and dropped with the session, [tokens] exists
+     * only for the debug hook, and keeping them apart is what lets the debug path stay byte-for-byte
+     * what it was. Same LRU cap and the same reason - see the note on [tokens].
+     */
+    private val plans = LinkedHashMap<String, CastPlan>()
+
+    /**
+     * Guards the once-per-process cast-cache purge. Set on the first successful [start] rather
+     * than in a constructor, so the sweep happens when something actually intends to serve - a
+     * service teardown that merely touches this object must not do file I/O.
+     */
+    private var purgedCastCache = false
+
     val isRunning: Boolean get() = base != null
 
     /**
@@ -167,28 +192,63 @@ class LocalMediaServer(
     }
 
     /**
-     * ⚠️ CALLED BY [urlFor] ON DEMAND, AND DIRECTLY BY A CAST SESSION IN STAGE 3. The second
-     * caller is why this is public and why it does not assume the test flag: a Cast session needs the
-     * server up before the receiver is handed any URL, whereas the local test hook can bind lazily on
-     * the first stream.
+     * Registers a plan and returns its URL, or null when the plan needs no server or the server
+     * will not come up.
+     *
+     * ⚠⚠ Direct AND Refused RETURN null, AND THAT IS NOT A FAILURE PATH. Direct means
+     * the receiver fetches the origin itself - relaying those bytes would spend the phone's radio
+     * and battery on something nobody needs us to touch. Refused means the source cannot be cast at
+     * all. Callers distinguish the three by asking the plan, never by the null.
+     */
+    @Synchronized
+    fun urlForPlan(plan: CastPlan): String? {
+        if (plan is CastPlan.Direct || plan is CastPlan.Refused) return null
+        if (!start()) return null
+        val prefix = base ?: return null
+        val token = UUID.randomUUID().toString().replace("-", "")
+        plans[token] = plan
+        while (plans.size > MAX_TOKENS) {
+            val oldest = plans.keys.firstOrNull() ?: break
+            plans.remove(oldest)
+        }
+        Log.d(
+            TAG, "register plan=" + plan.javaClass.simpleName + " mime=" + plan.mime +
+                " token=" + keyHash(token) + " plans=" + plans.size
+        )
+        return prefix + PATH_PREFIX + token
+    }
+
+    /**
+     * Binds the socket and starts the accept loop. Idempotent - it returns early when already
+     * running, which is why [urlFor] and [urlForPlan] can both call it unconditionally.
+     *
+     * ⚠️ PUBLIC BECAUSE A CAST SESSION STARTS IT DIRECTLY, NOT ONLY THE DEBUG HOOK.
+     * CastSessionController.onCastStarted needs the server up before the receiver is handed any
+     * URL, and refuses the session when this returns false; the debug hook instead binds lazily on
+     * the first stream. That is also why nothing in here assumes [PLAY_THROUGH_LOCAL_SERVER].
+     *
+     * ⚠️ RUNS ON THE MAIN THREAD AT SESSION START, SO EVERYTHING IT DOES MUST BE
+     * BOUNDED: two ConnectivityManager queries and a bind to a local interface, with no network
+     * round trip. The one unbounded thing it triggers - the cast-cache purge below - is dispatched
+     * to [workers] rather than called.
      */
     @Synchronized
     fun start(): Boolean {
         if (running.get()) return true
         val address = wifiAddress()
         if (address == null) {
-            if (VERBOSE) Log.w(TAG, "not starting: no Wi-Fi IPv4 address")
+            Log.w(TAG, "not starting: no Wi-Fi IPv4 address")
             return false
         }
         val host = address.hostAddress
         if (host == null) {
-            if (VERBOSE) Log.w(TAG, "not starting: Wi-Fi address has no literal form")
+            Log.w(TAG, "not starting: Wi-Fi address has no literal form")
             return false
         }
         val opened = runCatching { ServerSocket(0, BACKLOG, address) }
         val socket = opened.getOrNull()
         if (socket == null) {
-            if (VERBOSE) Log.w(
+            Log.w(
                 TAG, "bind failed: " + (opened.exceptionOrNull()?.javaClass?.simpleName ?: "?")
             )
             return false
@@ -200,7 +260,18 @@ class LocalMediaServer(
         val thread = Thread({ acceptLoop(socket) }, THREAD_NAME)
         thread.isDaemon = true
         thread.start()
-        if (VERBOSE) Log.d(TAG, "listening on " + base)
+        Log.d(TAG, "listening on " + base)
+        // Once per process, after the bind so the log reads bind-then-purge. See
+        // CastStreamStore.purgeAll for why a session-end tidy-up is not enough.
+        // ⚠️ DISPATCHED, NOT CALLED, BECAUSE THIS FUNCTION RUNS ON THE MAIN THREAD AT
+        // SESSION START. CastSessionController.onCastStarted calls start() inline, and the purge is
+        // listFiles plus one delete per file - unbounded disk I/O. The flag is set here,
+        // synchronously, so a stop/start cycle in one process cannot dispatch it twice; ordering
+        // against a copy that is already running is CastStreamStore.purgeClaim's job.
+        if (!purgedCastCache) {
+            purgedCastCache = true
+            workers?.execute { store?.purgeAll() }
+        }
         return true
     }
 
@@ -223,8 +294,9 @@ class LocalMediaServer(
         workers?.shutdownNow()
         workers = null
         tokens.clear()
+        plans.clear()
         lengths.clear()
-        if (VERBOSE) Log.d(TAG, "stopped")
+        Log.d(TAG, "stopped")
     }
 
     /** Reuses this key's existing token when it has one, so a re-prepare does not grow the map. */
@@ -241,7 +313,7 @@ class LocalMediaServer(
             val oldest = tokens.keys.firstOrNull() ?: break
             tokens.remove(oldest)
         }
-        if (VERBOSE) Log.d(TAG, "registered key=" + keyHash(key) + " tokens=" + tokens.size)
+        Log.d(TAG, "registered key=" + keyHash(key) + " tokens=" + tokens.size)
         return token
     }
 
@@ -276,7 +348,7 @@ class LocalMediaServer(
                         // A worker must not die with a stack trace on the console for a stream the
                         // extension refused or a client that vanished; the request has already been
                         // answered or the socket is already gone.
-                        if (VERBOSE) Log.w(TAG, "serve failed: " + e.javaClass.simpleName)
+                        Log.w(TAG, "serve failed: " + e.javaClass.simpleName)
                     } finally {
                         runCatching { client.close() }
                     }
@@ -316,7 +388,7 @@ class LocalMediaServer(
         // for the media fetch and the body is irrelevant to it. 204 rather than 200 because there is
         // no body and a preflight response must not have one.
         if (method == "OPTIONS") {
-            if (VERBOSE) Log.d(TAG, "OPTIONS -> 204")
+            Log.d(TAG, "OPTIONS -> 204")
             runCatching {
                 writeHead(output, 204, "No Content", listOf("Connection: close"))
                 output.flush()
@@ -334,9 +406,17 @@ class LocalMediaServer(
         // ⚠️ ONE 404 FOR EVERY REJECTION, AND THE SAMENESS IS THE POINT. A wrong path, an
         // expired token and a never-registered token are indistinguishable from outside, so probing
         // learns nothing about what this device is playing.
+        // ⚠⚠ CAST PLANS FIRST, BECAUSE keyFor BELOW 404s ANY TOKEN IT DOES NOT KNOW.
+        // A token minted by [urlForPlan] is served from a local file or relayed from upstream; only
+        // the debug hook's tokens reach keyFor and the resolving chain.
+        val plan = if (token.isNullOrEmpty()) null else synchronized(this) { plans[token] }
+        if (plan != null) {
+            servePlan(output, method, rangeHeader, plan, token)
+            return
+        }
         val key = if (token.isNullOrEmpty()) null else keyFor(token)
         if (key == null) {
-            if (VERBOSE) Log.d(TAG, method + " unknown token -> 404")
+            Log.d(TAG, method + " unknown token -> 404")
             respondStatus(output, 404, "Not Found")
             return
         }
@@ -370,7 +450,7 @@ class LocalMediaServer(
         val remaining = opened.getOrNull()
         if (remaining == null) {
             runCatching { source.close() }
-            if (VERBOSE) Log.w(
+            Log.w(
                 TAG, "open failed key=" + keyHash(key) + " start=" + start + " " +
                     (opened.exceptionOrNull()?.javaClass?.simpleName ?: "?")
             )
@@ -415,7 +495,7 @@ class LocalMediaServer(
         headers.add("Connection: close")
 
         val status = if (range.isPartial) 206 else 200
-        if (VERBOSE) Log.d(
+        Log.d(
             TAG, method + " key=" + keyHash(key) + " range=" + (rangeHeader ?: "-") +
                 " -> " + status + " start=" + start + " len=" + bodyLength + " total=" + total
         )
@@ -445,12 +525,215 @@ class LocalMediaServer(
             // Routine, not a fault: every seek, scrub and stop abandons an in-flight response, and the
             // client closing its half is how that arrives here. Logged at debug only because a build
             // with the flag on is a build where the pattern of these IS the measurement.
-            if (VERBOSE) Log.d(
+            Log.d(
                 TAG, "aborted key=" + keyHash(key) + " written=" + written + " of " + bodyLength +
                     " " + e.javaClass.simpleName
             )
         } finally {
             runCatching { source.close() }
+        }
+    }
+
+    private fun servePlan(
+        output: OutputStream, method: String, rangeHeader: String?, plan: CastPlan, token: String,
+    ) {
+        when (plan) {
+            is CastPlan.File -> serveLocalFile(
+                output, method, rangeHeader, java.io.File(plan.path), plan.mime, token
+            )
+
+            is CastPlan.Materialise -> {
+                // The controller does not LOAD until the copy is complete, so a missing file here
+                // means the token outlived its file (session ended, or evicted by retain) rather
+                // than a race worth waiting on. 404 is the honest answer.
+                val file = store?.fileFor(token)
+                if (file == null) {
+                    Log.w(TAG, method + " token=" + keyHash(token) + " materialised file gone -> 404")
+                    respondStatus(output, 404, "Not Found")
+                } else {
+                    serveLocalFile(output, method, rangeHeader, file, plan.mime, token)
+                }
+            }
+
+            is CastPlan.Relay -> relayUpstream(
+                output, method, rangeHeader, plan.url, plan.headers, plan.mime, token
+            )
+
+            is CastPlan.Direct, is CastPlan.Refused -> {
+                // Never registered, so unreachable; answered rather than ignored so a future
+                // caller that registers one finds out here instead of hanging.
+                Log.w(TAG, method + " token=" + keyHash(token) + " unservable plan -> 404")
+                respondStatus(output, 404, "Not Found")
+            }
+        }
+    }
+
+    /**
+     * ⚠⚠ A REAL LENGTH MAKES EVERY RANGE SATISFIABLE, WHICH IS THE WHOLE POINT OF THE
+     * FILE MODES. File.length() is known before the first byte is written to the socket, so there is
+     * no unknown-length branch here and no 416 for an open-ended range - which is what a media
+     * element's first request is.
+     */
+    private fun serveLocalFile(
+        output: OutputStream, method: String, rangeHeader: String?, file: java.io.File,
+        mime: String, token: String,
+    ) {
+        val total = file.length()
+        if (total <= 0L) {
+            Log.w(TAG, method + " token=" + keyHash(token) + " empty file -> 404")
+            respondStatus(output, 404, "Not Found")
+            return
+        }
+        val range = parseRange(rangeHeader)
+        if (range == null) {
+            respondRangeError(output, total)
+            return
+        }
+        val start = if (range.suffix) (total - range.suffixLength).coerceAtLeast(0L)
+        else range.start
+        if (start >= total) {
+            respondRangeError(output, total)
+            return
+        }
+        val end = when {
+            range.suffix -> total - 1L
+            range.endInclusive >= 0L -> minOf(range.endInclusive, total - 1L)
+            else -> total - 1L
+        }
+        val bodyLength = end - start + 1L
+        val status = if (range.isPartial) 206 else 200
+        val headers = ArrayList<String>()
+        headers.add("Accept-Ranges: bytes")
+        headers.add("Content-Type: " + mime)
+        headers.add("Content-Length: " + bodyLength)
+        if (range.isPartial) headers.add(
+            "Content-Range: bytes " + start + "-" + end + "/" + total
+        )
+        headers.add("Connection: close")
+        Log.d(
+            TAG, method + " file token=" + keyHash(token) + " range=" + (rangeHeader ?: "-") +
+                " -> " + status + " type=" + mime + " len=" + bodyLength + " total=" + total
+        )
+        runCatching {
+            writeHead(output, status, if (range.isPartial) "Partial Content" else "OK", headers)
+            output.flush()
+        }
+        if (method == "HEAD") return
+        var written = 0L
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                raf.seek(start)
+                val buffer = ByteArray(BUFFER)
+                while (written < bodyLength) {
+                    val want = minOf(buffer.size.toLong(), bodyLength - written).toInt()
+                    val read = raf.read(buffer, 0, want)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    written += read
+                }
+            }
+            output.flush()
+        } catch (e: IOException) {
+            Log.d(
+                TAG, "file aborted token=" + keyHash(token) + " written=" + written +
+                    " of " + bodyLength + " " + e.javaClass.simpleName
+            )
+        }
+    }
+
+    /**
+     * ⚠⚠ THE PHONE FETCHES UPSTREAM WITH THE SOURCE'S HEADERS AND RELAYS THE ANSWER.
+     * This exists for exactly one reason: a receiver cannot be given per-request headers, so an
+     * extension whose CDN needs an Authorization or Referer can only be cast by someone who can send
+     * them. Upstream supplies the real Content-Length and honours the Range we forward, so nothing
+     * has to be copied first and playback starts immediately.
+     *
+     * ⚠️ HOP-BY-HOP AND UPSTREAM CORS HEADERS ARE DROPPED, AND BOTH FOR CONCRETE
+     * REASONS. Relaying Connection or Transfer-Encoding would describe UPSTREAM'S connection, not
+     * ours - a relayed `chunked` in particular would be a lie, because we write a plain body. And
+     * relaying upstream's Access-Control-* would let an origin that sends a restrictive policy
+     * override the permissive one the receiver needs from us; [writeHead] adds ours unconditionally.
+     */
+    private fun relayUpstream(
+        output: OutputStream, method: String, rangeHeader: String?, url: String,
+        headers: Map<String, String>, mime: String, token: String,
+    ) {
+        val connection = runCatching {
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = if (method == "HEAD") "HEAD" else "GET"
+                instanceFollowRedirects = true
+                connectTimeout = UPSTREAM_CONNECT_MS
+                readTimeout = UPSTREAM_READ_MS
+                headers.forEach { (name, value) -> setRequestProperty(name, value) }
+                if (rangeHeader != null) setRequestProperty("Range", rangeHeader)
+            }
+        }.getOrNull()
+        if (connection == null) {
+            Log.w(TAG, method + " relay token=" + keyHash(token) + " connect failed -> 502")
+            respondStatus(output, 502, "Bad Gateway")
+            return
+        }
+        val status = runCatching { connection.responseCode }.getOrDefault(-1)
+        if (status < 200) {
+            Log.w(TAG, method + " relay token=" + keyHash(token) + " no status -> 502")
+            runCatching { connection.disconnect() }
+            respondStatus(output, 502, "Bad Gateway")
+            return
+        }
+        val relayed = ArrayList<String>()
+        runCatching {
+            connection.headerFields.forEach { (name, values) ->
+                if (name == null) return@forEach
+                val lower = name.lowercase()
+                if (lower in DROPPED_HEADERS || lower.startsWith("access-control-")) return@forEach
+                values.forEach { value -> relayed.add(name + ": " + value) }
+            }
+        }
+        // Our own type wins only when upstream declined to say: a CDN that names the container is
+        // more authoritative than any ladder we could run over the URL.
+        if (relayed.none { it.lowercase().startsWith("content-type:") }) {
+            relayed.add("Content-Type: " + mime)
+        }
+        if (relayed.none { it.lowercase().startsWith("accept-ranges:") }) {
+            relayed.add("Accept-Ranges: bytes")
+        }
+        relayed.add("Connection: close")
+        val contentType = relayed.firstOrNull { it.lowercase().startsWith("content-type:") }
+            ?.substringAfter(':')?.trim() ?: mime
+        val contentLength = relayed.firstOrNull { it.lowercase().startsWith("content-length:") }
+            ?.substringAfter(':')?.trim() ?: "-"
+        Log.d(
+            TAG, method + " relay token=" + keyHash(token) + " range=" + (rangeHeader ?: "-") +
+                " -> " + status + " type=" + contentType + " len=" + contentLength
+        )
+        runCatching {
+            writeHead(output, status, connection.responseMessage ?: "OK", relayed)
+            output.flush()
+        }
+        if (method == "HEAD") {
+            runCatching { connection.disconnect() }
+            return
+        }
+        var written = 0L
+        try {
+            val upstream = if (status >= 400) connection.errorStream else connection.inputStream
+            upstream?.use { input ->
+                val buffer = ByteArray(BUFFER)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    written += read
+                }
+            }
+            output.flush()
+        } catch (e: IOException) {
+            Log.d(
+                TAG, "relay aborted token=" + keyHash(token) + " written=" + written +
+                    " " + e.javaClass.simpleName
+            )
+        } finally {
+            runCatching { connection.disconnect() }
         }
     }
 
@@ -597,8 +880,6 @@ class LocalMediaServer(
          */
         const val PLAY_THROUGH_LOCAL_SERVER = false
 
-        private const val VERBOSE = PLAY_THROUGH_LOCAL_SERVER
-
         private const val TAG = "GladixCastServer"
         private const val THREAD_NAME = "GladixLocalMediaServer"
         private const val PATH_PREFIX = "/stream/"
@@ -639,6 +920,15 @@ class LocalMediaServer(
          * media3's own constant rather than hardcoding -1L here.
          */
         private val LENGTH_UNSET: Long = C.LENGTH_UNSET.toLong()
+
+        /** Hop-by-hop headers: they describe UPSTREAM'S connection and must not be relayed. */
+        private val DROPPED_HEADERS = setOf(
+            "connection", "transfer-encoding", "keep-alive", "proxy-authenticate",
+            "proxy-authorization", "te", "trailer", "upgrade",
+        )
+
+        private const val UPSTREAM_CONNECT_MS = 15_000
+        private const val UPSTREAM_READ_MS = 30_000
 
         private const val BUFFER = 64 * 1024
         private const val BACKLOG = 8

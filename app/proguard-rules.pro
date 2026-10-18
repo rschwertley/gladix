@@ -96,17 +96,32 @@
 #    ⚠️ THE LINE NUMBER IN THE FRAME STILL MOVES BUILD TO BUILD and nothing here changes
 #    that - onPlayerError's lambda index and :2036 will keep shifting. Crashlytics tolerates that
 #    within one issue; what it cannot tolerate is the class name changing, which is all this fixes.
-#    SCOPE: the three packages that exist to hold exceptions. Deliberately NOT covered, because a
-#    package pattern cannot reach them and they have not churned: HealthMonitor$* (already rule 5),
-#    AppUpdater$Github*/UpdateException, Serializer$DecodingException, App$FileCacheTimeoutException
-#    and PagedSource$LoadingException - all nested in non-exception outer classes. If one of those
-#    ever files itself twice under different names, add it here with its own anchor.
--keep class dev.brahmkshatriya.echo.playback.exceptions.** { *; }
-# anchor: dev.brahmkshatriya.echo.playback.exceptions.PlayerException
--keep class dev.brahmkshatriya.echo.extensions.exceptions.** { *; }
-# anchor: dev.brahmkshatriya.echo.extensions.exceptions.AppException
--keep class dev.brahmkshatriya.echo.download.exceptions.** { *; }
-# anchor: dev.brahmkshatriya.echo.download.exceptions.DownloadException
+#    ⚠⚠ [CORRECTED 2026-10-18] SCOPED BY PACKAGE AND THAT MISSED MOST OF THEM.
+#    The three packages named below covered playback/extensions/download only, and the exceptions
+#    that actually kept re-filing were NESTED IN NON-EXCEPTION OUTER CLASSES, where no package
+#    pattern reaches: build 1136 still showed "xd" (ExtensionsViewModel's "Update failed for ..."
+#    wrapper) and "pd" (AppUpdater$GithubNoReleasesException), and the same "No releases found"
+#    report filed separately on 1133 and 1136. The old note even LISTED those classes as
+#    "deliberately not covered ... they have not churned", which was wrong on the second clause.
+#    One rule over every Throwable has no such gap, and it needs no maintenance when a new
+#    exception is added in a new place - which is the other half of why the package list failed.
+#    ⚠️ -keepnames, NOT -keep: NAMES ONLY, SHRINKING STILL ALLOWED. `-keepnames` is
+#    `-keep,allowshrinking`, so an exception class nothing constructs is still removed; only the
+#    names of the ones that survive are pinned. That is the whole requirement - Crashlytics groups
+#    on the class name at ingest - and it is why this costs almost nothing compared with the `{ *; }`
+#    form, which would also pin every member of every Throwable in every dependency.
+#    ⚠️ IT ALSO SUBSUMES THE ANTI-MERGE PROPERTY RULE 5 GETS FROM `{ *; }`: a class
+#    whose name must survive cannot be horizontally merged into a sibling. Rule 5 is deliberately
+#    left alone anyway - it keeps the OUTER HealthMonitor class too, which is not a Throwable, and
+#    its fields are read by the report itself.
+#    ⚠⚠ IF AN ANCHOR BELOW EVER FAILS, ASK WHICH OF TWO THINGS HAPPENED BEFORE
+#    CHANGING THE RULE. A missing mapping.txt line means EITHER R8 renamed the class (the rule is
+#    broken - a real failure) OR R8 shrank it away because nothing constructs it any more (the rule
+#    is working and the anchor is simply a bad choice). The anchors are picked to be classes that
+#    are definitely thrown, so the second case should not arise; if it does, move the anchor rather
+#    than widening the rule.
+-keepnames class * extends java.lang.Throwable
+# anchor: dev.brahmkshatriya.echo.playback.exceptions.PlayerException, extensions.exceptions.ExtensionNotFoundException, download.exceptions.DownloadException, utils.AppUpdater$GithubNoReleasesException
 
 
 # Preserve generics + all annotation variants + nested/lambda linkage so kotlinx.serialization type

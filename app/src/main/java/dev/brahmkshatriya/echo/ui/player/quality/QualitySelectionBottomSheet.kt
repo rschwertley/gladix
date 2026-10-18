@@ -149,6 +149,19 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
     private var audioDeviceCallback: AudioDeviceCallback? = null
 
     /**
+     * The last step this sheet wrote, so a drag issues ONE write per integer step instead of one
+     * per touch event. Null until the first write.
+     *
+     * ⚠⚠ RE-BASELINED BY THE OBSERVER ON EVERY EXTERNAL CHANGE, AND THAT IS NOT
+     * TIDINESS - WITHOUT IT THE DEDUPE GOES WRONG. Drag to 7 (written, remembered), then press
+     * hardware volume-down to 6, then drag back to 7: the step equals what we last wrote, the write
+     * is skipped, and the slider sits at 7 while the stream is at 6. So the observer sets this to
+     * whatever the system reports whenever it is not being dragged, which makes "what we wrote" and
+     * "what the system has" the same number by construction.
+     */
+    private var lastWrittenVolume: Int? = null
+
+    /**
      * BUILD 1: DISCOVERY AND LOGGING ONLY. Nothing here plays, queues or resolves - the button
      * opens the system route chooser and a connect produces a log line, nothing more. Playback
      * still goes to the local player whatever this says.
@@ -247,22 +260,39 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             audioDeviceCallback = callback
         }
 
-        // Write on STOP only. Each write is a cross-process setStreamVolume, so a per-pixel
-        // listener would fire dozens of them per drag; and the system volume moving under the
-        // thumb mid-drag is what makes a slider feel like it is fighting the user.
+        // ⚠⚠ THE VOLUME IS WRITTEN LIVE WHILE DRAGGING, ONCE PER INTEGER STEP.
+        // Every fromUser change reaches [writeVolumeStep], which writes only when the step actually
+        // changes: stepSize=1 makes `value` integral already, but onValueChange fires far more often
+        // than the step moves. A full-width drag of a STREAM_MUSIC range - commonly 15 or 25 steps -
+        // is therefore tens of writes, which is what the system's own volume panel does.
+        // ⚠⚠ ONE PER STEP IS A CORRECTNESS BOUND WHILE CASTING, NOT A TIDINESS ONE.
+        // Locally a write is one binder call; with a Cast session live it is a CastSession.setVolume
+        // out to the receiver over Wi-Fi. Per step that is simply what a remote volume slider has to
+        // do; per touch EVENT it would be a packet storm. Do not relax this to every float change.
+        // ⚠️ THE STEP MEMORY IS RE-BASELINED WHENEVER THE SYSTEM VOLUME MOVES ON ITS
+        // OWN. The observer below adopts the reported value once the finger is off the slider, so a
+        // hardware key press between two drags cannot leave the remembered step disagreeing with the
+        // stream - see lastWrittenVolume for the sequence that needs it.
+        // The stop write is a final flush through the same dedupe: free after a drag that already
+        // wrote its last step, and it pins the value for a tap that settles in a single event.
         binding.volumeSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
             override fun onStartTrackingTouch(slider: Slider) = Unit
             override fun onStopTrackingTouch(slider: Slider) {
-                viewModel.setDeviceVolume(slider.value.toInt())
+                writeVolumeStep(slider.value.toInt())
             }
         })
-        // The percentage follows the thumb during the drag even though the write does not, so the
-        // number is never stale while the finger is down. fromUser keeps this off the
-        // programmatic path, which the observer below owns.
+        // ⚠⚠ fromUser IS THE WHOLE FEEDBACK-LOOP GUARD, AND IT IS SUFFICIENT.
+        // Material's Slider reports fromUser=false for a programmatic `value =` assignment, and the
+        // ONLY programmatic assignment is the observer below - which is where a hardware key press
+        // arrives (onDeviceVolumeChanged -> deviceVolume -> observer -> slider.value). So a key press
+        // moves the thumb and writes nothing, and our own write's echo comes back through the same
+        // fromUser=false path. There is no second mechanism needed and no flag to keep in step.
         binding.volumeSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) binding.outputVolumePercent.text = getString(
+            if (!fromUser) return@addOnChangeListener
+            binding.outputVolumePercent.text = getString(
                 R.string.percent_x, viewModel.deviceVolume.value.percentFor(value.toInt())
             )
+            writeVolumeStep(value.toInt())
         }
 
         observe(viewModel.deviceVolume) { volume ->
@@ -293,6 +323,9 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             // stepSize=1 stays satisfied throughout because every bound here is an integer.
             // isPressed keeps our own drag from being overwritten by the echo of its own write.
             if (!volume.available || binding.volumeSlider.isPressed) return@observe
+            // Past the drag guard, so this is the system's own value and not an echo of ours: adopt
+            // it as the dedupe baseline. See lastWrittenVolume for the sequence that needs it.
+            lastWrittenVolume = volume.volume
             val low = volume.min.toFloat()
             val high = volume.max.toFloat()
             runCatching {
@@ -304,6 +337,17 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
                 binding.volumeSlider.valueTo = high
             }
         }
+    }
+
+    /**
+     * One write per integer step; see the note at the slider's listeners for why that bound matters.
+     * [PlayerViewModel.setDeviceVolume] owns WHERE it goes - the phone's STREAM_MUSIC normally, the
+     * receiver while a Cast session is live - and owns the Do Not Disturb failure message.
+     */
+    private fun writeVolumeStep(step: Int) {
+        if (step == lastWrittenVolume) return
+        lastWrittenVolume = step
+        viewModel.setDeviceVolume(step)
     }
 
     private fun applyOutput() {

@@ -144,9 +144,22 @@ class CacheOnlyTailSource(
      * NOTE AT THAT SITE BEFORE CHANGING ANY BUFFER VALUE, because this gate's margin is
      * downstream of it: the whole resource must be committed before the fade begins, and what
      * decides when that happens is minBufferMs.
-     * ⚠️ A `file://` SOURCE ALWAYS FAILS HERE and that is correct for this build: downloads bypass
-     * the cache entirely (getFactory(source) sends them to the non-cache factories), so they need a
-     * direct-file tail path instead. Deliberately not built yet.
+     * ⚠⚠ [CORRECTED 2026-10-18] A `file://` SOURCE STILL FAILS THIS GATE, BUT THAT NO
+     * LONGER STOPS A DOWNLOAD CROSSFADING, AND THE REASON IT USED TO IS NOT WHAT WAS WRITTEN HERE.
+     * What this returns for a download is noContentLength: the cache key is the `file://` uri, which
+     * is never written to SimpleCache, so getContentLength is LENGTH_UNSET. That was fatal only while
+     * gate.ready was a CONDITION; it stopped being one on 2026-10-15 (see the note above and
+     * CrossfadeController.evaluateGate, which now gates on playerReady && sidecarReady alone), and
+     * this function lost its last caller when the probe lines went. Decision 5 of 2026-10-11 - "a
+     * direct-file tail path, deliberately not built yet" - was therefore MET BY THE 1128 CHANGE
+     * rather than implemented, and VERIFIED ON DEVICE 2026-10-18: downloaded tracks crossfade exactly
+     * as streamed ones do. No file-tail source was written and none is needed.
+     * ⚠️ THE OLD NOTE'S MECHANISM WAS FALSE AND IS RECORDED SO IT IS NOT RE-DERIVED: it
+     * said downloads "bypass the cache entirely (getFactory(source) sends them to the non-cache
+     * factories)". getFactory splits on `source.isLive`, and StreamableLoader.loadServer builds a
+     * download's source with `toSource()`, whose isLive default is FALSE - so downloads take the
+     * CACHE factories like everything else. The tail reads the file through
+     * CacheDataSource(DefaultDataSource) as a permanent cache miss, which is why it works.
      */
     fun gate(item: MediaItem): Gate {
         // ⚠⚠ [CORRECTED 2026-10-14] THIS USED TO READ servers[item.mediaId] AND

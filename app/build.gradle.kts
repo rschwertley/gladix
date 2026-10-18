@@ -428,14 +428,24 @@ tasks.register("verifyExtensionAbi") {
         // symptom would be a silently missing Cast button rather than a crash. This anchor is
         // what turns that into a build failure instead.
         "dev.brahmkshatriya.echo.cast.CastOptionsProvider",
-        // Reported exception types - the three exceptions.** packages (rule 7). Non-ABI, same
-        // reasoning as the HealthMonitor anchors above: an unanchored keep rule is unverified.
-        // These exist so Crashlytics files one issue per defect instead of one per BUILD -
-        // PlayerException had no mapping.txt entry at all and arrived as "mn3" in 1129 and "on3"
-        // in 1132. One anchor per keep rule, because the three rules can lapse independently.
+        // Reported exception types - `-keepnames class * extends java.lang.Throwable` (rule 7).
+        // Non-ABI, same reasoning as the HealthMonitor anchors above: an unanchored keep rule is
+        // unverified. These exist so Crashlytics files one issue per defect instead of one per
+        // BUILD - PlayerException arrived as "mn3" on 1129 and "on3" on 1132, and after the first
+        // (package-scoped) attempt 1136 still showed "xd" and "pd" for the two update-failure
+        // types, which no exceptions.** pattern could reach.
+        // FOUR ANCHORS FOR ONE RULE, DELIBERATELY, AND SPREAD ACROSS PACKAGE SHAPES: two in
+        // dedicated exceptions.** packages, one NESTED in a non-exception outer class
+        // (AppUpdater), and one more top-level. A single anchor would verify the rule matched
+        // SOMETHING; these verify it matches the shapes that actually broke - the nested one is
+        // the case the previous rule missed entirely.
+        // AppException is NOT among them on purpose: it is sealed and abstract, so it is the one
+        // most likely to be shrunk away legitimately, which would fail the check while the rule
+        // was working. Concrete, definitely-thrown classes only.
         "dev.brahmkshatriya.echo.playback.exceptions.PlayerException",
-        "dev.brahmkshatriya.echo.extensions.exceptions.AppException",
+        "dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException",
         "dev.brahmkshatriya.echo.download.exceptions.DownloadException",
+        "dev.brahmkshatriya.echo.utils.AppUpdater\$GithubNoReleasesException",
     )
     doLast {
         val mappingFiles: List<File> = (mappingRoot.listFiles()?.toList().orEmpty())

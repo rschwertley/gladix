@@ -531,5 +531,7 @@
     <string name="cast_refused_android_auto">Can’t cast while Android Auto is connected</string>
     <string name="cast_stopped_android_auto">Casting stopped — Android Auto connected</string>
     <string name="cast_unavailable_while_casting">Not available while casting</string>
+    <string name="cast_unsupported_drm">This track is copy-protected and can’t be cast</string>
+    <string name="cast_unsupported_stream">This track’s format can’t be cast</string>
     <string name="volume_change_blocked">Couldn’t change the volume — Do Not Disturb may be blocking it</string>
 </resources>

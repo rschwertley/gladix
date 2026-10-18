@@ -49,6 +49,7 @@ import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.cast.CastSessionController
+import dev.brahmkshatriya.echo.cast.CastStreamStore
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Streamable
@@ -460,6 +461,7 @@ class PlayerService : MediaLibraryService() {
             scope = scope,
             state = state,
             localServer = localServer,
+            store = castStore,
             localPlayer = player,
             session = { mediaSession },
             tracking = { trackingListener },
@@ -895,7 +897,17 @@ class PlayerService : MediaLibraryService() {
      * cache keys match - see the class note. It can only serve a track whose server is already
      * resolved; StreamableResolver puts it there, and nothing here resolves.
      */
-    private val localServer by lazy { LocalMediaServer(app.context, cache, state.servers) }
+    /**
+     * ⚠⚠ DECLARED BEFORE [localServer] BECAUSE THE SERVER READS FROM IT. A
+     * CastPlan.Materialise token is served from the file this store produced, so the server needs
+     * the reference; nothing else does. Both are lazy, so a device that never casts constructs
+     * neither.
+     */
+    private val castStore by lazy { CastStreamStore(app.context, cache, state.servers) }
+
+    private val localServer by lazy {
+        LocalMediaServer(app.context, cache, state.servers, castStore)
+    }
 
     private var trackingListener: TrackingListener? = null
     private var castController: CastSessionController? = null
