@@ -155,8 +155,8 @@
 
     <string name="true_crossfade">Crossfade</string>
     <string name="true_crossfade_seconds_summary">Overlap in seconds (0–%1$d), 0 = off</string>
-    <string name="skip_fade_on_albums">Skip Fade on Albums</string>
-    <string name="skip_fade_on_albums_summary">Don\'t fade between tracks on the same album</string>
+    <string name="skip_fade_on_albums">No crossfade on albums</string>
+    <string name="skip_fade_on_albums_summary">Play an album\'s tracks back to back, without crossfading</string>
 
     <string name="history">History</string>
     <string name="clear_history">Clear History</string>
@@ -525,4 +525,11 @@
     <string name="usb_audio">USB audio</string>
     <string name="audio_output">Audio output</string>
     <string name="percent_x">%1$d%%</string>
+    <!-- Cast -->
+    <string name="cast_needs_wifi">Casting needs Wi-Fi — the TV has to reach this phone on the same network</string>
+    <string name="cast_stopped">Casting stopped</string>
+    <string name="cast_refused_android_auto">Can’t cast while Android Auto is connected</string>
+    <string name="cast_stopped_android_auto">Casting stopped — Android Auto connected</string>
+    <string name="cast_unavailable_while_casting">Not available while casting</string>
+    <string name="volume_change_blocked">Couldn’t change the volume — Do Not Disturb may be blocking it</string>
 </resources>

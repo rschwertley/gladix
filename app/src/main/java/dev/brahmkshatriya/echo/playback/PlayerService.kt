@@ -48,6 +48,8 @@ import androidx.media3.session.SessionToken
 import com.google.common.collect.ImmutableList
 import dev.brahmkshatriya.echo.MainActivity.Companion.getMainActivity
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.cast.CastSessionController
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
@@ -204,7 +206,13 @@ class PlayerService : MediaLibraryService() {
         // ⚠️ NOTHING HERE TOUCHES THE CROSSFADE ANY MORE. An AA connect used to abort an
         // overlap in flight (product decision 7); crossfade on AA was made permanent on 2026-10-17
         // after the drive recorded at CrossfadeController.activate, so the abort and the arm refusal
-        // both went. `wasConnected` survives for the disconnect-edge pause just below.
+        // both went.
+        // ⚠️ IT DOES STILL END A CAST SESSION, AND AA IS THE SIDE THAT WINS. Casting and
+        // AA are mutually exclusive; AA cannot be refused, because the system decides when
+        // projection connects, and the user has just got into a car - so the TV gives way, with a
+        // message from CastSessionController. Edge-triggered on the CONNECT edge only;
+        // `wasConnected` also serves the disconnect-edge pause just below.
+        if (!wasConnected && isConnected) castController?.onAndroidAutoConnected()
         if (wasConnected && !isConnected) {
             mediaSession?.player?.let { if (it.playWhenReady) it.pause() }
         }
@@ -417,9 +425,13 @@ class PlayerService : MediaLibraryService() {
                 app, scope, player, app.throwFlow, state.radio, extensions.music, downloadFlow
             )
         )
-        player.addListener(
-            TrackingListener(player, scope, extensions, state.current, app.throwFlow, historyRepository)
+        // Held, not anonymous, because CastSessionController feeds its isPlaying and position while
+        // casting - see TrackingListener.castSource for why the inputs move and the listener does not.
+        val tracking = TrackingListener(
+            player, scope, extensions, state.current, app.throwFlow, historyRepository
         )
+        trackingListener = tracking
+        player.addListener(tracking)
         player.addListener(effects)
         audioFocusListener = AudioFocusListener(this, player)
         carConnection = CarConnection(this)
@@ -437,6 +449,41 @@ class PlayerService : MediaLibraryService() {
         // PlayerEventListener / PlayerRadio / TrackingListener / effects / focus to a second player
         // would double-fire history, radio top-up and the skip breakers.
         crossfadeSessionPlayer = player
+
+        // ⚠⚠ BUILT HERE BECAUSE THIS IS WHERE THE SESSION PLAYER EXISTS, AND REGISTERED
+        // IMMEDIATELY BECAUSE A SESSION CAN START FROM THE TV. register() is a no-op when Play
+        // Services is missing or stale (CastAvailability returns null), so this costs nothing on a
+        // device that cannot cast - and it does NOT touch CastContext beyond that check, so the
+        // framework's discovery is still only started by the quality sheet.
+        val controller = CastSessionController(
+            app = app,
+            scope = scope,
+            state = state,
+            localServer = localServer,
+            localPlayer = player,
+            session = { mediaSession },
+            tracking = { trackingListener },
+            isAndroidAutoConnected = { isAndroidAutoConnected },
+            // Before the swap, while the local player is still the session player - see the note on
+            // CrossfadeController.onCastingStarted.
+            abortCrossfade = { crossfade?.onCastingStarted() },
+        )
+        castController = controller
+        controller.register()
+
+        // ⚠⚠ THE ONE DRIVER THAT KEEPS THE RECEIVER ON THE QUEUE'S CURRENT TRACK.
+        // Nothing is transferred to the receiver, so this is how it follows: the local queue changes
+        // current item - by a user Next, by a queue edit, or by the cast leg ending and
+        // CastSessionController advancing it - and the new item is loaded there. Every emission is
+        // passed on, including the UNLOADED one, because the controller's own guard decides what is
+        // already playing; see castedMediaId for why that split is necessary.
+        scope.launch {
+            state.current.collect {
+                if (CastState.isCasting) withContext(Dispatchers.Main) {
+                    controller.loadCurrentOnCast(positionMs = 0L, play = true)
+                }
+            }
+        }
         syncCrossfade()
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -791,10 +838,15 @@ class PlayerService : MediaLibraryService() {
         // down, so no request can open a DataSource against a cache that is about to be released.
         // Safe when never started - stop() on an unstarted server is a no-op, and touching the lazy
         // here only constructs the object.
-        // ⚠️ WIDEN THIS GUARD IN STAGE 3. It is correct only while the TEST FLAG is the
-        // sole thing that can start the server; once a Cast session can, this must stop it with no
-        // flag in the condition, or a session started without the flag would leak the socket.
-        if (LocalMediaServer.PLAY_THROUGH_LOCAL_SERVER) localServer.stop()
+        // ⚠⚠ [WIDENED 2026-10-17] NO FLAG IN THIS CONDITION ANY MORE. The note here
+        // said to widen it once a Cast session could start the server, and one can: unregister()
+        // ends any live session, which stops the server through the normal path, and the
+        // unconditional stop below catches a server started by the debug flag or left up by a
+        // session that never reported its end. stop() on an unstarted server is a no-op.
+        castController?.unregister()
+        castController = null
+        trackingListener = null
+        localServer.stop()
         mediaSession?.run {
             // Flush the debounced queue save synchronously BEFORE releasing the player and cancelling
             // the scope (which would drop a pending scheduleSaveQueue). Must run before player.release()
@@ -844,6 +896,9 @@ class PlayerService : MediaLibraryService() {
      * resolved; StreamableResolver puts it there, and nothing here resolves.
      */
     private val localServer by lazy { LocalMediaServer(app.context, cache, state.servers) }
+
+    private var trackingListener: TrackingListener? = null
+    private var castController: CastSessionController? = null
 
     private val mediaChangeFlow = MutableSharedFlow<Pair<MediaItem, MediaItem>>()
 

@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -106,7 +107,10 @@ class CrossfadeController(
         //   so its mute has to be lifted by force.
         // MAIN_RECOVERY: the main player was stopped, re-prepared or seeked under us (buffering
         //   watchdog, error retry) while ACTIVE.
-        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY,
+        // CASTING: a Cast session started while something was armed or overlapping; see
+        //   [onCastingStarted]. The overlap is a property of the LOCAL output, and while casting
+        //   there is no local output.
+        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, CASTING,
     }
 
     // ⚠️ `reason` IS NOW WRITE-ONLY, AND THE ENUM IS KEPT ANYWAY. Every value above
@@ -305,6 +309,17 @@ class CrossfadeController(
         }
     }
 
+    /**
+     * A Cast session started while something was armed or overlapping. [armRefusal] keeps a new one
+     * from starting; this ends the one already in flight.
+     *
+     * ⚠️ CALLED BEFORE THE SESSION PLAYER IS SWAPPED, from CastSessionController's
+     * start path, so the un-mute lands on the local player while it is still the session player and
+     * while [abort] can still reach its processors. Aborting after the swap would leave the main
+     * processor muted on a player nothing is driving - silence the user cannot clear.
+     */
+    fun onCastingStarted() = abort(Abort.CASTING)
+
     fun onSkipSilenceChanged(enabled: Boolean) {
         sidecar.skipSilenceEnabled = enabled
     }
@@ -396,6 +411,13 @@ class CrossfadeController(
      */
     private fun armRefusal(): String? {
         if (isRestoring()) return "restore"
+        // ⚠⚠ NO OVERLAP WHILE CASTING, AND UNLIKE THE OLD ANDROID AUTO ARM THIS ONE IS
+        // NOT A WORKAROUND FOR AN UNDIAGNOSED FAILURE - IT IS ARITHMETIC. A crossfade is two local
+        // AudioTracks ramping against each other through AudioEffectsProcessor; while casting there
+        // is no local audio at all, so there is nothing to ramp and the sidecar would prepare, fetch
+        // a tail and fade silence. Checked second, next to the other cheap one, for the same reason
+        // the AA arm was: a casting session must never arm.
+        if (CastState.isCasting) return "casting"
         val item = exoPlayer.currentMediaItem ?: return "noItem"
         // ⚠⚠ THE GATE BUDGET, AND WITHOUT IT THE RETRY IS UNBOUNDED RATHER THAN ABSENT.
         // [abort] sets phase=IDLE, and tickIdle re-arms the moment position >= duration - leadMs -

@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.ui.player.quality
 
 import android.annotation.SuppressLint
-import android.content.res.ColorStateList
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.os.Bundle
@@ -12,7 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.annotation.OptIn
-import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -24,7 +22,6 @@ import com.google.android.gms.cast.framework.CastStateListener
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.cast.CastAvailability
@@ -266,12 +263,7 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             if (fromUser) binding.outputVolumePercent.text = getString(
                 R.string.percent_x, viewModel.deviceVolume.value.percentFor(value.toInt())
             )
-            updateVolumeLabelTint(value)
         }
-        // The first pass needs a laid-out overlay: updateVolumeLabelTint reads its measured
-        // width, which is 0 during onViewCreated, and nothing would re-trigger it afterwards
-        // for a volume that never changes while the sheet is open.
-        binding.volumeLabelOverlay.doOnLayout { updateVolumeLabelTint(binding.volumeSlider.value) }
 
         observe(viewModel.deviceVolume) { volume ->
             binding.volumeSlider.isEnabled = volume.available
@@ -311,9 +303,6 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
                 binding.volumeSlider.valueFrom = low
                 binding.volumeSlider.valueTo = high
             }
-            // Explicit rather than relying on the change listener above: a RANGE change with an
-            // unchanged value fires no onValueChange but does move the active edge.
-            updateVolumeLabelTint(binding.volumeSlider.value)
         }
     }
 
@@ -334,46 +323,6 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
     private fun applyOutputIfAlive() {
         if (view == null) return
         runCatching { applyOutput() }
-    }
-
-    /**
-     * Flips the in-track "Volume" label between the on-active and on-inactive foregrounds, so it
-     * stays legible when the active portion no longer reaches it.
-     *
-     * ⚠⚠ THE BOUNDARY IS MEASURED, NOT THE -18dp CONSTANT RESTATED. The track's
-     * extent is taken as the overlay's PARENT width, because the slider's negative margin is
-     * tuned so the track spans that FrameLayout exactly - so if that constant is off, this
-     * threshold is off by the same amount and in the same direction rather than independently
-     * wrong. Reading the thumb's pixel position would be the direct way and Slider exposes no
-     * getter for it.
-     * ⚠️ THE 8dp CLEARANCE IS WHAT STOPS IT FLICKERING. Without it the flip happens
-     * exactly as the active edge touches the label's last pixel, which during a drag means
-     * switching back and forth on adjacent frames and a half-contrast label at the crossover.
-     * Requiring the edge to clear the label by 8dp makes the transition happen while the label
-     * is already comfortably inside.
-     * ⚠️ RTL: the active track grows from the layout START, so the distance that
-     * matters is from the start edge to the overlay's far edge - which is `right` in LTR and
-     * `parentWidth - left` in RTL. Using `right` unconditionally would invert the behaviour.
-     */
-    private fun updateVolumeLabelTint(value: Float) {
-        val overlay = binding.volumeLabelOverlay
-        val parentWidth = (overlay.parent as? View)?.width ?: return
-        if (parentWidth <= 0 || overlay.width <= 0) return
-        val slider = binding.volumeSlider
-        val span = slider.valueTo - slider.valueFrom
-        val fraction = if (span <= 0f) 0f else
-            ((value - slider.valueFrom) / span).coerceIn(0f, 1f)
-        val isRtl = overlay.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        val labelFarEdge = if (isRtl) parentWidth - overlay.left else overlay.right
-        val clearance = 8f * resources.displayMetrics.density
-        val onActive = parentWidth * fraction >= labelFarEdge + clearance
-        val colour = MaterialColors.getColor(
-            overlay,
-            if (onActive) com.google.android.material.R.attr.colorOnPrimary
-            else com.google.android.material.R.attr.colorOnSurfaceVariant
-        )
-        binding.volumeLabelIcon.imageTintList = ColorStateList.valueOf(colour)
-        binding.volumeLabelText.setTextColor(colour)
     }
 
     @OptIn(UnstableApi::class)

@@ -24,6 +24,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoTimeoutException
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Message
@@ -205,7 +206,17 @@ class PlayerEventListener(
     // Every skip in this listener is an INVOLUNTARY auto-skip (a failed/stuck current track). Route
     // them through here so ShufflePlayer removes the departing track WITHOUT pushing it to the play-
     // history back-stack (Seam 3) — Previous must never land back on a dead track that would re-fail.
+    // ⚠⚠ REFUSED WHILE CASTING, AND THIS ONE FUNCTION IS WHY THE ERROR PATH AND THE
+    // WATCHDOG PATH BOTH NEEDED ONLY ONE GATE. While a Cast session is live the audio the user hears
+    // is the receiver's; the local player is parked and anything that goes wrong with it is, by
+    // definition, not what is playing. Letting a local failure advance the queue would skip a track
+    // the TV is in the middle of - the queue is shared, the audio is not.
+    // ⚠️ A REAL CAST-SIDE FAILURE STILL MOVES THE QUEUE, just not through here:
+    // CastSessionController's own remote listener ends the session on a receiver error, and the
+    // STATE_ENDED path advances normally. So refusing here loses no recovery, it only stops the
+    // parked leg from driving.
     private fun skipInvoluntarily() {
+        if (CastState.isCasting) return
         (player as? ShufflePlayer)?.suppressPushOnNextAdvance = true
         involuntarySkipInFlight = true
         try {
@@ -648,6 +659,15 @@ class PlayerEventListener(
         bufferingWatchdog = scope.launch {
             delay(BUFFERING_WATCHDOG_MS)
             withContext(Dispatchers.Main) {
+                // ⚠⚠ A PARKED PLAYER IS NOT A STUCK ONE. While casting the local player
+                // is deliberately not playing, and it can sit in STATE_BUFFERING having loaded what
+                // its LoadControl allows with nothing consuming it. Every branch below reacts by
+                // stopping, re-preparing or skipping - all three would disrupt the cast for a leg
+                // nobody is listening to. Returning WITHOUT re-arming is deliberate: arming is driven
+                // by player state changes, so the watchdog comes back on its own once the local leg
+                // is doing something real again, instead of waking every few seconds for the length
+                // of a cast session.
+                if (CastState.isCasting) return@withContext
                 if (player.playbackState != Player.STATE_BUFFERING) return@withContext
                 // RESOLVE-IN-FLIGHT SUPPRESSION: a stream resolution is actively running and we are
                 // still inside the grace window → the buffering is expected, not stuck. Re-arm and wait

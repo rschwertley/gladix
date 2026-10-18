@@ -48,10 +48,36 @@ class TrackingListener(
     private var current: MediaItem? = null
     private var previousId: String? = null
 
+    /**
+     * ⚠⚠ THE PLAYER TO ASK "AM I PLAYING, AND WHERE" - THE LOCAL ONE UNLESS A CAST
+     * SESSION IS LIVE. Null when not casting, and then every read below is the local player exactly
+     * as before; CastSessionController sets it to the RemoteCastPlayer on session start and back to
+     * null on session end.
+     *
+     * ⚠⚠ WHY THE INPUTS MOVE AND NOT THE LISTENER. This class is registered on the
+     * LOCAL player and stays there, because its track IDENTITY comes from `currentFlow` - the local
+     * queue - which is still correct while casting: nothing is transferred, the local queue still
+     * advances, so onTrackChanged already fires for the right track with no cast code at all. The
+     * only things that go stale are position/duration and isPlaying, because the local player is
+     * parked. Feeding those two is strictly smaller than a second listener and, decisively, it keeps
+     * ONE 30 s PauseTimer and ONE history record per track: two independent timers would have to
+     * agree about who had already recorded a track across a mid-track swap, which is exactly the
+     * double-count this avoids by construction.
+     *
+     * ⚠️ THE SWAP ITSELF PRODUCES NO TRACK CHANGE, in either direction, which is what
+     * makes a mid-track swap safe: `currentFlow` does not emit, so the timer is neither reset nor
+     * restarted and simply keeps accumulating against the same track.
+     */
+    @Volatile
+    var castSource: Player? = null
+
+    private val source: Player get() = castSource ?: player
+
     private suspend fun getDetails(): TrackDetails? {
         val item = current ?: return null
         val (pos, total) = withContext(Dispatchers.Main) {
-            player.currentPosition to player.duration.takeIf { it != C.TIME_UNSET }
+            val from = source
+            from.currentPosition to from.duration.takeIf { it != C.TIME_UNSET }
         }
         return TrackDetails(item.extensionId, item.track, item.context, pos, total)
     }
@@ -130,7 +156,7 @@ class TrackingListener(
         oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
     ) {
         scope.launch {
-            val isPlaying = withContext(Dispatchers.Main) { player.isPlaying }
+            val isPlaying = withContext(Dispatchers.Main) { source.isPlaying }
             playState.value = getDetails() to isPlaying
         }
         if (reason == 2 || current == null) return

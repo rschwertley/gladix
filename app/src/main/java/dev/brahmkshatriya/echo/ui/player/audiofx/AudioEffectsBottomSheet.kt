@@ -18,6 +18,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.databinding.DialogPlayerAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.playback.CrossfadeController
@@ -174,12 +175,45 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             skipFadeOnAlbumsSwitch.setOnCheckedChangeListener { _, isChecked ->
                 appSettings.edit { putBoolean(SKIP_FADE_ON_ALBUMS, isChecked) }
             }
+
+            // ⚠⚠ EVERY EFFECT HERE ACTS ON THE PHONE'S OWN AudioTrack, SO NONE OF IT DOES
+            // ANYTHING WHILE CASTING - AND SAYING SO IS THE POINT. Bass boost and the speed/pitch
+            // pair run in AudioEffectsProcessor, the equalizer row opens the system panel for OUR
+            // audio session, and crossfade is refused outright by CrossfadeController.armRefusal
+            // while a session is live. Left live, a user could move a slider and hear no change,
+            // which reads as a broken effect rather than an inapplicable one.
+            // ⚠️ DISABLED AND DIMMED, NOT HIDDEN. Hiding changes the sheet's shape when
+            // a session starts and leaves the user hunting for controls; a greyed row stays where
+            // it was. No stored preference is touched - this is presentation only, and every value
+            // returns when the session ends.
+            // ⚠️ THE ROWS ARE DISABLED WITHOUT A REASON LABEL, which is the one thing
+            // this does less well than the quality sheet's output row. There is no text view in
+            // fragment_audio_fx.xml to carry one and inventing a layout element was not worth it
+            // blind; R.string.cast_unavailable_while_casting exists for whoever adds one.
+            // ⚠️ READ ONCE AT BIND, and that is sound HERE only because this sheet
+            // cannot be open when a session starts - the route picker lives in the quality sheet,
+            // not this one. If a second entry point ever appears, this needs the live treatment
+            // the quality sheet's AudioDeviceCallback got.
+            if (CastState.isCasting) {
+                listOf(equalizer, pitch, trueCrossfade, skipFadeOnAlbums).forEach { row ->
+                    row.isEnabled = false
+                    row.alpha = DISABLED_ALPHA
+                    row.setOnClickListener(null)
+                }
+                listOf(bassBoostSlider, trueCrossfadeSlider).forEach { it.isEnabled = false }
+                pitchSwitch.isEnabled = false
+                skipFadeOnAlbumsSwitch.isEnabled = false
+                bassBoostSlider.alpha = DISABLED_ALPHA
+            }
         }
 
         // System-EQ presence is fixed for the process lifetime — only an app install/uninstall could
         // change it, which is rare and acceptable to ignore — so resolve the intent once and reuse the
         // cached Boolean for both the bind-time hide and the tap-time backstop. Companion-scoped, so it
         // survives sheet re-creation within a session and is only re-evaluated on a fresh process.
+        /** The dimming used for an inactive row elsewhere in the app. */
+        private const val DISABLED_ALPHA = 0.38f
+
         private var systemEqualizerAvailable: Boolean? = null
         private fun hasSystemEqualizer(context: Context) =
             systemEqualizerAvailable ?: (Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)

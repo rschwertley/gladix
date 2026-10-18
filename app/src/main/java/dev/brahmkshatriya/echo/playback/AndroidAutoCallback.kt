@@ -4,7 +4,6 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.res.Resources
 import android.net.Uri
-import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.CallSuper
@@ -667,64 +666,6 @@ abstract class AndroidAutoCallback(
                 SessionError(SessionError.ERROR_IO, context.getString(R.string.auto_error_loading))
             )
         val type = parentId.substringAfter("$extId/").substringBefore("/")
-        // ⚠⚠ AA-BROWSE-PROBE [emits `enter` and `exit`] TEMPORARY, APPROVED 2026-10-17
-        // FOR ONE CAPTURE ROUND: one short playlist and one long one, opened on the head unit.
-        // QUESTION: a long playlist's browse list opens PARTWAY DOWN on first tap - content correct,
-        // complete, in order, nothing playing, no scrolling - while a short one opens at the top.
-        // The only input we control is this list, so the capture has to say which property of it
-        // changes with length. Six fields, and what each OUTCOME would settle:
-        //
-        //  page=    only 0 for both playlists -> the host does NOT paginate, `items` IS the whole
-        //           list it holds, and nothing about pagination can explain the offset.
-        //           0,1,2,... on the long one -> it DOES paginate, and then see `items` below,
-        //           because every page after 0 re-serves page 0 (see the getTracks note).
-        //  pageSize= 2147483647 -> the host sent NO paging options and media3 substituted
-        //           Integer.MAX_VALUE (MediaLibraryServiceLegacyStub.onLoadChildren, 1.11.0:302).
-        //           A finite value BELOW `items` -> we are over-returning, and media3's
-        //           verifyResultItems (MediaLibrarySessionImpl.java:424-431, 1.11.0) is throwing
-        //           IllegalStateException("Invalid size=...") from a listener on the app handler -
-        //           GREP THE SAME CAPTURE FOR `Invalid size=`, it is a separate live defect.
-        //  items=   151 on the long one -> getTracks' take(150) truncated, so the host has only 150
-        //           tracks and "all tracks present" needs re-checking on the unit. Below 151 -> the
-        //           playlist fits under the cap and take(150) is irrelevant to this symptom.
-        //  ms=      long within ~2x of short -> load time is NOT the length term, and the canonical
-        //           re-resolve added 2026-08-02 is exonerated. Long in the SECONDS while short is in
-        //           the low hundreds -> that re-resolve is the length term: it issues one
-        //           song.getListData round trip per 100 tracks, sequentially (DeezerTrack
-        //           .getListData, chunked(GET_LIST_DATA_CHUNK=100)), on top of playlist.getSongs.
-        //           PREDICTION, STATED BEFORE THE BUILD: a ~500-track playlist should show ~6 round
-        //           trips' worth, i.e. low single-digit seconds; a short one one round trip. If both
-        //           come back under ~300 ms the whole load-time line of enquiry is dead.
-        //  attempt= 1 on both -> the node was delivered ONCE, so no second delivery can have moved a
-        //           drawn list and the offset is host-side rendering. 2+ on the long one and 1 on the
-        //           short one -> the node is re-requested, which IS length-dependent and IS ours.
-        //  code=    non-zero -> this delivery was an ERROR, not a list. Combined with ms>=15000 that
-        //           is the withTimeoutOrNull(15_000L) below firing, and the host is showing whatever
-        //           it had from an earlier delivery.
-        //
-        // ⚠️ BOTH LINES PRINT ON EVERY PATH, INCLUDING THE TIMEOUT AND ERROR ARMS - that
-        // is why `exit` hangs off .also on the whole expression rather than sitting in the success
-        // branch. An `enter` with no matching `exit` therefore means the future never completed,
-        // which is itself a finding and the only thing a missing line can mean.
-        // ⚠️ PLAYLIST + ALBUM ONLY, so a browse root or a 300-item library list cannot
-        // bury the two nodes under test. `node=` is a HASH of parentId: it is stable across the
-        // enter/exit pair and across repeat requests, which is all the capture needs, and it keeps
-        // the extension id and item id out of the log.
-        // REMOVE AFTER: the short-vs-long pair above has been captured once and read. Nothing else
-        // in the tree depends on these lines.
-        val probeNode = if (type == PLAYLIST || type == ALBUM)
-            Integer.toHexString(parentId.hashCode()) else null
-        val probeAttempt = if (probeNode == null) 0 else synchronized(browseAttempts) {
-            val seen = (browseAttempts[parentId] ?: 0) + 1
-            browseAttempts[parentId] = seen
-            seen
-        }
-        val probeStart = SystemClock.elapsedRealtime()
-        if (probeNode != null) Log.d(
-            "AA-BROWSE-PROBE",
-            "enter node=" + probeNode + " type=" + type + " page=" + page +
-                " pageSize=" + pageSize + " attempt=" + probeAttempt
-        )
         cacheMutex.withLock { withTimeoutOrNull(15_000L) { when (type) {
             ALBUM -> extension.getList<AlbumClient>(context, throwableFlow) {
                 val id = parentId.substringAfter("$ALBUM/").substringBefore("/")
@@ -844,21 +785,9 @@ abstract class AndroidAutoCallback(
                 ),
                 null
             )
-        } } ?: LibraryResult.ofError<ImmutableList<MediaItem>>(
+        } } ?: LibraryResult.ofError(
             SessionError(SessionError.ERROR_IO, context.getString(R.string.auto_timed_out))
-        ) }.also { probeResult ->
-            // AA-BROWSE-PROBE [emits `exit`] see the enter note above for what each field decides.
-            // `also` and not a local: this is the LAST expression of the futureCatching lambda, and
-            // also() returns its receiver, so the LibraryResult still flows out unchanged.
-            if (probeNode != null) Log.d(
-                "AA-BROWSE-PROBE",
-                "exit node=" + probeNode + " type=" + type + " page=" + page +
-                    " pageSize=" + pageSize + " attempt=" + probeAttempt +
-                    " items=" + (probeResult.value?.size ?: -1) +
-                    " code=" + probeResult.resultCode +
-                    " ms=" + (SystemClock.elapsedRealtime() - probeStart)
-            )
-        }
+        ) }
     }
 
     @OptIn(UnstableApi::class)
@@ -1211,21 +1140,7 @@ abstract class AndroidAutoCallback(
 
         private val cacheMutex = Mutex()
 
-        /**
-         * AA-BROWSE-PROBE [state only, emits no line] parentId -> how many times this process has
-         * been asked for that node. Feeds `attempt=`, which is the field that separates "the head
-         * unit positioned a list it received once" from "the node was delivered twice and the
-         * second delivery landed in an already-drawn list".
-         *
-         * ⚠️ CLEARED WITH THE CACHES, SO `attempt=` IS PER CACHE GENERATION, NOT PER
-         * PROCESS. That is the right unit for a capture (an AA cache clear is also what resets the
-         * host's own browse state) but it means a count of 1 does NOT prove the node has never been
-         * fetched before - only that it has not since the last clear.
-         */
-        private val browseAttempts = boundedMap<String, Int>()
-
         private fun clearCaches() {
-            browseAttempts.clear()
             itemMap.clear()
             listsMap.clear()
             shelvesMap.clear()

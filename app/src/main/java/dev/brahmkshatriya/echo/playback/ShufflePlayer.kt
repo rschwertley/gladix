@@ -10,6 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
+import dev.brahmkshatriya.echo.cast.CastState
 
 @Suppress("unused")
 @OptIn(UnstableApi::class)
@@ -483,13 +484,31 @@ class ShufflePlayer(
         if (player.playerError != null) player.prepare()
     }
 
+    /**
+     * ⚠⚠ THE TWO LINES BELOW ARE THE WHOLE OF "THE PHONE STAYS SILENT WHILE CASTING",
+     * AND THEY ARE HERE BECAUSE THIS IS THE ONLY CHOKEPOINT. While a Cast session is live the
+     * session player is CastSwitchPlayer, so every EXTERNAL play - the notification, the lockscreen,
+     * a headset button, our own UI - already goes to the receiver and never reaches this class. What
+     * still arrives here is the INTERNAL callers, and they are the ones that would otherwise start
+     * the phone's speaker underneath the TV: AudioFocusListener resuming after a transient loss,
+     * PlayerEventListener's buffering-watchdog retry and its error-skip retry, and PlayerRadio
+     * topping up a station. Refusing in one place covers all of them.
+     * ⚠️ NOT player.volume, DELIBERATELY. AudioFocusListener is the sole writer of
+     * volume (the dual-manager fix), so muting here would fight it and leave the phone silent after
+     * the session ends if any write were missed. Refusing to PLAY has no such failure mode.
+     * ⚠️ setPlayWhenReady(false) IS STILL ALLOWED, and must be: it is how the
+     * controller parks the local player at session start, and how a pause reaches the local leg
+     * after the session ends. Only `true` is refused.
+     */
     override fun play() {
+        if (CastState.isCasting) return
         if (player.playbackState == STATE_IDLE) player.prepare()
         if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.play()
     }
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
+        if (CastState.isCasting && playWhenReady) return
         if (playWhenReady && player.playbackState == STATE_IDLE) player.prepare()
         if (playWhenReady && player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.setPlayWhenReady(playWhenReady)

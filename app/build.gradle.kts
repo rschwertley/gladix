@@ -428,6 +428,14 @@ tasks.register("verifyExtensionAbi") {
         // symptom would be a silently missing Cast button rather than a crash. This anchor is
         // what turns that into a build failure instead.
         "dev.brahmkshatriya.echo.cast.CastOptionsProvider",
+        // Reported exception types - the three exceptions.** packages (rule 7). Non-ABI, same
+        // reasoning as the HealthMonitor anchors above: an unanchored keep rule is unverified.
+        // These exist so Crashlytics files one issue per defect instead of one per BUILD -
+        // PlayerException had no mapping.txt entry at all and arrived as "mn3" in 1129 and "on3"
+        // in 1132. One anchor per keep rule, because the three rules can lapse independently.
+        "dev.brahmkshatriya.echo.playback.exceptions.PlayerException",
+        "dev.brahmkshatriya.echo.extensions.exceptions.AppException",
+        "dev.brahmkshatriya.echo.download.exceptions.DownloadException",
     )
     doLast {
         val mappingFiles: List<File> = (mappingRoot.listFiles()?.toList().orEmpty())

@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.ui.player
 
+import android.content.Context
 import android.content.SharedPreferences
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
@@ -20,6 +22,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Track
@@ -864,20 +867,89 @@ class PlayerViewModel(
     }
 
     /**
-     * ⚠⚠ WRAPPED BECAUSE media3 DOES NOT WRAP IT. StreamVolumeManager.setVolume
-     * (1.11.0, :166-171) calls audioManager.setStreamVolume straight through with no try/catch,
-     * inside a background state update - and setStreamVolume throws SecurityException while Do
-     * Not Disturb is active unless the app holds ACCESS_NOTIFICATION_POLICY, which we do not.
-     * An uncaught throw off the main thread is fatal, so this catch is the only thing between a
-     * DND volume drag and a crash. The catch may not cover a throw raised on media3's own
-     * handler; if a DND crash is ever reported, that is the shape to look for.
-     * Flags are 0 deliberately: no system volume UI, no beep - the sheet is already showing the
-     * value and a system panel over a bottom sheet is two volume UIs at once.
+     * ⚠⚠ WRITES STRAIGHT TO AudioManager, NOT THROUGH THE MediaController, AND THE
+     * READ STILL COMES THROUGH media3. The asymmetry is deliberate and it is the fix for
+     * "reading works, dragging does nothing" (reported 2026-10-17, build with
+     * deviceVolumeControlEnabled on).
+     *
+     * IT IS THE SAME SYSTEM CALL, NOT A WORKAROUND AROUND ONE. The media3 write ends at
+     * StreamVolumeManager.setVolume -> `audioManager.setStreamVolume(state.streamType, volume,
+     * flags)` (1.11.0, StreamVolumeManager.java:170), and state.streamType is STREAM_MUSIC for
+     * our musicAudioAttributes - so this is that exact call with four process hops, a command
+     * negotiation and two thread assertions removed from in front of it.
+     *
+     * ⚠⚠ WHY BYPASS RATHER THAN FIX: THE WRITE PATH HAS THREE SILENT FAILURE MODES
+     * AND READING THE SOURCE COULD NOT SEPARATE THEM. Every link was traced at 1.11.0 and every
+     * one checks out - which is the finding, not a clean bill of health:
+     *   - the touch listener does fire, with the snapped value (BaseSlider.java:3416-3434,
+     *     Material 1.14.0: ACTION_UP calls onStopTrackingTouch whenever a thumb is active);
+     *   - the command IS granted - PlayerCallback.onConnect passes
+     *     ConnectionResult.DEFAULT_PLAYER_COMMANDS, which is
+     *     `Builder().addAllCommands()` (MediaSession.java:2452-2453);
+     *   - the player DOES report it - ExoPlayerImpl.java:362 adds
+     *     COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS under the same deviceVolumeControlEnabled flag as
+     *     COMMAND_GET_DEVICE_VOLUME on :360, and GET demonstrably works since the slider reads
+     *     the real level and tracks the hardware keys;
+     *   - ShufflePlayer is a plain ForwardingPlayer and overrides neither the commands nor any
+     *     device-volume member;
+     *   - StreamVolumeManager.java:167 skips the call only when the volume ALREADY matches, and
+     *     it compares against the real background state, not the optimistic placeholder
+     *     (BackgroundThreadStateHandler.java:120 applies the background lambda to
+     *     `backgroundState`, while :129 updates `foregroundState` separately).
+     * So the defect sits somewhere in that chain that source reading cannot reach. Rather than
+     * spend a fourth derivation on it, the write now skips the whole span that contains all three
+     * unverifiable failures.
+     *
+     * ⚠️ THE THREE SILENCES, RECORDED BECAUSE THE OLD CODE COULD NOT TELL THEM APART
+     * AND THE NEXT READER WILL WANT TO KNOW WHY ONE runCatching WAS NOT ENOUGH:
+     *   1. a missing command is a SILENT `return`, not a throw -
+     *      MediaControllerImplBase.java:1797-1800 - so runCatching never saw anything;
+     *   2. an off-looper call throws IllegalStateException from MediaController's
+     *      verifyApplicationThread, which the same runCatching then discarded;
+     *   3. SecurityException from setStreamVolume under a Do Not Disturb policy (we hold no
+     *      ACCESS_NOTIFICATION_POLICY), also discarded.
+     * Only (3) survives here, and it is now shown to the USER instead of dropped - a volume drag
+     * that DND is blocking should say so rather than look broken.
+     * ⚠️ messageFlow, NOT throwFlow, AND THE DIFFERENCE IS A CRASHLYTICS RECORD.
+     * throwFlow reaches App.kt's recordException, so routing this there would file a non-fatal
+     * for every user who nudges the volume with Do Not Disturb on - a policy refusal we can
+     * neither fix nor act on, arriving as a bug report. messageFlow is the snackbar surface and
+     * records nothing.
+     *
+     * ⚠⚠ THIS MUST GO BACK THROUGH THE PLAYER WHEN CAST SHIPS. STREAM_MUSIC is the
+     * right target only while playback is LOCAL. Once a RemoteCastPlayer can be the session
+     * player, the volume the user means is the RECEIVER's, and that one only moves through the
+     * player/controller - so this becomes a local-playback-only branch, not the whole function.
+     * Flags are 0 deliberately: no system volume UI, no beep - the sheet already shows the value,
+     * and a system panel over a bottom sheet is two volume UIs at once.
      */
     fun setDeviceVolume(volume: Int) {
-        withBrowser { controller ->
-            runCatching { controller.setDeviceVolume(volume, 0) }
+        // ⚠⚠ WHILE CASTING THE SLIDER MOVES THE RECEIVER, AND THE CONTROLLER IS THE ONLY
+        // ROUTE TO IT. This is the one case where the media3 path is not optional: STREAM_MUSIC is
+        // the phone's own output and moving it would do nothing audible while the TV plays. It is
+        // also the case where the command is known to be present rather than assumed -
+        // RemoteCastPlayer declares COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS in its
+        // PERMANENT_AVAILABLE_COMMANDS (media3-cast 1.11.0, RemoteCastPlayer.java:296-300) and maps
+        // it onto CastSession.setVolume, so the silent-no-op arm of
+        // MediaControllerImplBase.setDeviceVolume (:1797-1800) cannot be taken here.
+        // ⚠️ THE READ IS ALREADY CORRECT WITH NO CHANGE: PlayerUiListener reads
+        // player.deviceVolume off the controller, the session player is CastSwitchPlayer while
+        // casting, and its device-volume getters come from the cast leg - so the slider shows the
+        // TV's level and its range the moment the session starts.
+        if (CastState.isCasting) {
+            withBrowser { controller -> runCatching { controller.setDeviceVolume(volume, 0) } }
+            return
         }
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return
+        runCatching { audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0) }
+            .onFailure {
+                viewModelScope.launch {
+                    app.messageFlow.emit(
+                        Message(app.context.getString(R.string.volume_change_blocked))
+                    )
+                }
+            }
     }
 
     // Tracks STAMPED with the mediaId they belong to. Written only by PlayerUiListener, which reads both

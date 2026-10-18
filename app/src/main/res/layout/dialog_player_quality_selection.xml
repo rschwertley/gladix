@@ -175,85 +175,52 @@
              Every slider attribute used here was checked against the Material 1.14.0 AAR's R.txt
              (int styleable Slider_*) per .claude/rules/ResourceLinking.md: trackHeight,
              trackCornerSize, trackInsideCornerSize, thumbWidth, thumbHeight, thumbTrackGapSize,
-             haloRadius, trackStopIndicatorSize, labelBehavior all exist. So do the track-icon
-             attributes (trackIconActiveStart/End, trackIconInactiveStart/End, trackIconSize,
-             trackIconActiveColor) - see the overlay note below for why they are not used. -->
-        <FrameLayout
+             haloRadius, trackStopIndicatorSize, labelBehavior all exist, and so do all seven
+             track-icon attributes (trackIconActiveStart/End, trackIconInactiveStart/End,
+             trackIconSize, trackIconActiveColor, trackIconInactiveColor).
+             ⚠⚠ trackIconActiveStart IS SET AND trackIconInactiveStart IS DELIBERATELY
+             NOT, BECAUSE SETTING BOTH DRAWS TWO SPEAKERS. BaseSlider.drawTrackIcons (1.14.0,
+             BaseSlider.java:2989-2990) draws the active-start icon at the left edge of the
+             ACTIVE rect and the inactive-start icon at the left edge of the INACTIVE rect - and
+             the inactive rect begins at the THUMB, not at the track start. So at any middle
+             volume both rects clear the fit test and both icons render: one pinned at the far
+             left, one riding just ahead of the thumb. ONE icon that the fill passes over and
+             recolours is not expressible with these attributes.
+             ⚠️ WHAT THE ONE ICON DOES INSTEAD: it is pinned at the track start in
+             trackIconActiveColor, i.e. always on the ACTIVE fill, so it can never straddle the
+             boundary the way the removed overlay did. Below roughly trackIconSize + 2 *
+             m3_slider_track_icon_padding of fill it VANISHES rather than turning illegible -
+             calculateTrackIconBounds (BaseSlider.java:3026-3045) empties the bounds when the
+             segment is too narrow. Disappearing at near-zero volume is the trade for never
+             being unreadable, and the percentage in the row above still reads the value.
+             trackIconPadding is NOT a styleable attr - it is the m3_slider_track_icon_padding
+             dimen read in BaseSlider.loadResources - so it cannot be tuned from here.
+             ⚠️ THE CONTENT DESCRIPTION LIVES ON THE SLIDER, which is where it has to
+             be now that there is no label View: the icon is a canvas draw, not a child, so it
+             has nothing to describe itself with. -->
+        <com.google.android.material.slider.Slider
+            android:id="@+id/volumeSlider"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
-
-            <com.google.android.material.slider.Slider
-                android:id="@+id/volumeSlider"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="-18dp"
-                android:contentDescription="@string/volume"
-                android:stepSize="1"
-                android:value="0"
-                android:valueFrom="0"
-                android:valueTo="1"
-                app:haloRadius="0dp"
-                app:labelBehavior="gone"
-                app:thumbHeight="44dp"
-                app:thumbTrackGapSize="6dp"
-                app:thumbWidth="4dp"
-                app:trackCornerSize="22dp"
-                app:trackHeight="44dp"
-                app:trackInsideCornerSize="4dp"
-                app:trackStopIndicatorSize="0dp" />
-
-            <!-- ⚠⚠ THE ICON AND LABEL ARE AN OVERLAY EVEN THOUGH trackIconActiveStart
-                 EXISTS, AND THAT IS A CHOICE. The attribute would place the icon for us and would
-                 even recolour it correctly across the active/inactive boundary
-                 (trackIconActiveColor / trackIconInactiveColor) - but NO attribute puts TEXT in
-                 the track, so the label has to be an overlay regardless. Splitting them - icon
-                 from the attribute, label from the overlay - would leave two things that must
-                 align with each other and no way to express that. One overlay keeps the pair
-                 together.
-                 ⚠️ TOUCHES FALL THROUGH BECAUSE THIS IS NOT CLICKABLE. A FrameLayout
-                 dispatches to the topmost child first; a non-clickable View returns false from
-                 onTouchEvent, so the Slider below receives the gesture. Do not give this a click
-                 listener or a background with a ripple - either one captures the drag.
-                 ⚠⚠ THE TINTS BELOW ARE THE ACTIVE-TRACK DEFAULTS ONLY - THEY ARE
-                 SWITCHED AT RUNTIME. Near 0% the overlay sits on the INACTIVE track and
-                 colorOnPrimary loses contrast, so QualitySelectionBottomSheet
-                 .updateVolumeLabelTint flips both children to colorOnSurfaceVariant once the
-                 active portion no longer reaches past this overlay. The values here are what is
-                 shown for the frame before the first layout pass, which is why they are the
-                 common case rather than the safe one.
-                 ⚠ KEEP ALL THREE IDS. The overlay's id is read for its measured width, and the
-                 two children's for the tint - there is no "tint the whole subtree" call. -->
-            <LinearLayout
-                android:id="@+id/volumeLabelOverlay"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start|center_vertical"
-                android:layout_marginStart="16dp"
-                android:clickable="false"
-                android:focusable="false"
-                android:gravity="center_vertical"
-                android:importantForAccessibility="no"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:id="@+id/volumeLabelIcon"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_volume_up_24dp"
-                    app:tint="?attr/colorOnPrimary" />
-
-                <TextView
-                    android:id="@+id/volumeLabelText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/volume"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorOnPrimary" />
-            </LinearLayout>
-        </FrameLayout>
+            android:layout_marginHorizontal="-18dp"
+            android:layout_marginTop="8dp"
+            android:contentDescription="@string/volume"
+            android:stepSize="1"
+            android:value="0"
+            android:valueFrom="0"
+            android:valueTo="1"
+            app:haloRadius="0dp"
+            app:labelBehavior="gone"
+            app:thumbHeight="44dp"
+            app:thumbTrackGapSize="6dp"
+            app:thumbWidth="4dp"
+            app:trackCornerSize="22dp"
+            app:trackHeight="44dp"
+            app:trackIconActiveColor="?attr/colorOnPrimary"
+            app:trackIconActiveStart="@drawable/ic_volume_up_24dp"
+            app:trackIconSize="20dp"
+            app:trackInsideCornerSize="4dp"
+            app:trackStopIndicatorSize="0dp" />
 
         <!-- LEFT-ALIGNED SECONDARY TEXT. The gravity=center is gone: it was the only content
              element in this sheet that did not share the others' start edge, which is the whole
