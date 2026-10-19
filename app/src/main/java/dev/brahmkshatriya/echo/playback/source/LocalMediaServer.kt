@@ -410,7 +410,7 @@ class LocalMediaServer(
         // A token minted by [urlForPlan] is served from a local file or relayed from upstream; only
         // the debug hook's tokens reach keyFor and the resolving chain.
         val plan = if (token.isNullOrEmpty()) null else synchronized(this) { plans[token] }
-        if (plan != null) {
+        if (plan != null && token != null) {
             servePlan(output, method, rangeHeader, plan, token)
             return
         }

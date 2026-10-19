@@ -150,7 +150,7 @@ class CastStreamStore(
         // An empty or truncated file would be served with a Content-Length the receiver then cannot
         // fill - a stall with no error, which is the exact failure mode this whole store exists to
         // remove. Treat it as a failure here instead.
-        if (written <= 0L || (expected != C.LENGTH_UNSET && written < expected)) {
+        if (written <= 0L || (expected != LENGTH_UNSET && written < expected)) {
             Log.w(TAG, "materialise short token=" + token + " got=" + written + " expected=" + expected)
             runCatching { target.delete() }
             return null
@@ -227,6 +227,17 @@ class CastStreamStore(
 
     companion object {
         private const val TAG = "GladixCastServer"
+
+        /**
+         * C.LENGTH_UNSET is declared `int` (C.java:79, media3 1.11.0) while every length here is
+         * Long, so comparing one against it directly does not compile. Widened once, the same way
+         * LocalMediaServer does it - that constant is private to that class.
+         *
+         * A `val` and not a `const val`: a const initialiser must be a compile-time constant and
+         * `.toLong()` is not one.
+         */
+        private val LENGTH_UNSET: Long = C.LENGTH_UNSET.toLong()
+
         private const val DIR = "cast"
         private const val EXT = ".bin"
         private const val BUFFER = 128 * 1024
