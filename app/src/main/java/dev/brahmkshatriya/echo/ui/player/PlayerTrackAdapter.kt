@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.isLandscape
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 import kotlin.math.max
+import kotlin.math.min
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class PlayerTrackAdapter(
@@ -160,7 +161,34 @@ class PlayerTrackAdapter(
                 val toMoveX = binding.playerControlsPlaceholder.left - cover.left
                 toMoveX * inv
             }
+            // ⚠⚠ THE PER-PAGE COVER IS NOT VISIBLE IN THE COLLAPSED BAR, AND THAT IS
+            // THE WHOLE POINT OF THIS ALPHA. It used to be opaque at every offset, morphed to land
+            // flush on top of the overlay's collapsedTrackCover - so the mini bar was painted by a
+            // ViewPager page, and anything that moved the pager swept other tracks' covers through
+            // it. On 2026-10-19 that presented as the bar flashing through several songs when a
+            // track EARLIER in the playing playlist was tapped (a front-insert into the queue list,
+            // which desyncs ViewPager2's mCurrentItem from the rendered page - see the two parked
+            // findings at PlayerFragment's submit()). Fourth bug from this one structure, after the
+            // 2026-08-24/29 record asked for the carousel to come out of the art path: at alpha 0
+            // the page cannot paint the bar, so it no longer matters WHAT moves the pager.
+            // ⚠️ WHY THE MORPH STILL LOOKS THE SAME. The overlay cover and this one
+            // coincide exactly at p=0 (targetX/targetY/targetScale are computed to land flush on it,
+            // see the note above), so this is a crossfade of the SAME artwork at the SAME place -
+            // invisible, unlike the text double-exposure CHROME_FADE_FRACTION warns about. It
+            // completes in the first HALF of the bar's fade-out window so the two alphas sum to >= 1
+            // through the overlap; from there to the end of the drag the state is exactly what it
+            // always was. No gap (the incoming is up before the outgoing is gone), no pop (it ramps
+            // from 0 rather than switching), and alpha only - no isVisible, no layout change, so the
+            // geometry every other line here computes is untouched.
+            // ⚠️ DERIVED FROM CHROME_FADE_FRACTION, NOT A NUMBER OF ITS OWN: that
+            // constant's doc carries all three curves and says to retune there. `inv` is the
+            // expandedness (1 - offset), so this is 0 while collapsed and 1 from p = F/2 onward, in
+            // BOTH arms - the drag and Up Next over an expanded player - because `offset` already
+            // selects between them above. Landscape pins offset to 0f in the expanded arm, so the
+            // cover simply stays opaque there, as it does today.
+            val coverAlpha = min(1f, inv / (CHROME_FADE_FRACTION / 2f))
             cover.run {
+                alpha = coverAlpha
                 scaleX = if (!isPlayerVisible) 1 + (targetScale - 1) * offset else targetScale
                 scaleY = scaleX
                 translationX = targetX * offset + extraX

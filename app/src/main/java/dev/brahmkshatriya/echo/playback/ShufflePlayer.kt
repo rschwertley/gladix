@@ -502,6 +502,10 @@ class ShufflePlayer(
      */
     override fun play() {
         if (CastState.isCasting) return
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - first play of a young process only; see that
+        // file. Records or files a report, never changes what happens next. AFTER the casting
+        // refusal: a request refused there never starts audio, so it is not the event being hunted.
+        ColdStartPlayProbe.onPlay("play")
         if (player.playbackState == STATE_IDLE) player.prepare()
         if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.play()
@@ -509,6 +513,8 @@ class ShufflePlayer(
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
         if (CastState.isCasting && playWhenReady) return
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe, as in play() above.
+        if (playWhenReady) ColdStartPlayProbe.onPlay("setPlayWhenReady")
         if (playWhenReady && player.playbackState == STATE_IDLE) player.prepare()
         if (playWhenReady && player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.setPlayWhenReady(playWhenReady)

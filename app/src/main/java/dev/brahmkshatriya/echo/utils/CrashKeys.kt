@@ -182,6 +182,17 @@ object CrashKeys {
         }
     }
 
+    /**
+     * ⚠️ [TEMPORARY 2026-10-19 - COLD-START AUTOPLAY PROBE] Process age in
+     * MILLISECONDS, from the SAME baseline process_age_s uses, so a ColdStartPlayProbe breadcrumb
+     * and the keys in the same report cannot disagree. -1 when markProcessStart never ran (a
+     * pre-unlock spawn). Delete with ColdStartPlayProbe.
+     */
+    fun processAgeMs(): Long {
+        val start = processStartElapsedMs
+        return if (start == 0L) -1L else SystemClock.elapsedRealtime() - start
+    }
+
     private fun ageS(): Int {
         val start = processStartElapsedMs
         return if (start == 0L) -1 else ((SystemClock.elapsedRealtime() - start) / 1000L).toInt()

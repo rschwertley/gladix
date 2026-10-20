@@ -80,6 +80,29 @@ sealed class CastPlan {
             return labelMime(streamable, source)
         }
 
+        /**
+         * The file extension for a MIME type, for the `track.<ext>` suffix LocalMediaServer.urlForPlan
+         * puts on a served URL. The near-inverse of [extensionMime], which is the authority on the
+         * pairings; this direction has to pick ONE extension per type, so m4a loses to mp4 and oga
+         * to ogg.
+         *
+         * ⚠️ "bin" FOR ANYTHING UNRECOGNISED, RATHER THAN A PLAUSIBLE GUESS. The
+         * extension is a hint; the Content-Type we send and the contentType in the LOAD are the
+         * real answer, and naming a container we are not sure of would contradict them.
+         */
+        fun extFor(mime: String): String = when (mime.substringBefore(';').trim().lowercase()) {
+            "audio/mpeg", "audio/mp3" -> "mp3"
+            "audio/flac", "audio/x-flac" -> "flac"
+            "audio/mp4", "audio/aac", "audio/m4a", "audio/x-m4a" -> "mp4"
+            "audio/ogg", "application/ogg" -> "ogg"
+            "audio/opus" -> "opus"
+            "audio/webm", "video/webm" -> "webm"
+            "audio/wav", "audio/x-wav", "audio/wave" -> "wav"
+            "application/x-mpegurl", "application/vnd.apple.mpegurl" -> "m3u8"
+            "application/dash+xml" -> "mpd"
+            else -> "bin"
+        }
+
         /** Strips query and fragment first: a CDN URL's real extension is before the `?`. */
         private fun extensionMime(url: String): String? {
             val path = url.substringBefore('?').substringBefore('#').lowercase()

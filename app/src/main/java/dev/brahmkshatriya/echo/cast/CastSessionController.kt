@@ -81,6 +81,44 @@ class CastSessionController(
     /** What is on the receiver now, so the state.current observer cannot restart the same track. */
     private var castedMediaId: String? = null
 
+    /**
+     * ⚠⚠ THE mediaId OF A LOAD THAT HAS STARTED BUT NOT YET BEEN SENT, AND WITHOUT
+     * IT A TRACK LOADS TWICE. [castedMediaId] is set in [sendLoad], which for a Materialise plan
+     * is a file copy away - a window of a couple of hundred milliseconds in which PlayerService's
+     * state.current observer calls [loadCurrentOnCast] again, finds castedMediaId still null and
+     * starts the entire thing a second time.
+     * ⚠️ MEASURED ON DEVICE 2026-10-18: two plans, two copies and two LOADs 150 ms
+     * apart, and the SECOND won. It came from the observer, which passes pos=0, so the receiver
+     * was told to start at the beginning of a track the phone was 63 s into - and the 63 s was
+     * then also what onCastEnded could not restore. Claiming the id when the load STARTS closes
+     * the window; it is cleared when that load lands, so a genuine retry is still possible.
+     */
+    private var pendingMediaId: String? = null
+
+    /**
+     * ⚠⚠ ORDERS LOADS THAT FINISH OUT OF ORDER, AND WITHOUT IT A STALE COPY CAN
+     * OVERWRITE A NEWER ONE. A Materialise load completes a file copy some time after the event
+     * that started it, so Next pressed mid-copy leaves TWO in flight - and nothing makes the
+     * first one asked for the first one to finish, because they are different files of different
+     * sizes on different threads. A callback whose generation is no longer the current one is
+     * abandoned rather than sent.
+     * ⚠️ [pendingMediaId] CANNOT DO THIS JOB. It answers "is this track already
+     * being loaded", which is a different question from "is this load still the one we want" -
+     * and the second is the one that decides whether a late callback may touch the receiver.
+     * Bumped at both commit points: here, and in [sendLoad] for the synchronous path.
+     */
+    private var loadGeneration = 0
+
+    /** A materialisation in flight, so a newer load can STOP it rather than race it. */
+    private class Copy(
+        val job: Job,
+        val token: String,
+        val mediaId: String,
+        val generation: Int,
+    )
+
+    private var copy: Copy? = null
+
     /** Cancelled on the first STATE_READY after a load; fires if the receiver never gets there. */
     private var loadTimeout: Job? = null
 
@@ -255,7 +293,9 @@ class CastSessionController(
      * Called by PlayerService on every state.current emission while casting, and once at session
      * start with the live position.
      *
-     * ⚠️ EVERY EMISSION IS PASSED IN, INCLUDING THE UNLOADED ONE, and [castedMediaId] decides.
+     * ⚠️ EVERY EMISSION IS PASSED IN, INCLUDING THE UNLOADED ONE, and [castedMediaId]
+     * plus [pendingMediaId] decide - the first is what the receiver has, the second what it is
+     * about to be given.
      * state.current emits at least twice per track - once unloaded, once after the stream resolves -
      * and it is the LOADED one that matters, because before it state.servers has no entry. Keying the
      * observer on mediaId alone would miss it; guarding here instead means an unresolved track simply
@@ -264,7 +304,8 @@ class CastSessionController(
     fun loadCurrentOnCast(positionMs: Long, play: Boolean, force: Boolean = false) {
         if (!CastState.isCasting) return
         val current = state.current.value?.mediaItem ?: return
-        if (!force && current.mediaId == castedMediaId) return
+        if (!force && (current.mediaId == castedMediaId || current.mediaId == pendingMediaId))
+            return
 
         prepared[current.mediaId]?.let { ready ->
             sendLoad(ready, positionMs, play)
@@ -283,7 +324,28 @@ class CastSessionController(
             endSession()
             return
         }
-        prepare(current, plan) { ready ->
+        // Before anything is claimed: a newer load supersedes whatever copy is running, and
+        // cancelCopy releases that copy's pendingMediaId - so it runs first and this load's own
+        // claims cannot be cleared by it.
+        cancelCopy("superseded")
+        pendingMediaId = current.mediaId
+        val generation = ++loadGeneration
+        prepare(current, plan, generation) { ready ->
+            // Cleared BEFORE the staleness check, and only when it still names this load: a
+            // discarded load must not leave its own id parked in pendingMediaId, or the guard
+            // above would refuse to ever load that track again.
+            if (pendingMediaId == current.mediaId) pendingMediaId = null
+            if (generation != loadGeneration) {
+                Log.d(
+                    TAG, "discarding stale load gen=" + generation + " now=" + loadGeneration +
+                        " mediaId=" + hash(current.mediaId)
+                )
+                // The finished file is unreferenced the moment this load is abandoned - it was
+                // never put in [prepared] - so retainPrepared is what deletes it. A copy still
+                // running is untouched: CastStreamStore.retain only sees COMPLETED files.
+                if (ready != null) retainPrepared()
+                return@prepare
+            }
             if (ready == null) failAndStop(R.string.cast_stopped)
             else sendLoad(ready, positionMs, play)
         }
@@ -308,25 +370,38 @@ class CastSessionController(
      * Registers the plan, materialises if the plan needs it, and hands back a [Prepared] on the main
      * thread. [onReady] gets null when anything failed, having logged why.
      */
-    private fun prepare(item: MediaItem, plan: CastPlan, onReady: (Prepared?) -> Unit) {
+    private fun prepare(
+        item: MediaItem,
+        plan: CastPlan,
+        generation: Int,
+        onReady: (Prepared?) -> Unit,
+    ) {
         val url = if (plan is CastPlan.Direct) plan.url else localServer.urlForPlan(plan)
         if (url == null) {
             Log.w(TAG, "no url for plan=" + plan.javaClass.simpleName)
             onReady(null)
             return
         }
-        // The token is the URL's last path segment, which is how urlForPlan builds it. Derived rather
-        // than returned separately so the server keeps ONE entry point for minting a served URL.
-        val token = url.substringAfterLast('/')
+        // ⚠⚠ NOT THE LAST PATH SEGMENT - THAT IS NOW track.<ext>. The server owns the
+        // shape and reads its own token back; deriving it here by hand is what would silently
+        // materialise under "track.flac" and then 404 when the real token was served. Direct
+        // plans carry a foreign URL, where this value is only a map key and a log hash.
+        val token = LocalMediaServer.tokenOf(url)
         if (plan !is CastPlan.Materialise) {
             val built = CastMediaItemBuilder.build(item.track, plan, url)
             onReady(built?.let { Prepared(item.mediaId, token, plan, it) })
             return
         }
         val source = state.servers[item.track.id]?.getOrNull()?.sources?.firstOrNull()
-        scope.launch(Dispatchers.IO) {
-            val file = store.materialise(token, plan.key)
+        val job = scope.launch(Dispatchers.IO) {
+            // ⚠️ THE COPY POLLS THIS ONCE PER BUFFER - see the cancellation point in
+            // CastStreamStore.materialise. Cancelling a coroutine cannot interrupt a blocking
+            // read, so handing the flag in is the only thing that makes a cancel stop a download.
+            val file = store.materialise(token, plan.key) { !isActive }
             withContext(Dispatchers.Main) {
+                // Finished, so no longer cancellable: release the slot unless a newer copy has
+                // already taken it.
+                if (copy?.generation == generation) copy = null
                 if (file == null) {
                     onReady(null)
                     return@withContext
@@ -342,17 +417,36 @@ class CastSessionController(
                 onReady(built?.let { Prepared(item.mediaId, token, finalPlan, it) })
             }
         }
+        // After launch, deliberately: the body cannot reach its Main section until this function
+        // returns, because that section is queued on the looper this is running on.
+        copy = Copy(job, token, item.mediaId, generation)
     }
 
     private fun sendLoad(ready: Prepared, positionMs: Long, play: Boolean) {
         val castPlayer = remote ?: return
+        // Every send opens a new generation, which is what makes a copy that was started before
+        // this - including by the synchronous [prepared] path, which has no generation of its
+        // own - stale when it lands. See [loadGeneration].
+        loadGeneration++
+        // Reached from the synchronous [prepared] path too, which starts no copy of its own and
+        // would otherwise leave an older one running. A no-op when this send came FROM a copy:
+        // that one cleared the slot before calling back.
+        cancelCopy("load sent")
         castedMediaId = ready.mediaId
         prepared[ready.mediaId] = ready
         lastLoadAtMs = System.currentTimeMillis()
         retainPrepared()
+        // ⚠️ THESE ARE THE FIELDS DefaultMediaItemConverter ACTUALLY READS, so the
+        // line says what the RECEIVER is told rather than what we intended: contentUrl comes from
+        // localConfiguration.uri (:171) and contentType from localConfiguration.mimeType (:180),
+        // media3-cast 1.11.0. Read off the built item for that reason, not off the plan.
+        val config = ready.item.localConfiguration
         Log.d(
-            TAG, "LOAD token=" + hash(ready.token) + " plan=" + ready.plan.javaClass.simpleName +
-                " mime=" + ready.plan.mime + " pos=" + positionMs + " play=" + play
+            TAG, "LOAD plan=" + ready.plan.javaClass.simpleName +
+                " contentUrl=" + (config?.uri?.toString()?.let { loggableUrl(ready.plan, it) }
+                    ?: "none") +
+                " contentType=" + (config?.mimeType ?: "none") +
+                " contentId=" + hash(ready.mediaId) + " pos=" + positionMs + " play=" + play
         )
         runCatching {
             castPlayer.setMediaItem(ready.item, positionMs.coerceAtLeast(0L))
@@ -440,6 +534,7 @@ class CastSessionController(
         Log.d(TAG, "session ending")
         loadTimeout?.cancel()
         loadTimeout = null
+        cancelCopy("session ended")
         val castPlayer = remote
         val position = castPlayer?.let {
             runCatching { it.currentPosition }.getOrDefault(C.TIME_UNSET)
@@ -448,6 +543,7 @@ class CastSessionController(
         CastState.setCasting(false)
         tracking()?.castSource = null
         castedMediaId = null
+        pendingMediaId = null
 
         runCatching { mediaClient?.unregisterCallback(clientCallback) }
         mediaClient = null
@@ -463,14 +559,24 @@ class CastSessionController(
         prepared.clear()
         store.retain(emptySet())
 
-        if (position != C.TIME_UNSET && position > 0L) {
+        // ⚠⚠ AN UNUSABLE CAST POSITION MEANS KEEP THE LOCAL ONE, NOT SEEK TO ZERO.
+        // RemoteCastPlayer reports 0 for an item that never left LOADING, which is exactly the
+        // failed-load case this path is most often reached from. Nothing in a cast session moves
+        // the parked local player, so its own position is still the one the user reached - seeking
+        // to a cast 0 would be the only thing that threw it away.
+        val localPosition = runCatching { localPlayer.currentPosition }.getOrDefault(C.TIME_UNSET)
+        val resumeAt = if (position != C.TIME_UNSET && position > 0L) {
             runCatching { localPlayer.seekTo(position) }
-        }
+            position
+        } else localPosition
         // Explicitly NOT play(): see the note above. ShufflePlayer's refusal is already lifted by the
         // flag, so this is a choice rather than a consequence.
         runCatching { localPlayer.pause() }
         localServer.stop()
-        Log.d(TAG, "session ended, local resumed paused at " + position)
+        Log.d(
+            TAG, "session ended, local paused at " + resumeAt +
+                " (cast=" + position + " local=" + localPosition + ")"
+        )
     }
 
     /**
@@ -502,7 +608,47 @@ class CastSessionController(
         scope.launch { app.messageFlow.emit(Message(app.context.getString(resId))) }
     }
 
+    /**
+     * ⚠⚠ CANCELS A SUPERSEDED COPY, AND THE REASON IS CONCURRENCY RATHER THAN
+     * TIDINESS. Abandoning the result is not enough: a copy is a full stream read, so three quick
+     * Nexts would leave three complete downloads running at once - and Deezer's rate limiting and
+     * its 403s under concurrent requests are an open concern here, not a theoretical one. The copy
+     * deletes its own partial file on the way out and never reaches CastStreamStore's `ready`.
+     *
+     * ⚠️ IT ALSO RELEASES [pendingMediaId]. A cancelled job's callback never runs, so
+     * the id parked there would otherwise stay and make that track unloadable for the rest of the
+     * session.
+     */
+    private fun cancelCopy(reason: String) {
+        val running = copy ?: return
+        copy = null
+        if (running.mediaId == pendingMediaId) pendingMediaId = null
+        if (!running.job.isActive) return
+        Log.d(TAG, "cancelling copy token=" + hash(running.token) + " (" + reason + ")")
+        running.job.cancel()
+    }
+
     private fun hash(value: String) = Integer.toHexString(value.hashCode())
+
+    /**
+     * The served URL as the receiver will see it, with the TOKEN replaced by its hash - the token
+     * is the credential and is never printed. A [CastPlan.Direct] URL is an origin URL that can
+     * carry a signature, so only its scheme and host survive.
+     */
+    private fun loggableUrl(plan: CastPlan, uri: String): String {
+        if (plan is CastPlan.Direct) {
+            val scheme = uri.substringBefore("://", "")
+            val host = uri.substringAfter("://", "").substringBefore('/')
+            val origin = if (scheme.isEmpty() || host.isEmpty()) "" else scheme + "://" + host
+            return origin + "/#" + hash(uri)
+        }
+        val marker = "/stream/"
+        val prefix = uri.substringBeforeLast(marker, "")
+        if (prefix.isEmpty()) return "#" + hash(uri)
+        val rest = uri.substringAfterLast(marker)
+        val token = rest.substringBefore('/')
+        return prefix + marker + "#" + hash(token) + rest.removePrefix(token)
+    }
 
     private fun stateName(value: Int) = when (value) {
         Player.STATE_IDLE -> "idle"

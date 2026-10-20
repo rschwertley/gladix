@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -248,6 +249,13 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
             }
         }
 
+        /**
+         * Setting keys already reported as malformed, so a rebuild does not repeat the line -
+         * this whole screen is recreated on every stateFlow emission, several times per visit.
+         * Per fragment rather than per process, so a fresh visit to the page reports again.
+         */
+        private val loggedMismatches = mutableSetOf<String>()
+
         private fun Setting.addPreferenceTo(preferenceGroup: PreferenceGroup) {
             val context = preferenceGroup.context
             when (this) {
@@ -292,15 +300,59 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                 }
 
                 is SettingList -> {
+                    // ⚠⚠ AN ENTRY-LESS LIST USED TO TAKE DOWN THE WHOLE PAGE, AND
+                    // THE DATA IS THE EXTENSION'S, NOT OURS. `entryValues[index]` threw
+                    // IndexOutOfBoundsException: Index 0 out of bounds for length 0 on build 1136
+                    // (fatal, Combine + youtube_music): defaultEntryIndex is a plain Int that
+                    // extensions overwhelmingly set to 0, while the entry lists are whatever the
+                    // extension produced - and they are empty whenever a list is built from
+                    // something that was not available at the time. One malformed setting then
+                    // cost every OTHER setting on the page, including logout.
+                    // ⚠️ DISABLED RATHER THAN DROPPED, WHICH IS WHAT THIS PAGE
+                    // ALREADY DOES WITH BAD DATA: SettingMultipleChoice below discards an
+                    // out-of-range default index and still shows its row. So a malformed setting
+                    // degrades here instead of vanishing - the user sees that the extension
+                    // offers it with nothing to choose - and a disabled row cannot open the empty
+                    // dialog, which is the other dead end (MaterialListPreference.onClick indexes
+                    // entryValues, reached only from a tap).
+                    // ⚠⚠ AND CLAMPED TO THE COMMON LENGTH, BECAUSE ListPreference
+                    // RESOLVES THE INDEX AGAINST ONE ARRAY AND THEN READS THE OTHER. Read from
+                    // the androidx.preference 1.2.1 sources: getEntry() is
+                    // `index >= 0 && mEntries != null ? mEntries[index] : null`
+                    // (ListPreference.java:216-219) where the index came from
+                    // findIndexOfValue(mValue) scanning mEntryValues (:227-235) - nothing checks
+                    // it against mEntries. So entryValues LONGER than entryTitles, plus a stored
+                    // value from the tail, throws inside the library at bind time, reached by
+                    // MaterialListPreference.updateSummary reading `entry` on every
+                    // onSetInitialValue. The mirror case is ours: onClick does
+                    // `entryValues[index]` with an index bounded by `entries`. One clamp closes
+                    // both, and size == 0 subsumes the empty-list case above.
+                    val size = minOf(this.entryTitles.size, this.entryValues.size)
+                    if (this.entryTitles.size != this.entryValues.size &&
+                        loggedMismatches.add(this.key)
+                    ) Log.w(
+                        "ExtensionInfo", extensionId + " setting " + this.key + ": " +
+                            this.entryTitles.size + " titles vs " + this.entryValues.size +
+                            " values, using " + size
+                    )
+                    val titles = this.entryTitles.take(size)
+                    val values = this.entryValues.take(size)
                     MaterialListPreference(context).also {
                         it.title = this.title
                         it.key = this.key
                         it.summary = this.summary
+                        it.isEnabled = size > 0
+                        // getOrNull, not [index]: a NON-empty list can still carry a default
+                        // index past its end, which is the same crash one element further out.
+                        // Against the CLAMPED list, so a default inside a discarded tail is
+                        // dropped rather than set to a value no entry can display.
                         defaultEntryIndex?.let { index ->
-                            it.setDefaultValue(this.entryValues[index])
+                            values.getOrNull(index)?.let { default ->
+                                it.setDefaultValue(default)
+                            }
                         }
-                        it.entries = this.entryTitles.toTypedArray()
-                        it.entryValues = this.entryValues.toTypedArray()
+                        it.entries = titles.toTypedArray()
+                        it.entryValues = values.toTypedArray()
 
                         it.isIconSpaceReserved = false
                         it.layoutResource = R.layout.preference
@@ -309,10 +361,15 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                 }
 
                 is SettingMultipleChoice -> {
+                    // Same treatment as SettingList above, for the same reason. This branch never
+                    // crashed - its default indices already go through getOrNull - but an entry-less
+                    // multiple choice is still a row that can only open an empty dialog.
+                    val hasEntries = this.entryTitles.isNotEmpty() && this.entryValues.isNotEmpty()
                     MaterialMultipleChoicePreference(context).also {
                         it.title = this.title
                         it.key = this.key
                         it.summary = this.summary
+                        it.isEnabled = hasEntries
                         defaultEntryIndices?.let { indices ->
                             it.setDefaultValue(indices.mapNotNull { index ->
                                 entryValues.getOrNull(index)

@@ -85,6 +85,10 @@ class CastStreamStore(
 
     fun fileFor(token: String): File? = ready[token]
 
+    // The token is the credential that serves the stream on the LAN, so it is hashed here the
+    // same way LocalMediaServer hashes it rather than printed.
+    private fun hash(token: String) = Integer.toHexString(token.hashCode())
+
     /**
      * Copies the whole stream for [key] into a file named by [token]. Blocking; call off the main
      * thread. Returns null on failure, having logged why and cleaned up the partial file.
@@ -95,7 +99,11 @@ class CastStreamStore(
      * connection and then went quiet, which is what a Wi-Fi drop mid-copy looks like. So the limit is
      * on the gap between two successful reads, not on the total.
      */
-    fun materialise(token: String, key: String): File? {
+    fun materialise(
+        token: String,
+        key: String,
+        isCancelled: () -> Boolean = { false },
+    ): File? {
         // Claim the folder so an in-flight purge cannot delete what is about to be written. See
         // the note on purgeClaim; this is the cheap half of that ordering.
         purgeClaim.set(true)
@@ -110,18 +118,33 @@ class CastStreamStore(
         val expected = opened.getOrNull()
         if (expected == null) {
             Log.w(
-                TAG, "materialise open failed token=" + token + " " +
+                TAG, "materialise open failed token=" + hash(token) + " " +
                     (opened.exceptionOrNull()?.javaClass?.simpleName ?: "?")
             )
             runCatching { source.close() }
             return null
         }
-        Log.d(TAG, "materialise start token=" + token + " expected=" + expected)
+        Log.d(TAG, "materialise start token=" + hash(token) + " expected=" + expected)
+        // Set at the cancellation point below and read in the failure branch, so a cancel is told
+        // apart from a fault by WHAT HAPPENED rather than by matching an exception message.
+        var cancelled = false
         val ok = runCatching {
             FileOutputStream(target).use { out ->
                 val buffer = ByteArray(BUFFER)
                 var lastProgressAt = System.currentTimeMillis()
                 while (true) {
+                    // ⚠⚠ THE ONLY CANCELLATION POINT, AND WITHOUT IT A CANCEL
+                    // STOPS NOTHING. read() is blocking, so cancelling the coroutine around this
+                    // copy abandons its RESULT while the download runs to the end - and three
+                    // quick Nexts would have three full streams in flight at once, which is the
+                    // concurrency Deezer answers with 403s. Throwing reuses the failure path's
+                    // CLEANUP - source closed, partial file deleted, nothing written to [ready] -
+                    // while reporting under its own line, because a cancel is an expected
+                    // outcome of pressing Next and must not read as a fault in a capture.
+                    if (isCancelled()) {
+                        cancelled = true
+                        error("cancelled")
+                    }
                     val read = source.read(buffer, 0, buffer.size)
                     if (read == C.RESULT_END_OF_INPUT) break
                     if (read > 0) {
@@ -136,8 +159,10 @@ class CastStreamStore(
             }
             true
         }.getOrElse {
-            Log.w(
-                TAG, "materialise failed token=" + token + " at=" + written +
+            if (cancelled) Log.d(
+                TAG, "materialise cancelled token=" + hash(token) + " at=" + written
+            ) else Log.w(
+                TAG, "materialise failed token=" + hash(token) + " at=" + written +
                     " " + it.javaClass.simpleName + ": " + it.message
             )
             false
@@ -151,12 +176,15 @@ class CastStreamStore(
         // fill - a stall with no error, which is the exact failure mode this whole store exists to
         // remove. Treat it as a failure here instead.
         if (written <= 0L || (expected != LENGTH_UNSET && written < expected)) {
-            Log.w(TAG, "materialise short token=" + token + " got=" + written + " expected=" + expected)
+            Log.w(
+                TAG, "materialise short token=" + hash(token) + " got=" + written +
+                    " expected=" + expected
+            )
             runCatching { target.delete() }
             return null
         }
         Log.d(
-            TAG, "materialise done token=" + token + " bytes=" + written +
+            TAG, "materialise done token=" + hash(token) + " bytes=" + written +
                 " ms=" + (System.currentTimeMillis() - startedAt)
         )
         ready[token] = target

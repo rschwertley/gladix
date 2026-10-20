@@ -363,6 +363,13 @@ class PlayerService : MediaLibraryService() {
         val callback = PlayerCallback(
             app, scope, app.throwFlow, extensions, state, downloadFlow, historyRepository
         )
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe needs the two pieces of state it cannot see
+        // from the playback package: whether a head unit is connected and whether the queue is
+        // being restored. The same two lambdas the crossfade controller is given below.
+        ColdStartPlayProbe.attach(
+            androidAuto = { isAndroidAutoConnected },
+            restoring = { state.resumptionApplying },
+        )
 
         val session = MediaLibrarySession.Builder(this, player, callback)
             .setBitmapLoader(PlayerBitmapLoader(this, scope))

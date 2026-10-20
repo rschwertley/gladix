@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
+import dev.brahmkshatriya.echo.playback.ColdStartPlayProbe
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -332,6 +333,8 @@ class PlayerViewModel(
     }
 
     fun setPlaying(isPlaying: Boolean) {
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - one of four UI play sources. Records only.
+        if (isPlaying) ColdStartPlayProbe.recordUi()
         withBrowser {
             Log.d("GladixAudio", "setPlaying: isPlaying=$isPlaying playbackState=${it.playbackState} playWhenReady=${it.playWhenReady}")
             it.playWhenReady = isPlaying
@@ -620,6 +623,9 @@ class PlayerViewModel(
     // reader meeting "prepare accepted, nothing happened" should recognise it immediately rather than
     // re-derive it.
     fun setQueue(id: String, list: List<Track>, index: Int, context: EchoMediaItem?) {
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - a track tap plays through prepare(), which
+        // is not a controller play COMMAND, so it has to be recorded here or it reads as unsourced.
+        ColdStartPlayProbe.recordUi()
         withBrowser { controller ->
             if (list.isEmpty()) return@withBrowser
             // P2 — current+upcoming: start at the tapped track (index 0) and drop the tracks before it,
@@ -743,6 +749,8 @@ class PlayerViewModel(
     // generated radio — service-side (PlayerCallback.trackRadio) so it works on TV without relying on
     // auto-radio. No loading snackbar (the seed plays immediately), matching the old setQueue path.
     fun playTrackRadio(id: String, track: Track) = viewModelScope.launch {
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - custom command, same reason as setQueue.
+        ColdStartPlayProbe.recordUi()
         withBrowser {
             it.sendCustomCommand(trackRadioCommand, Bundle().apply {
                 putString("extId", id)
@@ -756,6 +764,8 @@ class PlayerViewModel(
     }
 
     fun play(id: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String? = null) = viewModelScope.launch {
+        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - custom command, same reason as setQueue.
+        ColdStartPlayProbe.recordUi()
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.playing_x, item.title))
         )

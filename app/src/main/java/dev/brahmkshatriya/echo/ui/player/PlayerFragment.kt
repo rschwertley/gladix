@@ -125,10 +125,17 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
 // morph alone (PlayerTrackAdapter.updateCollapsed scales the cover linearly across the whole drag) —
 // the shared element owns the handoff and the chrome clears at both ends.
 //
-// RETUNE HERE AND ONLY HERE. Both curves in updateCollapsed derive from this one value:
+// RETUNE HERE AND ONLY HERE. All THREE curves derive from this one value:
 //   collapsed bar   : min(1, max(0, (collapsedOffset - (1 - F)) / F))   -> 1 at p=0,   0 from p=F
 //   expanded chrome : 1 - min(1, collapsedOffset / F)                   -> 0 until p=1-F, 1 at p=1
+//   page cover      : min(1, (1 - collapsedOffset) / (F / 2))           -> 0 at p=0,   1 from p=F/2
 // where p = playerSheetOffset (0 collapsed .. 1 expanded) and collapsedOffset = 1 - p in the drag arm.
+// The third lives in PlayerTrackAdapter.updateCollapsed (the per-page cover is the adapter's to
+// animate) and is why this constant is no longer private. It fades IN over the first HALF of the
+// bar's fade-out window, deliberately faster than the bar fades out: the two cover images sit at
+// the same place and the same size at p=0, so their alphas must sum to >= 1 through the overlap or
+// the artwork goes briefly translucent. By p = F/2 the bar is still at ~0.5 and the page cover is
+// already opaque, which is the state the rest of the drag has always been in.
 // Larger F = longer fades and a smaller gap; F = 1/2 closes the gap and the curves cross at p = 0.5.
 // Avoid that: the two layouts put their text in different places, so blending both at 50% is
 // double-exposure — the same artefact this replaced.
@@ -146,7 +153,7 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
 // was an ALPHA problem wearing a translation costume. With the fade ending at p = F the bar is never
 // seen further than 2 * collapseHeight * F from its slot and reads as a normal slide-and-fade exit.
 // Retune F, not the 2.
-private const val CHROME_FADE_FRACTION = 1f / 3f
+internal const val CHROME_FADE_FRACTION = 1f / 3f
 
 class PlayerFragment : Fragment() {
     // ⚠⚠ `binding != null` IS NOT AN ATTACHMENT PROXY. READ THIS BEFORE WRITING ANOTHER
@@ -593,6 +600,40 @@ class PlayerFragment : Fragment() {
             if (index != pos && isUser) viewModel.seek(pos)
         }
 
+        // ⚠⚠ TWO KNOWN DEFECTS IN HERE, BOTH PARKED ON PURPOSE 2026-10-19, AND NEITHER
+        // IS VISIBLE TODAY. They were diagnosed chasing a mini-bar flash on tapping an EARLIER track
+        // in the playing playlist; that flash was fixed STRUCTURALLY instead, by taking the per-page
+        // cover out of the collapsed bar (PlayerTrackAdapter.updateCollapsed's cover alpha). Both
+        // defects survive, and both are now page-position bookkeeping with nothing painting from it
+        // while collapsed. Read both before "fixing" either, because each one's obvious fix is
+        // wrong in the presence of the other.
+        //
+        // 1. THE `abs(index - current) <= 1` GATE CAN COMPARE AGAINST A STALE PAGE. Read from
+        //    ViewPager2 1.1.0-beta02 (identical in 1.0.0): its adapter observer funnels
+        //    onItemRangeInserted/Removed/Changed into onChanged() (ViewPager2.java:1617+), which does
+        //    only `mCurrentItemDirty = true` plus a scroll-adapter notify (:141-144); and
+        //    updateCurrentItem() (:544-561) NEVER WRITES mCurrentItem - it dispatches
+        //    onPageSelected(snapPosition) and clears the flag. So after a DiffUtil insert at the
+        //    front, RecyclerView keeps the anchored view on screen (the rendered page moves by the
+        //    insert size) while getCurrentItem() still returns the old number. `current` below is
+        //    that number, so the gate can read a distance of 0 when the rendered distance is N, let
+        //    smooth=true through, and smoothScrollToPosition then animates from the RENDERED
+        //    position across every page in between (:665-670 even pre-jumps to +-3 first).
+        //    A front REMOVAL is harmless for the opposite reason: it moves the anchor TOWARD the
+        //    number mCurrentItem already holds, so the gate happens to be honest.
+        // 2. THE TWO SOURCES BELOW ARE DIFFERENTLY TIMED, SO A SUBMIT CAN STRADDLE A GENERATION.
+        //    `capturedCurrent` is fresh; `viewModel.queue` is written 50 ms after the last timeline
+        //    change (PlayerEventListener.emitFullQueue) and lags it. The current collector calls
+        //    submit() on EVERY Current change (transition, isLoaded, isPlaying), so several submits
+        //    land inside that window. On a replacement whose new list CONTAINS the old current -
+        //    which is exactly a tap earlier in the same playlist - indexOfFirst finds that old
+        //    current at a far index and the pager is committed there, then committed back to 0 when
+        //    Current catches up. The [CORRECTED 2026-10-16] note below fixed the second derivation
+        //    inside the posted runnable; the straddle between these two lines is still here.
+        // ⚠️ WHAT WOULD REOPEN THEM: anything that paints from the ViewPager while the
+        // player is collapsed. That is the structural condition the fix removed, and it is also what
+        // the 2026-08-24/29 record asked for after this per-page structure had caused three bugs
+        // (index, bookkeeping, paint). If a fourth painter is added, fix 1 and 2 first.
         fun submit() {
             val capturedCurrent = viewModel.playerState.current.value
             // `submitted` is the EXACT instance handed to submitList, so the index computed below and

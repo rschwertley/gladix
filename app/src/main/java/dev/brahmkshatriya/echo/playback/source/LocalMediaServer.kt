@@ -215,7 +215,12 @@ class LocalMediaServer(
             TAG, "register plan=" + plan.javaClass.simpleName + " mime=" + plan.mime +
                 " token=" + keyHash(token) + " plans=" + plans.size
         )
-        return prefix + PATH_PREFIX + token
+        // ⚠️ THE TRAILING /track.<ext> IS PART OF THE SHAPE, NOT DECORATION. Media
+        // pipelines routinely sniff a URL's extension, and some weight it over the Content-Type;
+        // a URL ending in an opaque token tells the receiver nothing before it connects. [serve]
+        // keys on the FIRST segment after the prefix, so this shape and the bare-token shape the
+        // debug hook mints are both accepted.
+        return prefix + PATH_PREFIX + token + "/track." + CastPlan.extFor(plan.mime)
     }
 
     /**
@@ -245,12 +250,9 @@ class LocalMediaServer(
             Log.w(TAG, "not starting: Wi-Fi address has no literal form")
             return false
         }
-        val opened = runCatching { ServerSocket(0, BACKLOG, address) }
-        val socket = opened.getOrNull()
+        val socket = bindSocket()
         if (socket == null) {
-            Log.w(
-                TAG, "bind failed: " + (opened.exceptionOrNull()?.javaClass?.simpleName ?: "?")
-            )
+            Log.w(TAG, "not starting: no candidate port could be bound")
             return false
         }
         serverSocket = socket
@@ -273,6 +275,30 @@ class LocalMediaServer(
             workers?.execute { store?.purgeAll() }
         }
         return true
+    }
+
+    /**
+     * ⚠️ BINDS THE WILDCARD ADDRESS, NOT THE WI-FI ONE. 0.0.0.0 puts the listener on
+     * every interface the device has, which includes whichever one the receiver can actually
+     * reach; binding the single link address [wifiAddress] picked makes the listener depend on
+     * that guess being right, and a device with more than one Wi-Fi-transport network has no
+     * guarantee it is. The address is still required and still what goes into the URL - the
+     * receiver needs something routable to connect back to.
+     *
+     * ⚠️ FIXED PORTS FIRST AND RANDOM LAST. The ladder exists because any one of them
+     * may be taken by another app, and port 0 means a fully occupied ladder is never fatal: the
+     * OS picks. Only [base] is handed out, so the port is never assumed anywhere.
+     */
+    private fun bindSocket(): ServerSocket? {
+        for (port in CANDIDATE_PORTS) {
+            val opened = runCatching { ServerSocket(port, BACKLOG) }
+            opened.getOrNull()?.let { return it }
+            Log.w(
+                TAG, "bind failed on " + port + ": " +
+                    (opened.exceptionOrNull()?.javaClass?.simpleName ?: "?")
+            )
+        }
+        return null
     }
 
     /**
@@ -335,6 +361,13 @@ class LocalMediaServer(
         while (running.get()) {
             val client = runCatching { socket.accept() }.getOrNull()
             if (client == null) break
+            // ⚠️ LOGGED BEFORE ANY PARSING, AND THAT IS THE WHOLE POINT OF IT BEING
+            // HERE. Every other line in this class is written after a request has been read and
+            // understood, so a connection that is malformed, uses a method we refuse, or dies
+            // mid-headers left no trace at all - which made "no request lines in the capture"
+            // unable to distinguish a receiver that never connected from one we dropped in
+            // silence. The peer address is a LAN address and carries nothing secret.
+            Log.d(TAG, "accept from " + (client.inetAddress?.hostAddress ?: "?"))
             val pool = workers
             if (pool == null) {
                 runCatching { client.close() }
@@ -367,6 +400,8 @@ class LocalMediaServer(
         val requestLine = readHeaderLine(input) ?: return
         val parts = requestLine.split(' ')
         if (parts.size < 2) {
+            // Length only: a malformed request line is attacker-controlled text.
+            Log.w(TAG, "malformed request line, " + requestLine.length + " chars -> 400")
             respondStatus(output, 400, "Bad Request")
             return
         }
@@ -396,13 +431,16 @@ class LocalMediaServer(
             return
         }
         if (method != "GET" && method != "HEAD") {
+            Log.w(TAG, method + " -> 405")
             respondStatus(output, 405, "Method Not Allowed", "Allow: GET, HEAD, OPTIONS")
             return
         }
 
         val path = runCatching { Uri.parse(PATH_BASE + target).path }.getOrNull()
+        // The token is the FIRST segment after the prefix: a cast URL carries a trailing
+        // /track.<ext> for the receiver's benefit (see [urlForPlan]), the debug hook's does not.
         val token = if (path == null || !path.startsWith(PATH_PREFIX)) null
-        else path.substring(PATH_PREFIX.length).trim('/')
+        else path.substring(PATH_PREFIX.length).trim('/').substringBefore('/')
         // ⚠️ ONE 404 FOR EVERY REJECTION, AND THE SAMENESS IS THE POINT. A wrong path, an
         // expired token and a never-registered token are indistinguishable from outside, so probing
         // learns nothing about what this device is playing.
@@ -884,6 +922,16 @@ class LocalMediaServer(
         private const val THREAD_NAME = "GladixLocalMediaServer"
         private const val PATH_PREFIX = "/stream/"
 
+        /**
+         * ⚠⚠ THE TOKEN IS NO LONGER THE LAST PATH SEGMENT, WHICH IS WHY THIS EXISTS.
+         * [urlForPlan] appends /track.<ext> after the token, so `substringAfterLast('/')` reads
+         * the FILENAME - and a caller that used it as the token would materialise under one key
+         * and serve under another, every time. One minter, one reader: the shape is known here
+         * and in [serve], nowhere else.
+         */
+        fun tokenOf(url: String): String =
+            url.substringAfterLast(PATH_PREFIX).substringBefore('/')
+
         // Only ever parsed, never dialled: the request target is relative, and Uri.parse needs an
         // authority before it will treat the target as a path.
         private const val PATH_BASE = "http://localhost"
@@ -893,6 +941,9 @@ class LocalMediaServer(
          * cannot reach a token being read - see the note on `tokens`.
          */
         private const val MAX_TOKENS = 4
+
+        /** Tried in order; 0 means "let the OS choose" and is the fallback. See [bindSocket]. */
+        private val CANDIDATE_PORTS = intArrayOf(8080, 8000, 8888, 0)
 
         private val CORS = listOf(
             "Access-Control-Allow-Origin: *",

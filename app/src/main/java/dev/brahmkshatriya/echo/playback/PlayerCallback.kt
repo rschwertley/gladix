@@ -98,6 +98,30 @@ class PlayerCallback(
 
     override val historyRepository: HistoryRepository get() = histRepo
 
+    /**
+     * ⚠⚠ [TEMPORARY 2026-10-19] RECORDS ONLY, RETURNS THE DEFAULT, CHANGES NOTHING.
+     * The cold-start autoplay item needs the NAME of whoever asks for play, and this is the one
+     * place every external request passes through: MediaSessionStub:353 for Media3 controllers and
+     * MediaSessionLegacyStub:875 for platform ones (Bluetooth, Assistant, Wear, the notification),
+     * both via MediaSessionImpl.onPlayerCommandRequestOnHandler:1047-1049, media3 1.11.0. Verified
+     * still dispatched at that version - the callback is @Deprecated (MediaSession.java:1764) in
+     * favour of available-command editing plus getControllerForCurrentRequest, not removed.
+     * ⚠️ THE RETURN IS `super`, NOT A LITERAL RESULT_SUCCESS, so the default cannot
+     * drift away from us; AndroidAutoCallback does not override it, so this reaches the interface
+     * default. Package name only - see ColdStartPlayProbe for the whole data rule, and delete this
+     * override with it.
+     */
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onPlayerCommandRequest(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        playerCommand: Int,
+    ): Int {
+        if (playerCommand == Player.COMMAND_PLAY_PAUSE)
+            ColdStartPlayProbe.recordController(controller.packageName)
+        return super.onPlayerCommandRequest(session, controller, playerCommand)
+    }
+
     // TIER 1 WAS UNDER-FILTERED — FIXED 2026-09-07. This is the LIVE implementation (PlayerCallback is
     // AndroidAutoCallback's only subclass). Tiers 2 and 3 already applied the full aaEligible; TIER 1 APPLIED
     // ONLY `it != UNIFIED_ID` to the STRING and never checked isEnabled. The id it reads is written by
