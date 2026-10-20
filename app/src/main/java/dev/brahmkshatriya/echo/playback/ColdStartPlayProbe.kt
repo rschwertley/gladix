@@ -17,10 +17,11 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * happens, which is what this does.
  *
  * ⚠⚠ REMOVAL IS ONE GREP: `ColdStartPlayProbe`. Delete this file, then delete the call lines
- * it names - PlayerCallback.onPlayerCommandRequest (the whole override), four recordUi() lines in
- * PlayerViewModel, two onPlay() lines in ShufflePlayer, one attach() line in PlayerService - plus
- * CrashKeys.processAgeMs, which was added for this and is marked the same way. Nothing else depends on
- * it and nothing reads its state.
+ * it names - PlayerCallback.onPlayerCommandRequest (the whole override) and its three
+ * recordCommand lines (backfillQueue, the trackRadio seed, addToNext - the last one restores a
+ * one-line `if`), six recordUi() lines in PlayerViewModel, two onPlay() lines in ShufflePlayer, one
+ * attach() line in PlayerService - plus CrashKeys.processAgeMs, which was added for this and is
+ * marked the same way. Nothing else depends on it and nothing reads its state.
  *
  * ⚠️ PACKAGE NAMES AND NUMBERS ONLY. The only identity recorded is `ControllerInfo.packageName`
  * for an external controller and the literal "ui" for our own surfaces. No track, no queue, no
@@ -82,6 +83,19 @@ object ColdStartPlayProbe {
 
     /** One of our own UI surfaces asked for play. */
     fun recordUi() = record(UI)
+
+    /**
+     * ⚠⚠ FOR A SESSION COMMAND THAT FORCES PLAY AFTER ASYNC WORK, WHERE THE UI
+     * RECORD IS ALREADY TOO OLD. Build 1140 filed a report for exactly this: a History tap
+     * (PlayerCallback.backfillQueue) with lastSource=none at ageMs=18120. Two causes, and the
+     * second is the one that matters - the ViewModel had no record site at all, AND that handler
+     * forces playWhenReady only AFTER freshContextUpcoming, a network fetch that on a Combine
+     * account can easily exceed [SOURCE_WINDOW_MS]. So recording at the tap is necessary and NOT
+     * sufficient; the source has to be re-asserted where the play actually originates.
+     * ⚠️ [name] IS ONE OF OUR OWN PATH LABELS, not anything about the user or the
+     * media - same class of value as the `path=` field. The data rule is unchanged.
+     */
+    fun recordCommand(name: String) = record("cmd:" + name)
 
     private fun record(source: String) {
         lastSource = source

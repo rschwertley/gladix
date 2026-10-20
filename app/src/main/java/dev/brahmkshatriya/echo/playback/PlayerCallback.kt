@@ -608,6 +608,10 @@ class PlayerCallback(
                 setMediaItems(listOf(seedItem), 0, seed.playedDuration ?: 0)
                 (this as? ShufflePlayer)?.syncShuffleFlag(false)
                 if (playbackState == Player.STATE_IDLE) prepare()
+                // [TEMPORARY 2026-10-20] ColdStartPlayProbe - same as backfillQueue: the source
+                // is re-asserted at the forced play, not only at the tap, so async work between
+                // the two cannot age the record past the probe's 2 s window.
+                ColdStartPlayProbe.recordCommand("trackRadio")
                 playWhenReady = true
             }
             // 2) Generate the radio and append it after the seed (mirrors PlayerRadio.loadPlaylist: start +
@@ -1027,6 +1031,11 @@ class PlayerCallback(
             // History tap: in-order current+upcoming — sync the shuffle flag/icon OFF without changeQueue.
             (player as? ShufflePlayer)?.syncShuffleFlag(false)
             player.prepare()
+            // [TEMPORARY 2026-10-20] ColdStartPlayProbe - re-assert the source HERE, not only at
+            // the tap: freshContextUpcoming above is a network fetch, so by this line the tap's own
+            // record can be many seconds old and outside the probe's 2 s window. This is the line
+            // that would have stopped 1140's false report.
+            ColdStartPlayProbe.recordCommand("backfill")
             player.playWhenReady = true
         }
         SessionResult(RESULT_SUCCESS)
@@ -1143,7 +1152,12 @@ class PlayerCallback(
                 )
                 return@with
             }
-            if (mediaItemCount == 0) playWhenReady = true
+            // [TEMPORARY 2026-10-20] ColdStartPlayProbe - recorded INSIDE the branch, so the
+            // source is asserted only when this really does force play (an empty queue).
+            if (mediaItemCount == 0) {
+                ColdStartPlayProbe.recordCommand("addToNext")
+                playWhenReady = true
+            }
             // Current index so "play next" inserts right after the CURRENT track.
             val fullIndex = currentMediaItemIndex
             addMediaItems(fullIndex + 1 + next, mediaItems)

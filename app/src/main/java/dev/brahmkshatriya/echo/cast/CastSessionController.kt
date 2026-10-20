@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
+import com.google.android.gms.cast.MediaError
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -196,6 +197,33 @@ class CastSessionController(
                 MediaStatus.IDLE_REASON_FINISHED -> advanceLocalQueue()
                 else -> Unit
             }
+        }
+
+        /**
+         * ⚠⚠ THE RECEIVER'S OWN VERDICT ON OUR LOAD, AND THE ONLY PLACE IT ARRIVES.
+         * The LOAD goes out through RemoteCastPlayer.setMediaItem, which issues
+         * remoteMediaClient.load internally and consumes the PendingResult<MediaChannelResult>
+         * itself - nothing in media3 1.11.0 surfaces that result, and its getPlayerError() is
+         * unconditional null (RemoteCastPlayer.java:623-627). So the request's own status code and
+         * message are NOT reachable without issuing the load ourselves, which would mean two load
+         * paths for one item. This callback is the free half: whatever the receiver reports about
+         * the media is delivered here, type and reason as strings plus the numeric
+         * detailedErrorCode that distinguishes, for example, a fetch failure from a decode one.
+         * Verified present in play-services-cast-framework 22.3.1 (RemoteMediaClient$Callback
+         * .onMediaError) with the getters on MediaError in play-services-cast 22.3.1.
+         *
+         * ⚠️ LOG ONLY, DELIBERATELY. [onStatusUpdated] above already owns the failure
+         * decision through IDLE_REASON_ERROR, and a second actor on the same event would race it
+         * into a double stop. customData is also deliberately not logged: it is receiver-authored
+         * and can echo the request, token and all.
+         */
+        override fun onMediaError(mediaError: MediaError) {
+            Log.w(
+                TAG, "receiver mediaError type=" + mediaError.type +
+                    " reason=" + mediaError.reason +
+                    " detailedCode=" + mediaError.detailedErrorCode +
+                    " requestId=" + mediaError.requestId
+            )
         }
     }
 
@@ -447,7 +475,16 @@ class CastSessionController(
                 " contentUrl=" + (config?.uri?.toString()?.let { loggableUrl(ready.plan, it) }
                     ?: "none") +
                 " contentType=" + (config?.mimeType ?: "none") +
-                " contentId=" + hash(ready.mediaId) + " pos=" + positionMs + " play=" + play
+                " contentId=" + (
+                    // What the converter will actually send, by the decoded branch quoted in
+                    // CastMediaItemBuilder: the URL when the mediaId is the default. Printing the
+                    // LOCAL id here (as this did until 2026-10-20) hid the whole defect - the line
+                    // said contentId=<track> while the wire carried <track> for a different reason
+                    // than anyone reading it assumed.
+                    if (ready.item.mediaId == MediaItem.DEFAULT_MEDIA_ID) "sameAsUrl"
+                    else hash(ready.item.mediaId)
+                    ) + " localId=" + hash(ready.mediaId) +
+                " pos=" + positionMs + " play=" + play
         )
         runCatching {
             castPlayer.setMediaItem(ready.item, positionMs.coerceAtLeast(0L))

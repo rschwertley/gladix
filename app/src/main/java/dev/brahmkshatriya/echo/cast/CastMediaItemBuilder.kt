@@ -19,11 +19,31 @@ import kotlin.io.encoding.Base64
  * degrading. The metadata it reads is title, subtitle, artist, albumArtist, albumTitle, artworkUri,
  * composer, discNumber and trackNumber (:142-170); anything else we set is dropped.
  *
- * ⚠️ mediaId IS THE TRACK ID, AND THAT IS CHECKED RATHER THAN ASSUMED. It becomes the
- * receiver's contentId (:172-173) while contentUrl carries the URL separately (:181), so the receiver
- * has both. Verified against the reference app (Echo Expressive 4.1.2), which casts successfully to the
- * same Default Media Receiver with mediaId set to the original item's id rather than to the URL - so
- * this shape is not the reason a load fails.
+ * ⚠⚠ [CORRECTED 2026-10-20] mediaId IS DELIBERATELY NOT SET, AND THE OLD CLAIM HERE
+ * WAS THE REASON CASTING NEVER PLAYED A NOTE. It read: "mediaId IS THE TRACK ID, AND THAT IS
+ * CHECKED RATHER THAN ASSUMED ... Verified against the reference app, which casts successfully with
+ * mediaId set to the original item's id rather than to the URL - so this shape is not the reason a
+ * load fails." Every clause was wrong in a different way, and the device settled it: build 1140
+ * logged a LOAD, the receiver sat in playerState=5 to the 15 s timeout, and LocalMediaServer logged
+ * NOT ONE accept - the receiver never dialled us at all.
+ * ⚠⚠ WHAT THE CONVERTER ACTUALLY DOES, DECODED FROM THE AAR (no sources jar is
+ * published for media3-cast 1.11.0, so this is javap on classes.jar, toMediaQueueItem):
+ *     268-278  contentUrl source = localConfiguration.uri.toString()
+ *     279-300  contentId = mediaId.equals("") ? uri : mediaId
+ *     322-328  new MediaInfo.Builder(contentId)
+ *     342      setContentUrl(uri)
+ * So a NON-EMPTY mediaId puts our TRACK ID in contentId - which is what the 1140 log shows
+ * (contentId=3c541c97) - and a receiver that fetches from contentId has nothing to fetch.
+ * ⚠️ AND THE REFERENCE WAS MISREAD, NOT MISQUOTED. Its converter is a MODIFIED copy
+ * (decompiled ia3/ma0) whose condition is INVERTED: `!mediaId.equals("") ? uri : mediaId`, so it
+ * sends the URI as contentId whenever it has an id at all - i.e. always. "The reference uses the
+ * item id" described the field it SET, not the field it SENT.
+ * ⚠️ LEAVING mediaId AT ITS DEFAULT IS THE WHOLE FIX, rather than setting it to the
+ * URL: both produce identical wire bytes (contentId == contentUrl == the served URL) and this way
+ * the token lives in exactly one field. Nothing of ours reads the CAST item's mediaId - every
+ * castedMediaId, pendingMediaId, prepared key and Copy id in CastSessionController comes from the
+ * LOCAL item - so the default costs no correlation. If that ever stops being true, set it to the
+ * served URL; never to the track id.
  */
 object CastMediaItemBuilder {
 
@@ -53,7 +73,8 @@ object CastMediaItemBuilder {
             else -> servedUrl ?: return null
         }
         return MediaItem.Builder()
-            .setMediaId(track.id)
+            // No setMediaId: the default empty id is what makes DefaultMediaItemConverter put the
+            // URL into contentId as well as contentUrl. See the note above before re-adding it.
             .setUri(url)
             // The receiver decides whether it can play the item from this alone. CastPlan.mimeFor
             // derives it from the source's own type, extension or container bytes - see the ladder

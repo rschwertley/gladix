@@ -657,6 +657,11 @@ class PlayerViewModel(
     fun backfillQueue(
         extensionId: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String,
     ) = viewModelScope.launch {
+        // [TEMPORARY 2026-10-20] ColdStartPlayProbe - the History tap, which had no record site
+        // and filed a false ColdStartAutoplayUnexplained on 1140. Not sufficient on its own: the
+        // play is forced service-side after a network fetch, so PlayerCallback.backfillQueue
+        // re-asserts the source at the point it actually plays.
+        ColdStartPlayProbe.recordUi()
         withBrowser {
             it.sendCustomCommand(backfillCommand, Bundle().apply {
                 putString("extId", extensionId)
@@ -809,6 +814,9 @@ class PlayerViewModel(
     }
 
     fun addToNext(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
+        // [TEMPORARY 2026-10-20] ColdStartPlayProbe - "play next" onto an EMPTY queue starts
+        // playback service-side, so this tap needs a record like the others.
+        ColdStartPlayProbe.recordUi()
         if (!(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_next, item.title))
         )
