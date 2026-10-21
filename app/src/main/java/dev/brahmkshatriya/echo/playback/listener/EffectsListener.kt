@@ -26,6 +26,9 @@ class EffectsListener(
     private val context: Context,
     private val audioSessionFlow: MutableStateFlow<Int>,
     private val audioEffectsProcessor: AudioEffectsProcessor,
+    // Service-lifetime scope (PlayerService.scope: SupervisorJob + IO, cancelled in onDestroy) — valid at
+    // init/onCreate and never fires after release, so the deferred broadcast can't leak or run post-teardown.
+    private val scope: CoroutineScope,
     /**
      * ⚠⚠ APPLIES BASS BOOST TO EVERY PROCESSOR, WHICH IS MORE THAN THIS CLASS
      * CAN REACH. [audioEffectsProcessor] is the MAIN player's; the crossfade tail has its own
@@ -33,11 +36,13 @@ class EffectsListener(
      * tail audibly different from the head - the exact defect the session-sharing rule existed to
      * prevent. So the fan-out lives at the one place that can see both.
      * Defaults to the main processor alone, which keeps this class usable in isolation.
+     * ⚠️ LAST, AND IT HAS TO BE: a parameter WITH a default placed before one
+     * WITHOUT breaks every positional call site, which is exactly what it did - inserted above
+     * `scope`, it swallowed PlayerService's 5th positional argument and the release build failed
+     * with "actual type is CoroutineScope, but (Int) -> Unit was expected". Keep defaulted
+     * parameters at the end.
      */
     private val applyBassBoost: (Int) -> Unit = { audioEffectsProcessor.setBassBoost(it) },
-    // Service-lifetime scope (PlayerService.scope: SupervisorJob + IO, cancelled in onDestroy) — valid at
-    // init/onCreate and never fires after release, so the deferred broadcast can't leak or run post-teardown.
-    private val scope: CoroutineScope,
 ) : Player.Listener {
 
     // Serial (parallelism=1) view of IO: the two ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION announces — the init

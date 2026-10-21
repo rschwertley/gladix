@@ -353,13 +353,17 @@ class PlayerService : MediaLibraryService() {
     }
     private val effects by lazy {
         EffectsListener(
-            exoPlayer, this, state.session, audioEffectsProcessor, scope,
+            exoPlayer = exoPlayer,
+            context = this,
+            audioSessionFlow = state.session,
+            audioEffectsProcessor = audioEffectsProcessor,
+            scope = scope,
             // ⚠⚠ BOTH PROCESSORS, AND THIS IS THE ONLY PLACE THAT CAN SEE BOTH.
             // EffectsListener holds the main player's processor; the crossfade tail has its own,
             // created in [syncCrossfade]. A shelf on one leg only would change the tone halfway
             // through every overlap. Null-safe on the controller: with the slider at 0 there is
             // no sidecar, and [syncCrossfade] seeds whichever one it creates next.
-            applyBassBoost = { strength ->
+            applyBassBoost = { strength: Int ->
                 audioEffectsProcessor.setBassBoost(strength)
                 crossfade?.onBassBoostChanged(strength)
             },
