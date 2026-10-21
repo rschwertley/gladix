@@ -94,6 +94,17 @@ class PlayerCallback(
     private val state: PlayerState,
     override val downloadFlow: StateFlow<List<Downloader.Info>>,
     private val histRepo: HistoryRepository,
+    /**
+     * ⚠⚠ "THE USER TOUCHED TRANSPORT", WHICH IS THE ONE THING AudioFocusListener
+     * CANNOT OBSERVE FOR ITSELF. Every pause in this app reaches it as
+     * PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST (ExoPlayerImpl hard-codes it,
+     * setPlayWhenReady:882-885, media3 1.11.0), so a focus pause and a user pause are
+     * indistinguishable there - and a pause press on an already-paused player produces no
+     * callback at all. This callback and [onSleepTimer] are the only sites that see user
+     * INTENT, so they are where the focus-resume authorisation is revoked. See
+     * AudioFocusListener.onTransportIntent.
+     */
+    private val onTransportIntent: () -> Unit = {},
 ) : AndroidAutoCallback(app, scope, extensions.music, downloadFlow) {
 
     override val historyRepository: HistoryRepository get() = histRepo
@@ -117,8 +128,16 @@ class PlayerCallback(
         controller: MediaSession.ControllerInfo,
         playerCommand: Int,
     ): Int {
-        if (playerCommand == Player.COMMAND_PLAY_PAUSE)
+        if (playerCommand == Player.COMMAND_PLAY_PAUSE) {
             ColdStartPlayProbe.recordController(controller.packageName)
+            // ⚠⚠ EVERY EXTERNAL AND IN-APP TRANSPORT PRESS PASSES HERE, AND NO
+            // INTERNAL PAUSE DOES. The notification, lock screen, headset/BT, Android Auto,
+            // Assistant and our own button (PlayerViewModel.setPlaying writes through the
+            // MediaController) are all controller commands; AudioFocusListener's own pause, the
+            // buffering watchdog and the stall hold call the player directly and never reach a
+            // session callback. That asymmetry is exactly what makes this the intent signal.
+            onTransportIntent()
+        }
         return super.onPlayerCommandRequest(session, controller, playerCommand)
     }
 
@@ -400,6 +419,11 @@ class PlayerCallback(
 
         timerJob = scope.launch {
             delay(time)
+            // ⚠️ THE SLEEP TIMER NEEDS ITS OWN CALL, because a custom session
+            // command does NOT pass through onPlayerCommandRequest - only Player.Commands do.
+            // Without this line a sleep-timer stop would leave a focus-resume authorisation
+            // armed, which is the 1141 shape with a timer instead of a finger.
+            onTransportIntent()
             player.with { pause() }
         }
         return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))

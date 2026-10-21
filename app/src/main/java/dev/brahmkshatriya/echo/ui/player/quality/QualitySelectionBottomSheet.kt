@@ -182,6 +182,15 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
     private fun bindCast() {
         val context = CastAvailability.castContext(requireContext()) ?: return
         castContext = context
+        // ⚠️ THIS LEAKS ONE MediaRouteButton PER SHEET OPEN AND THERE IS NOTHING
+        // WE CAN DO ABOUT IT - INVESTIGATED 2026-10-21, DO NOT RE-OPEN. Decoded from
+        // play-services-cast-framework 22.3.1: setUpMediaRouteButton ends with `zze.add(button)`
+        // into a process-wide static List, and the SDK exposes no teardown. The sheet re-inflates
+        // its button, so the call is required for the button to work and cannot be skipped.
+        // ⚠️ AND IT IS NOT THE DUPLICATE-DEVICE BUG. A retained button adds no
+        // routes (a detached one has already removed its own MediaRouter.Callback); the list in
+        // the chooser is built inside Play Services from MediaRouter.getRoutes(), and we populate
+        // nothing. That symptom is open pending a dumpsys media_router capture.
         // Wrapped separately from the init above: setUpMediaRouteButton touches the framework's
         // route selector, and a failure there must still leave the rest of the sheet working.
         val wired = runCatching {

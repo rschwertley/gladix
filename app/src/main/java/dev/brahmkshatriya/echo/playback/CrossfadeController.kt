@@ -100,6 +100,14 @@ class CrossfadeController(
     private val isRestoring: () -> Boolean,
     private val skipFadeOnAlbums: () -> Boolean,
     private val isPausedForFocus: () -> Boolean,
+    /**
+     * ⚠⚠ MAIN'S EFFECTIVE BASS BOOST FOR THE TRACK PLAYING NOW, READ AT ARM.
+     * Per-track effects mean the answer changes with the current item, and the sidecar is a
+     * long-lived object seeded once at creation - so without this it keeps whatever the FIRST
+     * track it ever tailed was set to. Wired from PlayerService, which owns the prefs resolution;
+     * 0 by default, which is also what a build with no bass boost would do.
+     */
+    private val currentBassBoost: () -> Int = { 0 },
 ) {
 
     /** Slider value in seconds; 0 = off. Written on the app looper from PlayerService's prefs listener. */
@@ -357,6 +365,12 @@ class CrossfadeController(
      */
     private var lastPrerollRefusal: String? = null
     private var measuredGapMs = 0L
+
+    /**
+     * Wall-clock time of the main sample that produced the accepted median; 0 when no measurement
+     * was accepted. Only the switch line reads it - see MainProjection.medianAtMs.
+     */
+    private var medianSampleAtMs = 0L
     private var tailEndLogged = false
 
     // ⚠⚠ THE HAND-OFF IS A SEEK, AND TWO OF OUR OWN HOOKS ABORT ON SEEKS. ShufflePlayer's
@@ -595,6 +609,56 @@ class CrossfadeController(
         runCatching { sidecar.skipSilenceEnabled = false }
     }
 
+    /**
+     * ⚠⚠ THE SIDECAR FOLLOWS MAIN'S AUDIO SESSION, AND IT HAS TO BE A HOOK
+     * RATHER THAN A COPY BECAUSE THE ID ARRIVES LATE. ExoPlayerImpl generates its session id on
+     * the PLAYBACK thread from its own constructor and publishes it back asynchronously (1.11.0,
+     * :427-443), so PlayerService.syncCrossfade - which runs in onCreate - read
+     * AUDIO_SESSION_ID_UNSET and its one-shot copy was a no-op. Measured on 1141: main 25513,
+     * sidecar 25521, and the Equalizer / LoudnessEnhancer chain on 25513 ALONE - so the tail of
+     * every crossfade played with none of the session effects the head had.
+     * ⚠️ MAIN'S ID IS NEVER WRITTEN, which is the older rule and still right:
+     * setting it would fire EffectsListener.onAudioSessionIdChanged - release, rebuild,
+     * re-broadcast - mid-playback, on every crossfade.
+     * ⚠️ SAFE AT ANY TIME. The sidecar is idle between transitions, and on a
+     * running one setAudioSessionId reaches DefaultAudioSink, which flushes its output before
+     * the next write - a tail that loses its correction is a worse crossfade, not a wrong
+     * session, and an id change mid-tail cannot happen in practice because main's id changes
+     * only when ITS output is rebuilt.
+     */
+    /**
+     * The tail gets the same EQ as the head. Called from PlayerService on every settings change
+     * and once when the sidecar is created, because a shelf on the main leg alone would make the
+     * crossfade audibly change tone halfway through - which is the same reason the two legs share
+     * an audio session. See AudioEffectsProcessor.setBassBoost.
+     *
+     * ⚠⚠ REFUSED WHILE ACTIVE, AND THAT IS ABOUT PER-TRACK PREFS RATHER THAN
+     * ABOUT TIMING. At the hand-off the main player transitions to the NEXT track, so
+     * EffectsListener.onMediaItemTransition re-resolves prefs for THAT track and announces its
+     * bass boost - while the sidecar is still playing the OUTGOING track's tail. Mirroring it
+     * would retune the tail to the incoming track's setting mid-overlap: an audible tone change
+     * on a leg that is fading out, and two legs that no longer match. The tail keeps what it
+     * started with until the crossfade ends; the next arm picks up the current value.
+     * ⚠️ ARMED AND PREROLL STILL ACCEPT IT. Nothing of the tail is audible yet
+     * (parked, or playing at volume 0), so a change there keeps the two legs matched, which is
+     * the thing that matters. The rebuilt filter's zeroed history lands inside the muted pre-roll.
+     * ⚠️ SO A SETTINGS CHANGE DURING AN OVERLAP IS DROPPED FOR THE TAIL ONLY,
+     * never for main - PlayerService applies to the main processor before calling this.
+     */
+    fun onBassBoostChanged(strength: Int) {
+        if (phase == Phase.ACTIVE) {
+            Log.d(TAG, "bass boost " + strength + " not mirrored: overlap in progress")
+            return
+        }
+        runCatching { sidecarProcessor.setBassBoost(strength) }
+    }
+
+    fun onMainSessionIdChanged(audioSessionId: Int) {
+        if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
+        val applied = runCatching { sidecar.setAudioSessionId(audioSessionId) }.isSuccess
+        Log.d(TAG, "sidecar session <- " + audioSessionId + " ok=" + applied)
+    }
+
     fun release() {
         abort(Abort.SETTING_OFF)
         stopTick()
@@ -704,6 +768,12 @@ class CrossfadeController(
      */
     private class MainProjection(
         val median: Long,
+        /**
+         * Wall-clock time the sample that BECAME the median was taken. Carried out of here
+         * because the age of the DATA is what a bad splice shows up in, and that is not the same
+         * as the age of the projection - see the switch line's medianAge.
+         */
+        val medianAtMs: Long,
         val robustSpread: Long,
         val rawSpread: Long,
         val count: Int,
@@ -711,7 +781,7 @@ class CrossfadeController(
 
     private fun projectedMain(): MainProjection {
         val n = mainSampleCount
-        if (n == 0 || playoutStartAtMs == 0L) return MainProjection(0L, -1L, -1L, 0)
+        if (n == 0 || playoutStartAtMs == 0L) return MainProjection(0L, 0L, -1L, -1L, 0)
         // ⚠⚠ x speed, BECAUSE THE PROJECTION CROSSES FROM WALL TIME INTO MEDIA TIME.
         // (playoutStartAtMs - sampleTime) is WALL milliseconds; the positions it is added to are
         // MEDIA milliseconds, and media advances `speed` ms per wall ms. At 1x the factor is
@@ -721,11 +791,19 @@ class CrossfadeController(
         val projected = LongArray(n) {
             mainSamplePos[it] + ((playoutStartAtMs - mainSampleAtMs[it]) * speed).toLong()
         }
-        projected.sort()
+        // ⚠⚠ THE INDICES ARE SORTED, NOT THE VALUES, SO THE MEDIAN KEEPS ITS
+        // IDENTITY. This used to be `projected.sort()`, which answered "what is the median" and
+        // threw away "which reading was it" - and the second is what the switch line needs to
+        // report how OLD the estimate's data is. Costs one list of n <= MAIN_SAMPLES indices,
+        // once per crossfade, on the main thread.
+        val order = (0 until n).sortedBy { projected[it] }
+        val mid = order[n / 2]
         return MainProjection(
-            median = projected[n / 2],
-            robustSpread = if (n >= MAIN_ROBUST_MIN) projected[n - 2] - projected[1] else -1L,
-            rawSpread = projected[n - 1] - projected[0],
+            median = projected[mid],
+            medianAtMs = mainSampleAtMs[mid],
+            robustSpread =
+                if (n >= MAIN_ROBUST_MIN) projected[order[n - 2]] - projected[order[1]] else -1L,
+            rawSpread = projected[order[n - 1]] - projected[order[0]],
             count = n,
         )
     }
@@ -854,6 +932,7 @@ class CrossfadeController(
         }
         prerollAligned = true
         measuredGapMs = gap
+        medianSampleAtMs = main.medianAtMs
         val frames = if (gap == 0L) 0L else sidecarProcessor.discard(gap)
         Log.d(
             TAG, "measured clockGap=" + clockGap + " counterGap=" + counterGap +
@@ -1068,6 +1147,7 @@ class CrossfadeController(
         mainCounterSuspect = false
         prerollRebuffered = false
         measuredGapMs = 0L
+        medianSampleAtMs = 0L
         mainSampleCount = 0
         prerollStartedAtMs = System.currentTimeMillis()
         // The first and most valuable sample: taken before the sidecar's sink exists, so no
@@ -1277,6 +1357,19 @@ class CrossfadeController(
         sidecarRePrepares = 0
         armedDurationMs = duration
         armedTailStartMs = duration - effectiveFadeMs
+        // ⚠⚠ THE TAIL'S EQ IS RE-SEEDED HERE, AND AT ARM SPECIFICALLY BECAUSE
+        // THE PREPARE HAS NOT HAPPENED YET. [onBassBoostChanged] refuses to retune a PLAYING
+        // tail, which is right - but it left the sidecar holding whatever the last applied value
+        // was, and with per-track effects that is the wrong track's setting. Worked example: A
+        // (bass 5) crossfades into B (bass 0); the mirror is refused during the overlap, main
+        // moves to B and announces 0, the sidecar stays at 5 - and B's OWN tail, at the next
+        // crossfade, plays with A's shelf. Reading main's current effective value at every arm
+        // closes that without reintroducing a mid-overlap retune.
+        // ⚠️ BEFORE [maybePrepareSidecar], WHICH IS WHAT MAKES IT FREE: arm() is
+        // reached from tickIdle and the prepare happens on the NEXT tick, so the coefficients are
+        // in place before a single frame is decoded and the rebuilt filter's zeroed history
+        // cannot land inside audible audio.
+        runCatching { sidecarProcessor.setBassBoost(currentBassBoost()) }
         // ⚠⚠ THE PARK IS UNCONDITIONAL SINCE 2026-10-20 (H8). It used to depend on
         // the MAIN player's skipSilenceEnabled, which defaults to TRUE (PlayerService:1154) - so
         // the pre-roll, i.e. the whole stutter fix, never ran for a default install, and the flag
@@ -1385,6 +1478,20 @@ class CrossfadeController(
             // in the last `fade` seconds of a track (normally none mid-track, which is where a
             // tail lives) and measurable as `tailEnded at` against `rampIn`.
             sidecar.skipSilenceEnabled = false
+            // ⚠⚠ THE SESSION ID, RE-ASSERTED, AND THIS IS THE BELT FOR THE 1141
+            // WRONG-SESSION DEFECT. [onMainSessionIdChanged] is the primary path; this is the
+            // last point before the sidecar's AudioTrack is created, so a sidecar that was built
+            // before main's id existed - or that missed the callback for any reason - still
+            // reaches the mixer on the session the effects are attached to. Idempotent:
+            // ExoPlayerImpl.setAudioSessionId early-returns when the value already matches
+            // (1.11.0, :1636), so on a healthy run this costs one comparison per arm.
+            val mainSession = exoPlayer.audioSessionId
+            if (mainSession != C.AUDIO_SESSION_ID_UNSET &&
+                sidecar.audioSessionId != mainSession
+            ) {
+                Log.w(TAG, "sidecar session corrected to " + mainSession)
+                sidecar.setAudioSessionId(mainSession)
+            }
             // ⚠⚠ PARKED [PREROLL_MS] + [PREROLL_SAFETY_MS] EARLIER THAN THE SWITCH,
             // AND STILL BY THE SOURCE'S OWN START POSITION - NEVER A SEEK. The pre-roll plays
             // that stretch out, muted, so the sidecar arrives at the switch already running. The
@@ -1507,29 +1614,50 @@ class CrossfadeController(
      * closed by reading code: a failure we can neither prevent nor detect is only ever settled by
      * someone listening to it.
      *
-     * ⚠⚠ THE DRIVE, 2026-10-17, DESKTOP HEAD UNIT - what was actually observed, since
-     * this is the whole basis for the decision. FIVE crossfades with AA connected, every one
-     * COMPLETED; re-sync offset 0 on all five; no audio-focus loss; the audio indistinguishable
-     * from the same transitions on the phone. Next, Previous and Pause pressed MID-CROSSFADE each
-     * aborted cleanly and playback recovered. So the hand-off's un-paused seek does not kill the
-     * AA AudioTrack on a current head unit and current media3 - which is the one thing the guard
-     * existed to avoid and the one thing no amount of reading could establish.
+     * ⚠⚠ THE FIRST DRIVE, 2026-10-17, DESKTOP HEAD UNIT - what was actually
+     * observed, since this is what allowed the guard to go. FIVE crossfades with AA connected,
+     * every one COMPLETED; re-sync offset 0 on all five; no audio-focus loss; the audio
+     * indistinguishable from the same transitions on the phone. Next, Previous and Pause pressed
+     * MID-CROSSFADE each aborted cleanly and playback recovered. So the hand-off's un-paused seek
+     * does not kill the AA AudioTrack on a current head unit and current media3 - which is the
+     * one thing the guard existed to avoid and the one thing no amount of reading could
+     * establish.
+     * ⚠️ [RE-SCOPED 2026-10-21] IT NO LONGER DESCRIBES THE SHIPPED SWITCH, AND
+     * "re-sync offset 0 on all five" IS THE TELL. That drive tested the SEEK-BASED hand-off, and
+     * the volume design deleted the seek (see this function's body). Its lasting value is the
+     * refutation of the May guard and the mid-crossfade transport result - NOT evidence about
+     * what AA now sees at a hand-off. Do not cite it for the current mechanism.
+     *
+     * ⚠⚠ THE SECOND DRIVE, 2026-10-21, REAL CAR, VOLUME-MUTED PRE-ROLL AT
+     * FADE=10 - AND THIS IS THE ONE THAT COVERS WHAT SHIPS. Hand-offs worked and there was no
+     * silent playback. A re-test was owed and is now paid: the volume design presents AA with a
+     * different stress from the one the first drive cleared, and it is worth naming because
+     * reading could not settle it either. A SECOND AudioTrack now runs on the shared session for
+     * ~2 s before every switch, muted at the mixer; and at the switch main's own output is
+     * released and reconfigured (DefaultAudioSink.flush releases it every time, 1.11.0,
+     * :1567-1580) WHILE that second track is live. Two concurrent tracks across a reconfigure is
+     * exactly the shape the May symptom lived in, so the question had to be asked again.
+     * ⚠️ WHAT THIS DRIVE DID NOT ESTABLISH, so it is not over-read later: no
+     * crossfade count was recorded and mid-crossfade Next/Previous/Pause were not exercised. The
+     * first drive's transport result therefore stands for the OLD mechanism only, and on the
+     * current one those three remain untested on a car. They are cheap to cover on any later
+     * drive and are the first thing to try if an AA report arrives.
      *
      * ⚠️ WHAT WOULD REOPEN IT, stated so a report is not mistaken for something else.
      * A user describing "the next track plays with no sound" ON AA, with progress moving. That is
-     * the May symptom exactly, and it would mean the 1.8.0 failure is back or the head unit above
-     * is not representative - one drive on one unit is what this rests on. The fix is then the arm
-     * refusal, back in [armRefusal] as the second check.
+     * the May symptom exactly, and it would mean the 1.8.0 failure is back or neither head unit
+     * above is representative - two drives, two units, no counts on the second, is what this
+     * rests on. The fix is then the arm refusal, back in [armRefusal] as the second check.
      * ⚠️ TWO THINGS THAT WERE NOT THE VARIABLE, so a re-test does not credit them: audio
      * offload went from user-toggleable to unconditionally DISABLED (7c6b37d1, 2026-07-13,
      * "Disable audio offload to fix silent playback on gapless auto-advance") and media3 went
-     * 1.8.0 -> 1.11.0 between the symptom and the drive. Either could be why it now works, and
-     * nothing distinguishes them - the May cause was NEVER IDENTIFIED, so this is a behavioural
-     * result, not an explained one.
+     * 1.8.0 -> 1.11.0 between the symptom and the FIRST drive. Either could be why it now
+     * works, and nothing distinguishes them - the May cause was NEVER IDENTIFIED, so this is a
+     * behavioural result, not an explained one.
      * ⚠⚠ THE FIVE ERROR-PATH AA GUARDS IN PlayerEventListener ARE UNTOUCHED, AND THAT
-     * IS LOAD-BEARING FOR THE RESULT ABOVE. They are the May workaround itself (pause ->
-     * delay(50) -> skip) and they still run on every error-driven skip. The drive tested the
-     * hand-off WITH those guards in place; removing them would invalidate it.
+     * IS LOAD-BEARING FOR BOTH RESULTS ABOVE. They are the May workaround itself (pause ->
+     * delay(50) -> skip) and they still run on every error-driven skip. Both drives tested the
+     * hand-off WITH those guards in place; removing them would invalidate both.
      */
     private fun activate(position: Long, duration: Long) {
         // ⚠⚠ ONE PATH NOW, AND THE SECOND ONE WAS DELETED RATHER THAN DISABLED.
@@ -1550,20 +1678,46 @@ class CrossfadeController(
         // Read a tick earlier and carried here - see [cachedGate]. Nothing on this line can
         // block, which is the property that matters between the mute and the seek.
         val gate = cachedGate
-        // ⚠️ THE AGE OF THE ESTIMATE, WHICH IS THE ONE NUMBER A BAD SPLICE WOULD
-        // SHOW UP IN. The projection was evaluated AT playoutStartAtMs, so its age here is how
-        // long the alignment has been running open-loop; sideClock is where that estimate says
-        // the tail should be (park + age x speed, less the frames the discard removed), to be
-        // compared with the counter's own sidePos in the same line.
-        val medianAge =
+        // ⚠⚠ [CORRECTED 2026-10-21] TWO SEPARATE INTERVALS, AND THEY WERE THE
+        // SAME ONE UNTIL A DEVICE CAPTURE CAUGHT IT. medianAge printed
+        // `now - playoutStartAtMs`, which is how long the alignment has been running open-loop -
+        // not what it claimed to be. The 1142 capture made it unmistakable: the values equalled
+        // the switch line's own timestamp minus playoutStart EXACTLY (2020, 2027, 2032, 1637,
+        // 1821), i.e. it was reporting the pre-roll's length back to the reader.
+        // ⚠️ THE DISTINCTION IS NOT PEDANTRY: the estimate is a median of
+        // samples taken ACROSS the pre-roll, so the data behind it can be a second older than
+        // the projection instant. Age-of-data is what a bad splice would show up in; age-of-
+        // projection is a constant (~PREROLL_MS) and tells a reader nothing.
+        val sincePlayoutMs =
             if (playoutStartAtMs == 0L) -1L else System.currentTimeMillis() - playoutStartAtMs
+        val medianAge =
+            if (medianSampleAtMs == 0L) -1L else System.currentTimeMillis() - medianSampleAtMs
+        // ⚠⚠ [CORRECTED 2026-10-21] THE DISCARD IS ADDED, NOT SUBTRACTED, AND
+        // THE OLD COMMENT'S REASONING WAS THE BUG. It read "less the frames the discard removed",
+        // which sounds right and is backwards: discarding media SKIPS the tail FORWARD, so the
+        // position reached is park + what was played + what was dropped. The 1142 capture is
+        // conclusive - hand-computing with `+` gave 164254/126985/144655/109377/148899 against
+        // logged 163764/126621/144339/108293/148215, and every difference is exactly TWICE the
+        // transition's measuredGap, which is the signature of a flipped sign and of nothing else.
+        // ⚠️ AND THE SAME ARITHMETIC IS WHAT THE SINK DOES, which is the
+        // independent confirmation: DefaultAudioSink.applySkipping ADDS
+        // audioProcessorChain.getSkippedOutputFrameCount() to the reported position (1.11.0,
+        // :1774-1788), and RenderersFactory's DiscardReportingChain is what feeds our discard
+        // into that count. So sidePos on this line already includes the discard - the estimate
+        // has to as well, or the two are not comparable, which is the whole point of printing
+        // them together.
+        // ⚠️ sincePlayoutMs, NOT medianAge, IS THE RIGHT MULTIPLIER HERE: this
+        // is dead reckoning from where the tail STARTED PLAYING, so the elapsed term has to be
+        // measured from playout start. Using medianAge would re-introduce the first bug as an
+        // arithmetic error rather than a cosmetic one.
         val sideClock =
             if (playoutStartAtMs == 0L) "n/a"
-            else (parkStartMs + (medianAge * speed).toLong() - measuredGapMs).toString()
+            else (parkStartMs + (sincePlayoutMs * speed).toLong() + measuredGapMs).toString()
         Log.d(
             TAG, "switch path=preroll mainPos=" + position + " sidePos=" + before +
                 " gap=" + (position - before) + " measuredGap=" + measuredGapMs +
                 " sideClock=" + sideClock + " medianAge=" + medianAge +
+                " sincePlayout=" + sincePlayoutMs +
                 " suspect=" + mainCounterSuspect + " queuedMs=" + sidecarQueuedMs() +
                 " durAtArm=" + armedDurationMs + " mainDur=" + duration +
                 " cache=" + (gate?.reason ?: "?") + " " + (gate?.cachedBytes ?: -1L) +
@@ -1784,6 +1938,7 @@ class CrossfadeController(
         playoutStartAtMs = 0L
         prerollStartedAtMs = 0L
         measuredGapMs = 0L
+        medianSampleAtMs = 0L
         mainCounterSuspect = false
         prerollRebuffered = false
         mainSampleCount = 0

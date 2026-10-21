@@ -66,6 +66,8 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.listener.AudioFocusListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
+import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.getFxPrefs
+import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.globalFx
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
@@ -162,6 +164,12 @@ class PlayerService : MediaLibraryService() {
         // drives the tail's fade-out through it, so the controller needs both processors. It lives
         // exactly as long as the sidecar does - both are created here and released together.
         val sidecarProcessor = AudioEffectsProcessor()
+        // ⚠️ SEEDED WITH THE CURRENT BASS BOOST, because a sidecar created
+        // mid-session (the slider moving off 0) misses every settings change that came before it,
+        // and EffectsListener only announces CHANGES. Re-read at every arm as well - see
+        // [currentBassBoost] and CrossfadeController.arm, which is what keeps a per-track value
+        // from following the wrong track.
+        runCatching { sidecarProcessor.setBassBoost(currentBassBoost()) }
         val sidecar = createExoplayer(
             sidecarProcessor,
             handleAudioBecomingNoisy = false,
@@ -170,13 +178,36 @@ class PlayerService : MediaLibraryService() {
             // player whose device volume nothing reads - see the signature's note.
             deviceVolumeControl = false,
         )
-        // ⚠⚠ THE SIDECAR TAKES THE MAIN PLAYER'S SESSION ID, NEVER THE REVERSE. Session effects
-        // (EffectsListener's Equalizer + LoudnessEnhancer, and any system/third-party EQ attached via
-        // broadcastAudioSession) apply to every AudioTrack on a session, so sharing is what stops the
-        // tail sounding different from the head. Setting the MAIN player's id instead would fire
-        // EffectsListener.onAudioSessionIdChanged -> release + rebuild + re-broadcast, mid-playback,
-        // on every crossfade.
-        runCatching { sidecar.setAudioSessionId(exoPlayer.audioSessionId) }
+        // ⚠⚠ THE SIDECAR TAKES THE MAIN PLAYER'S SESSION ID, NEVER THE REVERSE. A
+        // system or third-party equalizer attached through EffectsListener.broadcastAudioSession
+        // applies to every AudioTrack on a session, so sharing is what stops the tail sounding
+        // different from the head. Setting the MAIN player's id instead would re-announce the
+        // session mid-playback on every crossfade.
+        // ⚠⚠ [NARROWED 2026-10-21] THIS USED TO SAY "EffectsListener's Equalizer +
+        // LoudnessEnhancer" AND THOSE ARE GONE. Bass boost moved into AudioEffectsProcessor as a
+        // low shelf, so nothing of OURS is on the session any more - which means sharing it now
+        // matters only for an EXTERNAL equalizer. Our own EQ reaches the tail through
+        // CrossfadeController.onBassBoostChanged instead, and cannot be got wrong by a session id.
+        // ⚠⚠ [FIXED 2026-10-21] THIS LINE USED TO BE UNGUARDED AND WAS THEREFORE A
+        // COMPLETE NO-OP, WHICH IS WHY THE SIDECAR RAN ON ITS OWN SESSION. ExoPlayerImpl generates
+        // its session id on the PLAYBACK thread from its constructor and publishes it back to the
+        // application thread asynchronously (1.11.0, :427-443), so during onCreate - which is where
+        // this runs - exoPlayer.audioSessionId is still AUDIO_SESSION_ID_UNSET. And UNSET is not
+        // "inherit": setAudioSessionId early-returns when the target already holds the same value
+        // (:1634-1637), and a fresh player also holds UNSET, so the call did nothing and the
+        // sidecar's own constructor-generated id won. Measured on 1141: main 25513, sidecar 25521,
+        // with the effect chain on 25513 only.
+        // ⚠️ AND UNSET WOULD NOT HAVE WORKED EVEN PAST THAT GUARD: the background
+        // update is `id != UNSET ? id : generateAudioSessionId()` (:1639-1646), and
+        // DefaultAudioSink.setAudioSessionId sets `externalAudioSessionIdProvided = id != UNSET`
+        // (:1431-1441). Two independent places treat UNSET as "make your own".
+        // ⚠️ THE LISTENER BELOW IS THE REAL FIX; THIS STAYS AS THE FAST PATH for a
+        // sidecar created later (a slider change mid-session), when the id is already known.
+        // EffectsListener survived the same hazard only because it LISTENS - see its
+        // onAudioSessionIdChanged, which releases and rebuilds its effects on the real id.
+        val mainSession = exoPlayer.audioSessionId
+        if (mainSession != C.AUDIO_SESSION_ID_UNSET)
+            runCatching { sidecar.setAudioSessionId(mainSession) }
         crossfade = CrossfadeController(
             exoPlayer = exoPlayer,
             sessionPlayer = sessionPlayer,
@@ -188,8 +219,23 @@ class PlayerService : MediaLibraryService() {
             skipFadeOnAlbums = { app.settings.getBoolean(SKIP_FADE_ON_ALBUMS, true) },
             // Not the reason code: see the note at CrossfadeController.onUserPause.
             isPausedForFocus = { audioFocusListener.pausedForFocus },
+            currentBassBoost = { currentBassBoost() },
         ).also { it.fadeSeconds = seconds }
     }
+    /**
+     * The bass-boost value in force for the track playing NOW, resolved exactly as
+     * EffectsListener resolves it: the current item's own FX prefs when it has them, otherwise the
+     * global file. One function because two callers need the same answer - the sidecar's seed at
+     * creation and CrossfadeController's re-seed at every arm - and two copies of this resolution
+     * would drift the moment the per-track rule changed.
+     */
+    private fun currentBassBoost(): Int = runCatching {
+        val global = app.context.globalFx()
+        val fx = app.context.getFxPrefs(global, exoPlayer.currentMediaItem?.mediaId?.hashCode())
+            ?: global
+        fx.getInt(EffectsListener.BASS_BOOST, 0)
+    }.getOrDefault(0)
+
     private lateinit var carConnection: CarConnection
     private var isAndroidAutoConnected = false
     private val carConnectionObserver = Observer<Int> { connectionType ->
@@ -305,7 +351,20 @@ class PlayerService : MediaLibraryService() {
             }
         }
     }
-    private val effects by lazy { EffectsListener(exoPlayer, this, state.session, audioEffectsProcessor, scope) }
+    private val effects by lazy {
+        EffectsListener(
+            exoPlayer, this, state.session, audioEffectsProcessor, scope,
+            // ⚠⚠ BOTH PROCESSORS, AND THIS IS THE ONLY PLACE THAT CAN SEE BOTH.
+            // EffectsListener holds the main player's processor; the crossfade tail has its own,
+            // created in [syncCrossfade]. A shelf on one leg only would change the tone halfway
+            // through every overlap. Null-safe on the controller: with the slider at 0 there is
+            // no sidecar, and [syncCrossfade] seeds whichever one it creates next.
+            applyBassBoost = { strength ->
+                audioEffectsProcessor.setBassBoost(strength)
+                crossfade?.onBassBoostChanged(strength)
+            },
+        )
+    }
 
     private val historyRepository by inject<HistoryRepository>()
     private val downloader by inject<Downloader>()
@@ -361,7 +420,10 @@ class PlayerService : MediaLibraryService() {
         }
 
         val callback = PlayerCallback(
-            app, scope, app.throwFlow, extensions, state, downloadFlow, historyRepository
+            app, scope, app.throwFlow, extensions, state, downloadFlow, historyRepository,
+            // See the parameter's note: the session callback is the only place user transport
+            // intent is distinguishable from our own pauses.
+            onTransportIntent = { audioFocusListener.onTransportIntent() },
         )
         // [TEMPORARY 2026-10-19] ColdStartPlayProbe needs the two pieces of state it cannot see
         // from the playback package: whether a head unit is connected and whether the queue is
@@ -497,6 +559,21 @@ class PlayerService : MediaLibraryService() {
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 app.crashPlayerState = playbackState
+            }
+
+            /**
+             * ⚠⚠ THE ONLY RELIABLE MOMENT TO HAND THE SIDECAR MAIN'S SESSION,
+             * AND THE REASON THE ONE-SHOT COPY IN [syncCrossfade] WAS NOT ENOUGH. The id is
+             * generated on the playback thread from ExoPlayerImpl's constructor and published
+             * back to this thread asynchronously (1.11.0, :427-443), which is AFTER onCreate
+             * has run - so the copy read UNSET. This fires with the real id the moment it
+             * exists (ExoPlayerImpl.onAudioSessionIdChanged:3239-3244 sends
+             * EVENT_AUDIO_SESSION_ID, including that first generation) and again on any later
+             * change. It is the same mechanism EffectsListener already depends on, which is
+             * why ITS effects were on the right session and the sidecar's audio was not.
+             */
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                crossfade?.onMainSessionIdChanged(audioSessionId)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 app.crashIsPlaying = isPlaying

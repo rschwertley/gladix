@@ -5,8 +5,6 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.media.audiofx.AudioEffect
-import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
 import androidx.annotation.OptIn
 import androidx.core.content.edit
 import androidx.media3.common.MediaItem
@@ -21,8 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.pow
-import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class EffectsListener(
@@ -30,6 +26,15 @@ class EffectsListener(
     private val context: Context,
     private val audioSessionFlow: MutableStateFlow<Int>,
     private val audioEffectsProcessor: AudioEffectsProcessor,
+    /**
+     * ⚠⚠ APPLIES BASS BOOST TO EVERY PROCESSOR, WHICH IS MORE THAN THIS CLASS
+     * CAN REACH. [audioEffectsProcessor] is the MAIN player's; the crossfade tail has its own
+     * instance, created and owned by PlayerService, and a shelf on one leg only would make the
+     * tail audibly different from the head - the exact defect the session-sharing rule existed to
+     * prevent. So the fan-out lives at the one place that can see both.
+     * Defaults to the main processor alone, which keeps this class usable in isolation.
+     */
+    private val applyBassBoost: (Int) -> Unit = { audioEffectsProcessor.setBassBoost(it) },
     // Service-lifetime scope (PlayerService.scope: SupervisorJob + IO, cancelled in onDestroy) — valid at
     // init/onCreate and never fires after release, so the deferred broadcast can't leak or run post-teardown.
     private val scope: CoroutineScope,
@@ -55,10 +60,13 @@ class EffectsListener(
         oldSettings = current
         current.registerOnSharedPreferenceChangeListener(listener)
         applyPlayback(current)
-        effects.applySettings(current)
+        // ⚠⚠ BASS BOOST IS OURS NOW, NOT THE SESSION'S. See
+        // AudioEffectsProcessor.setBassBoost for the arithmetic that retired the old pair and
+        // why a session effect could not be kept: two clients on one engine, control by
+        // priority, and a setEnabled(false) of ours switched the system EQ off with it.
+        // PlayerService's lambda applies it to the main processor AND the crossfade tail's.
+        applyBassBoost(current.getInt(BASS_BOOST, 0))
     }
-
-    private fun createEffects() = Effects(exoPlayer.audioSessionId)
 
     private fun applyPlayback(settings: SharedPreferences) {
         val index = settings.getInt(PLAYBACK_SPEED, speedRange.indexOf(1f))
@@ -68,8 +76,31 @@ class EffectsListener(
             PlaybackParameters(speed, pitch)
     }
 
-    private var effects: Effects = createEffects()
     private val listener = OnSharedPreferenceChangeListener { _, _ -> applyCustomEffects() }
+
+    /**
+     * ⚠⚠ A SECOND init BLOCK, AND ITS POSITION IN THE FILE IS THE WHOLE REASON
+     * IT IS SEPARATE. Kotlin runs property initialisers and init blocks in DECLARATION ORDER, and
+     * [applyCustomEffects] touches [settings], [oldSettings] and [listener] - all declared above
+     * this line and BELOW the first init block. Calling it from there would read an
+     * uninitialised [oldSettings] and NPE on the unregister. So it runs here, after everything it
+     * needs exists. Do not merge the two init blocks.
+     *
+     * ⚠⚠ WHY IT IS CALLED AT ALL: UNTIL 2026-10-21 EFFECTS WAITED FOR THE FIRST
+     * MEDIA-ITEM TRANSITION. [onMediaItemTransition] was the only caller, so a freshly started
+     * service played its first track with no bass boost and no saved playback speed - and, worse,
+     * with NO PREFS LISTENER REGISTERED, since registering it is something applyCustomEffects
+     * does. Moving the slider before the first transition therefore changed nothing at all. The
+     * old platform-effect implementation had the same gap and it went unnoticed because the
+     * effects it configured were disabled by default anyway.
+     * ⚠️ SAFE TO RUN BEFORE ANY ITEM EXISTS: currentMediaItem is null, so
+     * getFxPrefs falls through to the global file, which is the right answer for "no track yet".
+     * The first transition re-resolves and re-points the listener at the track's own file if it
+     * has one.
+     */
+    init {
+        applyCustomEffects()
+    }
 
     // ⚠⚠ TRACK FADE LIVED HERE AND IS GONE AS OF BUILD 2 (2026-10-15). What this hook
     // used to own: a PlayerMessage scheduled at `duration - crossfadeMs*speed` that called
@@ -101,48 +132,23 @@ class EffectsListener(
         }
     }
 
+    /**
+     * ⚠⚠ ANNOUNCE-ONLY SINCE 2026-10-21, AND THAT IS THE POINT OF THE CHANGE.
+     * This used to release and rebuild our own Equalizer + LoudnessEnhancer on the new session,
+     * which is the only reason they ever ended up on the right one: the id arrives
+     * ASYNCHRONOUSLY (ExoPlayerImpl generates it on the playback thread from its constructor,
+     * 1.11.0 :427-443), so the pair built in [init] was built on AUDIO_SESSION_ID_UNSET. Now that
+     * bass boost lives in AudioEffectsProcessor there is nothing of ours on the session to
+     * rebuild, and the release/re-create - a chain reconfiguration on a live session, i.e. an
+     * audible click - goes with it.
+     * ⚠️ THE BROADCASTS STAY. The OPEN/CLOSE pair is how a system or
+     * third-party equalizer attaches to our session at all, which is still wanted; we have simply
+     * stopped competing with it for the same effect engine.
+     */
     override fun onAudioSessionIdChanged(audioSessionId: Int) {
-        release()
+        context.broadcastAudioSessionCloseDeferred(audioSessionFlow.value)
         context.broadcastAudioSession()
         audioSessionFlow.value = audioSessionId
-        effects = createEffects()
-        effects.applySettings(oldSettings)
-    }
-
-    class Effects(sessionId: Int) {
-        private val equalizer = runCatching { Equalizer(0, sessionId) }.getOrNull()
-        private val gain = runCatching { LoudnessEnhancer(sessionId) }.getOrNull()
-        private fun applyBassBoost(strength: Int) = runCatching {
-            if (strength == 0) {
-                equalizer?.setEnabled(false)
-                gain?.setEnabled(false)
-                return@runCatching
-            }
-            gain?.setEnabled(true)
-            equalizer?.setEnabled(true)
-            equalizer?.apply {
-                val value =
-                    (strength * bandLevelRange.last().toDouble() / 10).roundToInt().toShort()
-                val zero = numberOfBands.toDouble() * 2 / 3
-                for (it in 0 until numberOfBands) {
-                    val v = (-(it - zero).pow(3) * value / zero.pow(3)).roundToInt()
-                    setBandLevel(it.toShort(), v.toShort())
-                }
-            }
-            val g = (strength.toDouble().pow(1.toDouble() / 3) * 1600).roundToInt()
-            gain?.setTargetGain(g)
-        }
-
-        fun release() {
-            runCatching {
-                equalizer?.release()
-                gain?.release()
-            }
-        }
-
-        fun applySettings(settings: SharedPreferences) {
-            applyBassBoost(settings.getInt(BASS_BOOST, 0))
-        }
     }
 
     companion object {
@@ -212,19 +218,16 @@ class EffectsListener(
         scope.launch(broadcastDispatcher) { ctx.broadcastAudioSessionClose(id) }
     }
 
-    private fun release() {
-        effects.release()
-        // Defer the CLOSE off-main — this runs from onAudioSessionIdChanged on the callback/main thread.
-        // audioSessionFlow.value is still the OLD session here (updated AFTER this call), so we close it.
-        context.broadcastAudioSessionCloseDeferred(audioSessionFlow.value)
-    }
-
     // Teardown CLOSE — SYNCHRONOUS by design. Called from PlayerService.onDestroy BEFORE scope.cancel();
     // a deferred close would be dropped when the scope is cancelled → the final CLOSE never fires → the
     // external equalizer keeps a stale, leaked effect-session. The cold-start ANR that motivated deferring
     // the runtime OPEN/CLOSE does not apply at teardown (onDestroy, not a contended cold-start onCreate).
     fun releaseBlocking() {
-        effects.release()
+        // ⚠️ NOTHING OF OURS IS ATTACHED TO THE SESSION ANY MORE, so there is no
+        // effect to release here - the pair this used to free lived on it until 2026-10-21 and
+        // bass boost is now an AudioProcessor stage, released with the player. The CLOSE is still
+        // owed: an external equalizer attached through our OPEN has to be told the session is
+        // going, or it keeps a stale handle.
         context.broadcastAudioSessionClose(audioSessionFlow.value)
     }
 }

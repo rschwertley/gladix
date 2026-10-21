@@ -7,6 +7,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
+import android.os.SystemClock
 import androidx.media3.common.Player
 
 @Suppress("DEPRECATION")
@@ -29,6 +30,31 @@ class AudioFocusListener(
     // Read-only outside this class; this class is the only writer.
     internal var pausedForFocus = false
         private set
+
+    /**
+     * ⚠⚠ WHEN AND WHY THE LATCH WAS ARMED, BECAUSE AN AUTHORISATION TO RESUME
+     * HAS TO EXPIRE AND WE DO NOT KNOW WHAT ARMS IT. Build 1141 auto-resumed a player the user
+     * had paused the previous night: an alarm took focus at 06:15, gave it back 16 s later, and
+     * [pausedForFocus] was still true from some earlier event, so AUDIOFOCUS_GAIN called play().
+     * The capture could not say what armed it - no app requested focus between 22:40 and the
+     * alarm, which rules out the transient-loss reading - so the window below is deliberately
+     * not a fix for a known path; it is a bound on an unknown one. StaleFocusProbe reports the
+     * provenance when it fires, which is how that path gets named.
+     * ⚠️ elapsedRealtime, NOT currentTimeMillis: the gap being measured is hours
+     * long and spans a sleeping device, so a clock or timezone change must not be able to turn a
+     * 7-hour-old authorisation into a fresh one (or vice versa).
+     */
+    private var pausedForFocusAtMs = 0L
+    private var pausedForFocusArmedBy: String? = null
+    private var pausedForFocusProcessAgeMs = 0L
+
+    private fun armPausedForFocus(by: String) {
+        pausedForFocus = true
+        pausedForFocusArmedBy = by
+        pausedForFocusAtMs = SystemClock.elapsedRealtime()
+        pausedForFocusProcessAgeMs = StaleFocusProbe.processAge()
+    }
+
     private var loweringVolume = false
 
     // Mirrors whether commitPauseRunnable is actually queued. cancelCommit() reads it to skip
@@ -53,24 +79,54 @@ class AudioFocusListener(
                     player.volume = 1f
                     loweringVolume = false
                 }
+                // ⚠⚠ AN AUTHORISATION TO RESUME EXPIRES, AND THIS IS THE BELT
+                // FOR AN ARMING PATH WE HAVE NOT IDENTIFIED. See [pausedForFocusAtMs] for the
+                // 1141 capture. The primary fix is [onTransportIntent] - a user who touches
+                // transport revokes the authorisation outright - but that only helps if the
+                // user touches transport, and the 1141 user's pause press was a no-op
+                // (ExoPlayerImpl.updatePlayWhenReady, 1.11.0, :3074-3078, returns early when
+                // playWhenReady, the suppression reason AND the change reason all match, so an
+                // already-paused player fires no callback at all).
+                // ⚠️ 30 MINUTES IS A USER DECISION, NOT A DERIVED NUMBER. No
+                // platform guidance gives a value; the official pattern is the transport one
+                // above. The window has to outlast the longest interruption a user would still
+                // want resumed - a phone call - while killing an overnight resume.
                 if (pausedForFocus) {
+                    val ageMs = SystemClock.elapsedRealtime() - pausedForFocusAtMs
+                    val armedBy = pausedForFocusArmedBy ?: "unknown"
+                    val armedAt = pausedForFocusProcessAgeMs
                     pausedForFocus = false
-                    player.play()
+                    pausedForFocusArmedBy = null
+                    if (ageMs <= RESUME_WINDOW_MS) player.play()
+                    else {
+                        Log.w(
+                            "GladixAudio", "stale focus resume blocked: armedBy=" + armedBy +
+                                " ageMs=" + ageMs
+                        )
+                        StaleFocusProbe.onBlocked(armedBy, ageMs, armedAt, player.playWhenReady)
+                        // Nothing of ours is going to play, so stop holding what another app
+                        // could use. STATE_IDLE would abandon anyway; a paused player would not.
+                        abandonFocus()
+                    }
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
                 Log.d("GladixAudio", "AUDIOFOCUS_LOSS: playWhenReady=${player.playWhenReady}")
                 if (player.playWhenReady) {
                     cancelCommit()
-                    pausedForFocus = true
+                    armPausedForFocus(ARMED_BY_LOSS)
                     player.pause()
                     postCommit()
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 cancelCommit()
+                // ⚠️ THE playWhenReady GUARD IS THE REASON THIS BRANCH IS NOT
+                // THE 1141 BUG, and it was checked before being left alone: at 06:15:00 the
+                // player was already paused, so nothing was armed here. The latch that fired
+                // was older. Do not "fix" the auto-resume by touching this guard.
                 if (player.playWhenReady) {
-                    pausedForFocus = true
+                    armPausedForFocus(ARMED_BY_TRANSIENT)
                     player.pause()
                 }
             }
@@ -120,7 +176,7 @@ class AudioFocusListener(
                 // Focus queued — pause now, AUDIOFOCUS_GAIN resumes when it arrives.
                 // pausedForFocus=true prevents onPlayWhenReadyChanged from calling
                 // abandonFocus(), which would cancel the queued request.
-                pausedForFocus = true
+                armPausedForFocus(ARMED_BY_DELAYED)
                 player.pause()
             }
             AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
@@ -159,6 +215,42 @@ class AudioFocusListener(
         }
     }
 
+    /**
+     * ⚠⚠ A USER TOUCHING TRANSPORT REVOKES THE FOCUS-RESUME AUTHORISATION, AND
+     * THIS IS THE PRIMARY FIX FOR THE 1141 OVERNIGHT AUTO-RESUME. [pausedForFocus] means "we
+     * paused this and will resume it"; once the user presses play or pause, that is no longer
+     * true whatever the player's current state. Clearing it here is unconditional and
+     * synchronous, so it holds even on the one path that produces no player callback at all: a
+     * pause press on an ALREADY-PAUSED player, which ExoPlayerImpl.updatePlayWhenReady
+     * (1.11.0, :3074-3078) drops because playWhenReady, the suppression reason and the change
+     * reason all already match. That silence is why the latch survived the night.
+     *
+     * ⚠⚠ THE INTENT IS READ FROM THE RESULT, ONE TASK LATER, BECAUSE IT CANNOT
+     * BE READ AT THE CALL. media3 invokes PlayerCallback.onPlayerCommandRequest BEFORE running
+     * the command - MediaSessionStub:353 calls the callback, then :369-372 only QUEUES the work
+     * (ConnectedControllersManager.addToCommandQueue:344-353) for a later flush - and
+     * COMMAND_PLAY_PAUSE is shared by play and pause, so the command carries no direction.
+     * ⚠️ AND READING player.playWhenReady AT THE CALL IS NOT A SUBSTITUTE, which
+     * is the trap worth naming: "playing now, so this must be a pause" is wrong for an explicit
+     * play() on a playing player and wrong for a pause() on a paused one - and the paused one is
+     * exactly the 1141 case. So the decision waits for the outcome.
+     * ⚠️ ABANDON ON PAUSE ONLY, NEVER ON PLAY. An abandon-then-request blip
+     * around a play would hand AUDIOFOCUS_GAIN to whatever sits below us in the focus stack -
+     * another paused-for-focus media app - and resume IT. That is this same bug pointed the
+     * other way, so the posted check refuses unless the outcome really is a paused player.
+     * ⚠️ SAFE IF THE POSTED READ IS EARLY ANYWAY: the latch clear has already
+     * happened, and an abandon followed by [onPlayWhenReadyChanged]'s own requestFocus() for the
+     * play costs a re-request, not a behaviour change.
+     */
+    internal fun onTransportIntent() {
+        cancelCommit()
+        pausedForFocus = false
+        pausedForFocusArmedBy = null
+        handler.postDelayed({
+            if (!player.playWhenReady && !pausedForFocus) abandonFocus()
+        }, INTENT_RESOLVE_MS)
+    }
+
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady) {
             requestFocus()
@@ -194,5 +286,21 @@ class AudioFocusListener(
     companion object {
         private const val GRACE_WINDOW_MS = 750L
         private const val DUCK_VOLUME = 0.4f
+
+        /** How long a focus-driven pause stays resumable. See [pausedForFocusAtMs]. */
+        private const val RESUME_WINDOW_MS = 30 * 60 * 1000L
+
+        /**
+         * How long [onTransportIntent] waits before reading the command's OUTCOME. One queued
+         * task on this same looper; see that function for why the intent is unreadable at the
+         * call. Short enough to be invisible, long enough that the queue has drained.
+         */
+        private const val INTENT_RESOLVE_MS = 50L
+
+        // Provenance strings for StaleFocusProbe. Closed set, so a report can never read as free
+        // text, and named rather than inlined because the probe's keys are the whole point.
+        private const val ARMED_BY_LOSS = "loss"
+        private const val ARMED_BY_TRANSIENT = "transientLoss"
+        private const val ARMED_BY_DELAYED = "delayedGrant"
     }
 }

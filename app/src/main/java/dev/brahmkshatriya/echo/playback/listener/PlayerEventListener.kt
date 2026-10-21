@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.playback.listener
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -431,7 +432,10 @@ class PlayerEventListener(
         // watchdog stops and re-prepares it, or an error skip does, or the queue ends, the controller
         // needs to know so it can un-mute. Seeks and errors already reach it through onSeek /
         // onPlayerError - STATE_IDLE is the one that does not.
-        if (playbackState == Player.STATE_IDLE) crossfade()?.onPlayerIdle()
+        if (playbackState == Player.STATE_IDLE) {
+            crossfade()?.onPlayerIdle()
+            armIdleSettle()
+        }
         // ⚠⚠ THIS ARM IS UNGATED ON playWhenReady, AND IT IS THE ONLY ONE OF THE THREE THAT IS.
         // onTimelineChanged's arm tests `STATE_BUFFERING && player.playWhenReady`, onPlayWhenReadyChanged's
         // tests `playWhenReady && STATE_BUFFERING`, and armBufferingWatchdog itself does NOT re-gate - it
@@ -922,6 +926,73 @@ class PlayerEventListener(
         }
     }
 
+    /**
+     * ⚠⚠ STATE_IDLE WITH playWhenReady TRUE IS A STUCK UI BY CONSTRUCTION, AND
+     * NOTHING WAS WATCHING FOR IT. Build 1141, 06:15:18: an unwanted focus resume played for
+     * ~24 ms, buffered, then went IDLE and stayed. The session reported state=NONE(0) with
+     * error=null, position 56600 and 72 items - and because ShufflePlayer.getPlaybackState only
+     * fakes READY when playWhenReady is FALSE, the transport showed PAUSE. The user could not
+     * press play, because the button they were offered was pause.
+     *
+     * ⚠⚠ IT SETTLES TO PAUSED AND DOES NOT RESUME, WHICH IS THE WHOLE DESIGN.
+     * pause() makes getPlaybackState's fake apply (IDLE + items + !playWhenReady -> READY), so
+     * the session reports PAUSED, the transport shows PLAY, and one tap reaches
+     * ShufflePlayer.play, which prepares from IDLE. The recovery already exists and is free -
+     * the same argument the isStreamStall hold makes for itself. An automatic prepare+play here
+     * would be an unrequested resume, which is the defect AudioFocusListener's window exists to
+     * prevent; after an unexplained failure we do not know the user still wants audio.
+     *
+     * ⚠⚠ THE 250 ms DELAY IS LOAD-BEARING, NOT CAUTION, and it is why no
+     * `recovering` flag is needed. Every recovery in this class passes through IDLE with
+     * playWhenReady still true - the watchdog's stop/seek/prepare/play, the error paths'
+     * stop/prepare/play - and ALL of them complete inside ONE main-thread task, because
+     * stop() flushes its listeners inline (ExoPlayerImpl.updatePlaybackInfo, 1.11.0). A
+     * re-check one task later cannot observe any of them. Checked path by path 2026-10-21:
+     *   watchdog retry / final skip      synchronous, or pause() first on the AA arm
+     *   all four launchInvoluntarySkip   open with player.pause(), so playWhenReady is false
+     *   404 / socket / generic retries   synchronous, and playerError non-null until prepare
+     *   queue-exhausted stop(); return   playerError non-null - deliberately stays stopped
+     *   isStreamStall hold               pause() AND playerError non-null
+     *   radio top-up                     fires at STATE_ENDED, never IDLE
+     *   cold-start restore               never writes playWhenReady = true
+     *   Cast session end                 localPlayer.pause() first
+     * ⚠️ AND THE STATE IS UNREACHABLE FROM ANY PLAY REQUEST, which bounds the
+     * input set to two things: a recovery that cleared the error and failed back, or media3
+     * itself. ShufflePlayer.play and setPlayWhenReady(true) both prepare() from IDLE, so asking
+     * to play can never leave the player here.
+     * ⚠️ THE TWO STAND-ASIDE CONDITIONS ARE NOT INTERCHANGEABLE.
+     * playerError != null means an error path owns the player and has decided to stay stopped;
+     * mediaItemCount == 0 means there is nothing to settle to. Neither is a degenerate case of
+     * the other, and dropping either would make this fight a subsystem that is working.
+     */
+    private fun armIdleSettle() {
+        idleSettleJob?.cancel()
+        // Captured HERE, not in the coroutine: stop() dispatches this callback inline on its
+        // caller's stack, so the frame that drove IDLE is only on the stack right now.
+        IdleStateProbe.onIdleEntered(SystemClock.elapsedRealtime())
+        idleSettleJob = scope.launch {
+            delay(IDLE_SETTLE_MS)
+            withContext(Dispatchers.Main) {
+                val stuck = player.playbackState == Player.STATE_IDLE &&
+                    player.playWhenReady &&
+                    player.playerError == null &&
+                    player.mediaItemCount > 0
+                if (!stuck) return@withContext IdleStateProbe.clear()
+                Log.w(
+                    "GladixPlayback", "idle with playWhenReady and no error -> settling to paused"
+                )
+                IdleStateProbe.onGuardFired(
+                    nowMs = SystemClock.elapsedRealtime(),
+                    position = player.currentPosition,
+                    buffered = player.bufferedPosition,
+                    items = player.mediaItemCount,
+                    extensionId = runCatching { player.currentMediaItem?.extensionId }.getOrNull(),
+                )
+                player.pause()
+            }
+        }
+    }
+
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         // ⚠⚠ TICK LIFECYCLE ONLY - DO NOT ROUTE A PAUSE THROUGH HERE. isPlaying goes
         // false while the main player buffers the item it was handed off to, and the crossfade tail
@@ -996,6 +1067,15 @@ class PlayerEventListener(
         )
 
         private const val BUFFERING_WATCHDOG_MS = 5_000L
+
+        /**
+         * How long after a STATE_IDLE transition the settle check runs. Long enough that every
+         * synchronous stop/prepare recovery has finished - they all complete inside the one
+         * main-thread task that drove IDLE - and short enough that a user looking at a wrong
+         * transport button sees it corrected rather than discovering it later. See
+         * [armIdleSettle] for the path-by-path argument that nothing legitimate is inside it.
+         */
+        private const val IDLE_SETTLE_MS = 250L
         // Cold-start re-seek belt: only re-apply the saved position if the current position is still at the
         // start. A user seek before the first STATE_READY moves it past this, and we leave their choice.
         private const val RESTORE_SEEK_BELT_MS = 1_000L
@@ -1199,6 +1279,9 @@ class PlayerEventListener(
     private var serverErrorNotified = false
 
     private var bufferingWatchdog: Job? = null
+
+    /** See [armIdleSettle]. Re-armed on every IDLE transition, so only the latest one decides. */
+    private var idleSettleJob: Job? = null
 
     /**
      * Epoch ms at which the CURRENT buffering episode began, 0 while not buffering. Read ONLY by the

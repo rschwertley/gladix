@@ -114,7 +114,7 @@
     <string name="playback_speed">Playback Speed</string>
     <string name="change_pitch_with_speed">Change pitch with speed</string>
     <string name="bass_boost">Bass Boost</string>
-    <string name="bass_boost_desc">Larger value may distort the sound.</string>
+    <string name="bass_boost_desc">Lifts the low end without raising the overall volume.</string>
     <string name="change_pitch_with_speed_desc">Get that slow-motion sound</string>
     <string name="equalizer">Equalizer</string>
     <string name="equalizer_summary">Open the device equalizer settings</string>

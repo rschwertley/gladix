@@ -16,6 +16,7 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -143,13 +144,60 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private val emittedFrames = AtomicLong(0)
     private val pendingToken = AtomicReference<Any?>(null)
     private val publishedToken = AtomicReference<Any?>(null)
-    private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
+    /**
+     * ⚠⚠ VOLATILE, BECAUSE THE COEFFICIENT BUILD READS IT FROM THE OTHER THREAD.
+     * [onConfigure] writes it on the PLAYBACK thread; [rebuildBands] reads it from there AND from
+     * the app thread when the slider moves. AudioFormat is IMMUTABLE, so a single read into a
+     * local - which is what every reader here does - is already a consistent snapshot of rate,
+     * channel count and encoding together; there is no torn-field hazard. What was missing was
+     * VISIBILITY: without volatile, a slider move racing a reconfigure could read a stale
+     * reference and build a 44.1 kHz shelf for a 48 kHz stream, which would sit at the wrong
+     * corner frequency until the next settings write. One keyword closes it.
+     * ⚠️ SO THE RULE FOR READERS IS: READ IT ONCE INTO A LOCAL, NEVER TWICE.
+     * [rebuildBands], [frameSizeBytes], [framesFor] and [emittedOutputMs] all do. Reading
+     * `configuredFormat.sampleRate` and `configuredFormat.channelCount` as two separate
+     * expressions would reintroduce exactly the inconsistency this note is about.
+     */
+    @Volatile private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
 
     // LUT infrastructure
     // Placeholder is a CLEAN PASSTHROUGH table (see passthroughLut) set synchronously in the ctor, so
     // activeLut is always a valid 65536-entry array before the audio thread reads it. The real unity-gain
     // table (~65k pow() — the onCreate ANR when built in the ctor) is generated OFF-MAIN in init{} below
     // and swapped in by the audio thread via pendingLut, exactly like setTrackGain/resetGain.
+    /**
+     * ⚠⚠ THE EQ STAGE, AND IT IS AN ARRAY OF BANDS RATHER THAN ONE BASS FILTER
+     * BECAUSE THE NEXT BAND SHOULD BE A LINE OF CODE. Today it holds exactly one [LowShelf] -
+     * bass boost - or nothing at all. Adding a second band later means: write another [EqBand]
+     * (a peaking section is the same biquad with different coefficient formulas), append it in
+     * [rebuildBands], give it a settings key, and add a slider. NOTHING IN [queueInput] CHANGES.
+     * That is the whole reason the per-channel history lives inside each band and [EqBand.process]
+     * takes a channel index, rather than this class owning one filter's state.
+     *
+     * ⚠⚠ SNAPSHOT ONCE PER BUFFER, NEVER PER FRAME. The audio thread reads this
+     * AtomicReference at the top of [queueInput] into a local; the app thread publishes a whole
+     * new array. So a settings change can never tear a coefficient set mid-buffer, and the hot
+     * loop pays one array read per buffer plus an index loop with no iterator allocation.
+     * ⚠️ EMPTY MEANS BIT-EXACT BYPASS, which is what slider 0 must be: the
+     * inner loop skips the stage entirely, so a user with bass boost off gets byte-identical
+     * output to a build without this code.
+     */
+    private val eqBands = AtomicReference<Array<EqBand>>(emptyArray())
+
+    /**
+     * Linear gain applied BEFORE the bands, to buy back part of what they add. See
+     * [HEADROOM_FRACTION]; 1f whenever [eqBands] is empty.
+     */
+    private val eqPreGain = AtomicReference(1f)
+
+    /**
+     * Slider position the published bands were built for, so a no-op write rebuilds nothing.
+     * Volatile because [rebuildBands] is reached from BOTH threads - the app thread on a
+     * settings change and the playback thread from [onConfigure] - and a stale read there would
+     * build the shelf for the wrong gain until the next write.
+     */
+    @Volatile private var bassBoostStrength = 0
+
     private var activeLut: ShortArray = passthroughLut()
     private val pendingLut = AtomicReference<Pair<String, ShortArray>?>(null)
     private val currentTrackToken = AtomicReference("")
@@ -196,7 +244,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             // Pass A — 2.5:1 downward compression above threshold 0.4
             if (isNormalizationEnabled && x > 0.4) x = 0.4 * (x / 0.4).pow(PASS_A_EXPONENT)
 
-            // Pass B — cubic soft limiter, C0-continuous at x=0.5 and x=1.25
+            // Pass B — cubic soft limiter, C0-continuous at x=0.5 and x=1.25.
+            // ⚠️ THE SAME CURVE IS EVALUATED PER SAMPLE BY [softLimit] FOR THE EQ
+            // STAGE, WHICH SITS DOWNSTREAM OF THIS TABLE. Two copies of a limiter shape in one
+            // file would drift, so if this changes, change that with it - and the comment there
+            // says the same thing in the other direction.
             val out = when {
                 x <= 0.5  -> x
                 x <= 1.25 -> (-16.0 / 27.0) * x.pow(3) + (8.0 / 9.0) * x.pow(2) + (5.0 / 9.0) * x + (2.0 / 27.0)
@@ -221,6 +273,79 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
                 pendingLut.set(Pair(token, lut))
             }
         }
+    }
+
+    /**
+     * ⚠⚠ BASS BOOST, 0-10, AND IT IS A SHELF IN OUR OWN CHAIN RATHER THAN THE
+     * PLATFORM Equalizer. What it replaced, because the arithmetic is the whole argument: the old
+     * implementation (upstream Echo's, unchanged by us) wrote a tilt into a session Equalizer AND
+     * a makeup gain into a LoudnessEnhancer, `strength^(1/3) * 1600` millibels - so slider 1 gave
+     * +1.5 dB of actual bass against +16.0 dB BROADBAND, and slider 10 gave +15 dB against
+     * +34.5 dB. Measured on device 2026-10-21 with the system EQ off: both effects Enabled y, us
+     * in sole control, and the audible result was "only louder". It was doing exactly what it
+     * says; what it says is wrong.
+     * ⚠⚠ AND IN OUR CHAIN, NOT THE SESSION, SO IT CANNOT FIGHT MusicFX. Two
+     * clients on one session share ONE effect engine, control goes by priority, and the loser's
+     * parameter writes fail silently - worse, a controlling client's setEnabled(false) disables
+     * the engine for both. Ours ran at priority 0. Here the shelf is upstream of the AudioTrack
+     * and the system EQ is downstream of it, so the two compose in series with nothing shared.
+     * ⚠️ IT ALSO COVERS THE CROSSFADE TAIL, which the session version could not
+     * be trusted to do: the sidecar had its own session for three builds (fixed 2026-10-21) and
+     * the whole tail played with none of the session effects. A per-processor stage has no
+     * session to get wrong - PlayerService mirrors the value to the sidecar's processor.
+     *
+     * Safe from any thread: all the arithmetic is closed form and the result is published
+     * atomically. Called from the app thread on a settings change and once per sidecar creation.
+     */
+    fun setBassBoost(strength: Int) {
+        val clamped = strength.coerceIn(0, BASS_BOOST_MAX)
+        if (clamped == bassBoostStrength && eqBands.get().isNotEmpty() == (clamped > 0)) return
+        bassBoostStrength = clamped
+        rebuildBands()
+    }
+
+    /**
+     * Builds the band array and the pre-gain for the current slider value and the configured
+     * format. Called on a settings change and from [onConfigure], because the coefficients depend
+     * on the sample rate - and on nothing else, which is why this is the only place they are
+     * computed and why [queueInput] never does trigonometry.
+     */
+    private fun rebuildBands() {
+        val fmt = configuredFormat
+        val strength = bassBoostStrength
+        val bands: Array<EqBand>
+        val preGain: Float
+        if (strength <= 0 || fmt.sampleRate <= 0 || fmt.channelCount <= 0) {
+            bands = emptyArray()
+            preGain = 1f
+        } else {
+            val shelfDb = strength * BASS_BOOST_DB_PER_STEP
+            bands = arrayOf<EqBand>(
+                LowShelf(
+                    gainDb = shelfDb,
+                    centreHz = BASS_SHELF_HZ,
+                    slope = BASS_SHELF_SLOPE,
+                    sampleRate = fmt.sampleRate,
+                    channelCount = fmt.channelCount,
+                )
+            )
+            preGain = 10.0.pow(-shelfDb * HEADROOM_FRACTION / 20.0).toFloat()
+        }
+        // ⚠⚠ PUBLISH ONLY IF THE FORMAT IS STILL THE ONE THESE WERE COMPUTED
+        // FROM, AND IDENTITY IS THE RIGHT TEST. This runs on BOTH threads - the app thread when
+        // the slider moves, the playback thread from [onConfigure] - and "onConfigure rebuilds
+        // afterwards so it converges" misses one interleaving: the app thread reads the OLD
+        // format and computes; onConfigure publishes the new format and its own coefficients;
+        // then the app thread publishes LAST and the stream runs a 44.1 kHz shelf at 48 kHz,
+        // until the next settings write. Discarding is correct rather than merely safe, because
+        // onConfigure's rebuild has already published the right answer for the new format.
+        // ⚠️ BOTH PATHS ARE GUARDED, INCLUDING THE EMPTY ONE. An app-thread pass
+        // that read a NOT_SET format would otherwise publish `emptyArray()` over good bands and
+        // silently turn the shelf off until the next write - the same race with the opposite
+        // symptom, which is why the publish is one block at the end rather than an early return.
+        if (configuredFormat !== fmt) return
+        eqBands.set(bands)
+        eqPreGain.set(preGain)
     }
 
     fun resetGain() {
@@ -359,6 +484,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         configuredFormat = inputAudioFormat
+        // The biquad coefficients are a function of the SAMPLE RATE, so a format change
+        // invalidates them - a 44.1k shelf run at 48k sits at the wrong frequency. This is the
+        // only other place [rebuildBands] is called, and between the two of them the audio thread
+        // never computes a coefficient.
+        rebuildBands()
         return inputAudioFormat
     }
 
@@ -397,6 +527,13 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         discardFramesRemaining.set(0)
         discardedFrames.set(0)
         emittedFrames.set(0)
+        // ⚠️ THE FILTER HISTORY GOES WITH THE STREAM, NOT WITH THE CROSSFADE. A
+        // biquad carries two samples of state per channel; after a flush the next buffer is
+        // discontinuous with it, and feeding stale history into a new stream is a transient -
+        // audible as a click or a thump on the first frames. The COEFFICIENTS stay (they depend
+        // only on rate and gain), which is why this resets the bands rather than rebuilding them.
+        val bands = eqBands.get()
+        for (i in bands.indices) bands[i].reset()
     }
 
     /**
@@ -463,6 +600,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             return
         }
 
+        // Snapshotted once per buffer - see [eqBands]. A settings change between buffers takes
+        // effect on the next one; it can never tear a coefficient set inside this loop.
+        val bands = eqBands.get()
+        val preGain = eqPreGain.get()
         var currentFi = fadeInFramesRemaining.get()
         var currentFo = fadeOutFramesRemaining.get()
         val total = rampTotalFrames.get()
@@ -490,10 +631,32 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             } else {
                 fadeGain = 1f
             }
-            repeat(channelCount) {
+            for (ch in 0 until channelCount) {
                 val raw = inputBuffer.short.toInt()
                 val index = (raw + 32768).coerceIn(0, 65535)
-                val processed = activeLut[index] / 32768f
+                var processed = activeLut[index] / 32768f
+                // ⚠⚠ THE EQ STAGE: PRE-GAIN, BANDS, THEN THE LIMITER - AND THE
+                // RAMP STAYS OUTERMOST. Order is load-bearing in three directions:
+                //   - AFTER the LUT, so the shelf works on a normalised sample and the per-track
+                //     gain is not shelved along with the music;
+                //   - BEFORE [softLimit], so the peaks a +12 dB shelf adds are limited rather
+                //     than clipped at the int conversion below;
+                //   - BEFORE fadeGain, so cos/sin remain the last thing applied and the overlap
+                //     still sums to unity. Ramping before the bands would feed them an
+                //     attenuated signal and make each leg come out relatively hotter - the same
+                //     argument the note on [OVERLAP_PEDESTAL] makes about the LUT.
+                // ⚠️ [CORRECTED 2026-10-21] THE CHAIN WAS RECORDED AS
+                // "normalize -> fade -> limit" AND THE LIMITER IS NOT WHERE THAT SAYS. Both the
+                // normalisation and the original limiter are INSIDE the LUT (one table lookup,
+                // Pass A and Pass B of generateDualStageLUT), i.e. UPSTREAM of the fade, not
+                // downstream of it. So the existing limiter could not have caught the shelf's
+                // peaks - it never sees them - and [softLimit] below is what gives the EQ stage
+                // the limiter the design assumed it already had.
+                if (bands.isNotEmpty()) {
+                    processed *= preGain
+                    for (b in bands.indices) processed = bands[b].process(processed, ch)
+                    processed = softLimit(processed)
+                }
                 output.putShort(
                     (processed * fadeGain * 32768f).toInt()
                         .coerceIn(-32768, 32767).toShort()
@@ -507,8 +670,141 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
+    /**
+     * ⚠⚠ ONE SECTION OF THE EQ STAGE. The contract is deliberately tiny: take a
+     * sample and its channel, return the filtered sample. State lives in the BAND, keyed by
+     * channel, because that is what lets [eqBands] grow without [queueInput] changing - and what
+     * stops two bands sharing one history by accident.
+     * ⚠️ [process] IS ON THE AUDIO THREAD, PER FRAME PER CHANNEL. No allocation,
+     * no trigonometry, no branching beyond what the maths needs. Everything expensive happens in
+     * the constructor, which runs on the app thread from [rebuildBands].
+     */
+    private interface EqBand {
+        fun process(sample: Float, channel: Int): Float
+
+        /** Drops the filter history; coefficients survive. Called on a flush, never per buffer. */
+        fun reset()
+    }
+
+    /**
+     * ⚠⚠ RBJ LOW SHELF, ONE BIQUAD SECTION, AND IT IS BAND 0 OF THE EQ STAGE
+     * RATHER THAN A BASS-BOOST SPECIAL CASE. Coefficients are the Audio EQ Cookbook's lowShelf,
+     * normalised by a0 so [process] is four multiplies and four adds. A SECOND BAND IS THE SAME
+     * CLASS WITH DIFFERENT COEFFICIENT FORMULAS - a peaking section needs only b0/b1/b2/a1/a2 to
+     * be computed from gain, Q and centre instead; nothing else about this file changes.
+     *
+     * ⚠️ ONE SECTION, S = 0.9, SO THERE IS NO RIPPLE AND NO RESONANT PEAK. A
+     * shelf slope above 1 needs cascaded sections to stay monotonic; 0.9 keeps a single section
+     * well-behaved, which matters because the thing being boosted is the part of the spectrum a
+     * phone speaker and a cheap pair of earbuds already struggle with.
+     * ⚠️ DOUBLE ACCUMULATORS, FLOAT INTERFACE. A biquad at 120 Hz against a
+     * 44.1 kHz rate has coefficients close to 1 and is numerically delicate in float; the state
+     * and the accumulate are Double, and only the result is narrowed. The cost is one conversion
+     * per sample, which is far cheaper than a filter that drifts.
+     */
+    private class LowShelf(
+        gainDb: Float,
+        centreHz: Float,
+        slope: Float,
+        sampleRate: Int,
+        channelCount: Int,
+    ) : EqBand {
+        private val b0: Double
+        private val b1: Double
+        private val b2: Double
+        private val a1: Double
+        private val a2: Double
+
+        // Flat per-channel history: [x1, x2, y1, y2] per channel, so one allocation and no
+        // per-sample indirection. Audio thread only, after the constructor publishes the array.
+        private val state = DoubleArray(channelCount.coerceAtLeast(1) * 4)
+
+        init {
+            val a = 10.0.pow(gainDb / 40.0)
+            val w0 = 2.0 * PI * centreHz / sampleRate
+            val cosW0 = cos(w0)
+            val alpha = sin(w0) / 2.0 * sqrt((a + 1 / a) * (1.0 / slope - 1.0) + 2.0)
+            val twoSqrtAAlpha = 2.0 * sqrt(a) * alpha
+            val a0 = (a + 1) + (a - 1) * cosW0 + twoSqrtAAlpha
+            b0 = a * ((a + 1) - (a - 1) * cosW0 + twoSqrtAAlpha) / a0
+            b1 = 2 * a * ((a - 1) - (a + 1) * cosW0) / a0
+            b2 = a * ((a + 1) - (a - 1) * cosW0 - twoSqrtAAlpha) / a0
+            a1 = -2 * ((a - 1) + (a + 1) * cosW0) / a0
+            a2 = ((a + 1) + (a - 1) * cosW0 - twoSqrtAAlpha) / a0
+        }
+
+        override fun process(sample: Float, channel: Int): Float {
+            val i = channel * 4
+            if (i + 3 >= state.size) return sample
+            val x0 = sample.toDouble()
+            val y0 = b0 * x0 + b1 * state[i] + b2 * state[i + 1] -
+                a1 * state[i + 2] - a2 * state[i + 3]
+            state[i + 1] = state[i]
+            state[i] = x0
+            state[i + 3] = state[i + 2]
+            state[i + 2] = y0
+            return y0.toFloat()
+        }
+
+        override fun reset() {
+            state.fill(0.0)
+        }
+    }
+
+    /**
+     * ⚠⚠ THE SAME CUBIC generateDualStageLUT's PASS B BAKES INTO THE TABLE,
+     * EVALUATED PER SAMPLE FOR THE EQ STAGE. It exists because the table's limiter is UPSTREAM of
+     * the bands - the LUT is one lookup that normalises and limits together - so it cannot see
+     * what a +12 dB shelf adds. Without this the shelf's peaks would hit the int conversion and
+     * hard-clip, which is the one artefact a bass boost must not produce.
+     * ⚠️ KEEP THE TWO IN STEP. Written out with multiplies rather than pow()
+     * because this runs per frame per channel, but it is the SAME curve: identity to 0.5, cubic
+     * to 1.25, flat at 1.0 after. If the table's curve changes, change this.
+     * ⚠️ ONLY REACHED WHEN BANDS ARE ACTIVE, and the magnitude test means a
+     * sample under half scale costs one comparison. Slider 0 never reaches it at all.
+     */
+    private fun softLimit(sample: Float): Float {
+        val x = abs(sample)
+        if (x <= 0.5f) return sample
+        val sign = if (sample >= 0f) 1f else -1f
+        if (x >= 1.25f) return sign
+        val out = (-16f / 27f) * x * x * x + (8f / 9f) * x * x + (5f / 9f) * x + (2f / 27f)
+        return sign * out
+    }
+
     private companion object {
         const val PASS_A_EXPONENT = 1.0 / 2.5  // 2.5:1 compression ratio, threshold 0.4
+
+        /** Slider range, mirroring the Audio FX sheet's valueTo. */
+        const val BASS_BOOST_MAX = 10
+
+        /**
+         * Shelf gain per slider step, so 10 is +12 dB of bass. Linear in dB because the ear is:
+         * every step is the same perceived increment, which the old cube-root makeup curve was
+         * not - it spent 46% of its range on step 1.
+         */
+        const val BASS_BOOST_DB_PER_STEP = 1.2f
+
+        /**
+         * ⚠⚠ HOW MUCH OF THE SHELF'S GAIN IS BOUGHT BACK BEFORE IT, AND THE
+         * ONE NUMBER TO TUNE BY EAR. 0.5 means -0.6 dB of pre-attenuation per step: at slider 10,
+         * +12 dB of shelf against -6 dB in, so the bass rises 6 dB net and everything else drops
+         * 6 dB. DECIDED by the user, 2026-10-21, over full compensation (-12 dB, no residual
+         * peaks but audibly quieter) and none (the old behaviour, which clipped).
+         * ⚠️ THE RESIDUAL IS WHAT [softLimit] IS FOR. Half compensation leaves
+         * up to 6 dB of peak over full scale on bass-heavy material; the limiter rounds those off
+         * instead of the int conversion clipping them. If a listening pass finds the shelf grainy
+         * at 10, RAISE THIS toward 1.0 - do not touch the curve or the slope.
+         */
+        const val HEADROOM_FRACTION = 0.5f
+
+        /**
+         * Shelf corner and slope. 120 Hz sits below almost all vocal fundamentals and above the
+         * rumble a phone speaker cannot reproduce anyway, so the boost is felt rather than heard
+         * as muddiness. S below 1 keeps the single section monotonic - see [LowShelf].
+         */
+        const val BASS_SHELF_HZ = 120f
+        const val BASS_SHELF_SLOPE = 0.9f
 
         // ⚠⚠ HEADROOM FOR THE SUMMED OVERLAP. 1.0 = none, which is what the
         // reference ships and what we ship. The numbers behind the choice, measured from

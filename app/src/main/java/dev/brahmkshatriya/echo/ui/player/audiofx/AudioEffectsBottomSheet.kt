@@ -244,7 +244,19 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
                 showNoEqualizer()
                 return
             }
+            // ⚠⚠ NEVER HAND OUT SESSION 0, WHICH IS WHAT THIS FLOW HOLDS BEFORE
+            // THE PLAYER HAS ONE. PlayerState.session starts at 0 and is written only when
+            // EffectsListener sees onAudioSessionIdChanged - and the id is generated on the
+            // playback thread and published back asynchronously (ExoPlayerImpl, 1.11.0,
+            // :427-443), so there is a real window where it is still 0. Session 0 is
+            // AUDIO_SESSION_ID_GENERATE / the global output mix: handing it to MusicFX would
+            // point the system equalizer at everything the device plays, or at nothing, rather
+            // than at us. Milliseconds wide in practice, and one comparison to close.
             val sessionId = viewModel.playerState.session.value
+            if (sessionId == 0) {
+                showNoEqualizer()
+                return
+            }
             runCatching { openEqualizer(activity, sessionId) }.getOrElse { showNoEqualizer() }
         }
     }
