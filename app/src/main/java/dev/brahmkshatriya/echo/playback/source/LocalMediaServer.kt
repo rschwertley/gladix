@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A LAN HTTP endpoint that serves one extension-resolved stream per request, by reading through the
@@ -129,6 +130,21 @@ class LocalMediaServer(
     private var workers: ExecutorService? = null
 
     /**
+     * ⚠⚠ CONNECTIONS ACCEPTED SINCE [start], AND IT EXISTS TO MAKE AN ABSENCE
+     * REPORTABLE. "No accept line in the capture" was the whole evidence for the Android 17
+     * local-network failure (build 1141: a registered plan, a materialised file, playerState=5 on
+     * the receiver and not one inbound connection), and reading it required someone to notice a
+     * line that was not there. A counter lets CastSessionController.armInboundWatch state it
+     * positively a few seconds after each LOAD instead.
+     * ⚠️ RESET BY [start] AND [stop], so it counts PER SERVER rather than for the
+     * life of the process - the watch compares two readings taken inside one session.
+     */
+    private val accepted = AtomicInteger(0)
+
+    /** First served request per server, for the one-line-per-session request log in [serve]. */
+    private val loggedFirstRequest = AtomicBoolean(false)
+
+    /**
      * Read from loader threads through [urlFor] and written by [start] / [stop] on whichever thread
      * owns the service lifecycle, so it is volatile rather than guarded - a stale null only makes the
      * hook fall through to the ordinary chain.
@@ -223,6 +239,16 @@ class LocalMediaServer(
         return prefix + PATH_PREFIX + token + "/track." + CastPlan.extFor(plan.mime)
     }
 
+    /** Connections accepted since [start]; see [accepted]. Safe from any thread. */
+    fun acceptedCount(): Int = accepted.get()
+
+    /**
+     * `http://<ip>:<port>` while running, null otherwise. For logging a failure to connect: the
+     * host and port are already printed by [start]'s "listening on" line and are a LAN address
+     * plus a port, carrying nothing secret - unlike a token, which never appears here.
+     */
+    fun baseUrl(): String? = base
+
     /**
      * Binds the socket and starts the accept loop. Idempotent - it returns early when already
      * running, which is why [urlFor] and [urlForPlan] can both call it unconditionally.
@@ -257,6 +283,8 @@ class LocalMediaServer(
         }
         serverSocket = socket
         workers = Executors.newCachedThreadPool()
+        accepted.set(0)
+        loggedFirstRequest.set(false)
         base = "http://" + host + ":" + socket.localPort
         running.set(true)
         val thread = Thread({ acceptLoop(socket) }, THREAD_NAME)
@@ -322,6 +350,8 @@ class LocalMediaServer(
         tokens.clear()
         plans.clear()
         lengths.clear()
+        accepted.set(0)
+        loggedFirstRequest.set(false)
         Log.d(TAG, "stopped")
     }
 
@@ -367,6 +397,9 @@ class LocalMediaServer(
             // mid-headers left no trace at all - which made "no request lines in the capture"
             // unable to distinguish a receiver that never connected from one we dropped in
             // silence. The peer address is a LAN address and carries nothing secret.
+            // Counted BEFORE the log, so [acceptedCount] can never read lower than what has
+            // been printed - the watch that reads it treats equality as "nothing arrived".
+            accepted.incrementAndGet()
             Log.d(TAG, "accept from " + (client.inetAddress?.hostAddress ?: "?"))
             val pool = workers
             if (pool == null) {
@@ -441,6 +474,17 @@ class LocalMediaServer(
         // /track.<ext> for the receiver's benefit (see [urlForPlan]), the debug hook's does not.
         val token = if (path == null || !path.startsWith(PATH_PREFIX)) null
         else path.substring(PATH_PREFIX.length).trim('/').substringBefore('/')
+        // ⚠⚠ ONE FULL REQUEST LINE PER SERVER, AND ONLY THE FIRST. "accept from"
+        // proves a TCP connection; it does not prove the receiver asked for what we handed it.
+        // This line closes that gap once per session - method, peer, and the path with the token
+        // replaced by its hash, which is the same redaction every other line here uses. Capped at
+        // one because a media client issues a range request per chunk and the rest say nothing new.
+        if (loggedFirstRequest.compareAndSet(false, true)) Log.d(
+            TAG, "first request " + method + " from " +
+                (client.inetAddress?.hostAddress ?: "?") +
+                " path=" + PATH_PREFIX + "#" + (token?.let { keyHash(it) } ?: "none") +
+                " range=" + (if (rangeHeader == null) "none" else "yes")
+        )
         // ⚠️ ONE 404 FOR EVERY REJECTION, AND THE SAMENESS IS THE POINT. A wrong path, an
         // expired token and a never-registered token are indistinguishable from outside, so probing
         // learns nothing about what this device is playing.

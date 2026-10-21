@@ -27,10 +27,37 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * ⚠⚠ A RUNTIME PERMISSION ASKED FOR BY SOMETHING THAT HAS NO ACTIVITY, AND THE
+ * [result] IS WHY IT IS A REQUEST RATHER THAN AN EVENT. PlayerService's CastSessionController has
+ * to KNOW the answer before it binds a socket or sends a LOAD, so a fire-and-forget emission is
+ * not enough - the deferred is the return path.
+ * ⚠️ COMPLETED EXACTLY ONCE, BY WHOEVER GETS THERE FIRST, and every path has to
+ * complete it: granted, denied, dialog cancelled, or the asker giving up. CompletableDeferred
+ * makes a second complete() a no-op returning false rather than a throw, which is what lets the
+ * asker cancel its own wait (CastSessionController.onCastEnded) without racing the collector.
+ * ⚠⚠ [outcome] EXISTS SO THE BROKER NEEDS NO LOG TAG OF ITS OWN. What happened -
+ * whether a rationale was shown, whether a denial is permanent - is only knowable on the Activity
+ * side, and only interesting to the asker, which has the tag the capture is filtered on. So the
+ * broker reports rather than logs, and every Cast line stays on the Cast tag.
+ */
+data class PermissionRequest(
+    val permission: String,
+    val result: CompletableDeferred<PermissionResult>,
+)
+
+/**
+ * The answer to a [PermissionRequest]. [granted] is the decision; [outcome] is the short string
+ * the asker logs - `granted`, `rationaleShown+granted`, `denied`, `deniedPermanently`,
+ * `rationaleDeclined`, or the asker's own `noUi` / `timeout`, which never reach the broker.
+ */
+data class PermissionResult(val granted: Boolean, val outcome: String)
 
 data class App(
     val context: Application,
@@ -93,6 +120,25 @@ data class App(
     // Activity is stopped was already lost with no record anywhere.
     val messageFlow = MutableSharedFlow<Message>(
         extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    /**
+     * Runtime permission requests from code with no Activity; see [PermissionRequest].
+     * Collected by PermsUtils.setupPermissionRequests from MainActivity.
+     *
+     * ⚠⚠ ITS subscriptionCount IS PART OF THE CONTRACT, NOT AN IMPLEMENTATION
+     * DETAIL. The collector is ContextUtils.observe, i.e. lifecycle-gated to STARTED - so with the
+     * app backgrounded there is NOBODY to show a dialog, and an emission is simply dropped (same
+     * gap the note on [messageFlow] describes). An asker that then waited on its deferred would
+     * hang for its whole timeout with no prompt on screen, which for a Cast session is a spinner
+     * the user cannot explain. So an asker MUST check `subscriptionCount.value` first and treat 0
+     * as "cannot ask" - CastSessionController.onCastStarted is the worked example.
+     * ⚠️ A SMALL BUFFER, DELIBERATELY: a request is only ever user-initiated, so
+     * eight in flight already means something is wrong, and dropping the oldest is correct - its
+     * deferred is then completed by the asker's own timeout rather than left pending forever.
+     */
+    val permissionRequestFlow = MutableSharedFlow<PermissionRequest>(
+        extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
     // Safety net for UNCAUGHT exceptions in background coroutines launched on `scope` — e.g. an extension's

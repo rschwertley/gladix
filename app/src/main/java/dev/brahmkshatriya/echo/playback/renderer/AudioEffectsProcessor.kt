@@ -82,10 +82,22 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * move out of earshot. Dropping N frames of input advances the audio relative to the clock by
      * N frames, so the controller measures how far the tail is behind the main player once and
      * cancels it here.
-     * ⚠⚠ THE DROP HAPPENS INSIDE THE MUTE BRANCH, AND THAT IS WHAT MAKES IT
-     * INAUDIBLE. The splice is between two silent regions, so there is no waveform
-     * discontinuity to click. Dropping frames in the UNMUTED path would be a splice in live
-     * audio - never move this.
+     * ⚠⚠ [CORRECTED 2026-10-20] THE DROP IS NO LONGER INSIDE THE MUTE BRANCH,
+     * AND THE NOTE THAT FORBADE MOVING IT WAS RIGHT ABOUT THE REASON AND WRONG ABOUT THE
+     * MECHANISM. It read: "THE DROP HAPPENS INSIDE THE MUTE BRANCH, AND THAT IS WHAT MAKES IT
+     * INAUDIBLE ... Dropping frames in the UNMUTED path would be a splice in live audio - never
+     * move this." What makes a splice safe is that NOTHING IS AUDIBLE WHEN IT IS CONSUMED, and
+     * the zero-fill in this branch was only one way to arrange that. Since 2026-10-20 the
+     * sidecar is silenced by its PLAYER VOLUME instead (CrossfadeController.startPreRoll), so
+     * the branch is never taken on the leg that discards and a drop left in here would have been
+     * SCHEDULED AND NEVER APPLIED - the alignment correction silently absent, with the measured
+     * gap still logged as if it had been cancelled.
+     * ⚠⚠ WHAT STILL HAS TO HOLD, AND WHERE IT IS ENFORCED: the spliced frames
+     * must reach the mixer while the volume is still 0. They are queued at the measurement,
+     * ~300 ms into a ~2 s pre-roll, and the sink holds ~500 ms - so they are consumed around a
+     * second before the volume comes back up. CrossfadeController.measureAlignment's `queue`
+     * reject is what refuses the correction when that margin is not there; it is the guard this
+     * note's invariant now lives behind.
      * ⚠️ SET BY THE APP LOOPER, READ AND WRITTEN BY THE AUDIO THREAD, hence atomic -
      * the same discipline the ramp counters carry for the Jul 1-3 fade-out bleed.
      */
@@ -105,13 +117,30 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private val discardedFrames = AtomicLong(0)
 
     /**
-     * ⚠️ THE LIFT OUT OF THE PRE-ROLL MUTE. Releasing a mute on a RUNNING waveform is
-     * a 0 -> 1 gain step, i.e. a click - the one artefact this feature does not currently have.
-     * A few milliseconds of linear rise removes the step and is far too short to hear as a fade.
-     * Multiplied into the fade gain, so it composes with the cos curve instead of replacing it.
+     * ⚠⚠ FRAMES THIS PROCESSOR HAS EMITTED TO THE CURRENT AUDIO OUTPUT, AND ITS
+     * LIFETIME IS THE OUTPUT'S, NOT A CROSSFADE'S. Counted from the moment the output was
+     * created or last flushed - which includes everything written while the player sat PAUSED
+     * after prepare, because an ExoPlayer fills its AudioTrack then - and cleared ONLY in
+     * [onFlush] and [onReset], the two points where the output itself restarts. Deliberately NOT
+     * cleared by [clearRamps] or by anything in a crossfade's own lifecycle.
+     *
+     * ⚠️ WHAT IT IS FOR: the queued-ahead depth of the sink, which no public API
+     * exposes. With this counter the controller computes, with no position counter involved,
+     *     queuedMs = emittedMs / speed - (now - playoutStartAtMs)
+     * i.e. the output we have handed down, minus the wall time that has elapsed since the mixer
+     * started consuming it.
+     * ⚠️ THE / speed IS NOT OPTIONAL, AND THE FIRST DRAFT OF THIS NOTE SAID IT
+     * WAS. It claimed "both terms are output time, and Sonic sits AFTER this processor" - the
+     * premise is right and the conclusion inverted. SonicAudioProcessor applying the rate change
+     * after us is precisely why the frames counted here are PRE-speed, i.e. media time, while the
+     * elapsed term is wall time. At 1x the two coincide, which is how a missing factor would have
+     * shipped unnoticed. No discard term, though: dropped frames were never emitted.
+     * ⚠️ A MID-STREAM FLUSH INVALIDATES THE PAIRING, not the counter: the counter
+     * restarts at 0 while the controller's playoutStartAtMs still refers to the first playout.
+     * The only flush that can reach the sidecar mid-pre-roll is a rebuffer, which demotes the
+     * transition to a plain one, so the stale pairing is never read.
      */
-    private val liftFramesRemaining = AtomicLong(0)
-    private val liftTotalFrames = AtomicLong(0)
+    private val emittedFrames = AtomicLong(0)
     private val pendingToken = AtomicReference<Any?>(null)
     private val publishedToken = AtomicReference<Any?>(null)
     private var configuredFormat = AudioProcessor.AudioFormat.NOT_SET
@@ -234,7 +263,19 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         muted = false
     }
 
-    /** Silence this leg and stage [token]; survives the flush the hand-off seek causes. */
+    /**
+     * Silence this leg and stage [token]; survives the flush the hand-off seek causes.
+     *
+     * ⚠⚠ [MOVED HERE 2026-10-20] THIS IS WHERE THE OFFLOAD DEPENDENCY LIVES NOW. It
+     * used to be stated on armPreRoll, which muted the SIDECAR by zero-filling here; the sidecar
+     * is muted by its PLAYER VOLUME instead since 2026-10-20 (see CrossfadeController.startPreRoll
+     * for why), so that function is gone and with it the claim that offload would make the
+     * pre-roll audible. The dependency itself is unchanged and if anything broader: audio offload
+     * bypasses the processor chain entirely, so under offload this mute, BOTH ramps and the
+     * pre-roll discard would all be skipped - the crossfade would not merely sound wrong, it
+     * would not happen. Offload is disabled unconditionally (7c6b37d1, 2026-07-13); that is a
+     * precondition of this feature, not a coincidence.
+     */
     fun armIncoming(token: Any) {
         pendingToken.set(token)
         publishedToken.set(null)
@@ -251,32 +292,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     fun overlapToken(): Any? = publishedToken.get()
 
     /**
-     * The outgoing leg during the pre-roll: identical handshake to [armIncoming] - silence plus a
-     * token published on the first rendered frame - used for the opposite purpose. Here the
-     * published token is the PROOF that the sidecar's AudioTrack was activated, and that the
-     * platform's start ramp was applied, while nothing could be heard.
-     *
-     * ⚠⚠ THIS IS WHY THE SIDECAR MAY NOW PLAY WHILE MERELY ARMED, WHICH WAS THE
-     * 1129 BUG. The 1129 invariant was "the sidecar never plays before the hand-off"; it is now
-     * "the sidecar is never AUDIBLE before the hand-off", enforced by the mute in [queueInput]
-     * rather than by playWhenReady. That is a strictly weaker guarantee, and it holds only
-     * because: the mute branch is the FIRST thing queueInput does, before any format check, and
-     * zero bytes are valid silence for both PCM_16BIT and PCM_FLOAT; this processor is always in
-     * the chain, since BaseAudioProcessor.isActive() is `pendingOutputAudioFormat != NOT_SET`
-     * (BaseAudioProcessor.java:62-64, 1.11.0) and onConfigure always returns a real format; it is
-     * FIRST in RenderersFactory's chain; and [onFlush] deliberately keeps the mute.
-     * ⚠⚠ AND IT DEPENDS ON AUDIO OFFLOAD STAYING OFF. Offload bypasses the
-     * processor chain entirely, so a muted pre-roll would be fully audible. Offload is disabled
-     * unconditionally (7c6b37d1, 2026-07-13); re-enabling it would make the pre-roll play the
-     * departing track twice, which is exactly the 1129 symptom. Not a coincidence to rely on
-     * silently - this is the dependency.
-     */
-    fun armPreRoll(token: Any) = armIncoming(token)
-
-    /**
-     * Drops [mediaMs] of the outgoing leg, in whole frames, while it is still muted. Returns the
-     * frame count actually scheduled - 0 when the configured format cannot be ramped, which is
-     * the same condition under which no fade would be applied either.
+     * Drops [mediaMs] of the outgoing leg, in whole frames, while it is still INAUDIBLE - which
+     * since 2026-10-20 means at player volume 0 rather than zero-filled here; see
+     * [discardFramesRemaining]. Returns the frame count actually scheduled - 0 when the
+     * configured format cannot be ramped, which is the same condition under which no fade would
+     * be applied either.
      */
     fun discard(mediaMs: Long): Long {
         val frames = framesFor(mediaMs)
@@ -287,25 +307,35 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     /** Cumulative dropped frames, for RenderersFactory's chain. See [discardedFrames]. */
     fun discardedFrameCount(): Long = discardedFrames.get()
 
+    /**
+     * Emitted output time in MEDIA milliseconds at the configured rate, or -1 when the format is
+     * not one we count - the same condition under which no ramp and no discard would apply
+     * either. See [emittedFrames] for the lifetime and for why a caller comparing this with wall
+     * time has to divide by the playback speed first.
+     */
+    fun emittedOutputMs(): Long {
+        val fmt = configuredFormat
+        if (fmt.sampleRate <= 0 || fmt.encoding != C.ENCODING_PCM_16BIT) return -1L
+        return emittedFrames.get() * 1000L / fmt.sampleRate
+    }
+
+    /**
+     * Adds [bytes] of emitted output to [emittedFrames]. Called on every path that writes to the
+     * output buffer - muted, passthrough and the PCM ramp loop - so the count is the SINK's view
+     * of what we produced, which is what the queue depth is measured against. A format with no
+     * frame size contributes nothing rather than a wrong number.
+     */
+    private fun countEmitted(bytes: Int) {
+        val frameSize = frameSizeBytes()
+        if (frameSize > 0 && bytes > 0) emittedFrames.addAndGet((bytes / frameSize).toLong())
+    }
+
     /** Bytes per PCM frame for the configured format; 0 when it is not a format we ramp. */
     fun frameSizeBytes(): Int {
         val fmt = configuredFormat
         if (fmt.encoding != C.ENCODING_PCM_16BIT || fmt.sampleRate <= 0 || fmt.channelCount <= 0)
             return 0
         return Util.getPcmFrameSize(fmt.encoding, fmt.channelCount)
-    }
-
-    /**
-     * Ends the pre-roll: cancels any unapplied discard, clears the mute, and lifts the gain over
-     * [mediaMs] instead of stepping it. See the note on [liftFramesRemaining] for why the step
-     * cannot simply be taken.
-     */
-    fun releasePreRoll(mediaMs: Long) {
-        discardFramesRemaining.set(0)
-        val frames = framesFor(mediaMs).coerceAtLeast(1L)
-        liftTotalFrames.set(frames)
-        liftFramesRemaining.set(frames)
-        muted = false
     }
 
     /**
@@ -317,13 +347,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
         rampTotalFrames.set(0)
-        // The PENDING discard and the lift go, because both are gain-side state that must not
-        // survive an abort. The CUMULATIVE count deliberately does NOT: it is what the sink has
+        // The PENDING discard goes, because it is gain-side state that must not survive an
+        // abort. The CUMULATIVE counts deliberately do NOT: they are what the sink has
         // been told about the stream it may still be draining, so its lifetime is the stream's -
         // bounded by onFlush and onReset - and zeroing it here would step the reported position.
         discardFramesRemaining.set(0)
-        liftFramesRemaining.set(0)
-        liftTotalFrames.set(0)
         pendingToken.set(null)
         publishedToken.set(null)
         muted = false
@@ -360,11 +388,33 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         clearPreRollState()
     }
 
+    /**
+     * Everything whose lifetime is the AUDIO OUTPUT's rather than a crossfade's. Called from
+     * [onFlush] and [onReset] only - see [emittedFrames] and [discardedFrames] for why each of
+     * these must survive a crossfade ending but not an output restart.
+     */
     private fun clearPreRollState() {
         discardFramesRemaining.set(0)
         discardedFrames.set(0)
-        liftFramesRemaining.set(0)
-        liftTotalFrames.set(0)
+        emittedFrames.set(0)
+    }
+
+    /**
+     * Consumes up to [discardFramesRemaining] whole frames from the front of [inputBuffer] and
+     * reports them to [discardedFrames]. Nothing happens for a format with no frame size, which
+     * is the same condition under which no ramp would apply either - see [frameSizeBytes].
+     * Audio thread only.
+     */
+    private fun applyPendingDiscard(inputBuffer: ByteBuffer) {
+        val wanted = discardFramesRemaining.get()
+        if (wanted <= 0L) return
+        val frameSize = frameSizeBytes()
+        if (frameSize <= 0) return
+        val dropped = min(wanted, (inputBuffer.remaining() / frameSize).toLong())
+        if (dropped <= 0L) return
+        discardFramesRemaining.addAndGet(-dropped)
+        discardedFrames.addAndGet(dropped)
+        inputBuffer.position(inputBuffer.position() + (dropped * frameSize).toInt())
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -377,24 +427,17 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // startFadeIn clears the mute, which is what lets the controller decide the ramp length on
         // the main thread (it needs the sidecar position; the audio thread cannot read it). The
         // silence lasts the seek plus at most one 200 ms tick, and the tail covers all of it.
+        // ⚠⚠ THE DISCARD IS TAKEN BEFORE ANY OUTPUT IS SIZED, AND THAT IS WHY IT
+        // IS HERE RATHER THAN IN EITHER BRANCH BELOW. It consumes frames from the INPUT, so
+        // every path after it - mute, passthrough, the ramp loop - sizes its output from the
+        // shortened buffer and reports exactly what it emitted, with no per-path arithmetic. An
+        // empty remainder is fine on all three: replaceOutputBuffer(0) and flip() are valid.
+        applyPendingDiscard(inputBuffer)
+
         if (muted) {
             pendingToken.get()?.let { publishedToken.compareAndSet(null, it) }
-            // ⚠⚠ THE DISCARD LIVES HERE - see the note on discardFramesRemaining.
-            // Whole frames only, for the format actually configured, and the output is shortened
-            // by exactly what was consumed: that is the frame count the sink is told about.
-            val frameSize = frameSizeBytes()
-            var dropped = 0L
-            if (frameSize > 0) {
-                val wanted = discardFramesRemaining.get()
-                if (wanted > 0L) {
-                    dropped = min(wanted, (inputBuffer.remaining() / frameSize).toLong())
-                    if (dropped > 0L) {
-                        discardFramesRemaining.addAndGet(-dropped)
-                        discardedFrames.addAndGet(dropped)
-                    }
-                }
-            }
-            val keep = inputBuffer.remaining() - (dropped * frameSize).toInt()
+            val keep = inputBuffer.remaining()
+            countEmitted(keep)
             val silence = replaceOutputBuffer(keep)
             while (silence.hasRemaining()) silence.put(0)
             inputBuffer.position(inputBuffer.limit())
@@ -414,6 +457,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val output = replaceOutputBuffer(inputBuffer.remaining())
 
         if (fmt.encoding != C.ENCODING_PCM_16BIT || fmt.sampleRate <= 0) {
+            countEmitted(inputBuffer.remaining())
             output.put(inputBuffer)
             output.flip()
             return
@@ -421,8 +465,6 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
         var currentFi = fadeInFramesRemaining.get()
         var currentFo = fadeOutFramesRemaining.get()
-        var currentLift = liftFramesRemaining.get()
-        val liftTotal = liftTotalFrames.get()
         val total = rampTotalFrames.get()
         val channelCount = fmt.channelCount
         val applyFade = total > 0
@@ -448,13 +490,6 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             } else {
                 fadeGain = 1f
             }
-            // The pre-roll lift: a linear 0 -> 1 over a few ms, composed with whatever the ramp
-            // decided. Runs at most once per crossfade and only on the outgoing leg.
-            if (currentLift > 0L && liftTotal > 0L) {
-                fadeGain *= 1f - currentLift.toFloat() / liftTotal
-                currentLift--
-            }
-
             repeat(channelCount) {
                 val raw = inputBuffer.short.toInt()
                 val index = (raw + 32768).coerceIn(0, 65535)
@@ -468,7 +503,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
 
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
-        liftFramesRemaining.set(currentLift)
+        countEmitted(output.position())
         output.flip()
     }
 

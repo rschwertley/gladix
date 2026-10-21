@@ -33,6 +33,7 @@ import com.google.android.material.color.DynamicColorsOptions
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigationrail.NavigationRailView
 import dev.brahmkshatriya.echo.databinding.ActivityMainBinding
+import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
@@ -53,6 +54,7 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkAppPermissions
+import dev.brahmkshatriya.echo.utils.PermsUtils.setupPermissionRequests
 import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
@@ -71,6 +73,7 @@ open class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
     private val uiViewModel by viewModel<UiViewModel>()
+    private val app by inject<App>()
     private val extensionLoader by inject<ExtensionLoader>()
     private val playerState by inject<PlayerState>()
 
@@ -204,6 +207,11 @@ open class MainActivity : AppCompatActivity() {
         )
         setupExceptionHandler(setupSnackBar(uiViewModel, binding.root))
         checkAppPermissions { extensionLoader.setPermGranted() }
+        // The Activity-side broker for permissions asked for by code that has no Activity -
+        // currently only CastSessionController's local-network gate. Wired unconditionally and
+        // costs nothing until something emits; see App.permissionRequestFlow, whose subscription
+        // count this call is what makes non-zero.
+        setupPermissionRequests(app)
         checkBatteryOptimization()
         configureExtensionsUpdater()
         supportFragmentManager.commit {

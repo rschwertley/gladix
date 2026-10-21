@@ -6,6 +6,28 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17 (API 37) LOCAL NETWORK PROTECTION. We target 37, so without this the TV
+         cannot open a TCP connection IN to LocalMediaServer and the connection TIMES OUT rather
+         than failing - which is exactly what build 1141 captured: "register plan=w10 ... token=..."
+         and "materialise done (6416717 bytes)" on our side, playerState=5 on the receiver, NOT ONE
+         "accept from" line, and our own 15 s load timeout. Requested at Cast session start, never
+         at launch - see CastSessionController.onCastStarted.
+         WHY ONLY THE AUDIO FAILED, since that is what made this look like a Cast bug rather than a
+         permission one: discovery and control go through Play Services (its own permissions) and
+         the artwork is an http(s) CDN URL the RECEIVER fetches (CastMediaItemBuilder.artworkUri),
+         so the TV showed title, metadata and cover art with no audio.
+         THE OUTPUT SWITCHER EXEMPTION DOES NOT APPLY. It covers STARTING a cast; what needs the
+         permission here is the receiver connecting IN to a socket we are listening on.
+         ONE PERMISSION COVERS EVERY CAST PLAN THAT USES THE SERVER - Materialise, File and Relay
+         are all served from the single listening socket in LocalMediaServer.serve. CastPlan.Direct
+         needs nothing from us: the receiver fetches the origin itself.
+         OUTBOUND LAN WAS CONSIDERED AND NEEDS NOTHING - DECIDED 2026-10-20, not deferred.
+         LocalMediaServer.relayUpstream and the ordinary StreamableDataSource chain could in
+         principle dial a private address, which would be local-network access too. No extension in
+         use streams from a LAN host (Deezer and the rest are internet services), so there is
+         nothing to build and no second request site. A self-hosted extension would reopen it, and
+         the fix would be a request on the PLAYBACK path - not this one, which is Cast-specific. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />

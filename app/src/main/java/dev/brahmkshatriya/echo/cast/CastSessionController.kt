@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.cast
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.cast.RemoteCastPlayer
@@ -15,13 +18,18 @@ import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Message
+import androidx.core.content.ContextCompat
 import dev.brahmkshatriya.echo.di.App
+import dev.brahmkshatriya.echo.di.PermissionRequest
+import dev.brahmkshatriya.echo.di.PermissionResult
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
 import dev.brahmkshatriya.echo.playback.source.LocalMediaServer
+import dev.brahmkshatriya.echo.utils.PermsUtils.openAppSettings
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Owns a Cast session end to end: decides whether one may start, swaps the session player while it
@@ -80,6 +89,23 @@ class CastSessionController(
     private var wrapper: CastSwitchPlayer? = null
     private var mediaClient: RemoteMediaClient? = null
 
+    private class PendingPermission(
+        val sessionId: String?,
+        val result: CompletableDeferred<PermissionResult>,
+    )
+
+    /**
+     * ⚠⚠ THE LOCAL-NETWORK PROMPT THAT IS STILL ON SCREEN, HELD FOR TWO JOBS, AND
+     * ONE OF THEM IS A RE-ENTRY GUARD. The wait can last [PERMISSION_TIMEOUT_MS] with the Cast
+     * session connected and nothing of ours started, so:
+     *   1. if the user disconnects or the receiver drops in that window, [onCastEnded] completes
+     *      it with `sessionEnded` rather than leaving the coroutine parked until the timeout;
+     *   2. non-null means "a prompt is already up", which is the ONLY thing standing between a
+     *      second [onCastStarted] and a second dialog - see the guard there.
+     * Main thread only, like every other field here.
+     */
+    private var pendingPermission: PendingPermission? = null
+
     /** What is on the receiver now, so the state.current observer cannot restart the same track. */
     private var castedMediaId: String? = null
 
@@ -123,6 +149,9 @@ class CastSessionController(
 
     /** Cancelled on the first STATE_READY after a load; fires if the receiver never gets there. */
     private var loadTimeout: Job? = null
+
+    /** See [armInboundWatch]. Cancelled by the next LOAD and by session end. */
+    private var inboundWatch: Job? = null
 
     /**
      * ⚠️ THE TRANSIENT-ENDED GUARD, KEPT UNTIL DEVICE TESTING SAYS IT IS REDUNDANT.
@@ -228,9 +257,14 @@ class CastSessionController(
     }
 
     private val sessionListener = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarted(castSession: CastSession, sessionId: String) = onCastStarted()
+        override fun onSessionStarted(castSession: CastSession, sessionId: String) =
+            onCastStarted(sessionId)
+
+        // A resume carries no sessionId parameter, so it is read off the session. Verified present
+        // on the base type: Session.getSessionId() / Session.isConnected(), decoded from
+        // play-services-cast-framework 22.3.1 (CastSession extends Session).
         override fun onSessionResumed(castSession: CastSession, wasSuspended: Boolean) =
-            onCastStarted()
+            onCastStarted(runCatching { castSession.sessionId }.getOrNull())
 
         override fun onSessionEnded(castSession: CastSession, error: Int) = onCastEnded()
         override fun onSessionSuspended(castSession: CastSession, reason: Int) = onCastEnded()
@@ -267,7 +301,24 @@ class CastSessionController(
 
     // ── Session start ───────────────────────────────────────────────────────────────────────────
 
-    private fun onCastStarted() {
+    /**
+     * ⚠⚠ THE PERMISSION GATE, AND IT RUNS BEFORE THE SERVER BINDS RATHER THAN
+     * BEFORE THE LOAD. On Android 17 (API 37) with targetSdk 37, the receiver cannot open a TCP
+     * connection IN to [LocalMediaServer] without ACCESS_LOCAL_NETWORK, and a missing grant does
+     * not error - the connection TIMES OUT. Build 1141 is exactly that shape: a registered plan, a
+     * materialised 6.4 MB file, contentId=sameAsUrl on the wire, playerState=5 on the receiver,
+     * NOT ONE "accept from" line, and our own 15 s load timeout. Metadata and artwork arrived
+     * because neither comes from us - control goes through Play Services and the cover is a CDN
+     * URL the receiver fetches itself.
+     * ⚠️ ASKED HERE AND NOWHERE ELSE, WHICH IS THE PRODUCT DECISION: the user has
+     * just picked a Cast device, so the prompt has a reason the user can see. At app start it
+     * would be an unexplained network-permission dialog on every first launch, and most users
+     * never cast. The cost is that the first cast of a fresh install shows a dialog mid-connect.
+     * ⚠️ AND BEFORE [LocalMediaServer.start] SPECIFICALLY. Binding first would
+     * leave a listening socket nothing can reach, and the purge it dispatches would run for a
+     * session that is about to be refused.
+     */
+    private fun onCastStarted(sessionId: String?) {
         if (CastState.isCasting) return
         // AA and Cast are mutually exclusive. Refused here rather than by hiding the button, because
         // a session can be started from the TV or another phone - the button is not the only entry.
@@ -277,6 +328,101 @@ class CastSessionController(
             endSession()
             return
         }
+        // ⚠⚠ A PROMPT ALREADY UP MEANS DROP THIS CALL, BECAUSE isCasting IS FALSE
+        // FOR THE WHOLE WAIT AND THE GUARD AT THE TOP OF THIS FUNCTION THEREFORE DOES NOT HOLD.
+        // Two routes reach here twice for one connection: onSessionStarted and onSessionResumed
+        // both call this, and a disconnect/reconnect inside the wait produces a second start. Two
+        // prompts would be bad on its own; worse is that the second would OVERWRITE this field,
+        // orphaning the first deferred - which nothing then completes, so it waits out the full
+        // two minutes and ends with `timeout` -> endSession(), killing the session the SECOND
+        // prompt had just been granted for.
+        // ⚠️ THE DROPPED CALL IS NOT RE-QUEUED, AND THAT IS THE ACCEPTED TRADE.
+        // If the pending prompt belongs to a session that has since been replaced, its own
+        // stale-session guard below refuses to start and the user re-taps - one lost tap in a
+        // double fault, against a guaranteed-correct state. `same=` in the line says which case
+        // it was, so a capture can show if the same-session half ever actually happens.
+        val inFlight = pendingPermission
+        if (inFlight != null) {
+            Log.w(
+                TAG, "ignoring session start: local-network prompt in flight (same=" +
+                    (inFlight.sessionId == sessionId) + ")"
+            )
+            return
+        }
+        if (localNetworkState() != LOCAL_NET_DENIED) return startCastSession()
+        // ⚠⚠ NO ACTIVITY MEANS NO PROMPT, AND subscriptionCount IS HOW WE KNOW
+        // RATHER THAN GUESS. A session can start from the TV or the notification with our UI
+        // backgrounded, and the broker is PermsUtils.setupPermissionRequests behind
+        // ContextUtils.observe - lifecycle-gated to STARTED, so the emission would simply be
+        // dropped (the same gap App.messageFlow's note describes). Waiting on a deferred nobody
+        // will complete is the 15 s spinner again with two extra minutes on it, so the absence of
+        // a collector is answered immediately. See App.permissionRequestFlow, where this check is
+        // part of the contract rather than an optimisation.
+        if (app.permissionRequestFlow.subscriptionCount.value == 0) {
+            Log.w(TAG, "refusing session: localNetwork=noUi")
+            failAndStop(R.string.cast_needs_local_network_foreground)
+            return
+        }
+        val request = PermissionRequest(
+            Manifest.permission.ACCESS_LOCAL_NETWORK, CompletableDeferred()
+        )
+        pendingPermission = PendingPermission(sessionId, request.result)
+        Log.d(TAG, "requesting local-network permission")
+        scope.launch {
+            app.permissionRequestFlow.emit(request)
+            // The broker completes this on every path, including a cancelled dialog, and
+            // [onCastEnded] completes it if the session goes away - so the timeout is a backstop
+            // for a collector that dies mid-dialog, not the normal exit.
+            val result = withTimeoutOrNull(PERMISSION_TIMEOUT_MS) { request.result.await() }
+            withContext(Dispatchers.Main) {
+                if (pendingPermission?.result === request.result) pendingPermission = null
+                val outcome = result?.outcome ?: "timeout"
+                Log.d(TAG, "local-network permission -> " + outcome)
+                if (outcome == PERMISSION_SESSION_ENDED) return@withContext
+                if (result?.granted != true) {
+                    // ⚠️ A PERMANENT DENIAL NEEDS A WAY OUT, because the system
+                    // will not show the dialog again - the same answer checkAppPermissions gives a
+                    // refusal, routed through the snackbar's action instead of a dialog.
+                    // ⚠️ AND activityDestroyed IS NOT A REFUSAL. The prompt was
+                    // torn down by a rotation or a theme change (see
+                    // PermsUtils.setupPermissionRequests), so the user decided nothing and the
+                    // honest message is "try again" rather than "you denied this".
+                    when (outcome) {
+                        "deniedPermanently" -> messageWithSettings()
+                        "activityDestroyed" -> message(R.string.cast_needs_local_network_retry)
+                        else -> message(R.string.cast_needs_local_network)
+                    }
+                    endSession()
+                    return@withContext
+                }
+                // ⚠⚠ THE SESSION MAY HAVE ENDED WHILE THE DIALOG WAS UP, AND
+                // STARTING ON A DEAD SESSION IS WORSE THAN NOT STARTING. Up to two minutes can
+                // pass here with the receiver connected and nothing of ours attached, so the
+                // grant is re-validated against the framework rather than assumed: the current
+                // session must exist, be connected, and - when we were given an id - be the same
+                // one. CastState.isCasting is checked too, for the disconnect/reconnect case where
+                // a SECOND onCastStarted already got through on a later grant.
+                val current = runCatching {
+                    CastAvailability.castContext(app.context)?.sessionManager?.currentCastSession
+                }.getOrNull()
+                val connected = current != null &&
+                    runCatching { current.isConnected }.getOrDefault(false) &&
+                    (sessionId == null ||
+                        runCatching { current.sessionId }.getOrNull() == sessionId)
+                if (!connected || CastState.isCasting) {
+                    Log.w(
+                        TAG, "permission result for ended session (connected=" + connected +
+                            " casting=" + CastState.isCasting + ")"
+                    )
+                    return@withContext
+                }
+                startCastSession()
+            }
+        }
+    }
+
+    /** Everything the session needs once the local-network question is settled. */
+    private fun startCastSession() {
         if (!localServer.start()) {
             Log.w(TAG, "refusing session: no Wi-Fi address to bind")
             message(R.string.cast_needs_wifi)
@@ -290,7 +436,7 @@ class CastSessionController(
             endSession()
             return
         }
-        Log.d(TAG, "session starting")
+        Log.d(TAG, "session starting localNetwork=" + localNetworkState())
         remote = castPlayer
         castPlayer.addListener(remoteListener)
         mediaClient = CastAvailability.castContext(app.context)
@@ -492,6 +638,42 @@ class CastSessionController(
             castPlayer.playWhenReady = play
         }
         armLoadTimeout()
+        armInboundWatch(ready.plan)
+    }
+
+    /**
+     * ⚠⚠ MAKES A MISSING INBOUND CONNECTION SAY SO, WHICH IS THE ONE THING THE
+     * 1141 CAPTURE COULD ONLY SHOW BY ITS ABSENCE. Reading that capture meant noticing that an
+     * "accept from" line was NOT there - and an absence is indistinguishable from a log that was
+     * filtered, a server that never started, or a build without the line at all. This states it
+     * positively a few seconds after each LOAD, with the three facts needed to act on it: whether
+     * the permission is held, where we told the receiver to connect, and which plan it was.
+     * ⚠️ NOT ARMED FOR [CastPlan.Direct], which is not a failure: the receiver
+     * fetches the origin itself and is SUPPOSED to make no connection to us. Arming it there
+     * would print a warning on every healthy Direct cast, which is how a probe becomes noise.
+     * ⚠️ A COUNTER, NOT A FLAG, because a session serves many requests - the
+     * question is whether anything arrived SINCE THIS LOAD, so two readings are compared. See
+     * LocalMediaServer.accepted for why it resets per server rather than per process.
+     * ⚠️ SHORTER THAN [LOAD_TIMEOUT_MS] ON PURPOSE: the point is to have the
+     * diagnosis in the log BEFORE the timeout fires, so the capture reads cause then symptom.
+     */
+    private fun armInboundWatch(plan: CastPlan) {
+        inboundWatch?.cancel()
+        inboundWatch = null
+        if (plan is CastPlan.Direct) return
+        val before = localServer.acceptedCount()
+        inboundWatch = scope.launch {
+            delay(INBOUND_WATCH_MS)
+            withContext(Dispatchers.Main) {
+                if (localServer.acceptedCount() != before) return@withContext
+                Log.w(
+                    TAG, "no inbound connection " + INBOUND_WATCH_MS + "ms after LOAD" +
+                        " (localNetwork=" + localNetworkState() +
+                        " base=" + (localServer.baseUrl() ?: "none") +
+                        " plan=" + plan.javaClass.simpleName + ")"
+                )
+            }
+        }
     }
 
     /**
@@ -568,6 +750,16 @@ class CastSessionController(
      * failed, resume failed, our own failure paths, and unregister() at teardown.
      */
     private fun onCastEnded() {
+        // ⚠⚠ BEFORE THE EARLY RETURN, DELIBERATELY, AND THAT ORDER IS THE WHOLE
+        // FIX. While a local-network prompt is on screen nothing of ours has started - isCasting is
+        // false and remote is null - so the guard below returns immediately and would leave the
+        // waiting coroutine parked for its full timeout, ending a session that had already ended.
+        // Completing the deferred here makes the wait exit at once; a second complete() on an
+        // already-completed deferred is a no-op returning false, so racing the broker is safe.
+        pendingPermission?.result?.complete(PermissionResult(false, PERMISSION_SESSION_ENDED))
+        pendingPermission = null
+        inboundWatch?.cancel()
+        inboundWatch = null
         if (!CastState.isCasting && remote == null) return
         Log.d(TAG, "session ending")
         loadTimeout?.cancel()
@@ -647,6 +839,44 @@ class CastSessionController(
     }
 
     /**
+     * The denial message with a Settings action, for a permission the system will no longer
+     * prompt for. Separate from [message] because a snackbar ACTION is not free: SnackBarHandler
+     * dedupes by value and Message.action holds a lambda, which has no structural equality, so
+     * every actionable message escapes the dedupe. One per refused session is the whole point
+     * here, so that is acceptable - do not reach for this shape for anything repeating.
+     */
+    private fun messageWithSettings() {
+        scope.launch {
+            app.messageFlow.emit(
+                Message(
+                    app.context.getString(R.string.cast_needs_local_network),
+                    Message.Action(app.context.getString(R.string.settings)) {
+                        app.context.openAppSettings()
+                    }
+                )
+            )
+        }
+    }
+
+    /**
+     * `notRequired` below Android 17, otherwise `granted` or `denied`. A string rather than a
+     * Boolean because it is read straight into the "session starting" line, where "this device
+     * never needed it" and "this device granted it" are different findings.
+     *
+     * ⚠️ THE CONSTANT AND THE GATE WERE BOTH VERIFIED AGAINST THE COMPILE SDK
+     * (android-37.0): Manifest.permission.ACCESS_LOCAL_NETWORK is
+     * "android.permission.ACCESS_LOCAL_NETWORK" and Build.VERSION_CODES.CINNAMON_BUN is 37, so
+     * neither is a literal here.
+     */
+    private fun localNetworkState(): String = when {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN -> "notRequired"
+        ContextCompat.checkSelfPermission(
+            app.context, Manifest.permission.ACCESS_LOCAL_NETWORK
+        ) == PackageManager.PERMISSION_GRANTED -> "granted"
+        else -> LOCAL_NET_DENIED
+    }
+
+    /**
      * ⚠⚠ CANCELS A SUPERSEDED COPY, AND THE REASON IS CONCURRENCY RATHER THAN
      * TIDINESS. Abandoning the result is not enough: a copy is a full stream read, so three quick
      * Nexts would leave three complete downloads running at once - and Deezer's rate limiting and
@@ -704,6 +934,35 @@ class CastSessionController(
          * the same interval rather than one masking the other.
          */
         private const val LOAD_TIMEOUT_MS = 15_000L
+
+        /**
+         * How long after a LOAD we report that nothing dialled in - see [armInboundWatch]. Short
+         * enough to land BEFORE [LOAD_TIMEOUT_MS] so the capture reads cause then symptom, long
+         * enough that a receiver doing DNS, TLS to its own CDN and a first range request is not
+         * reported as broken. The 1140/1141 captures show a healthy receiver connecting well inside
+         * a second of the LOAD.
+         */
+        private const val INBOUND_WATCH_MS = 5_000L
+
+        /**
+         * ⚠⚠ GENEROUS BECAUSE NOTHING IS SPINNING YET, which is the opposite of
+         * [LOAD_TIMEOUT_MS]'s problem. At this point no socket is bound and no LOAD has been sent;
+         * the user is looking at a system permission dialog and may read it, switch apps, or check
+         * their network. Cutting that short would refuse a session the user was in the middle of
+         * allowing. The cases that would otherwise hang are handled by their own exits instead -
+         * no collector (subscriptionCount), a cancelled dialog (the broker), and the session ending
+         * ([onCastEnded]) - so this fires only if the collector dies mid-dialog.
+         */
+        private const val PERMISSION_TIMEOUT_MS = 120_000L
+
+        /** [localNetworkState]'s refusing value, and the one the gate compares against. */
+        private const val LOCAL_NET_DENIED = "denied"
+
+        /**
+         * The outcome [onCastEnded] completes a pending prompt with. Distinct from `denied` because
+         * the user did not refuse anything - they disconnected - so it must NOT produce a message.
+         */
+        private const val PERMISSION_SESSION_ENDED = "sessionEnded"
 
         private const val TRANSIENT_ENDED_MS = 3_000L
     }

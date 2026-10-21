@@ -527,6 +527,11 @@
     <string name="percent_x">%1$d%%</string>
     <!-- Cast -->
     <string name="cast_needs_wifi">Casting needs Wi-Fi — the TV has to reach this phone on the same network</string>
+    <string name="cast_local_network_title">Allow network access</string>
+    <string name="cast_local_network_rationale">Gladix streams the audio from this phone to your TV, so it needs permission to connect to devices on your network.</string>
+    <string name="cast_needs_local_network">Casting needs permission to reach devices on your network</string>
+    <string name="cast_needs_local_network_foreground">Open Gladix and connect again to allow casting on this network</string>
+    <string name="cast_needs_local_network_retry">Permission request was interrupted — connect again to allow casting</string>
     <string name="cast_stopped">Casting stopped</string>
     <string name="cast_refused_android_auto">Can’t cast while Android Auto is connected</string>
     <string name="cast_stopped_android_auto">Casting stopped — Android Auto connected</string>

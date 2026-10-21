@@ -16,7 +16,6 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -43,12 +42,34 @@ import kotlin.math.min
  *   3. [startTick] refuses to post while `fadeSeconds == 0`, so a stale instance mid-teardown stops
  *      ticking even if a hook reaches it.
  *
- * ⚠⚠ THE RE-SYNC IS MANDATORY, NOT DEFENSIVE. The sidecar is pre-seeked as soon as the tail
- * becomes readable - the moment the main player reports the current item buffered to its end - which
- * is an unpredictable number of seconds before the hand-off. It then sits paused while the main
- * player keeps advancing, so by ACTIVE the two are offset by however long that wait was. Without the
- * re-sync the overlap would play the wrong part of the track, which is a worse artefact than no
- * crossfade at all.
+ * ⚠⚠ [RE-SCOPED 2026-10-20] THERE IS NO RE-SYNC AT THE HAND-OFF ANY MORE, AND THE
+ * PROBLEM IT SOLVED IS STILL REAL. This paragraph used to read "THE RE-SYNC IS MANDATORY, NOT
+ * DEFENSIVE", and the reason was sound: the sidecar is prepared as soon as the tail becomes
+ * readable - an unpredictable number of seconds before the hand-off - so a sidecar that merely sat
+ * there would be offset by however long that wait was, and the overlap would play the wrong part of
+ * the track. What changed is the ANSWER, not the problem. The sidecar is now parked by START
+ * POSITION (never a seek), plays the last [PREROLL_MS] before the switch silently, and its one
+ * residual offset is corrected by DISCARDING frames upstream of the sink - so by ACTIVE it is
+ * already in the right place and the switch has nothing to move.
+ * ⚠️ AND A SEEK AT THE SWITCH IS NOW KNOWN TO BE WORSE THAN NO CROSSFADE, which is
+ * why the fallback was deleted rather than kept for the unaligned case: DefaultAudioSink.flush
+ * releases the audio output on every call (1.11.0, :1567-1580, b/7941810), so a seek there costs
+ * the full AudioTrack start latency at the exact instant main's own queue has been flushed by the
+ * hand-off. See [activate] and [plainTransition].
+ *
+ * ⚠⚠ PLATFORM NOTES BEHIND THE VOLUME MUTE - EXTERNAL, AND NOT VERIFIED BY US.
+ * Provided by Gemini citing AOSP; no AOSP source was read here and nothing below was measured on
+ * device. They are recorded because the design leans on them, so a future failure has somewhere to
+ * start rather than being re-derived:
+ *   - AudioTrack.setVolume is applied by the MIXER as frames are consumed, not baked into the
+ *     frames as they are written, and the change is ramped across a mix buffer rather than taken
+ *     as a step - which is what makes a 0 -> 1 restore inaudible without a gain lift of our own.
+ *   - the volume is per-AudioTrack and independent of stream volume and of every other track, so
+ *     muting the sidecar cannot attenuate the main leg.
+ *   - a track started at volume 0 still pays its activation and still runs the platform's own
+ *     start ramp, which is the whole point of the pre-roll: both happen while nothing is audible.
+ * ⚠️ IF A CLICK OR A LEVEL JUMP IS EVER REPORTED AT THE SWITCH, these three are
+ * the claims to test first - and the test is a device, not another reading.
  *
  * ⚠️ NATURAL END ONLY. ARM is reached only from the tick, and a media-item transition always
  * aborts (except our own hand-off, see [handoff]). That is what makes a manual Next/Previous
@@ -122,7 +143,12 @@ class CrossfadeController(
         //   there is no local output.
         // PREROLL_STALL: the main player stopped advancing during the pre-roll, so the measured
         //   alignment is stale and the tail would drift. Cheaper to lose one crossfade.
-        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, CASTING, PREROLL_STALL,
+        // ⚠⚠ PLAIN IS A CHOSEN OUTCOME, NOT A FAULT, AND IT IS THE ONLY VALUE IN
+        //   THIS SET THAT ISN'T ONE. It means the overlap was DECLINED because it could not be
+        //   started silently, so the transition is an ordinary gapless one - see
+        //   [plainTransition]. Do not triage a `reason=PLAIN` line as an error; the
+        //   `switch path=plain reason=...` line beside it carries the actual statement.
+        NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, CASTING, PREROLL_STALL, PLAIN,
     }
 
     // ⚠️ [TEMPORARY 2026-10-19] `reason` IS READ AGAIN, BY THE CROSSFADE-FEEL PROBE'S
@@ -227,9 +253,27 @@ class CrossfadeController(
 
     /**
      * The projected samples disagree by more than [MAIN_SPREAD_TOLERANCE_MS] AFTER TRIMMING the
-     * highest and lowest, so main's counter stepped repeatedly during the pre-roll and no
-     * projection of it can be trusted. No correction, and the switch takes the legacy path - a
-     * known seek beats an unknown offset. One stale sample is not enough to get here, by design.
+     * highest and lowest, so main's counter stepped repeatedly during the pre-roll and the
+     * median is noisier than usual. One stale sample is not enough to get here, by design.
+     *
+     * ⚠⚠ [CORRECTED 2026-10-20, SAME DAY] THIS NO LONGER REJECTS ANYTHING, AND
+     * THE CLAIM THAT IT SHOULD WAS THE WHOLE PROBLEM. The note here read "No correction, and no
+     * overlap: the transition is a plain one, because an unknown offset is worse than a missing
+     * crossfade". On the 1140 numbers that reasoning refused about half of all measurements, and
+     * DECIDED by the user, 2026-10-20: a measurement that is merely noisy still TRIMS, capped by
+     * [MAX_DISCARD_MS], because a crossfade that silently fails half the time is a worse product
+     * than one whose alignment is occasionally tens of milliseconds out.
+     * ⚠️ WHAT "UNKNOWN OFFSET" ACTUALLY MEANS HERE, which is why the trade is
+     * safe: a high spread does NOT mean the median is wrong, only that the samples agree less.
+     * The samples are projections of the same counter to the same instant, so their spread is
+     * bounded by how far that counter stepped - 200-250 ms per step on 1140 - and the TRIMMED
+     * median of four or more is still inside that. The conditions that mean the measurement is
+     * genuinely unusable are separate and all still reject: noAdvance, ahead, overCap,
+     * rebuffered, queue.
+     * ⚠️ SO IT IS A LOG FIELD NOW (`suspect=` beside `spread=`/`rawSpread=`), and
+     * it is the field to read if a capture shows a bad splice: a run of `suspect=true` lines
+     * with large `sideClock` - `sidePos` differences at the switch is what would reopen the
+     * decision. Nothing else in this class reads it.
      *
      * ⚠⚠ [CORRECTED 2026-10-20] THE FIRST VERSION OF THIS GUARD WOULD HAVE
      * REJECTED THE GOOD TRANSITIONS. It compared main's advance against wall time over the
@@ -247,8 +291,8 @@ class CrossfadeController(
      * STEP, and the pre-roll is muted so that step is inaudible while it happens and permanent
      * afterwards. Only STATE_IDLE and playerError were watched until 2026-10-20; STATE_BUFFERING
      * went unnoticed, which is a candidate for the one 1140 transition whose gap GREW ~300 ms
-     * after the measurement. Set here, it demotes the switch to the legacy path rather than
-     * switching on a stale number.
+     * after the measurement. Set here, it demotes the transition to a plain one rather than
+     * overlapping on a stale number.
      */
     private var prerollRebuffered = false
 
@@ -266,13 +310,44 @@ class CrossfadeController(
     private var prerollMeasured = false
 
     /**
-     * The measurement was usable AND the correction was applied, so the switch needs no seek.
-     * False when the gap was out of range: the switch then takes the legacy path rather than
-     * aborting, because a hard cut is worse than the stutter being fixed.
+     * The measurement was usable AND the correction was applied, so the tail is where the switch
+     * expects it. [evaluateGate] REQUIRES this: false means a plain transition.
+     * ⚠️ [CORRECTED 2026-10-20] IT USED TO SAY "the switch then takes the legacy
+     * path rather than aborting, because a hard cut is worse than the stutter being fixed". The
+     * premise was that the fallback cost only the stutter. It cost a DROPOUT - the hand-off has
+     * already flushed main's queue, so the sidecar's start latency is silence, not a late fade -
+     * and a plain transition is better than both.
      */
     private var prerollAligned = false
 
     private var prerollListenerAttached = false
+
+    /**
+     * ⚠⚠ THE TRACK WHOSE OVERLAP HAS BEEN DECLINED, AND WHY THIS IS NOT THE GATE
+     * BUDGET. When the overlap cannot be started silently - the park point is already behind us,
+     * or the gate point arrives with no pre-roll running - nothing about THIS track will change,
+     * so the crossfade is declined for the rest of it. Leaning on [gateAttempts] instead would
+     * work by accident and cost two more arms, each re-running setMediaSource and prepare on the
+     * sidecar for nothing, five times a second until the budget ran out. Keyed by mediaId and
+     * cleared exactly where gateAttempts is - [onTransition] and [complete] - so the next track
+     * always starts eligible.
+     * ⚠️ DELIBERATELY NOT CLEARED IN [resetSidecar], WHICH WOULD MAKE IT INERT:
+     * every decline goes through [abort], and abort calls resetSidecar. If a future edit moves
+     * the other per-transition fields in there, this one stays out.
+     * ⚠️ ONLY TERMINAL REFUSALS SET IT. notPrepared and notReady are TRANSIENT -
+     * the main player may still be buffering, the sidecar may still be reaching READY - and
+     * declining on those would throw away crossfades that work a tick later. They become
+     * terminal only if the gate point itself arrives with no pre-roll running.
+     */
+    private var declinedMediaId: String? = null
+
+    /**
+     * Why [measureAlignment] rejected its measurement, or null when it accepted one. Carried so
+     * the plain-transition line can name the real cause (overCap, rebuffered, queue, ...) rather
+     * than a flat "unaligned", which is the difference between a capture that explains a missing
+     * crossfade and one that only reports it.
+     */
+    private var alignmentReject: String? = null
 
     /**
      * Last refusal reason logged for THIS transition, so [refusePreRoll] says each thing once.
@@ -281,7 +356,6 @@ class CrossfadeController(
      * [arm], which is the only per-transition entry point.
      */
     private var lastPrerollRefusal: String? = null
-    private var prerollToken: Any? = null
     private var measuredGapMs = 0L
     private var tailEndLogged = false
 
@@ -338,14 +412,48 @@ class CrossfadeController(
         if (handoffInFlight) return   // our own hand-off; the overlap owns this transition
         gateAttempts = 0
         gateAttemptsForMediaId = null
+        declinedMediaId = null
         abort(Abort.TRACK_CHANGE)
         startTick()
     }
 
     fun onSeek() {
         if (handoffInFlight) return
+        clearDeclineIfBeforeArm()
         abort(if (phase == Phase.ACTIVE) Abort.MAIN_RECOVERY else Abort.SEEK)
         startTick()
+    }
+
+    /**
+     * ⚠⚠ A SEEK BACK PAST THE ARM POINT MAKES THE TRACK ELIGIBLE AGAIN, AND
+     * WITHOUT THIS BOTH REFUSALS WOULD BE PERMANENT FOR THE PLAYTHROUGH. [declinedMediaId] and
+     * [gateAttempts] are keyed by mediaId and cleared only in [onTransition] and [complete], which
+     * is right for their own reason - nothing about the track changes while it keeps playing. A
+     * seek is the one event that falsifies that: the track now has the full [armLeadMs] of runway
+     * ahead of it, so the condition that produced the refusal (a park point already behind us, a
+     * pre-roll that never started in time) no longer holds and the next arm is a fresh one.
+     * ⚠️ THE TEST IS POSITIONAL, NOT WHOSE SEEK IT WAS, which is why it is safe
+     * that PlayerEventListener.onPositionDiscontinuity routes EVERY DISCONTINUITY_REASON_SEEK
+     * here - including the buffering-watchdog and error-retry seeks it excludes from
+     * consumeRestoreSeek via internalSeekInFlight. An internal seek re-seeks to roughly the same
+     * position, so it lands before the arm point only if the position really is that far from the
+     * end, and in that case re-enabling the crossfade is simply correct.
+     * ⚠️ DELIBERATELY DOES NOTHING FOR A SEEK THAT LANDS INSIDE THE ARM WINDOW:
+     * there the refusal's premise still holds, and clearing the budget would re-open the
+     * re-arm/prepare churn [armRefusal] bounds.
+     */
+    private fun clearDeclineIfBeforeArm() {
+        val item = exoPlayer.currentMediaItem ?: return
+        if (item.mediaId != declinedMediaId && item.mediaId != gateAttemptsForMediaId) return
+        val duration = exoPlayer.duration
+        if (duration == C.TIME_UNSET) return
+        val position = exoPlayer.currentPosition
+        val leadMs = armLeadMs()
+        if (position >= duration - leadMs) return
+        declinedMediaId = null
+        gateAttempts = 0
+        gateAttemptsForMediaId = null
+        Log.d(TAG, "decline cleared by seek pos=" + position + " lead=" + leadMs)
     }
 
     /**
@@ -622,6 +730,63 @@ class CrossfadeController(
         )
     }
 
+    /**
+     * ⚠⚠ THE SINK'S QUEUED-AHEAD DEPTH, WHICH NO PUBLIC API EXPOSES, AND THE
+     * ONLY REASON THE PROCESSOR COUNTS ITS OUTPUT. Emitted output time minus the wall time that
+     * has elapsed since the mixer began consuming it:
+     *     queuedMs = emittedOutputMs / speed - (now - playoutStartAtMs)
+     * -1 when it cannot be computed - no playout callback yet, or a format we do not count.
+     * See AudioEffectsProcessor.emittedFrames for the counter's lifetime and for why the /speed
+     * is there (SonicAudioProcessor applies the rate change after us, so our count is media
+     * time while the elapsed term is wall time).
+     *
+     * ⚠️ IT IS A SAFETY READING, NOT A CORRECTION TERM, AND THE DISTINCTION IS
+     * WHY THE VOLUME DESIGN NEEDS NO ESTIMATE OF IT. The volume is applied at the mixer, so the
+     * queue's contents become audible the instant [activate] restores it, however deep it is.
+     * What the depth DOES bound is the DISCARD: those frames are removed upstream of the sink,
+     * so a discard applied at the measurement reaches the output one queue-depth later. If that
+     * lands after the switch the tail plays uncorrected, which is what the reject below refuses.
+     * ⚠️ SAFE TO CALL FROM ANYWHERE INCLUDING BETWEEN THE MUTE AND THE SEEK: an
+     * AtomicLong read and two field reads, no locks, nothing that can block.
+     */
+    private fun sidecarQueuedMs(): Long {
+        if (playoutStartAtMs == 0L) return -1L
+        val emitted = runCatching { sidecarProcessor.emittedOutputMs() }.getOrDefault(-1L)
+        if (emitted < 0L) return -1L
+        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
+        return (emitted / speed).toLong() - (System.currentTimeMillis() - playoutStartAtMs)
+    }
+
+    /**
+     * ⚠⚠ NO OVERLAP FOR THIS TRANSITION, AND THAT IS A DECISION RATHER THAN A
+     * FAILURE. Reached whenever the tail cannot be made audible without starting an AudioTrack at
+     * the switch. Nothing is armed, nothing is muted and no seek is issued, so the main player
+     * simply plays to its end and media3 advances the queue itself - an ordinary transition,
+     * identical to one with the slider at 0.
+     * ⚠️ IT MUST BAIL BEFORE [activate]'s armIncoming, which is the line that
+     * mutes the MAIN player. Muting main and then not handing over is the one failure mode here
+     * that would be worse than the stutter: silence to the end of the track, cleared only by
+     * RAMP_TIMEOUT.
+     * ⚠️ THE LINE IS THE PROBE, and the closed set of reasons is: `late` and
+     * `noPreroll` (no usable pre-roll ran), `unmeasured` (the measurement never happened),
+     * `noAdvance`, `ahead`, `overCap`, `rebuffered`, `queue` (from [measureAlignment]) and
+     * `rebufferedLate` (a rebuffer after an accepted measurement). Silence in a capture means no
+     * transition reached here at all, which is the only thing it can mean.
+     * ⚠⚠ NOTHING "NOISY BUT IN RANGE" IS IN THAT SET, BY DECISION - a high
+     * sample spread trims anyway; see [mainCounterSuspect]. If a new reason is ever added here,
+     * check it against that decision first: the failure mode this set exists to avoid is a
+     * crossfade that quietly does not happen half the time.
+     */
+    private fun plainTransition(reason: String) {
+        Log.d(
+            TAG, "switch path=plain reason=" + reason + " phase=" + phase +
+                " sidePos=" + runCatching { sidecar.currentPosition }.getOrDefault(-1L) +
+                " park=" + parkStartMs + " measuredGap=" + measuredGapMs +
+                " queuedMs=" + sidecarQueuedMs() + " alignReject=" + alignmentReject
+        )
+        abort(Abort.PLAIN)
+    }
+
     private fun measureAlignment() {
         prerollMeasured = true
         // ⚠⚠ THE CLOCK NUMBER DECIDES; THE COUNTER NUMBER IS LOGGED BESIDE IT SO THE
@@ -646,20 +811,43 @@ class CrossfadeController(
         // 400 was making at 1x.
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         val maxDiscardMs = (MAX_DISCARD_MS * speed).toLong()
+        // ⚠⚠ THE DISCARD HAS TO REACH THE OUTPUT BEFORE THE SWITCH DOES, AND THIS
+        // IS THE ONE LINE THAT CHECKS IT. See [sidecarQueuedMs]: frames are dropped upstream of
+        // the sink, so a correction applied now becomes audible one queue-depth later. The
+        // measurement lands ~300 ms into a ~2 s pre-roll and the device's sink holds ~500 ms, so
+        // this has well over a second of headroom and is expected NEVER to fire; if it does, the
+        // reading to take is that the sink is far deeper than measured, not that the estimate is
+        // bad. `> 0` first because an unknown depth is -1 and must not reject.
+        // ⚠⚠ IT HAS A SECOND JOB SINCE THE VOLUME DESIGN, AND THAT ONE IS ABOUT
+        // AUDIBILITY RATHER THAN TIMING. Dropping frames splices the waveform, and the splice is
+        // inaudible only because the mixer consumes it while the sidecar is still at volume 0.
+        // The same inequality is the test for both: queued deeper than the time left means the
+        // spliced frames would still be in the sink when the volume comes back up. See
+        // AudioEffectsProcessor.discardFramesRemaining, whose invariant now lives here.
+        val queuedMs = sidecarQueuedMs()
+        val toSwitchMs = PREROLL_MS - (System.currentTimeMillis() - prerollStartedAtMs)
+        // ⚠⚠ mainCounterSuspect IS DELIBERATELY NOT IN THIS CHAIN - see its note.
+        // Every condition that remains means the measurement cannot be USED (no estimate at all,
+        // a tail that is ahead, a gap too large to discard, a leg that stepped after the
+        // measurement, a correction that would land late). "The samples agreed less well than
+        // usual" is not one of those, and treating it as one cost half the crossfades.
         val reject = when {
             advancingAtMs == 0L || main.rawSpread < 0L -> "noAdvance"
-            mainCounterSuspect -> "mainSpread"
             prerollRebuffered -> "rebuffered"
             gap < 0L -> "ahead"
             gap > maxDiscardMs -> "overCap"
+            queuedMs > 0L && queuedMs > toSwitchMs -> "queue"
             else -> null
         }
+        alignmentReject = reject
         if (reject != null) {
             Log.w(
                 TAG, "measured reject=" + reject + " clockGap=" + clockGap +
                     " spread=" + main.robustSpread + " rawSpread=" + main.rawSpread +
                     " samples=" + main.count + " thin=" + thin +
-                    " counterGap=" + counterGap + " -> legacy switch mainPos=" + mainPos +
+                    " suspect=" + mainCounterSuspect +
+                    " counterGap=" + counterGap + " queuedMs=" + queuedMs +
+                    " toSwitch=" + toSwitchMs + " -> plain transition mainPos=" + mainPos +
                     " sidePos=" + sidePos + " park=" + parkStartMs
             )
             return
@@ -671,8 +859,10 @@ class CrossfadeController(
             TAG, "measured clockGap=" + clockGap + " counterGap=" + counterGap +
                 " spread=" + main.robustSpread + " rawSpread=" + main.rawSpread +
                 " samples=" + main.count + " thin=" + thin +
+                " suspect=" + mainCounterSuspect +
                 " gap=" + gap + " frames=" + frames +
                 " bytes=" + frames * sidecarProcessor.frameSizeBytes() +
+                " queuedMs=" + queuedMs + " toSwitch=" + toSwitchMs +
                 " mainPos=" + mainPos + " sidePos=" + sidePos + " park=" + parkStartMs +
                 " sinceAdvancing=" + (System.currentTimeMillis() - advancingAtMs)
         )
@@ -694,12 +884,21 @@ class CrossfadeController(
         // The string is now documentation only - see [armRefusal]. Non-null means "do not arm".
         if (armRefusal() != null) return
         val duration = exoPlayer.duration
+        if (exoPlayer.currentPosition >= duration - armLeadMs()) arm()
+    }
+
+    /**
+     * How far before the end [tickIdle] arms. Extracted because [onSeek] needs the SAME number -
+     * two copies of this expression would drift the moment either the lead or the speed factor
+     * changed, and the one that drifted would be the one nobody reads.
+     *
+     * Scaled by speed because a position threshold is MEDIA time while "25 seconds of warning" is
+     * wall-clock intent - the same correction EffectsListener.scheduleFadeOut made.
+     */
+    private fun armLeadMs(): Long {
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
-        // Lead scaled by speed because a position threshold is MEDIA time while "25 seconds of
-        // warning" is wall-clock intent - the same correction EffectsListener.scheduleFadeOut made.
         val fadeMs = fadeSeconds * 1000L
-        val leadMs = (max(ARM_LEAD_BASE_MS + fadeMs, ARM_LEAD_FLOOR_MS) * speed).toLong()
-        if (exoPlayer.currentPosition >= duration - leadMs) arm()
+        return (max(ARM_LEAD_BASE_MS + fadeMs, ARM_LEAD_FLOOR_MS) * speed).toLong()
     }
 
     private fun tickArmed() {
@@ -724,8 +923,9 @@ class CrossfadeController(
             return
         }
         // Still before the switch: start the muted pre-roll once we are inside its window. A
-        // refusal here is not an abort - it leaves the phase ARMED and the gate above then runs
-        // the pre-pre-roll path, which is what shipped in 1129.
+        // TRANSIENT refusal here is not an abort - it leaves the phase ARMED and the next tick
+        // tries again. A terminal one declines the overlap for this track; either way the gate
+        // above no longer has a second way to start the sidecar. See [startPreRoll].
         // Scaled for the same reason the park is - see [arm]. `remaining` is media time, so the
         // window has to be media time as well, or the two disagree at any speed but 1x.
         if (remaining <= effectiveFadeMs + (PREROLL_MS * speed).toLong()) {
@@ -742,21 +942,30 @@ class CrossfadeController(
      * applies its own start ramp (RAMP_VOLUME) to the first frames - and we were doing that at the
      * exact instant the main player went silent, so the outgoing audio had a short gap or dip
      * there. The reference player has the same artefact. Here the sidecar is started
-     * [PREROLL_MS] early with its processor MUTED, so activation and the platform ramp both
-     * happen in silence and the switch itself only lifts a gain.
+     * [PREROLL_MS] early MUTED AT THE MIXER, so activation and the platform ramp both happen in
+     * silence and the switch itself only restores a volume.
      *
-     * ⚠⚠ REFUSED WHEN SKIP-SILENCE IS ON, AND THE LIMITATION IS STRUCTURAL RATHER
-     * THAN CAUTION. SilenceSkippingAudioProcessor sits AFTER ours in the chain
-     * (RenderersFactory's DefaultAudioProcessorChain), so the frames we discard to align the legs
-     * are PRE-skip while the audible result is POST-skip: discarding N ms of input does not shift
-     * the audible stream by N ms, and the two legs keep diverging for the rest of the pre-roll by
-     * an amount that depends on their content. The class note above already records that the legs
-     * skip by the same RULE and not the same AMOUNT. So with skip-silence on we fall back to the
-     * 1129 path, stutter included, rather than apply a correction we cannot trust.
+     * ⚠⚠ [SUPERSEDED 2026-10-20] THE SKIP-SILENCE REFUSAL THAT USED TO BE
+     * DOCUMENTED HERE IS GONE, AND THE REASON IT EXISTED IS NOT. It read: "with skip-silence on
+     * we fall back to the 1129 path, stutter included, rather than apply a correction we cannot
+     * trust" - and it disabled the whole fix for a default install, because skipSilence defaults
+     * ON (PlayerService). The underlying fact is unchanged and still load-bearing:
+     * SilenceSkippingAudioProcessor sits AFTER ours in RenderersFactory's chain, so the frames
+     * the discard removes are PRE-skip while the audible result is POST-skip, and a correction of
+     * N ms would not move the audible stream by N ms. H8's answer is to force skip-silence OFF on
+     * the tail instead of refusing the pre-roll - see [maybePrepareSidecar], which carries the
+     * trade it accepts in exchange.
      *
-     * ⚠️ EVERY OTHER REFUSAL IS "NOT YET", NOT "NEVER": an unprepared or
-     * not-yet-READY sidecar simply leaves the phase ARMED, and the gate a few ticks later runs
-     * the old path. Nothing here can lose a crossfade that would otherwise have happened.
+     * ⚠⚠ TWO KINDS OF REFUSAL, AND THE SPLIT IS THE DESIGN SINCE THE SWITCH HAS
+     * ONLY ONE PATH. notPrepared and notReady are TRANSIENT: the phase stays ARMED and the next
+     * tick tries again, 200 ms later, inside a window about ten ticks long. `late` is TERMINAL -
+     * the park point is behind us and no later tick can move it - so it declines the overlap for
+     * this track ([declinedMediaId]) and the transition is a plain one.
+     * ⚠️ SO THIS FUNCTION CAN NOW LOSE A CROSSFADE, WHICH THE PREVIOUS NOTE
+     * PROMISED IT COULD NOT. That promise was kept by the fallback overlap, and the fallback
+     * overlap is exactly what was removed: it started the sidecar AT the switch, which is the
+     * defect this whole feature exists to remove. Declining is the cheaper failure - see
+     * [plainTransition].
      */
     /**
      * Logs a refusal once per reason per transition. [reason] is the dedupe key, so varying
@@ -769,38 +978,75 @@ class CrossfadeController(
     }
 
     private fun startPreRoll(position: Long, duration: Long) {
-        // ⚠️ THESE TWO USED TO RETURN SILENTLY, WHICH MADE A LEGACY SWITCH
+        // ⚠️ THESE TWO USED TO RETURN SILENTLY, WHICH MADE A MISSING OVERLAP
         // UNEXPLAINED IN THE CAPTURE. Now that a reason is logged once rather than per tick,
         // naming them costs one line each and tells the next reader why the pre-roll never ran.
+        // Both are transient; see the KDoc for why neither declines the crossfade.
         if (!sidecarPrepared) return refusePreRoll("notPrepared")
         if (runCatching { sidecar.playbackState }.getOrNull() != Player.STATE_READY)
             return refusePreRoll("notReady")
         // ⚠️ NO SKIP-SILENCE REFUSAL ANY MORE (H8, 2026-10-20) - the sidecar runs
         // with it off, set in [maybePrepareSidecar], so there is nothing left to refuse and the
         // pre-roll runs for a default install. The note at that line carries the trade.
-        // ⚠⚠ NOT IF THE PARK POINT IS ALREADY BEHIND US, AND THIS GUARD IS WHAT STOPS
-        // A CHURN LOOP. An arm that lands late - a re-arm after an abort inside the fade window,
-        // a duration that moved - leaves the sidecar parked further back than the main player has
-        // reached, so the measured gap would exceed MAX_DISCARD_MS, the measurement would abort,
-        // the tick would re-arm and prepare again, and that would repeat every few hundred
-        // milliseconds to the end of the track. Refusing here leaves the phase ARMED and the gate
-        // runs the 1129 path, which handles exactly this case with its re-sync seek.
-        // Media against media, with the cap scaled as it is in [measureAlignment] - the question
-        // is whether the overshoot is still inside what a discard could cancel.
+        // ⚠⚠ THE PARK POINT IS ALREADY BEHIND US, SO THE OVERLAP IS DECLINED FOR
+        // THIS TRACK. An arm that lands late - a re-arm after an abort inside the fade window, a
+        // duration that moved - leaves the sidecar parked further back than the main player has
+        // reached, and no discard can cancel an overshoot that large. Media against media, with
+        // the cap scaled as it is in [measureAlignment]: the question is whether the overshoot is
+        // still inside what a discard could cancel.
+        // ⚠⚠ IT USED TO LEAVE THE PHASE ARMED SO THE GATE COULD RUN THE 1129 PATH
+        // (re-sync seek, then play). THAT PATH IS GONE, DELIBERATELY - user decision,
+        // 2026-10-20, option (c) - because starting an AudioTrack AT the switch is the defect
+        // this feature exists to remove: the seek flushes the sink, DefaultAudioSink.flush
+        // RELEASES the audio output every time (1.11.0, :1567-1580, b/7941810), and the next
+        // frames cost the full start latency the 1140 capture measured at 171-187 ms. With main's
+        // own queue already flushed by the hand-off that lands as a DROPOUT, not a late fade.
+        // A crossfade that does not happen is inaudible; one that happens late is not.
+        // ⚠️ AND A SHORTENED PRE-ROLL FOR A LATE ARM WAS REJECTED, NOT DEFERRED -
+        // option (b) of the same decision. It would keep the activation silent but shrink the
+        // measurement window precisely where the estimate is newest and weakest, trading a
+        // declined overlap we can see in the log for an aligned one we cannot trust. Do not
+        // re-propose it without new evidence about the estimator.
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         if (position > parkStartMs + (MAX_DISCARD_MS * speed).toLong()) {
-            return refusePreRoll("late", " pos=" + position + " park=" + parkStartMs)
+            declinedMediaId = armedMediaId
+            refusePreRoll("late", " pos=" + position + " park=" + parkStartMs)
+            return plainTransition("late")
         }
-        val token = Any()
         val started = runCatching {
             // Mirrored BEFORE a single frame is rendered, so nothing is ever decoded at the wrong
-            // rate: speed changes what the pre-roll consumes, and skip-silence would change it
-            // mid-flight (refused above, mirrored anyway so the two legs cannot disagree).
+            // rate: speed changes what the pre-roll consumes. Skip-silence is NOT mirrored -
+            // it is held off on the tail whatever main does (H8); the next line re-asserts it.
             sidecar.playbackParameters = exoPlayer.playbackParameters
             // NOT mirrored: see [maybePrepareSidecar]. Re-asserted rather than read, so a stray
             // write between prepare and here cannot turn it back on under the correction.
             sidecar.skipSilenceEnabled = false
-            sidecarProcessor.armPreRoll(token)
+            // ⚠⚠ THE PRE-ROLL IS MUTED BY PLAYER VOLUME, NOT BY ZERO-FILLING THE
+            // PROCESSOR, AND THIS LINE MUST PRECEDE playWhenReady. Zero-filling put the whole
+            // pre-roll's SILENCE into the sidecar's AudioTrack, and un-muting at the switch only
+            // affects frames processed from then on - so the switch was followed by however much
+            // silence the sink still held (frameCount 22050 = 500 ms on this device), and the
+            // same amount of music was lost with it. A playhead-based switch gap cannot see that,
+            // which is why it took a design review rather than a capture to find.
+            // ⚠️ MUTING AT THE MIXER INSTEAD LEAVES THE QUEUE FULL OF REAL, ALIGNED
+            // AUDIO: setVolume is applied to frames as they are MIXED, not as they are written,
+            // so restoring it in [activate] makes the tail audible from that instant with no
+            // queue estimate, no wait state and nothing to drain.
+            // ⚠️ SAFE BECAUSE THE TRACK IS BORN SILENT, WHICH IS THE ONE ORDERING
+            // CLAIM HERE: DefaultAudioSink.setVolume stores the value and pushes it only once an
+            // output exists (1.11.0, :1545-1550), and initializeAudioOutput calls
+            // setVolumeInternal() at :884 - before a single frame is written. So volume 0 FIRST,
+            // then playWhenReady; reversed, the first buffer could be audible.
+            // ⚠️ AND THIS DOES NOT REOPEN THE 2026-10-19 "setVolume IS NOT OURS TO
+            // WRITE" REJECTION. That one is about the MAIN player, where AudioFocusListener must
+            // stay the sole writer of player.volume or ducking fights us. The sidecar's volume has
+            // always been controller-owned - [activate] sets it from exoPlayer.volume, which is
+            // how ducking reaches the tail at all - so there is no second decider here.
+            // ⚠⚠ IT IS ALSO THE 1129 SHAPE: a player-level flag that SURVIVES stop()
+            // and clearMediaItems(), exactly like the leaked playWhenReady. [resetSidecar]
+            // restores it to 1f for that reason, and a volume left at 0 would silence a FUTURE
+            // crossfade - quieter than the 1129 failure and harder to notice, not easier.
+            sidecar.volume = 0f
             if (!prerollListenerAttached) {
                 sidecar.addAnalyticsListener(prerollListener)
                 prerollListenerAttached = true
@@ -808,14 +1054,15 @@ class CrossfadeController(
             sidecar.playWhenReady = true
         }.isSuccess
         if (!started) {
-            // Leave the mute behind rather than a half-started pre-roll: clearRamps is the one
-            // path that un-mutes, and abort runs it.
+            // Abort rather than leave a half-started pre-roll: [resetSidecar] both stops the
+            // sidecar and restores its volume, so a throw between `volume = 0f` and
+            // `playWhenReady` cannot leave a silent player behind for the next crossfade.
             Log.w(TAG, "preroll failed to start")
             return abort(Abort.NOT_READY)
         }
-        prerollToken = token
         prerollMeasured = false
         prerollAligned = false
+        alignmentReject = null
         advancingAtMs = 0L
         playoutStartAtMs = 0L
         mainCounterSuspect = false
@@ -848,20 +1095,23 @@ class CrossfadeController(
             return abort(Abort.TAIL_DIED)
         // ⚠⚠ A REBUFFER IS NOT A DEATH BUT IT IS A STEP, AND IT INVALIDATES THE ONE
         // CORRECTION. See [prerollRebuffered]: the tail stops being fed, falls permanently
-        // behind, and the pre-roll's silence hides it until the switch. Demotes to the legacy
-        // path (a seek we understand) rather than switching on a stale offset. Logged once.
+        // behind, and the pre-roll's silence hides it until the switch. Demotes to a plain
+        // transition rather than overlapping on a stale offset. Logged once.
         if (!prerollRebuffered && sidecar.playbackState == Player.STATE_BUFFERING) {
             prerollRebuffered = true
             if (prerollAligned) {
                 prerollAligned = false
-                Log.w(TAG, "preroll rebuffered AFTER the correction -> legacy switch")
-            } else Log.w(TAG, "preroll rebuffered before the measurement -> legacy switch")
+                // Named so the plain line says WHICH rebuffer this was: the measurement was
+                // accepted and then invalidated, which is not the same finding as one that was
+                // never usable, and [alignmentReject] is null on this path without it.
+                alignmentReject = "rebufferedLate"
+                Log.w(TAG, "preroll rebuffered AFTER the correction -> plain transition")
+            } else Log.w(TAG, "preroll rebuffered before the measurement -> plain transition")
         }
         // ⚠️ [PREROLL_SETTLE_MS] IS NOT SCALED, AND THAT IS CORRECT. It is how long a
         // freshly started AudioTrack's position counter takes to become trustworthy - a property
         // of the audio path in wall time, not of the content - so it is compared against
-        // currentTimeMillis and must stay there. Same for PREROLL_RELEASE_MS: 10 ms of media is
-        // 5 ms of wall at 2x, and an anti-click lift that short is inaudible either way.
+        // currentTimeMillis and must stay there.
         // One main sample per tick until the measurement - see the note on [mainSamplePos]. Taken
         // before the measurement below so the current tick's reading is in the set it uses.
         if (!prerollMeasured) {
@@ -948,8 +1198,20 @@ class CrossfadeController(
         // only gives up ~0.8 s before the end (our LATE_ABORT_MS). What this bounds is the
         // PATHOLOGICAL case - a gate that can never pass re-arming five times a second for the rest
         // of the track - not the transient one.
+        // ⚠️ [CORRECTED 2026-10-20] THAT SECOND ATTEMPT CAN NO LONGER PASS, AND THE
+        // BUDGET IS NOW A BOUND RATHER THAN A RETRY. A re-arm inside the fade window has
+        // remaining < fade, so effectiveFade collapses to `remaining`, armedTailStartMs lands ON
+        // the current position and the park ~2 s BEHIND it - which [startPreRoll] refuses as
+        // `late`, and with the fallback overlap gone the gate then takes the plain path. So the
+        // 2026-10-15 capture above ("that second attempt PASSED") describes behaviour that no
+        // longer exists; what the budget still does is stop the re-arm/prepare cycle repeating.
+        // Left at 2 rather than cut to 1 so the one wasted prepare stays visible in a capture.
         if (gateAttempts >= MAX_GATE_ATTEMPTS && item.mediaId == gateAttemptsForMediaId)
             return "gateAttemptsUsed"
+        // Decided already for this track, and re-arming cannot change it - see
+        // [declinedMediaId]. Checked beside the budget because it is the same kind of answer,
+        // reached from the other end: that one bounds a retry, this one ends it.
+        if (item.mediaId == declinedMediaId) return "declined"
         if (exoPlayer.repeatMode == Player.REPEAT_MODE_ONE) return "repeatOne"
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return "noDuration"
@@ -1030,8 +1292,8 @@ class CrossfadeController(
         // ⚠️ MIN_TRACK_HEADROOM_MS IS NOT SCALED (armRefusal is deliberately
         // untouched), so at high speed a short track can want more media than it has before the
         // switch. coerceAtLeast(0) keeps that safe rather than correct: the park lands at 0, the
-        // measured gap comes out enormous, and the measurement is rejected as overCap - a legacy
-        // switch, which is the right degradation.
+        // measured gap comes out enormous, and the measurement is rejected as overCap - a plain
+        // transition, which is the right degradation.
         parkStartMs = (armedTailStartMs - ((PREROLL_MS + PREROLL_SAFETY_MS) * speed).toLong())
             .coerceAtLeast(0L)
         cachedGate = null
@@ -1127,10 +1389,12 @@ class CrossfadeController(
             // AND STILL BY THE SOURCE'S OWN START POSITION - NEVER A SEEK. The pre-roll plays
             // that stretch out, muted, so the sidecar arrives at the switch already running. The
             // reason it is this call and not prepare-then-seek is unchanged and is above.
-            // ⚠️ THE FALLBACK PATH STILL WORKS BECAUSE OF THE RE-SYNC. If the
-            // pre-roll never starts, [activate] finds the sidecar ~2 s behind `expected` - far
-            // past RESYNC_TOLERANCE_MS - and seeks it to the switch point exactly as it always
-            // did. The park change is safe precisely because that seek is still there.
+            // ⚠⚠ [CORRECTED 2026-10-20] THERE IS NO FALLBACK PATH. This note read
+            // "THE FALLBACK PATH STILL WORKS BECAUSE OF THE RE-SYNC ... the park change is safe
+            // precisely because that seek is still there" - true when written, and the seek is
+            // now deleted (see [activate]). So the park is no longer a safe-either-way change:
+            // a sidecar parked here and never pre-rolled is ~2 s behind at the gate and the
+            // transition is a PLAIN one. That is the intended degradation, not an oversight.
             sidecar.setMediaSource(tail.factory.createMediaSource(item), parkStartMs)
             sidecar.prepare()
         }.isSuccess
@@ -1165,6 +1429,21 @@ class CrossfadeController(
         // came from. The old note asked to keep printing gate.reason to see whether the upstream
         // fallback was being used; that question is answered - the 2026-10-17 drive crossfaded five
         // times with the upstream in place - so the reading is no longer needed.
+        // ⚠⚠ AN ALIGNED PRE-ROLL IS A PRECONDITION OF THE OVERLAP SINCE
+        // 2026-10-20, NOT AN OPTIMISATION ON TOP OF ONE. Both of these used to fall through to
+        // [activate]'s second path, which seeked the sidecar and started it HERE; that is the
+        // defect the pre-roll exists to remove, so there is no longer anywhere for them to go
+        // but a plain transition. Terminal in both cases - a pre-roll that has not started by
+        // the gate point cannot start inside the fade window (its park is behind us), and a
+        // rejected measurement is not re-taken.
+        if (phase != Phase.PREROLL) {
+            declinedMediaId = item.mediaId
+            return plainTransition("noPreroll")
+        }
+        if (!prerollAligned) {
+            declinedMediaId = item.mediaId
+            return plainTransition(alignmentReject ?: "unmeasured")
+        }
         if (playerReady && sidecarReady) {
             activate(position, duration)
             return
@@ -1182,15 +1461,23 @@ class CrossfadeController(
      * ⚠⚠ TEN STEPS IN THIS ORDER, AND THE ORDER IS THE DESIGN. After the hand-off the MAIN
      * player is the INCOMING leg and the sidecar is the OUTGOING one, which is the opposite of the
      * intuition that the sidecar "is the crossfade".
-     *   1-2. re-sync the sidecar to where the main player actually is (see the class note);
-     *   3.   mirror speed / skip-silence / volume while it is still silent, so nothing is ever heard
-     *        at the wrong rate or level for a frame;
+     *   1.   read the sidecar's position and the sink's queue depth - nothing audible, nothing
+     *        that can block (see [sidecarQueuedMs]);
+     *   2.   LOG, before anything is muted, so that nothing between the mute and the un-mute
+     *        below can take time;
+     *   3.   mirror speed while the tail is still silent, so nothing is ever heard at the wrong
+     *        rate for a frame. NOT skip-silence (held off on the tail, see
+     *        [maybePrepareSidecar]) and NOT volume, which is step 6;
      *   4.   NOT a fade-out yet. The tail plays at FULL gain until the token, because starting it
-     *        here would have it descending through the 1-2 s the seek takes, which reintroduces the
-     *        dip the equal-power curve exists to avoid;
-     *   5.   mute the main processor and stage the token. From here the main is silent, which is what
-     *        stops the departing track being audible TWICE (its own buffered audio plus the tail);
-     *   6.   the tail becomes audible, at full gain;
+     *        here would have it descending through the tick before [startRamps] runs, which
+     *        reintroduces the dip the equal-power curve exists to avoid;
+     *   5.   mute the main processor and stage the token. This silences the frames main processes
+     *        FROM NOW ON, which is what stops the INCOMING track being audible before its fade-in
+     *        is armed; main's already-queued audio keeps playing for another ~20 ms (step 7);
+     *   6.   restore the sidecar's volume: the tail becomes audible, at main's own level, from the
+     *        next mix buffer. Steps 5-7 are adjacent statements on purpose - what they produce is a
+     *        short CROSS-RAMP of the same content, not a silent gap; the long comment at step 6
+     *        is the one to read before reordering any of them;
      *   7.   the seek, inside [handoff] so our own onSeek/onTransition do not abort it;
      *   8.   media3 flushes the main processor; its onFlush clears the COUNTERS but keeps the mute
      *        and the token - that asymmetry is what lets step 5 survive the seek;
@@ -1245,57 +1532,86 @@ class CrossfadeController(
      * hand-off WITH those guards in place; removing them would invalidate it.
      */
     private fun activate(position: Long, duration: Long) {
-        // ⚠⚠ TWO PATHS, AND THE SECOND IS 1129'S, UNCHANGED. `aligned` means the
-        // pre-roll ran AND its one measurement landed: the tail is already playing at the right
-        // place, so there is nothing to seek and nothing to start - only a gain to lift. Anything
-        // else (pre-roll refused, never started, measurement never delivered) takes the original
-        // path: re-sync by seeking, then play. That is why the re-sync code is still here and why
-        // the class note about it being mandatory still applies - to that path.
-        val inPreRoll = phase == Phase.PREROLL
-        val aligned = inPreRoll && prerollAligned
-        val expected = armedTailStartMs + (position - (duration - effectiveFadeMs))
+        // ⚠⚠ ONE PATH NOW, AND THE SECOND ONE WAS DELETED RATHER THAN DISABLED.
+        // Reaching here means the pre-roll ran AND its one measurement landed (the gate enforces
+        // both), so the tail is ALREADY PLAYING at the right place: there is nothing to seek,
+        // nothing to start, and the switch is a volume. Everything else is a plain transition -
+        // see [plainTransition] and [evaluateGate].
+        // ⚠⚠ WHAT WENT, AND WHY IT IS NOT COMING BACK: `if (resync) sidecar.seekTo
+        // (expected)` and `sidecar.play()`. Both started or restarted the sidecar's AudioTrack at
+        // this instant. A seek flushes the sink and DefaultAudioSink.flush RELEASES the audio
+        // output on every call (1.11.0, :1567-1580, b/7941810), so the first frames afterwards pay
+        // the full start latency - 171-187 ms, measured on 1140 - and main's own queue has just
+        // been flushed by the hand-off, which makes that a DROPOUT rather than a late fade. The
+        // fallback was therefore WORSE than no crossfade, which is why it is gone (user decision,
+        // 2026-10-20, option (c)) and why RESYNC_TOLERANCE_MS went with it.
         val before = runCatching { sidecar.currentPosition }.getOrDefault(0L)
-        val offset = before - expected
-        val resync = !aligned && abs(offset) > RESYNC_TOLERANCE_MS
-        runCatching {
-            if (resync) sidecar.seekTo(expected)
-            sidecar.volume = exoPlayer.volume
-            sidecar.playbackParameters = exoPlayer.playbackParameters
-            // skipSilenceEnabled is NOT mirrored here any more - the tail keeps it off; see
-            // [maybePrepareSidecar].
-        }
-        val token = Any()
-        overlapToken = token
-        mainProcessor.armIncoming(token)
-        // ⚠⚠ THE MUTE RELEASE IS A SHORT LIFT, NOT A STEP. The tail has been running
-        // at processor gain 0; dropping the mute outright would be a 0 -> 1 jump on a live
-        // waveform, i.e. a click - the one artefact this feature does not have today. The lift is
-        // milliseconds, far too short to hear as a fade, and it composes with the cos the next
-        // tick arms. Reached on EVERY pre-roll path, aligned or not, or the tail stays silent.
-        if (inPreRoll) sidecarProcessor.releasePreRoll(PREROLL_RELEASE_MS)
-        else runCatching { sidecar.play() }
-        phase = Phase.ACTIVE
-        handoffAtMs = System.currentTimeMillis()
-        rampStartedAtMs = 0L
-        tailEndLogged = false
+        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         // Read a tick earlier and carried here - see [cachedGate]. Nothing on this line can
         // block, which is the property that matters between the mute and the seek.
         val gate = cachedGate
-        val path = when {
-            aligned -> "preroll"
-            inPreRoll && prerollMeasured -> "preroll-degraded"
-            inPreRoll -> "preroll-unmeasured"
-            else -> "legacy"
-        }
+        // ⚠️ THE AGE OF THE ESTIMATE, WHICH IS THE ONE NUMBER A BAD SPLICE WOULD
+        // SHOW UP IN. The projection was evaluated AT playoutStartAtMs, so its age here is how
+        // long the alignment has been running open-loop; sideClock is where that estimate says
+        // the tail should be (park + age x speed, less the frames the discard removed), to be
+        // compared with the counter's own sidePos in the same line.
+        val medianAge =
+            if (playoutStartAtMs == 0L) -1L else System.currentTimeMillis() - playoutStartAtMs
+        val sideClock =
+            if (playoutStartAtMs == 0L) "n/a"
+            else (parkStartMs + (medianAge * speed).toLong() - measuredGapMs).toString()
         Log.d(
-            TAG, "switch path=" + path + " mainPos=" + position + " sidePos=" + before +
+            TAG, "switch path=preroll mainPos=" + position + " sidePos=" + before +
                 " gap=" + (position - before) + " measuredGap=" + measuredGapMs +
-                " offset=" + offset + " resync=" + resync +
-                " framed=" + (prerollToken != null && sidecarProcessor.overlapToken() != null) +
+                " sideClock=" + sideClock + " medianAge=" + medianAge +
+                " suspect=" + mainCounterSuspect + " queuedMs=" + sidecarQueuedMs() +
                 " durAtArm=" + armedDurationMs + " mainDur=" + duration +
                 " cache=" + (gate?.reason ?: "?") + " " + (gate?.cachedBytes ?: -1L) +
                 "/" + (gate?.contentLength ?: -1L)
         )
+        runCatching {
+            sidecar.playbackParameters = exoPlayer.playbackParameters
+            // skipSilenceEnabled is NOT mirrored here - the tail keeps it off; see
+            // [maybePrepareSidecar]. Volume is NOT set here either: it is step 6, below.
+        }
+        val token = Any()
+        overlapToken = token
+        mainProcessor.armIncoming(token)
+        // ⚠⚠ THE VOLUME GOES UP AND THE HAND-OFF GOES OUT WITH NOTHING BETWEEN
+        // THEM, AND WHAT COVERS THE STEP IS A SHORT CROSS-RAMP RATHER THAN SILENCE ON ONE SIDE.
+        // [startRamps] arms both our curves on the NEXT tick, up to 200 ms later, so at this
+        // instant neither leg has one of ours. What actually happens over the next ~20 ms, which
+        // is the thing to understand before touching these two statements:
+        //   - armIncoming mutes only the frames main PROCESSES FROM NOW ON. Everything main has
+        //     already queued keeps playing until the hand-off seek's flush lands, which is the
+        //     next statement - so main does not go silent here, it goes silent SHORTLY.
+        //   - that flush releases the audio output, and the release PAUSES the AudioTrack and
+        //     then schedules flush+release 20 ms later specifically so the platform can ramp it
+        //     down: AudioTrackAudioOutput.release() (media3 1.11.0, :309-321) into
+        //     releaseAudioTrackAsync (:472+), delayed by AUDIO_TRACK_VOLUME_RAMP_TIME_MS = 20
+        //     (:81, used at :512) whose own comment reads "to ensure the audio system can
+        //     completely ramp down the audio output after the preceding pause".
+        //   - meanwhile the sidecar's new volume is applied by the mixer under AudioFlinger's own
+        //     per-buffer ramp (external claim - see the class note).
+        // So both legs are briefly audible: one ramping DOWN over ~20 ms, the other UP.
+        // ⚠⚠ AND IT IS NOT A DOUBLING, BECAUSE THE CONTENT MATCHES. Both legs
+        // are the SAME track at the SAME media position - that is what the whole pre-roll
+        // measurement exists to arrange - so a down-ramp against an up-ramp of the same waveform
+        // is roughly continuous rather than additive. It is also why an alignment error of tens
+        // of milliseconds is tolerable here instead of audible as an echo, and why a LARGE one
+        // would not be: see [mainCounterSuspect] for where that trade was decided.
+        // ⚠️ AND THE LEVEL IS exoPlayer.volume, NOT 1f - that is how ducking and
+        // any other main-player attenuation reach the tail at all. Mirrored at the latest
+        // possible moment for the same reason: it is the most current value.
+        // ⚠️ THE 200 ms BEFORE OUR RAMPS ARM IS STILL NOT A BOOST. Once the
+        // ~20 ms above has passed, main's output is gone and only the tail is audible, at main's
+        // own level - which is what a plain transition sounds like too. Our curves then take over
+        // from unity on both legs, which is where equal power expects to start.
+        runCatching { sidecar.volume = exoPlayer.volume }
+        phase = Phase.ACTIVE
+        handoffAtMs = System.currentTimeMillis()
+        rampStartedAtMs = 0L
+        tailEndLogged = false
         handoff { sessionPlayer.seekToNextMediaItem() }
     }
 
@@ -1353,6 +1669,7 @@ class CrossfadeController(
         sidecarPrepared = false
         gateAttempts = 0
         gateAttemptsForMediaId = null
+        declinedMediaId = null
     }
 
     private fun clearRampState() {
@@ -1433,6 +1750,16 @@ class CrossfadeController(
      * ⚠️ pause() AND the explicit flag write, not one or the other: pause() is the
      * documented way to drop playWhenReady, and setting the field makes the invariant greppable and
      * survives a future refactor that reorders these calls.
+     * ⚠⚠ AND THE VOLUME IS RESTORED HERE FOR THE SAME REASON THE FLAG IS - it is
+     * the other player-level write that OUTLIVES stop() and clearMediaItems(). [startPreRoll]
+     * sets it to 0; if that leaked, the next crossfade's tail would be silent rather than doubled,
+     * which is the same family of bug one degree quieter and therefore harder to notice. 1f, not
+     * exoPlayer.volume: this is a teardown, and [activate] mirrors the live value when it matters.
+     * ⚠️ THE FIELDS BELOW ARE CLEARED ON EVERY EXIT PATH, NOT ONLY AT ENTRY.
+     * [startPreRoll] clears them too, which is where they were set up; doing it here as well is
+     * what stops a measurement from one transition being read during the next one if a future
+     * path reaches the gate without a fresh pre-roll. [declinedMediaId] is deliberately NOT in
+     * this list - see its note.
      * Reused, never released - releasing per crossfade would re-enter the June "zombie ExoPlayer"
      * territory and, on a shared audio session, drop session effects on some OEM ROMs.
      */
@@ -1440,6 +1767,7 @@ class CrossfadeController(
         runCatching {
             sidecar.pause()
             sidecar.playWhenReady = false
+            sidecar.volume = 1f
             sidecar.stop()
             sidecar.clearMediaItems()
         }
@@ -1449,12 +1777,18 @@ class CrossfadeController(
             runCatching { sidecar.removeAnalyticsListener(prerollListener) }
             prerollListenerAttached = false
         }
-        prerollToken = null
         prerollMeasured = false
         prerollAligned = false
+        alignmentReject = null
         advancingAtMs = 0L
+        playoutStartAtMs = 0L
         prerollStartedAtMs = 0L
         measuredGapMs = 0L
+        mainCounterSuspect = false
+        prerollRebuffered = false
+        mainSampleCount = 0
+        cachedGate = null
+        lastPrerollRefusal = null
     }
 
     /**
@@ -1495,9 +1829,6 @@ class CrossfadeController(
         /** The reference polls at 200 ms; so do we, and it is the only clock this class has. */
         private const val TICK_MS = 200L
 
-        /** Re-sync when the sidecar is further off than this. Mandatory, not polish. */
-        private const val RESYNC_TOLERANCE_MS = 200L
-
         /**
          * The reference waits up to 4 s for its incoming leg to become READY. Ours is the deadline
          * for the main player's first post-hand-off frame; past it the mute is lifted by force,
@@ -1534,13 +1865,10 @@ class CrossfadeController(
          * play()-to-playout latency (playoutStart - preroll start = 171, 187, 185, 180, 174 -
          * strikingly consistent). Both are strictly positive, so the gap cannot go negative and
          * this margin is belt rather than the mechanism. At 700 the gap would run ~940-1130 and
-         * cross [MAX_DISCARD_MS] on many transitions, turning good measurements into legacy
-         * fallbacks - the same mistake the cap itself used to make, one term further out.
+         * cross [MAX_DISCARD_MS] on many transitions, turning good measurements into plain
+         * transitions - the same mistake the cap itself used to make, one term further out.
          */
         private const val PREROLL_SAFETY_MS = 50L
-
-        /** The lift out of the pre-roll mute: long enough not to click, short enough not to hear. */
-        private const val PREROLL_RELEASE_MS = 10L
 
         /**
          * How long after the sink reports its position advancing before the gap is measured. The
@@ -1553,12 +1881,13 @@ class CrossfadeController(
         /**
          * A measured gap this far NEGATIVE is read as zero rather than as unfixable. Two
          * independent position clocks, each with a few ms of jitter, can put an aligned tail a
-         * hair ahead; beyond this band it really is ahead and only the legacy seek can fix it.
+         * hair ahead; beyond this band it really is ahead, and nothing short of inserting silence
+         * could fix it - so the transition is a plain one.
          */
         private const val PREROLL_SLACK_MS = 20L
 
         /**
-         * Largest gap the one-shot discard will correct; past it the switch takes the legacy path
+         * Largest gap the one-shot discard will correct; past it the transition is a plain one
          * rather than discarding a chunk of the track.
          *
          * ⚠⚠ [CORRECTED 2026-10-20] 400 WAS BELOW THE REAL GAP, SO IT REJECTED
@@ -1584,6 +1913,10 @@ class CrossfadeController(
          * Projections of a steady counter differ only by sampling jitter (tens of ms), and a
          * SINGLE 1140-style step moves one sample by 200-250 and is trimmed away; two of them
          * disagreeing is what this is meant to catch, and 60 separates that from jitter.
+         *
+         * ⚠️ IT IS A REPORTING THRESHOLD, NOT A GATE, SINCE 2026-10-20 - it only
+         * decides whether `suspect=true` appears in the line. Changing it cannot lose or gain a
+         * crossfade; see [mainCounterSuspect].
          */
         private const val MAIN_SPREAD_TOLERANCE_MS = 60L
 
