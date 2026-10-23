@@ -82,6 +82,28 @@ import kotlin.math.min
  * fade=10 is >15 s, so both have long since fired. A tracker extension that returned something close
  * to the track duration would lose its mark on crossfaded tracks; that is its threshold, not ours.
  *
+ * ⚠⚠ ONE PERMANENT LOG LINE SURVIVES THE SIGN-OFF, AND lagVsMain IS WHY.
+ * The feature was accepted by ear on 2026-10-21/22 (slider 10, Deezer and YouTube Music, phone
+ * and Android Auto) and the twelve per-stage CROSSFADE-FEEL lines went with that. One line per
+ * transition stays - see [logTransition] - because ONE of its fields cannot be obtained any
+ * other way.
+ * ⚠⚠ lagVsMain IS THE ONLY ON-DEVICE CHECK OF ALIGNMENT THERE IS. The splice
+ * is between two independently clocked AudioTracks, and nothing in the audio framework reports
+ * whether they lined up; by ear a small error is inaudible, so listening cannot bound it
+ * either. Two 2026-10-22 transitions read 119 ms and 178 ms BEHIND main - the 119 ms one was
+ * inaudible, and the 178 ms one followed an outlier 57 ms trim and was NOT checked by ear. So
+ * the tolerable bound is known to be at least 119 ms and is otherwise unestablished, which is
+ * precisely the state in which the measurement has to keep arriving.
+ * ⚠️ AND THE COUNTER CANNOT DO THIS JOB, which is why the line carries a
+ * DEAD-RECKONED estimate rather than the obvious subtraction. mainPos minus
+ * sidecar.currentPosition would be simpler and is not usable: the sidecar's position counter
+ * lags by up to ~250 ms (AudioTrackPositionTracker smooths any correction to 10% of the
+ * inter-sample elapsed time, 1.11.0, :266-288), which is larger than the error being measured.
+ * On 1140 the counter under-read the gap by 60-260 ms where the clock landed within ~30 ms.
+ * ⚠️ SO THE REMOVAL CONDITION IS NOT "IT SOUNDS FINE" - that is already
+ * true and is what removed the other eleven lines. It is a bound on lagVsMain established
+ * from field data, or a cheaper check that does not depend on our own arithmetic.
+ *
  * ⚠️ SKIP-SILENCE IS MIRRORED BUT CANNOT BE SYNCHRONISED. SilenceSkippingAudioProcessor sits
  * AFTER ours in the chain (RenderersFactory's DefaultAudioProcessorChain), so the frames our ramp
  * counts are pre-skip. Mirroring makes both legs skip by the same RULE, not by the same AMOUNT -
@@ -187,7 +209,6 @@ class CrossfadeController(
      * whether the park point was computed against a stale number, which is the one candidate for
      * the stutter whose magnitude would scale with the fade length.
      */
-    private var armedDurationMs = 0L
     private var sidecarPrepared = false
 
     /**
@@ -278,10 +299,9 @@ class CrossfadeController(
      * median of four or more is still inside that. The conditions that mean the measurement is
      * genuinely unusable are separate and all still reject: noAdvance, ahead, overCap,
      * rebuffered, queue.
-     * ⚠️ SO IT IS A LOG FIELD NOW (`suspect=` beside `spread=`/`rawSpread=`), and
-     * it is the field to read if a capture shows a bad splice: a run of `suspect=true` lines
-     * with large `sideClock` - `sidePos` differences at the switch is what would reopen the
-     * decision. Nothing else in this class reads it.
+     * ⚠️ SO IT IS A REPORTING FIELD NOW - `suspect=` on the end line, which is
+     * the field to read if a bad splice ever shows up: a run of `suspect=true` transitions with
+     * large `lagVsMain` is what would reopen the decision. Nothing else in this class reads it.
      *
      * ⚠⚠ [CORRECTED 2026-10-20] THE FIRST VERSION OF THIS GUARD WOULD HAVE
      * REJECTED THE GOOD TRANSITIONS. It compared main's advance against wall time over the
@@ -303,16 +323,6 @@ class CrossfadeController(
      * overlapping on a stale number.
      */
     private var prerollRebuffered = false
-
-    /**
-     * ⚠️ READ ONE TICK BEFORE THE SWITCH, NEVER INSIDE [activate]. The value is
-     * wanted in the switch line, but CacheOnlyTailSource.gate takes the SimpleCache monitor -
-     * the same monitor commitFile holds - and between the main player's mute and the hand-off
-     * seek is the worst possible place to wait on it. The 1140 capture cleared it of actually
-     * stalling (no gap over ~200 ms anywhere, STATE_BUFFERING within 20-30 ms of the switch
-     * line), and it is moved anyway: nothing that can block belongs there.
-     */
-    private var cachedGate: CacheOnlyTailSource.Gate? = null
 
     /** The measurement has been taken, whatever it decided. One-shot per crossfade. */
     private var prerollMeasured = false
@@ -357,21 +367,23 @@ class CrossfadeController(
      */
     private var alignmentReject: String? = null
 
-    /**
-     * Last refusal reason logged for THIS transition, so [refusePreRoll] says each thing once.
-     * [startPreRoll] is re-entered on every tick of the pre-roll window - about ten times - and
-     * an unguarded line turned one decision into ten identical ones in the capture. Cleared in
-     * [arm], which is the only per-transition entry point.
-     */
-    private var lastPrerollRefusal: String? = null
     private var measuredGapMs = 0L
 
     /**
-     * Wall-clock time of the main sample that produced the accepted median; 0 when no measurement
-     * was accepted. Only the switch line reads it - see MainProjection.medianAtMs.
+     * ⚠⚠ EVERYTHING THE ONE END LINE NEEDS, AND NOTHING ELSE READS ANY OF IT.
+     * [logTransition] is the only consumer; [arm] resets all four. They exist because the line is
+     * emitted when the transition ENDS while two of its fields are only knowable AT THE SWITCH -
+     * by the time abort() or complete() runs, playoutStartAtMs has been cleared and the sidecar
+     * has been stopped, so neither could be recomputed.
+     * ⚠️ endPath NULL MEANS NO SWITCH HAPPENED, which the line reports as
+     * `path=plain` - correct from a listener's point of view, since nothing overlapped - with
+     * `reason=` carrying the abort that ended it.
      */
-    private var medianSampleAtMs = 0L
-    private var tailEndLogged = false
+    private var armedAtMs = 0L
+    private var endPath: String? = null
+    private var switchQueuedMs = -1L
+    private var switchLagVsMainMs: Long? = null
+
 
     // ⚠⚠ THE HAND-OFF IS A SEEK, AND TWO OF OUR OWN HOOKS ABORT ON SEEKS. ShufflePlayer's
     // seekToNextMediaItem delivers DISCONTINUITY_REASON_SEEK (reaching PlayerEventListener's
@@ -461,13 +473,10 @@ class CrossfadeController(
         if (item.mediaId != declinedMediaId && item.mediaId != gateAttemptsForMediaId) return
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return
-        val position = exoPlayer.currentPosition
-        val leadMs = armLeadMs()
-        if (position >= duration - leadMs) return
+        if (exoPlayer.currentPosition >= duration - armLeadMs()) return
         declinedMediaId = null
         gateAttempts = 0
         gateAttemptsForMediaId = null
-        Log.d(TAG, "decline cleared by seek pos=" + position + " lead=" + leadMs)
     }
 
     /**
@@ -646,17 +655,13 @@ class CrossfadeController(
      * never for main - PlayerService applies to the main processor before calling this.
      */
     fun onBassBoostChanged(strength: Int) {
-        if (phase == Phase.ACTIVE) {
-            Log.d(TAG, "bass boost " + strength + " not mirrored: overlap in progress")
-            return
-        }
+        if (phase == Phase.ACTIVE) return
         runCatching { sidecarProcessor.setBassBoost(strength) }
     }
 
     fun onMainSessionIdChanged(audioSessionId: Int) {
         if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
-        val applied = runCatching { sidecar.setAudioSessionId(audioSessionId) }.isSuccess
-        Log.d(TAG, "sidecar session <- " + audioSessionId + " ok=" + applied)
+        runCatching { sidecar.setAudioSessionId(audioSessionId) }
     }
 
     fun release() {
@@ -709,20 +714,7 @@ class CrossfadeController(
             advancingAtMs = System.currentTimeMillis()
             // The instant everything is projected to; the sample set does the rest.
             playoutStartAtMs = playoutStartSystemTimeMs
-            val mainNow = exoPlayer.currentPosition
-            recordMainSample(mainNow, advancingAtMs)
-            val provisional = projectedMain()
-            Log.d(
-                TAG, "advancing eventPos=" + eventTime.currentPlaybackPositionMs +
-                    " sidePos=" + runCatching { sidecar.currentPosition }.getOrDefault(-1L) +
-                    " mainPos=" + mainNow + " park=" + parkStartMs +
-                    " clockGap=" + (provisional.median - parkStartMs) +
-                    " spread=" + provisional.robustSpread +
-                    " rawSpread=" + provisional.rawSpread +
-                    " samples=" + provisional.count +
-                    " playLatency=" + (advancingAtMs - prerollStartedAtMs) +
-                    " playoutStart=" + playoutStartSystemTimeMs
-            )
+            recordMainSample(exoPlayer.currentPosition, advancingAtMs)
         }
     }
 
@@ -768,12 +760,6 @@ class CrossfadeController(
      */
     private class MainProjection(
         val median: Long,
-        /**
-         * Wall-clock time the sample that BECAME the median was taken. Carried out of here
-         * because the age of the DATA is what a bad splice shows up in, and that is not the same
-         * as the age of the projection - see the switch line's medianAge.
-         */
-        val medianAtMs: Long,
         val robustSpread: Long,
         val rawSpread: Long,
         val count: Int,
@@ -781,7 +767,7 @@ class CrossfadeController(
 
     private fun projectedMain(): MainProjection {
         val n = mainSampleCount
-        if (n == 0 || playoutStartAtMs == 0L) return MainProjection(0L, 0L, -1L, -1L, 0)
+        if (n == 0 || playoutStartAtMs == 0L) return MainProjection(0L, -1L, -1L, 0)
         // ⚠⚠ x speed, BECAUSE THE PROJECTION CROSSES FROM WALL TIME INTO MEDIA TIME.
         // (playoutStartAtMs - sampleTime) is WALL milliseconds; the positions it is added to are
         // MEDIA milliseconds, and media advances `speed` ms per wall ms. At 1x the factor is
@@ -791,19 +777,11 @@ class CrossfadeController(
         val projected = LongArray(n) {
             mainSamplePos[it] + ((playoutStartAtMs - mainSampleAtMs[it]) * speed).toLong()
         }
-        // ⚠⚠ THE INDICES ARE SORTED, NOT THE VALUES, SO THE MEDIAN KEEPS ITS
-        // IDENTITY. This used to be `projected.sort()`, which answered "what is the median" and
-        // threw away "which reading was it" - and the second is what the switch line needs to
-        // report how OLD the estimate's data is. Costs one list of n <= MAIN_SAMPLES indices,
-        // once per crossfade, on the main thread.
-        val order = (0 until n).sortedBy { projected[it] }
-        val mid = order[n / 2]
+        projected.sort()
         return MainProjection(
-            median = projected[mid],
-            medianAtMs = mainSampleAtMs[mid],
-            robustSpread =
-                if (n >= MAIN_ROBUST_MIN) projected[order[n - 2]] - projected[order[1]] else -1L,
-            rawSpread = projected[order[n - 1]] - projected[order[0]],
+            median = projected[n / 2],
+            robustSpread = if (n >= MAIN_ROBUST_MIN) projected[n - 2] - projected[1] else -1L,
+            rawSpread = projected[n - 1] - projected[0],
             count = n,
         )
     }
@@ -856,30 +834,24 @@ class CrossfadeController(
      * crossfade that quietly does not happen half the time.
      */
     private fun plainTransition(reason: String) {
-        Log.d(
-            TAG, "switch path=plain reason=" + reason + " phase=" + phase +
-                " sidePos=" + runCatching { sidecar.currentPosition }.getOrDefault(-1L) +
-                " park=" + parkStartMs + " measuredGap=" + measuredGapMs +
-                " queuedMs=" + sidecarQueuedMs() + " alignReject=" + alignmentReject
-        )
-        abort(Abort.PLAIN)
+        endPath = "plain"
+        switchQueuedMs = sidecarQueuedMs()
+        abort(Abort.PLAIN, reason)
     }
 
     private fun measureAlignment() {
         prerollMeasured = true
-        // ⚠⚠ THE CLOCK NUMBER DECIDES; THE COUNTER NUMBER IS LOGGED BESIDE IT SO THE
-        // NEXT CAPTURE CAN COMPARE THE TWO METHODS ON THE SAME TRANSITION. On 1140 the counter
-        // under-read the gap by 60-260 ms while the clock landed within ~30 ms; keeping both
-        // printed is what makes a regression in either visible rather than argued about.
-        val mainPos = exoPlayer.currentPosition
-        val sidePos = runCatching { sidecar.currentPosition }.getOrDefault(0L)
-        val counterGap = mainPos - sidePos
+        // ⚠⚠ THE CLOCK NUMBER DECIDES, AND THE COUNTER IS NOT CONSULTED AT ALL.
+        // The comparison that settled it is on record rather than re-run: on 1140 the sidecar's
+        // position counter under-read the gap by 60-260 ms while the clock landed within ~30 ms.
+        // Both used to be printed side by side for exactly that reason; since 2026-10-22 only
+        // the clock survives - see [logTransition] for why a counter-based check would be
+        // measuring its own lag rather than the alignment.
         val main = projectedMain()
-        // ⚠️ A NEGATIVE robustSpread MEANS "TOO FEW SAMPLES TO JUDGE", NOT "BAD" -
-        // so it cannot exceed the tolerance and the median is accepted, with `thin=true` in the
-        // line to say why no spread was checked.
+        // ⚠️ A NEGATIVE robustSpread MEANS "TOO FEW SAMPLES TO JUDGE", NOT "BAD",
+        // so it cannot exceed the tolerance and the median is accepted. Reported as suspect=false
+        // on the end line, which is honest: nothing was found wrong, because nothing was checked.
         mainCounterSuspect = main.robustSpread > MAIN_SPREAD_TOLERANCE_MS
-        val thin = main.count in 1 until MAIN_ROBUST_MIN
         val clockGap = main.median - parkStartMs
         val gap = if (clockGap in -PREROLL_SLACK_MS..0L) 0L else clockGap
         // ⚠️ THE CAP IS SCALED BECAUSE THE GAP IT BOUNDS IS. Every term in the gap -
@@ -918,33 +890,10 @@ class CrossfadeController(
             else -> null
         }
         alignmentReject = reject
-        if (reject != null) {
-            Log.w(
-                TAG, "measured reject=" + reject + " clockGap=" + clockGap +
-                    " spread=" + main.robustSpread + " rawSpread=" + main.rawSpread +
-                    " samples=" + main.count + " thin=" + thin +
-                    " suspect=" + mainCounterSuspect +
-                    " counterGap=" + counterGap + " queuedMs=" + queuedMs +
-                    " toSwitch=" + toSwitchMs + " -> plain transition mainPos=" + mainPos +
-                    " sidePos=" + sidePos + " park=" + parkStartMs
-            )
-            return
-        }
+        if (reject != null) return
         prerollAligned = true
         measuredGapMs = gap
-        medianSampleAtMs = main.medianAtMs
-        val frames = if (gap == 0L) 0L else sidecarProcessor.discard(gap)
-        Log.d(
-            TAG, "measured clockGap=" + clockGap + " counterGap=" + counterGap +
-                " spread=" + main.robustSpread + " rawSpread=" + main.rawSpread +
-                " samples=" + main.count + " thin=" + thin +
-                " suspect=" + mainCounterSuspect +
-                " gap=" + gap + " frames=" + frames +
-                " bytes=" + frames * sidecarProcessor.frameSizeBytes() +
-                " queuedMs=" + queuedMs + " toSwitch=" + toSwitchMs +
-                " mainPos=" + mainPos + " sidePos=" + sidePos + " park=" + parkStartMs +
-                " sinceAdvancing=" + (System.currentTimeMillis() - advancingAtMs)
-        )
+        if (gap != 0L) sidecarProcessor.discard(gap)
     }
 
     // ── The tick ────────────────────────────────────────────────────────────────────────────────
@@ -1007,12 +956,12 @@ class CrossfadeController(
         // above no longer has a second way to start the sidecar. See [startPreRoll].
         // Scaled for the same reason the park is - see [arm]. `remaining` is media time, so the
         // window has to be media time as well, or the two disagree at any speed but 1x.
-        if (remaining <= effectiveFadeMs + (PREROLL_MS * speed).toLong()) {
-            // Once per crossfade, a clear tick before the switch, and on BOTH paths - see
-            // [cachedGate] for why it cannot be read inside activate().
-            if (cachedGate == null) cachedGate = runCatching { tail.gate(item) }.getOrNull()
+        // ⚠️ THE PER-TICK tail.gate(item) CALL WENT WITH THE SWITCH LINE
+        // (2026-10-22). Its only consumer was that line's `cache=` field, so it had become
+        // content-index I/O - under the SimpleCache monitor - feeding a log and nothing else.
+        // CacheOnlyTailSource.gate now has no callers again; left in place as its own note says.
+        if (remaining <= effectiveFadeMs + (PREROLL_MS * speed).toLong())
             startPreRoll(position, duration)
-        }
     }
 
     /**
@@ -1046,24 +995,13 @@ class CrossfadeController(
      * defect this whole feature exists to remove. Declining is the cheaper failure - see
      * [plainTransition].
      */
-    /**
-     * Logs a refusal once per reason per transition. [reason] is the dedupe key, so varying
-     * numbers go in [detail] where they cannot defeat it.
-     */
-    private fun refusePreRoll(reason: String, detail: String = "") {
-        if (lastPrerollRefusal == reason) return
-        lastPrerollRefusal = reason
-        Log.d(TAG, "preroll refused: " + reason + detail)
-    }
-
     private fun startPreRoll(position: Long, duration: Long) {
         // ⚠️ THESE TWO USED TO RETURN SILENTLY, WHICH MADE A MISSING OVERLAP
         // UNEXPLAINED IN THE CAPTURE. Now that a reason is logged once rather than per tick,
         // naming them costs one line each and tells the next reader why the pre-roll never ran.
         // Both are transient; see the KDoc for why neither declines the crossfade.
-        if (!sidecarPrepared) return refusePreRoll("notPrepared")
-        if (runCatching { sidecar.playbackState }.getOrNull() != Player.STATE_READY)
-            return refusePreRoll("notReady")
+        if (!sidecarPrepared) return
+        if (runCatching { sidecar.playbackState }.getOrNull() != Player.STATE_READY) return
         // ⚠️ NO SKIP-SILENCE REFUSAL ANY MORE (H8, 2026-10-20) - the sidecar runs
         // with it off, set in [maybePrepareSidecar], so there is nothing left to refuse and the
         // pre-roll runs for a default install. The note at that line carries the trade.
@@ -1089,7 +1027,6 @@ class CrossfadeController(
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         if (position > parkStartMs + (MAX_DISCARD_MS * speed).toLong()) {
             declinedMediaId = armedMediaId
-            refusePreRoll("late", " pos=" + position + " park=" + parkStartMs)
             return plainTransition("late")
         }
         val started = runCatching {
@@ -1136,7 +1073,7 @@ class CrossfadeController(
             // Abort rather than leave a half-started pre-roll: [resetSidecar] both stops the
             // sidecar and restores its volume, so a throw between `volume = 0f` and
             // `playWhenReady` cannot leave a silent player behind for the next crossfade.
-            Log.w(TAG, "preroll failed to start")
+            // The end line reports it as reason=NOT_READY.
             return abort(Abort.NOT_READY)
         }
         prerollMeasured = false
@@ -1147,18 +1084,12 @@ class CrossfadeController(
         mainCounterSuspect = false
         prerollRebuffered = false
         measuredGapMs = 0L
-        medianSampleAtMs = 0L
         mainSampleCount = 0
         prerollStartedAtMs = System.currentTimeMillis()
         // The first and most valuable sample: taken before the sidecar's sink exists, so no
         // start-up activity on the audio path can have perturbed main's counter yet.
         recordMainSample(position, prerollStartedAtMs)
         phase = Phase.PREROLL
-        Log.d(
-            TAG, "preroll start pos=" + position + " sidePos=" +
-                runCatching { sidecar.currentPosition }.getOrDefault(-1L) +
-                " remaining=" + (duration - position) + " eff=" + effectiveFadeMs
-        )
     }
 
     /**
@@ -1181,12 +1112,11 @@ class CrossfadeController(
             prerollRebuffered = true
             if (prerollAligned) {
                 prerollAligned = false
-                // Named so the plain line says WHICH rebuffer this was: the measurement was
+                // Named so the end line says WHICH rebuffer this was: the measurement was
                 // accepted and then invalidated, which is not the same finding as one that was
                 // never usable, and [alignmentReject] is null on this path without it.
                 alignmentReject = "rebufferedLate"
-                Log.w(TAG, "preroll rebuffered AFTER the correction -> plain transition")
-            } else Log.w(TAG, "preroll rebuffered before the measurement -> plain transition")
+            }
         }
         // ⚠️ [PREROLL_SETTLE_MS] IS NOT SCALED, AND THAT IS CORRECT. It is how long a
         // freshly started AudioTrack's position counter takes to become trustworthy - a property
@@ -1219,15 +1149,6 @@ class CrossfadeController(
         //    already tick on is the right instrument, not a second listener.
         if (sidecar.playbackState == Player.STATE_IDLE || sidecar.playerError != null)
             return abort(Abort.TAIL_DIED)
-        if (!tailEndLogged && sidecar.playbackState == Player.STATE_ENDED) {
-            tailEndLogged = true
-            Log.d(
-                TAG, "tailEnded at=" + (
-                    if (rampStartedAtMs == 0L) -1L
-                    else System.currentTimeMillis() - rampStartedAtMs
-                    ) + " expected=" + rampMs
-            )
-        }
         // 2. Mirror the duck. AudioFocusListener is the ONLY writer of the main player's volume
         //    (DUCK_VOLUME on TRANSIENT_CAN_DUCK, 1f on GAIN); we only ever write the sidecar's, so
         //    there is no second decider - this is a mirror, not a policy.
@@ -1355,7 +1276,6 @@ class CrossfadeController(
         phase = Phase.ARMED
         armedMediaId = item.mediaId
         sidecarRePrepares = 0
-        armedDurationMs = duration
         armedTailStartMs = duration - effectiveFadeMs
         // ⚠⚠ THE TAIL'S EQ IS RE-SEEDED HERE, AND AT ARM SPECIFICALLY BECAUSE
         // THE PREPARE HAS NOT HAPPENED YET. [onBassBoostChanged] refuses to retune a PLAYING
@@ -1389,12 +1309,11 @@ class CrossfadeController(
         // transition, which is the right degradation.
         parkStartMs = (armedTailStartMs - ((PREROLL_MS + PREROLL_SAFETY_MS) * speed).toLong())
             .coerceAtLeast(0L)
-        cachedGate = null
-        lastPrerollRefusal = null
-        Log.d(
-            TAG, "arm fade=" + fadeSeconds + " eff=" + effectiveFadeMs + " dur=" + duration +
-                " switchAt=" + armedTailStartMs + " park=" + parkStartMs + " pos=" + position
-        )
+        // Per-transition reporting state for the one end line; see [logTransition].
+        armedAtMs = System.currentTimeMillis()
+        endPath = null
+        switchQueuedMs = -1L
+        switchLagVsMainMs = null
         maybePrepareSidecar()
     }
 
@@ -1505,13 +1424,7 @@ class CrossfadeController(
             sidecar.setMediaSource(tail.factory.createMediaSource(item), parkStartMs)
             sidecar.prepare()
         }.isSuccess
-        if (ok) {
-            sidecarPrepared = true
-            Log.d(
-                TAG, "prepared park=" + parkStartMs + " buffered=" + exoPlayer.bufferedPosition +
-                    " dur=" + duration
-            )
-        }
+        if (ok) sidecarPrepared = true
     }
 
     private fun evaluateGate(item: MediaItem, position: Long, duration: Long) {
@@ -1552,7 +1465,7 @@ class CrossfadeController(
             return plainTransition(alignmentReject ?: "unmeasured")
         }
         if (playerReady && sidecarReady) {
-            activate(position, duration)
+            activate(position)
             return
         }
         // Increment against the OLD id, THEN adopt the new one - the reverse order makes the
@@ -1568,10 +1481,11 @@ class CrossfadeController(
      * ⚠⚠ TEN STEPS IN THIS ORDER, AND THE ORDER IS THE DESIGN. After the hand-off the MAIN
      * player is the INCOMING leg and the sidecar is the OUTGOING one, which is the opposite of the
      * intuition that the sidecar "is the crossfade".
-     *   1.   read the sidecar's position and the sink's queue depth - nothing audible, nothing
-     *        that can block (see [sidecarQueuedMs]);
-     *   2.   LOG, before anything is muted, so that nothing between the mute and the un-mute
-     *        below can take time;
+     *   1-2. CAPTURE the alignment estimate and the sink's queue depth into fields the end line
+     *        reads later - see [logTransition]. Both are arithmetic on values already in hand,
+     *        with nothing that can block; they come first so that nothing between the mute at
+     *        step 5 and the un-mute at step 6 can take time. Until 2026-10-22 this step LOGGED,
+     *        for the same reason and in the same place;
      *   3.   mirror speed while the tail is still silent, so nothing is ever heard at the wrong
      *        rate for a frame. NOT skip-silence (held off on the tail, see
      *        [maybePrepareSidecar]) and NOT volume, which is step 6;
@@ -1659,7 +1573,7 @@ class CrossfadeController(
      * delay(50) -> skip) and they still run on every error-driven skip. Both drives tested the
      * hand-off WITH those guards in place; removing them would invalidate both.
      */
-    private fun activate(position: Long, duration: Long) {
+    private fun activate(position: Long) {
         // ⚠⚠ ONE PATH NOW, AND THE SECOND ONE WAS DELETED RATHER THAN DISABLED.
         // Reaching here means the pre-roll ran AND its one measurement landed (the gate enforces
         // both), so the tail is ALREADY PLAYING at the right place: there is nothing to seek,
@@ -1673,56 +1587,24 @@ class CrossfadeController(
         // been flushed by the hand-off, which makes that a DROPOUT rather than a late fade. The
         // fallback was therefore WORSE than no crossfade, which is why it is gone (user decision,
         // 2026-10-20, option (c)) and why RESYNC_TOLERANCE_MS went with it.
-        val before = runCatching { sidecar.currentPosition }.getOrDefault(0L)
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
-        // Read a tick earlier and carried here - see [cachedGate]. Nothing on this line can
-        // block, which is the property that matters between the mute and the seek.
-        val gate = cachedGate
-        // ⚠⚠ [CORRECTED 2026-10-21] TWO SEPARATE INTERVALS, AND THEY WERE THE
-        // SAME ONE UNTIL A DEVICE CAPTURE CAUGHT IT. medianAge printed
-        // `now - playoutStartAtMs`, which is how long the alignment has been running open-loop -
-        // not what it claimed to be. The 1142 capture made it unmistakable: the values equalled
-        // the switch line's own timestamp minus playoutStart EXACTLY (2020, 2027, 2032, 1637,
-        // 1821), i.e. it was reporting the pre-roll's length back to the reader.
-        // ⚠️ THE DISTINCTION IS NOT PEDANTRY: the estimate is a median of
-        // samples taken ACROSS the pre-roll, so the data behind it can be a second older than
-        // the projection instant. Age-of-data is what a bad splice would show up in; age-of-
-        // projection is a constant (~PREROLL_MS) and tells a reader nothing.
-        val sincePlayoutMs =
-            if (playoutStartAtMs == 0L) -1L else System.currentTimeMillis() - playoutStartAtMs
-        val medianAge =
-            if (medianSampleAtMs == 0L) -1L else System.currentTimeMillis() - medianSampleAtMs
-        // ⚠⚠ [CORRECTED 2026-10-21] THE DISCARD IS ADDED, NOT SUBTRACTED, AND
-        // THE OLD COMMENT'S REASONING WAS THE BUG. It read "less the frames the discard removed",
-        // which sounds right and is backwards: discarding media SKIPS the tail FORWARD, so the
-        // position reached is park + what was played + what was dropped. The 1142 capture is
-        // conclusive - hand-computing with `+` gave 164254/126985/144655/109377/148899 against
-        // logged 163764/126621/144339/108293/148215, and every difference is exactly TWICE the
-        // transition's measuredGap, which is the signature of a flipped sign and of nothing else.
-        // ⚠️ AND THE SAME ARITHMETIC IS WHAT THE SINK DOES, which is the
-        // independent confirmation: DefaultAudioSink.applySkipping ADDS
-        // audioProcessorChain.getSkippedOutputFrameCount() to the reported position (1.11.0,
-        // :1774-1788), and RenderersFactory's DiscardReportingChain is what feeds our discard
-        // into that count. So sidePos on this line already includes the discard - the estimate
-        // has to as well, or the two are not comparable, which is the whole point of printing
-        // them together.
-        // ⚠️ sincePlayoutMs, NOT medianAge, IS THE RIGHT MULTIPLIER HERE: this
-        // is dead reckoning from where the tail STARTED PLAYING, so the elapsed term has to be
-        // measured from playout start. Using medianAge would re-introduce the first bug as an
-        // arithmetic error rather than a cosmetic one.
-        val sideClock =
-            if (playoutStartAtMs == 0L) "n/a"
-            else (parkStartMs + (sincePlayoutMs * speed).toLong() + measuredGapMs).toString()
-        Log.d(
-            TAG, "switch path=preroll mainPos=" + position + " sidePos=" + before +
-                " gap=" + (position - before) + " measuredGap=" + measuredGapMs +
-                " sideClock=" + sideClock + " medianAge=" + medianAge +
-                " sincePlayout=" + sincePlayoutMs +
-                " suspect=" + mainCounterSuspect + " queuedMs=" + sidecarQueuedMs() +
-                " durAtArm=" + armedDurationMs + " mainDur=" + duration +
-                " cache=" + (gate?.reason ?: "?") + " " + (gate?.cachedBytes ?: -1L) +
-                "/" + (gate?.contentLength ?: -1L)
-        )
+        // ⚠⚠ THE ONE ALIGNMENT MEASUREMENT THAT SURVIVES, CAPTURED HERE AND
+        // REPORTED BY [logTransition]. sideClock is dead reckoning from where the tail started
+        // playing: park + elapsed playout x speed + the frames the discard SKIPPED FORWARD.
+        // ⚠️ THE DISCARD IS ADDED, NOT SUBTRACTED, AND THE OPPOSITE SIGN WAS A
+        // REAL BUG HERE (fixed 2026-10-21). Dropping media moves the playhead FORWARD, so the
+        // position reached is park + what was played + what was dropped. Independent
+        // confirmation from the sink: DefaultAudioSink.applySkipping ADDS
+        // audioProcessorChain.getSkippedOutputFrameCount() to the position it reports (1.11.0,
+        // :1774-1788), fed by RenderersFactory's DiscardReportingChain - so the counter and this
+        // estimate only agree if both include it.
+        if (playoutStartAtMs != 0L) {
+            val sincePlayoutMs = System.currentTimeMillis() - playoutStartAtMs
+            val sideClock = parkStartMs + (sincePlayoutMs * speed).toLong() + measuredGapMs
+            switchLagVsMainMs = position - sideClock
+        }
+        endPath = "preroll"
+        switchQueuedMs = sidecarQueuedMs()
         runCatching {
             sidecar.playbackParameters = exoPlayer.playbackParameters
             // skipSilenceEnabled is NOT mirrored here - the tail keeps it off; see
@@ -1765,7 +1647,6 @@ class CrossfadeController(
         phase = Phase.ACTIVE
         handoffAtMs = System.currentTimeMillis()
         rampStartedAtMs = 0L
-        tailEndLogged = false
         handoff { sessionPlayer.seekToNextMediaItem() }
     }
 
@@ -1801,21 +1682,52 @@ class CrossfadeController(
         rampStartedAtMs = System.currentTimeMillis()
         if (!ended) sidecarProcessor.startFadeOut(rampMs)
         mainProcessor.startFadeIn(rampMs)
+    }
+
+    /**
+     * ⚠⚠ THE ONE PERMANENT LINE, EMITTED WHEN A TRANSITION ENDS - COMPLETED,
+     * PLAIN OR ABORTED - AND IT IS WHAT IS LEFT OF A TWELVE-LINE CAPTURE. The feature was signed
+     * off by ear on 2026-10-21/22 (slider 10, Deezer and YouTube Music, phone and Android Auto),
+     * so the per-stage lines went: arm, prepared, preroll start, advancing, measured, switch,
+     * ramps, tailEnded and the refusals. What a reader needs afterwards is whether each
+     * transition overlapped or not, why not, and whether the alignment held - one line each.
+     *
+     * ⚠⚠ lagVsMain IS THE REASON THE LINE EXISTS AT ALL, AND IT IS THE ONLY
+     * ON-DEVICE CHECK OF ALIGNMENT WE HAVE. mainPos minus the tail's dead-reckoned clock at the
+     * switch: 0 means the two legs are splice-aligned, positive means the tail is BEHIND. Two
+     * 2026-10-22 transitions read 119 ms and 178 ms behind - the 119 ms one was inaudible, and
+     * the 178 ms one followed an outlier 57 ms trim and was NOT checked by ear. So the tolerable
+     * bound is known to be at least 119 and is otherwise unestablished; a run of values well
+     * above 178 is the thing to look for, and `trim=` beside it says whether a bad measurement
+     * caused it.
+     * ⚠️ AND THE COUNTER CANNOT REPLACE IT, WHICH IS WHY A DEAD-RECKONED
+     * ESTIMATE IS WORTH CARRYING. The obvious version of this check - mainPos minus
+     * sidecar.currentPosition - is unreliable: the sidecar's position counter lags by up to
+     * ~250 ms (AudioTrackPositionTracker smooths a correction at 10% of elapsed time, 1.11.0,
+     * :266-288), which is larger than the error being measured. The estimate is computed from
+     * the playout clock instead and is the only number here that is independent of it.
+     * ⚠️ `trim` IS measuredGapMs AND `suspect` IS THE SAMPLE-SPREAD FLAG, both
+     * kept because the controller uses them: trim is the discard actually applied, suspect is
+     * recorded by [measureAlignment] and deliberately does NOT reject (see [mainCounterSuspect]).
+     * `elapsed` is measured from ARM, which is the only base that exists for all three outcomes.
+     */
+    private fun logTransition(reason: String) {
         Log.d(
-            TAG, "ramps rampIn=" + rampMs + " rampOut=" + (if (ended) 0L else rampMs) +
-                " eff=" + effectiveFadeMs + " tailRemaining=" + tailRemaining +
-                " ended=" + ended + " sinceHandoff=" + (rampStartedAtMs - handoffAtMs)
+            TAG, "crossfade path=" + (endPath ?: "plain") + " reason=" + reason +
+                " trim=" + measuredGapMs + " suspect=" + mainCounterSuspect +
+                " queuedMs=" + switchQueuedMs +
+                " lagVsMain=" + (switchLagVsMainMs?.toString() ?: "n/a") +
+                " elapsed=" + (if (armedAtMs == 0L) -1L else System.currentTimeMillis() - armedAtMs)
         )
     }
 
     /** The overlap ran its course: tear the sidecar down and return to IDLE for the new item. */
     private fun complete() {
-        Log.d(
-            TAG, "end reason=COMPLETED elapsed=" + (
-                if (rampStartedAtMs == 0L) -1L
-                else System.currentTimeMillis() - rampStartedAtMs
-                )
-        )
+        logTransition("COMPLETED")
+        endPath = null
+        switchLagVsMainMs = null
+        switchQueuedMs = -1L
+        armedAtMs = 0L
         clearRampState()
         resetSidecar()
         phase = Phase.IDLE
@@ -1938,12 +1850,9 @@ class CrossfadeController(
         playoutStartAtMs = 0L
         prerollStartedAtMs = 0L
         measuredGapMs = 0L
-        medianSampleAtMs = 0L
         mainCounterSuspect = false
         prerollRebuffered = false
         mainSampleCount = 0
-        cachedGate = null
-        lastPrerollRefusal = null
     }
 
     /**
@@ -1953,13 +1862,18 @@ class CrossfadeController(
      *
      * ⚠️ [reason] IS NOT READ - see the note on [Abort]. It documents the call site.
      */
-    private fun abort(reason: Abort) {
-        if (phase != Phase.IDLE) Log.d(
-            TAG, "end reason=" + reason + " phase=" + phase + " elapsed=" + (
-                if (rampStartedAtMs == 0L) -1L
-                else System.currentTimeMillis() - rampStartedAtMs
-                )
-        )
+    private fun abort(reason: Abort, detail: String? = null) {
+        // ⚠️ [detail] IS THE PLAIN REASON, AND IT IS THE ONLY CALLER-SUPPLIED
+        // STRING HERE. [plainTransition] passes the condition that declined the overlap (`late`,
+        // `overCap`, `queue`...), which is far more useful on the line than the enum's own PLAIN.
+        // Every other call site leaves it null and reports the enum.
+        // ⚠️ BEFORE [resetSidecar], WHICH CLEARS measuredGapMs - the line reads
+        // trim= from it, so the order of these two statements is load-bearing.
+        if (phase != Phase.IDLE) logTransition(detail ?: reason.name)
+        endPath = null
+        switchLagVsMainMs = null
+        switchQueuedMs = -1L
+        armedAtMs = 0L
         // ⚠⚠ THE SIDECAR IS STOPPED BEFORE THE PROCESSORS ARE CLEARED, AND THE ORDER
         // MATTERS SINCE THE PRE-ROLL. clearRampState un-mutes BOTH legs, and during a pre-roll
         // the sidecar is PLAYING - so un-muting first opens a window in which the audio thread

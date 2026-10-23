@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.ui.player.quality
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.os.Bundle
@@ -16,6 +17,11 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.mediarouter.app.MediaRouteChooserDialog
+import androidx.mediarouter.app.MediaRouteChooserDialogFragment
+import androidx.mediarouter.app.MediaRouteDialogFactory
+import androidx.mediarouter.app.MediaRouteDynamicChooserDialog
+import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastStateListener
@@ -197,6 +203,10 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
             CastButtonFactory.setUpMediaRouteButton(requireContext(), binding.castSlot)
         }.isSuccess
         if (wired) binding.castSlot.isVisible = true
+        // ⚠⚠ AFTER setUpMediaRouteButton, NEVER BEFORE: that call installs the
+        // Cast SDK's own dialog factory, so setting ours first would simply be overwritten and
+        // the filter would silently never run. See [CastOnlyDialogFactory] for what it filters.
+        runCatching { binding.castSlot.dialogFactory = CastOnlyDialogFactory() }
         Log.d(
             CastAvailability.TAG,
             "sheet opened: button=" + (if (wired) "wired" else "failed") +
@@ -207,6 +217,68 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
         }
         runCatching { context.addCastStateListener(listener) }
             .onSuccess { castStateListener = listener }
+    }
+
+    /**
+     * ⚠⚠ THE CHOOSER LISTS ONLY PLAY SERVICES' CAST ROUTES, AND WITHOUT THIS
+     * EVERY DEVICE APPEARS TWICE. androidx's RegisteredMediaRouteProviderWatcher binds the
+     * MediaRouteProviderService of EVERY package on the device (scanPackages ->
+     * queryIntentServices("android.media.MediaRouteProviderService"), mediarouter 1.8.1), so any
+     * second Play-services implementation publishes the same Chromecasts under its own provider
+     * id. Captured on device 2026-10-22 with the picker open - `dumpsys activity services` showed
+     * this app holding TWO provider bindings:
+     *     com.google.android.gms/.cast.media.CastMediaRoute2ProviderService_Persistent
+     *     app.revanced.android.gms/com.google.android.gms.cast.media.CastMediaRouteProviderService
+     * and the picker listed all four devices twice, with identical names.
+     *
+     * ⚠⚠ AND IT IS NOT COSMETIC, WHICH IS WHY A FILTER RATHER THAN A SHRUG.
+     * Selecting a route sends its control calls to the provider that PUBLISHED it, while our
+     * session machinery is attached to the CastContext loaded from real Play services
+     * (CastAvailability.castContext -> CastContext.getSharedInstance, which needs
+     * GoogleApiAvailability SUCCESS for com.google.android.gms, and CastSessionController's
+     * SessionManagerListener lives on THAT SessionManager). So the other copy's routes cannot
+     * reach the code that starts a session, and picking one of two identical rows was a coin
+     * flip. USER DECISION, 2026-10-22: only real Play services routes are wanted, whatever the
+     * other copy can or cannot do - so no behavioural test was run to find out.
+     *
+     * ⚠️ BOTH DIALOGS ARE OVERRIDDEN, AND MISSING ONE WOULD BE A SILENT NO-OP.
+     * MediaRouteChooserDialogFragment.onCreateDialog branches on a PRIVATE mUseDynamicGroup flag
+     * (decoded from 1.8.1): true -> onCreateDynamicChooserDialog returning
+     * MediaRouteDynamicChooserDialog, false -> onCreateChooserDialog returning
+     * MediaRouteChooserDialog. CastButtonFactory decides which, and we cannot read it, so the
+     * filter has to exist on both paths.
+     * ⚠️ super.onFilterRoute IS KEPT, WHICH MAKES THIS PURELY SUBTRACTIVE: the
+     * base call applies the route selector and the enabled check, so a non-Cast provider's routes
+     * were never in the list to begin with and this only removes a DUPLICATE Cast route.
+     * ⚠️ THE CONTROLLER DIALOG IS DELIBERATELY NOT OVERRIDDEN. It shows the
+     * route already connected, never a list, so there is nothing to filter there.
+     */
+    private class CastOnlyDialogFactory : MediaRouteDialogFactory() {
+        override fun onCreateChooserDialogFragment() = CastOnlyChooserFragment()
+    }
+
+    private class CastOnlyChooserFragment : MediaRouteChooserDialogFragment() {
+        override fun onCreateChooserDialog(context: Context, savedInstanceState: Bundle?) =
+            object : MediaRouteChooserDialog(context) {
+                override fun onFilterRoute(route: MediaRouter.RouteInfo) =
+                    super.onFilterRoute(route) && route.isFromPlayServices()
+            }
+
+        override fun onCreateDynamicChooserDialog(context: Context) =
+            object : MediaRouteDynamicChooserDialog(context) {
+                override fun onFilterRoute(route: MediaRouter.RouteInfo) =
+                    super.onFilterRoute(route) && route.isFromPlayServices()
+            }
+
+        private fun MediaRouter.RouteInfo.isFromPlayServices() =
+            runCatching { provider.packageName == PLAY_SERVICES_PACKAGE }.getOrDefault(true)
+
+        private companion object {
+            // ReVanced GmsCore and other microG-style Play-services replacements publish
+            // duplicate Cast routes; only real Play services hosts our CastContext sessions.
+            // Package rather than component: the GMS service class name is not ours to depend on.
+            const val PLAY_SERVICES_PACKAGE = "com.google.android.gms"
+        }
     }
 
     // Paired with bindCast. The CastContext is a process singleton, so the listener outlives this

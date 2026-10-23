@@ -265,6 +265,18 @@ class PlayerCallback(
         customCommand: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> = with(PlayerCommands) {
+        // ⚠⚠ [TEMPORARY 2026-10-19] ColdStartPlayProbe - ONE RECORD FOR EVERY
+        // CUSTOM COMMAND, WHICH REPLACED THREE PER-PATH CALLS THAT KEPT MISSING NEW PATHS.
+        // Custom commands do NOT pass through onPlayerCommandRequest - that hook sees
+        // Player.Commands only - so every handler below that ends in play() was invisible to the
+        // probe unless someone remembered to add a line. Three false alarms came of exactly
+        // that: playItem and radio (1140, 1142) both reached ShufflePlayer.play with
+        // lastSource=none. Recording here instead means a NEW command is covered the day it is
+        // added, with nothing to remember.
+        // ⚠️ customAction IS OUR OWN LABEL, not anything about the user or the
+        // media - the strings are the literals in PlayerCommands ("play", "radio", "backfill").
+        // Same data rule as the `path=` field; see ColdStartPlayProbe.
+        ColdStartPlayProbe.recordCommand(customCommand.customAction)
         val player = session.player
         when (customCommand) {
             likeCommand -> onSetRating(session, controller, ThumbRating(true))
@@ -1287,6 +1299,16 @@ class PlayerCallback(
         // apply the same queue, and a second setMediaItems would tear down and re-prepare. Only the
         // isForPlayback path applies; the metadata-only stub below never sets it.
         if (isForPlayback) state.resumptionApplying = true
+        // ⚠⚠ [TEMPORARY 2026-10-19] ColdStartPlayProbe - BOTH ENDS OF THE
+        // RESTORE, AND THE SECOND ONE IS THE POINT. media3 plays AFTER this future resolves, and
+        // on 1142 the restore of 1,685 items took ~4 s - well past SOURCE_WINDOW_MS - so an
+        // entry-only record expires before the play and the probe filed
+        // "play from MediaSessionImpl$2.onSuccess, lastSource=none". The entry stamp still earns
+        // its place: it attributes a play that arrives while the restore is still running, which
+        // the completion stamp cannot.
+        // ⚠️ isForPlayback ONLY. The metadata-only stub never plays, so recording
+        // it would attribute a later unrelated play to a resumption that never asked for one.
+        if (isForPlayback) ColdStartPlayProbe.recordCommand("resumption")
         return scope.futureCatching {
             if (!isForPlayback) {
                 // System UI metadata-only request (e.g. lock-screen notification after reboot).
@@ -1369,6 +1391,9 @@ class PlayerCallback(
                             }
                 }
                 Log.d("GladixPlayback", "onPlaybackResumption: items=${data.items.size}")
+                // [TEMPORARY 2026-10-19] ColdStartPlayProbe - re-stamped at COMPLETION, which is
+                // the stamp that survives to the play media3 makes next. See the entry call.
+                ColdStartPlayProbe.recordCommand("resumption")
                 MediaItemsWithStartPosition(data.items.map { withUnloaded(it) }, data.index, data.pos)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { state.resumptionApplying = false }

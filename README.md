@@ -25,6 +25,15 @@ A full-screen D-pad player, a mini-player bar, and focus routing that behaves ac
 ### Playback and queue
 The queue is stored durably and restored exactly — the same track, the same position — across cold starts, process death and app updates. A buffering watchdog retries and then skips a stuck track rather than leaving the player wedged, with a grace window so a slow stream resolution isn't mistaken for a stall.
 
+### Crossfade
+True crossfade of up to 10 seconds: the ending track keeps playing on a second player while the next one fades in, on equal-power curves. The tail starts silently a couple of seconds early and is lined up with the main player, so the hand-off has no gap or stutter. Works in Android Auto. Albums played in order can stay gapless, and a track you skip into the last few seconds of simply ends with a clean cut.
+
+### Casting
+Cast to Chromecast and Google TV devices. The phone serves the audio to the TV over your home network, so casting doesn't depend on the music service supporting it. On Android 17, Gladix asks once for permission to reach devices on your network, which casting needs.
+
+### Audio effects
+Bass boost lifts the low end without raising the overall volume, and carries through crossfades. For a full equalizer, Gladix opens your phone's system equalizer, which also applies through crossfades.
+
 ### History
 Listening history with date sections, sort by date, title or artist, filtering by extension, and text or voice search. Tapping an entry plays that track and rebuilds its context — the playlist, album or radio station it came from.
 

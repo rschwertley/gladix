@@ -19,9 +19,23 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * ⚠⚠ REMOVAL IS ONE GREP: `ColdStartPlayProbe`. Delete this file, then delete the call lines
  * it names - PlayerCallback.onPlayerCommandRequest (the whole override) and its three
  * recordCommand lines (backfillQueue, the trackRadio seed, addToNext - the last one restores a
- * one-line `if`), six recordUi() lines in PlayerViewModel, two onPlay() lines in ShufflePlayer, one
+ * one-line `if`), the recordCommand at the top of onCustomCommand, the two in
+ * onPlaybackResumption (entry and completion), six recordUi() lines in PlayerViewModel, two
+ * onPlay() lines in ShufflePlayer, one
  * attach() line in PlayerService - plus CrashKeys.processAgeMs, which was added for this and is
  * marked the same way. Nothing else depends on it and nothing reads its state.
+ *
+ * ⚠⚠ WHEN TO REMOVE IT - USER DECISION, 2026-10-21, AND IT IS A DECISION RATHER
+ * THAN A REMINDER. If this files another FALSE ALARM after the chokepoint change of that date
+ * (one record for every custom command, plus both ends of onPlaybackResumption), or if it stays
+ * QUIET FOR A FEW WEEKS without catching a real autoplay, DELETE IT - the inventory above is
+ * the whole procedure. DO NOT ADD MORE PER-PATH CALLS.
+ * ⚠⚠ BOTH HALVES OF THAT CONDITION ARE EXIT CRITERIA, which is the part worth
+ * reading twice. Another false alarm means the probe cannot distinguish what it was built to
+ * distinguish; weeks of silence means the symptom is not occurring. Neither is an argument for
+ * another record site - three per-path calls were already added that way, and each one closed
+ * the path in front of it while the next report arrived from somewhere else. The chokepoint was
+ * the structural answer; if that is not enough, the instrument is wrong, not incomplete.
  *
  * ⚠️ PACKAGE NAMES AND NUMBERS ONLY. The only identity recorded is `ControllerInfo.packageName`
  * for an external controller and the literal "ui" for our own surfaces. No track, no queue, no
@@ -92,11 +106,54 @@ object ColdStartPlayProbe {
      * forces playWhenReady only AFTER freshContextUpcoming, a network fetch that on a Combine
      * account can easily exceed [SOURCE_WINDOW_MS]. So recording at the tap is necessary and NOT
      * sufficient; the source has to be re-asserted where the play actually originates.
+     *
+     * ⚠⚠ CALLED TWICE PER COMMAND BY DESIGN SINCE 2026-10-21, AND THE SECOND CALL
+     * IS NOT REDUNDANT. PlayerCallback.onCustomCommand now records EVERY custom command on
+     * arrival - one chokepoint, so a new command is covered without anyone remembering - and the
+     * three handlers that force play after async work (backfillQueue, the trackRadio seed,
+     * addToNext) re-stamp immediately before the play. The arrival stamp alone cannot survive a
+     * fetch longer than [SOURCE_WINDOW_MS]; the re-stamp alone cannot attribute a play that
+     * arrives WHILE the handler is still working. Keeping both is what makes the window
+     * irrelevant either way, which is why the per-path calls were not removed with the rest.
      * ⚠️ [name] IS ONE OF OUR OWN PATH LABELS, not anything about the user or the
-     * media - same class of value as the `path=` field. The data rule is unchanged.
+     * media - same class of value as the `path=` field. The arrival chokepoint passes
+     * SessionCommand.customAction, which is the literal string from PlayerCommands. The data
+     * rule is unchanged.
      */
     fun recordCommand(name: String) = record("cmd:" + name)
 
+    /**
+     * ⚠⚠ WHAT IS STILL UNATTRIBUTED, ENUMERATED 2026-10-21 SO IT IS NOT
+     * RE-DERIVED FROM THE NEXT REPORT. Every route into ShufflePlayer.play /
+     * setPlayWhenReady(true) - the only two sites that call [onPlay] - falls into one of five
+     * buckets, and only the last can still produce a false alarm:
+     *   1. CONTROLLER COMMANDS - notification, lock screen, headset/BT, Assistant, AA transport,
+     *      our own UI (PlayerViewModel.setPlaying writes through the MediaController) and
+     *      BaseWidget's ACTION_RESUME. All recorded by PlayerCallback.onPlayerCommandRequest.
+     *   2. CUSTOM COMMANDS - play, radio, track_radio, backfill, add_to_next, add_to_queue,
+     *      resume, seek_to_full and anything added later. All recorded at the top of
+     *      PlayerCallback.onCustomCommand. seekToFullIndex -> jumpForwardTo(play = true) is
+     *      reachable ONLY from seek_to_full, so it is covered by that record.
+     *   3. RESUMPTION - onPlaybackResumption(isForPlayback = true), recorded at entry AND at
+     *      completion.
+     *   4. INTERNAL RECOVERY - AudioFocusListener's focus-gain resume, PlayerEventListener's
+     *      buffering-watchdog retries and every onPlayerError retry/skip arm, PlayerRadio's
+     *      end-of-station advance. DELIBERATELY unrecorded: a report from one of these is the
+     *      finding, not noise.
+     *   5. THE ONE REMAINING GAP - ShufflePlayer.seekToDefaultPosition(mediaItemIndex), the
+     *      ANDROID AUTO QUEUE-ITEM TAP. It arrives as COMMAND_SEEK_TO_MEDIA_ITEM, and
+     *      onPlayerCommandRequest records only COMMAND_PLAY_PAUSE, so nothing stamps a source -
+     *      yet our override forces playWhenReady = true. It is reachable only with a head unit
+     *      connected, so [onPlay]'s androidAutoConnected arm absorbs it as source=androidauto
+     *      rather than filing. That arm is load-bearing for this path, not a convenience.
+     * ⚠️ SO THE SHAPE TO WATCH FOR IS A FUTURE Player.Command THAT FORCES PLAY.
+     * Bucket 1 is keyed on one command id; anything else a controller sends that ends in a play
+     * joins bucket 5 without AA's cover. If one appears, widen onPlayerCommandRequest rather than
+     * adding another per-path call - that is the mistake the chokepoint replaced.
+     * ⚠️ TWO THINGS THAT LOOK LIKE PATHS AND ARE NOT: CastSwitchPlayer.play goes
+     * to the receiver (while casting the session player is not a ShufflePlayer), and
+     * PlayerFragment's play() is the background-video ExoPlayer.
+     */
     private fun record(source: String) {
         lastSource = source
         lastSourceAtMs = SystemClock.elapsedRealtime()
