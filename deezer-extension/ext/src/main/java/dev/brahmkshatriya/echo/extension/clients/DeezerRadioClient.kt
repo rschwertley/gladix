@@ -10,6 +10,8 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.coroutines.async
@@ -309,8 +311,10 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
     private fun String.stripVersionSuffix() = replace(versionSuffixRegex, "").trim()
 
+    // Lenient (DeezerJson): callers degrade to an empty radio, which PlayerRadio already treats
+    // as a transient failure rather than content.
     private fun JsonObject.resultsArray(key: String): JsonArray? =
-        this["results"]?.jsonObject?.get(key)?.jsonArray
+        this["results"].objOrNull()?.get(key)?.arrOrNull()
 
     private fun JsonElement.safeObj(): JsonObject? =
         runCatching { this.jsonObject }.getOrNull()
@@ -320,9 +324,9 @@ class DeezerRadioClient(private val api: DeezerApi, private val parser: DeezerPa
 
     private fun JsonObject.randomTracksFromSongs(parser: DeezerParser, count: Int): List<Track> =
         runCatching {
-            val songs = this["results"]?.jsonObject
-                ?.get("SONGS")?.jsonObject
-                ?.get("data")?.jsonArray
+            val songs = this["results"].objOrNull()
+                ?.get("SONGS")?.objOrNull()
+                ?.get("data")?.arrOrNull()
                 ?: return emptyList()
             val allTracks = songs.shuffled().mapNotNull { it.safeObj()?.toTrack(parser) }
             val liked = allTracks.filter { it.extras["loved"] == "1" }

@@ -147,6 +147,19 @@ class PlayerEventListener(
     // field access with no dispatch cost.
     // SAFE because MediaSession.setPlayer() is never called anywhere in the app (verified by grep) —
     // the reference cannot go stale. If that ever changes, this must become a withContext(Main) read.
+    // ⚠️ [CORRECTED 2026-10-23] "setPlayer() IS NEVER CALLED" IS FALSE:
+    // CastSessionController sets session.player to its CastSwitchPlayer on cast start and back to
+    // the local player on cast end, and MediaSessionImpl.setPlayer (media3-session 1.11.0,
+    // :280-288) builds a NEW PlayerWrapper each time rather than re-pointing this one - so this
+    // reference IS stale from the first cast onwards. THE CONCLUSION SURVIVES, AND THE STALENESS
+    // IS THE BEHAVIOUR WE WANT: it resolves to the local ShufflePlayer/ExoPlayer, which is
+    // exactly the player this listener HEARS - PlayerService registers it on ShufflePlayer, so
+    // ForwardingPlayer.addListener targets the inner player and CastSwitchPlayer's RemoteRelay
+    // never applies to it. A live withContext(Main) read would point every stop/prepare retry and
+    // breaker below at the CAST leg while the events still came from the local one. Do not
+    // "fix" this to a live read. (The old wrapper is not released - setPlayerInternal only
+    // removes media3's own listener from it, :293-294 - so calls still forward; what is stale is
+    // that wrapper's available-command view, which nothing here reads.)
     private val player = session.player
 
     // True only while an INTERNAL seek is in flight — a buffering-watchdog re-prepare OR an onPlayerError

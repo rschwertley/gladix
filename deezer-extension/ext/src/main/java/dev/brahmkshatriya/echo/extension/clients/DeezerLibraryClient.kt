@@ -6,6 +6,8 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.coroutines.CoroutineDispatcher
@@ -95,11 +97,14 @@ class DeezerLibraryClient(
         else parser.run { arr.mapNotNull { it.jsonObject.toEchoMediaItem()?.toShelf() } }
     }
 
-    private fun JsonObject.results(): JsonObject? = this["results"]?.jsonObject
+    // Lenient at every hop (DeezerJson): an empty library tab is a genuine state, and every
+    // caller of these already treats null as "nothing to show".
+    private fun JsonObject.results(): JsonObject? = this["results"].objOrNull()
     private fun JsonObject.resultsDataArray(): JsonArray? =
-        results()?.get("data")?.jsonArray
+        results()?.get("data")?.arrOrNull()
     private fun JsonObject.tabDataArray(tabId: String): JsonArray? =
-        results()?.get("TAB")?.jsonObject?.get(tabId)?.jsonObject?.get("data")?.jsonArray
+        results()?.get("TAB")?.objOrNull()?.get(tabId)?.objOrNull()
+            ?.get("data")?.arrOrNull()
 
     // FALLBACK-graft for favorites/liked TRACKS — identical to DeezerPlaylistClient.loadTracks:
     // favorite_song.getList pre-substitutes an unavailable original with a playable-but-dead/mis-attributed

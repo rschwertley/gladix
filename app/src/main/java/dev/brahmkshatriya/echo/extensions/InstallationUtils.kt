@@ -7,11 +7,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import dev.brahmkshatriya.echo.extensions.repo.ExtensionParser.Companion.PACKAGE_FLAGS
 import dev.brahmkshatriya.echo.extensions.repo.FileRepository.Companion.getExtensionsFileDir
 import dev.brahmkshatriya.echo.utils.ContextUtils.getTempFile
@@ -25,6 +28,9 @@ import java.io.File
 import kotlin.coroutines.resume
 
 object InstallationUtils {
+
+    /** The picker closed with nothing chosen - a back-out, or a result lost to a recreation. */
+    class NoFileSelected : Exception("No file selected")
 
     // Legacy install result codes, carried in EXTRA_INSTALL_RESULT on the deprecated
     // ACTION_VIEW / ACTION_INSTALL_PACKAGE path that installApp uses.
@@ -205,7 +211,13 @@ object InstallationUtils {
             addCategory(Intent.CATEGORY_OPENABLE)
         }
         val result = waitForResult(intent)
-        val uri = result.data?.data ?: throw IllegalStateException("No file selected")
+        // ⚠️ A TYPE, NOT IllegalStateException, SO A BACK-OUT CAN BE TOLD FROM A
+        // REAL FAILURE. Both a plain cancel and an interrupted result (see [waitForResult]) land
+        // here with no URI, and neither is an error worth a snackbar or a Crashlytics non-fatal -
+        // the rule the uninstall path already follows. A copy or permission failure below still
+        // throws its own exception and still reports. Callers that cannot tell the difference keep
+        // working: ExtensionsAddBottomSheet already discards every failure with getOrNull().
+        val uri = result.data?.data ?: throw NoFileSelected()
         return getTempFile(uri)
     }
 
@@ -222,12 +234,26 @@ object InstallationUtils {
         val packageName =
             activity.packageManager.getPackageArchiveInfo(path, PACKAGE_FLAGS)?.packageName
                 ?: throw IllegalStateException("Invalid APK path or package name not found")
-        activity.packageManager.getPackageInfo(packageName, 0)
+        // ⚠⚠ ALREADY GONE MEANS DONE, NOT A CRASH. This line used to be a bare
+        // getPackageInfo call kept for its throw, so a SECOND attempt on an extension that had
+        // already been removed - a double tap, or a first attempt whose result we never saw -
+        // reported NameNotFoundException to the user for work that had completed. The caller
+        // (ExtensionsViewModel.uninstall) turns a null result into "uninstalled successfully",
+        // which is the honest answer when the package is not there.
+        if (!activity.isInstalled(packageName)) return
         val intent = Intent(Intent.ACTION_DELETE).apply {
             data = "package:$packageName".toUri()
             putExtra(Intent.EXTRA_RETURN_RESULT, true)
         }
         val result = activity.waitForResult(intent)
+        // ⚠⚠ THE PACKAGE MANAGER IS THE ARBITER ON ANY NON-OK CODE, NOT THE
+        // CODE ITSELF - THE SAME RULE installApp ALREADY APPLIES TO ITS OWN RESULT. Two ways a
+        // completed uninstall arrives here as non-OK: the system dialog returns RESULT_CANCELED on
+        // some installers even after the user confirmed, and [waitForResult] now delivers a
+        // synthetic RESULT_CANCELED when the Activity was destroyed while the dialog was up. In
+        // both cases the extension IS gone, and the branches below would report a cancellation or
+        // a failure for work that succeeded.
+        if (result.resultCode != Activity.RESULT_OK && !activity.isInstalled(packageName)) return
         when (result.resultCode) {
             Activity.RESULT_OK -> {} // uninstalled
             Activity.RESULT_CANCELED ->
@@ -266,12 +292,54 @@ object InstallationUtils {
         fileIgnoreFlow.emit(null)
     }
 
+    /** Whether [packageName] is currently installed. Absent package -> false, never a throw. */
+    private fun FragmentActivity.isInstalled(packageName: String) =
+        runCatching { packageManager.getPackageInfo(packageName, 0) }.isSuccess
+
+    /**
+     * ⚠⚠ COMPLETES ON ACTIVITY DESTROY, BECAUSE A RESULT THAT ARRIVES AFTER A
+     * RECREATION IS GONE AND THE ASKER WOULD OTHERWISE WAIT FOREVER.
+     * PermsUtils.registerActivityResultLauncher mints a RANDOM UUID key per call, and
+     * ActivityResultRegistry hands a restored pending result only to a callback registered under
+     * THAT SAME key (activity 1.13.0, register(key, contract, callback), :161-180); nothing
+     * re-registers that UUID, so a rotation or a theme change while the installer/uninstaller
+     * dialog is up drops the result. Three of the four callers suspend on a ViewModel scope,
+     * which SURVIVES the recreation - so the continuation was never resumed and never cancelled.
+     * ExtensionsViewModel.uninstall and the update pass through ensureCanInstallPackages both
+     * stranded that way, silently, for the rest of the session.
+     * ⚠️ SAME DECISION AS THE CAST BROKER, AND FOR THE SAME REASON: fail fast
+     * rather than make the result survive. Surviving needs a stable key registered on every
+     * Activity create plus a re-deliverable request; see PermsUtils.setupPermissionRequests,
+     * which completes its deferred with an `activityDestroyed` outcome from this same observer
+     * shape.
+     * ⚠️ RESULT_CANCELED, NOT AN EXCEPTION, AND THAT IS WHAT MAKES THE CALLERS
+     * A NO-OP. Every package caller already treats a non-OK code as "ask the PackageManager what
+     * actually happened" - installApp because installers lie on ACTION_VIEW,
+     * ensureCanInstallPackages because the settings screen always returns CANCELED,
+     * [uninstallApp] as of 2026-10-23. An interrupted result wants exactly that answer, so it is
+     * delivered in exactly that form.
+     * ⚠️ THE isActive GUARDS ARE REQUIRED BY THIS CHANGE, not belt and braces:
+     * resuming an already-resumed continuation throws IllegalStateException, and before the
+     * observer existed only one resume was reachable. After a normal result the observer sees an
+     * inactive continuation and does nothing, so a later destroy costs nothing.
+     */
     private suspend fun FragmentActivity.waitForResult(
         intent: Intent
     ) = suspendCancellableCoroutine { cont ->
         val contract = ActivityResultContracts.StartActivityForResult()
-        val launcher = registerActivityResultLauncher(contract) { cont.resume(it) }
-        cont.invokeOnCancellation { launcher.unregister() }
+        val launcher = registerActivityResultLauncher(contract) {
+            if (cont.isActive) cont.resume(it)
+        }
+        val observer = object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                if (cont.isActive) cont.resume(ActivityResult(Activity.RESULT_CANCELED, null))
+            }
+        }
+        lifecycle.addObserver(observer)
+        cont.invokeOnCancellation {
+            launcher.unregister()
+            lifecycle.removeObserver(observer)
+        }
         launcher.launch(intent)
     }
 }

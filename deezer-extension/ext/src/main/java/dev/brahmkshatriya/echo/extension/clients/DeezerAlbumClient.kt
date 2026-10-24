@@ -6,6 +6,10 @@ import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
+import dev.brahmkshatriya.echo.extension.requireObj
+import dev.brahmkshatriya.echo.extension.requireArr
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.serialization.json.JsonObject
@@ -21,7 +25,16 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
     }
 
     private suspend fun results(album: Album) =
-        (if (album.type == Album.Type.Show) api.show(album) else api.album(album))["results"]!!.jsonObject
+        // STRICT ON THE TYPE ONLY: an album or show whose envelope is a literal must NOT read as
+        // a valid album with nothing in it, so a present-but-wrong `results` throws
+        // DeezerShapeException (DeezerJson).
+        // ⚠️ THE `!!` STAYS, SO AN ABSENT KEY FAILS EXACTLY AS BEFORE. It threw
+        // a NullPointerException here and never reached Cached.loadMedia's "no longer available"
+        // path - that one fires when loadItem RETURNS a blank item, not when it throws - and
+        // nothing downstream was re-checked against a new type, so the absent case is left
+        // untouched rather than quietly re-typed. Do not "tidy" this into .requireObj alone.
+        (if (album.type == Album.Type.Show) api.show(album) else api.album(album))["results"]
+            ?.requireObj("results")!!
 
     // ══ SINGLE-SLOT HANDOFF: loadAlbum -> loadTracks ══
     // A cold album open issued THE SAME request twice. loadAlbum and loadTracks both call results(album),
@@ -83,8 +96,14 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
         if (album.type == Album.Type.Show) {
             // Same guard as the album branch: a show with no episodes, or no bookmarked episodes,
             // returns a results object without EPISODES.data — yield empty rather than NPE on !!.
-            val dataArray = resultsObject["EPISODES"]?.jsonObject?.get("data")?.jsonArray.orEmpty()
-            val bookmarkMap = api.getBookmarkedEpisodes()["results"]?.jsonObject?.get("data")?.jsonArray.orEmpty().associate { ep ->
+            // ABSENT stays empty - that is the decided behaviour above - but a PRESENT literal
+            // throws rather than silently emptying a show's episode list (DeezerJson).
+            val dataArray = resultsObject["EPISODES"]?.requireObj("EPISODES")
+                ?.get("data")?.requireArr("EPISODES.data").orEmpty()
+            // Bookmarks are lenient: no bookmarks is a genuine state and only affects resume
+            // positions, never which episodes exist.
+            val bookmarkMap = api.getBookmarkedEpisodes()["results"].objOrNull()
+                ?.get("data")?.arrOrNull().orEmpty().associate { ep ->
                 ep.jsonObject["EPISODE_ID"]?.jsonPrimitive?.content to
                         ep.jsonObject["OFFSET"]?.jsonPrimitive?.content?.toLongOrNull()
             }
@@ -96,7 +115,10 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
             // Some albums (region-restricted / unavailable / placeholder) return a valid results
             // object with no SONGS (or SONGS without data). Guard the chain instead of !! so those
             // just yield an empty track list rather than crashing album load with an NPE.
-            val dataArray = resultsObject["SONGS"]?.jsonObject?.get("data")?.jsonArray.orEmpty()
+            // As above: absent SONGS keeps the decided empty-track-list behaviour, a literal
+            // throws rather than presenting the album as having no tracks.
+            val dataArray = resultsObject["SONGS"]?.requireObj("SONGS")
+                ?.get("data")?.requireArr("SONGS.data").orEmpty()
             dataArray.mapIndexed { index, song ->
                 val currentTrack = parser.run { song.jsonObject.toTrack() }
                 val nextTrack = parser.run { dataArray.getOrNull(index + 1)?.jsonObject?.toTrack() }

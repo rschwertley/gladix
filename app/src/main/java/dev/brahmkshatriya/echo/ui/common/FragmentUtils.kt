@@ -438,13 +438,20 @@ object FragmentUtils {
      * add - PROVIDED no consumer ever requires one, because links already in the wild will lack it.
      *
      * ⚠⚠ QUERY STRING, NOT PATH SEGMENTS - AND SOMEONE WILL WANT TO "TIDY" IT INTO SEGMENTS.
-     * `/gladix/open/?ext=..` resolves to a REAL FILE (open/index.html on the Pages branch), while
-     * `/gladix/open/deezer/track/123` matches no file and is served by GitHub's 404.html fallback -
+     * `/gladix/o/?ext=..` resolves to a REAL FILE (o/index.html on the Pages branch), while
+     * `/gladix/o/deezer/track/123` matches no file and is served by GitHub's 404.html fallback -
      * which RENDERS, but with HTTP status 404. Both verify identically, because App Links matches on
      * pathPrefix and IGNORES the query, so the only difference is that the segment form hands every
      * recipient without the app a 404. Do not convert it.
+     * ⚠️ [CORRECTED 2026-10-23] THE THREE PATHS ABOVE READ `/gladix/open/…` AND
+     * `open/index.html` UNTIL TODAY. The filter is /gladix/o/ and the file this repo tracks is
+     * o/index.html, so the example naming the REAL FILE named one that does not exist - in an
+     * argument that turns on which URL resolves to a file. THE CONCLUSION IS UNAFFECTED: the
+     * query form still hits a real file and the segment form still hits the 404 fallback, so do
+     * not convert it. Same stale spelling as the heading below; see the manifest's 2026-09-24
+     * note for where it came from.
      *
-     * ⚠️ `/gladix/open/` RATHER THAN `/gladix/`, AND THE REASON IS IN A DIFFERENT REPO. App
+     * ⚠️ `/gladix/o/` RATHER THAN `/gladix/`, AND THE REASON IS IN A DIFFERENT REPO. App
      * Links VERIFICATION is host-level (assetlinks.json at the root of rschwertley.github.io covers
      * everything), but the FILTER is ours to narrow - and `/gladix/` is the obvious prefix and is
      * WRONG. The TV pairing page lives at rschwertley.github.io/gladix/pair.html, and
@@ -452,6 +459,18 @@ object FragmentUtils {
      * make that link open the app instead, breaking pairing for exactly the people who have Gladix
      * installed. NOTHING IN THIS MANIFEST OR THIS FILE REFERENCES THAT PAGE, so the constraint is
      * invisible from here - which is why it is written down rather than left to be rediscovered.
+     * ⚠️ [CORRECTED 2026-10-23] THE HEADING ABOVE READ `/gladix/open/` UNTIL TODAY,
+     * WHILE [GLADIX_LINK_PREFIX] AND THE MANIFEST'S data ELEMENT HAVE ALWAYS SAID /gladix/o/.
+     * Prose only - nothing behavioural - and the SAME stale spelling the manifest corrected in
+     * its own comment on 2026-09-24, which survived here because that fix never crossed files.
+     * That note lists THREE PLACES, ONE VALUE (the filter, the constant, o/index.html in the
+     * repo root) and says nothing checks that they agree; this prose was the fourth.
+     * ⚠️ [CORRECTED 2026-10-23] R.string.tv_pairing_option_3 NO LONGER EXISTS. The
+     * browser pairing route was removed from the TV screen, and as of 2026-10-23
+     * rschwertley.github.io/gladix/pair.html returns 404. The pairing worker also accepts only
+     * POST /pair and answers no OPTIONS preflight, so that page could not have reached it anyway.
+     * THE NARROW PATH FILTER STANDS ON ITS OWN MERITS - it is simply no longer protecting that
+     * link, so do not widen it on the grounds that the reason above has gone.
      *
      * Param names match the echo:// form where they overlap (`name`), so the two stay readable side
      * by side.

@@ -17,6 +17,7 @@ import androidx.media3.common.Rating
 import androidx.media3.common.ThumbRating
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaButtonReceiver
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.SessionCommand
@@ -29,6 +30,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
+import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
 import dev.brahmkshatriya.echo.common.clients.ArtistClient
 import dev.brahmkshatriya.echo.common.clients.LikeClient
@@ -128,6 +130,44 @@ class PlayerCallback(
         controller: MediaSession.ControllerInfo,
         playerCommand: Int,
     ): Int {
+        // ⚠⚠ A CONTROLLER STOP BECOMES A PAUSE, BECAUSE stop() LEAVES
+        // STATE_IDLE WITH playWhenReady STILL TRUE. Field evidence (build 1144, SM-S918B,
+        // Android 17): an external controller sent STOP, MediaSessionStub -> PlayerWrapper.stop
+        // -> ExoPlayer.stop left exactly that, and PlayerEventListener's idle-settle guard had
+        // to pause it 250 ms later - which is the backstop doing its job, not the fix.
+        // ⚠⚠ THE PLAYER CANNOT BE THE HOOK, AND THAT IS WHY THIS IS HERE.
+        // Twenty-two internal callers stop the session player directly - every stop/seek/prepare
+        // retry and consecutive-skip breaker in PlayerEventListener, plus PlayerService's
+        // clear-queue receiver and onTaskRemoved - and they NEED STATE_IDLE (the retries to
+        // re-prepare, the breakers to drop the notification and leave foreground). A stop()
+        // override on ShufflePlayer would catch all of them; a session callback catches none.
+        // ⚠️ isMediaNotificationController EXCLUDES THE NOTIFICATION SWIPE,
+        // WHICH MUST STILL STOP. DefaultMediaNotificationProvider sets the notification's delete
+        // intent to createNotificationDismissalIntent, whose default is COMMAND_STOP
+        // (MediaNotification.java:124-126, 1.11.0), and MediaSessionService dispatches it with
+        // callerInfo = getMediaNotificationControllerInfo (:548). Converting it would be worse
+        // than a no-op: a paused READY player satisfies
+        // MediaNotificationManager.shouldShowNotification (:382-387), which also RESETS
+        // wasNotificationDismissed, so the swiped notification would be re-posted by the pause
+        // event itself. MediaSessionImpl.resolveControllerInfoForCallback (:1178-1187) maps the
+        // System UI controller onto the same info, so one test covers the shade too.
+        // ⚠️ A HARDWARE/BT STOP DOES NOT ARRIVE HERE IN A DISTINGUISHABLE
+        // FORM - see [onMediaButtonEvent], which is where that one is handled. media3 turns a
+        // KEYCODE_MEDIA_STOP into sessionStub.stopForControllerInfo(mediaNotificationController)
+        // (MediaSessionImpl:1749-1751), i.e. it reaches this callback wearing the notification
+        // controller's identity and would be excluded by the line below. Handling it earlier is
+        // not belt-and-braces; it is the only place the two are separable.
+        // ⚠️ onTransportIntent() FIRST, AND IT IS NOT COSMETIC: a stop()
+        // changes no playWhenReady, so today a STOP leaves a focus-resume authorisation armed -
+        // the 1141 shape with a controller instead of a finger. A STOP is the user saying stop,
+        // so it revokes the authorisation exactly as a pause press does.
+        if (playerCommand == Player.COMMAND_STOP &&
+            !session.isMediaNotificationController(controller)
+        ) {
+            onTransportIntent()
+            session.player.pause()
+            return SessionResult.RESULT_ERROR_NOT_SUPPORTED
+        }
         if (playerCommand == Player.COMMAND_PLAY_PAUSE) {
             ColdStartPlayProbe.recordController(controller.packageName)
             // ⚠⚠ EVERY EXTERNAL AND IN-APP TRANSPORT PRESS PASSES HERE, AND NO
@@ -209,7 +249,47 @@ class PlayerCallback(
                 return true
             }
         }
+        // ⚠⚠ A HARDWARE/BT STOP KEY BECOMES A PAUSE, AND THIS IS THE ONLY
+        // PLACE IT CAN BE TOLD FROM A NOTIFICATION SWIPE. Both end up as COMMAND_STOP on the
+        // media notification controller (MediaSessionImpl.applyMediaButtonKeyEvent:1749-1751,
+        // 1.11.0), so by the time [onPlayerCommandRequest] sees them they are identical. They
+        // differ only in the INTENT, which this callback receives and that one does not:
+        // DefaultActionFactory.createNotificationDismissalIntent (:116-124) puts
+        // NOTIFICATION_DISMISSED_EVENT_KEY=true in the extras, and
+        // createMediaButtonIntentInternal then adds EXTRA_KEY_EVENT = KeyEvent(ACTION_DOWN,
+        // KEYCODE_MEDIA_STOP) to the same Intent - the one MediaSessionImpl.onMediaButtonEvent
+        // (:1613-1625) hands us BEFORE any of its own handling. So the dismissal falls through
+        // to a real stop(), and only a key from outside is converted.
+        // ⚠️ ACTION_DOWN ONLY. A media key arrives as DOWN then UP; media3's
+        // own handler acts on DOWN and merely reports the non-DOWN actions as consumed
+        // (:1629-1659), so letting UP fall through costs nothing and pauses once rather than
+        // twice.
+        // ⚠️ THE READ IS DUPLICATED RATHER THAN SHARED WITH THE BLOCK
+        // ABOVE, DELIBERATELY. That block is the Aug 7b post-disconnect suppression; it is
+        // load-bearing, it is unchanged here, and a refactor to hoist the key event out of it
+        // would make this diff touch it. The two branches are disjoint anyway - that one matches
+        // only KEYCODE_MEDIA_PLAY - so the order between them cannot change either behaviour.
+        if (intent.isMediaStopKeyDown() && !intent.getBooleanExtra(
+                MediaNotification.NOTIFICATION_DISMISSED_EVENT_KEY, false
+            )
+        ) {
+            onTransportIntent()
+            session.player.pause()
+            return true
+        }
         return super.onMediaButtonEvent(session, controllerInfo, intent)
+    }
+
+    /**
+     * True for the DOWN of a KEYCODE_MEDIA_STOP media-button intent. Safe on the app thread
+     * only, like the rest of this callback.
+     */
+    private fun Intent.isMediaStopKeyDown(): Boolean {
+        val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        else @Suppress("DEPRECATION") getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+        return keyEvent != null && keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_STOP &&
+            keyEvent.action == KeyEvent.ACTION_DOWN
     }
 
     override fun onConnect(
@@ -1240,6 +1320,22 @@ class PlayerCallback(
             // timeline, retry via the extension path", so returning it here would like the track twice.
             return SessionResult(SessionError.ERROR_UNKNOWN)
         }
+        // ⚠⚠ THE METADATA WRITE BELOW IS NOT ENOUGH ON ITS OWN, AND THAT WAS
+        // REPRODUCED ON DEVICE (2026-10-23, Pixel 10, Deezer): it fixes THIS timeline item, but the
+        // next MediaItem built for the same track - re-tapping it in a playlist, a second copy later
+        // in the queue, a cold restore - is replaced by StreamableMediaSource with one derived from
+        // the CACHED MediaState.Loaded, so the heart came back empty for a liked track while the
+        // overflow sheet beside it offered "Unlike". The sheet and the item page never showed it
+        // because both call refresh() after liking, which re-runs loadMedia WITHOUT preferCache and
+        // rewrites that entry as a side effect; this path has no refresh, which is why the write
+        // belongs here.
+        // ⚠️ item.extensionId AND track.id ARE THE EXACT KEY THE PLAYBACK READ
+        // USES. StreamableLoader resolves its Extension with getExtensionOrThrow(item.extensionId)
+        // and asks for state.item.id; MediaItemUtils defines `MediaItem.extensionId` as
+        // state.extensionId and `MediaItem.track` as state.item, so these two are the same strings.
+        // ⚠️ AFTER THE likeItem CALL SUCCEEDED, NEVER BEFORE: a cache that
+        // claims a like the extension refused would be worse than a stale one.
+        Cached.setTrackLiked(app, item.extensionId, track.id, liked)
         val newItem = item.run {
             buildUpon().setMediaMetadata(
                 mediaMetadata.buildUpon().setUserRating(ThumbRating(liked)).build()

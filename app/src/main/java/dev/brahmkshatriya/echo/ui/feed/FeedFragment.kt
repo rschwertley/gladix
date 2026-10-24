@@ -52,9 +52,26 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         // genuine pause gets missed. 500 is the point where a fast scroll costs zero requests.
         const val WARM_DEBOUNCE_MS = 500L
 
-        fun getBundle(title: String, subtitle: String?) = Bundle().apply {
+        /**
+         * ⚠⚠ THE IDS TRAVEL IN THE BUNDLE BECAUSE THE ACTIVITY VM DOES NOT
+         * SURVIVE PROCESS DEATH. They used to live only in the activity-scoped [VM], so a kill
+         * while locked left the restored fragment with nulls - getExtensionOrThrow(null) threw
+         * ExtensionNotFoundException(null) and the cached path's own extensionId!! threw too,
+         * i.e. a blank screen with nothing to retry. See [FeedArgs] for the precedence and for
+         * what this does NOT restore (the Feed object itself, which cannot be parcelled).
+         * ⚠️ DEFAULTED SO EXISTING CALLERS KEEP COMPILING, and there is one
+         * (FeedClickListener.openFeed). A caller that omits them simply gets today's behaviour.
+         */
+        fun getBundle(
+            title: String,
+            subtitle: String?,
+            extensionId: String? = null,
+            feedId: String? = null,
+        ) = Bundle().apply {
             putString("title", title)
             putString("subtitle", subtitle)
+            putString("extensionId", extensionId)
+            putString("feedId", feedId)
         }
     }
 
@@ -72,8 +89,21 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         val feedViewModel by viewModel<FeedViewModel>()
         if (!vm.initialized) {
             vm.initialized = true
-            vm.extensionId = activityVm.extensionId
-            vm.feedId = activityVm.feedId
+            // ⚠⚠ ARGUMENTS WIN OVER THE ACTIVITY VM - see [FeedArgs]. The VM is
+            // RAM-only, so after a process kill it holds nulls while the arguments still carry
+            // the ids. The fallback covers back-stack entries created before the ids were put
+            // in the bundle. Adapted from Evoe (github.com/Doggo785/evoe), 27eac710, UPL.
+            val (extId, fId) = FeedArgs.resolveFeedIds(
+                arguments?.getString("extensionId"),
+                arguments?.getString("feedId"),
+                activityVm.extensionId,
+                activityVm.feedId,
+            )
+            vm.extensionId = extId
+            vm.feedId = fId
+            // ⚠️ STILL FROM THE VM, AND STILL NULL AFTER A KILL. Feed<Shelf>
+            // carries lambdas and cannot be parcelled, so the loader below fails on a restore
+            // and the CACHED lambda - which needs only the two ids above - is what renders.
             vm.feed = activityVm.feed
         }
         feedViewModel.getFeedData(
@@ -84,8 +114,39 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
                 FeedData.State(extId, null, feed.getOrThrow())
             }
         ) {
+            // ⚠⚠ THROWN, NOT RETURNED AS null, AND THE DIFFERENCE IS THE WHOLE
+            // FIX. This used to be `vm.feed!!`, which threw a NullPointerException on every
+            // restored see-all (the VM is RAM-only - see the note above and [FeedArgs]).
+            // Returning null instead LOOKS like the gentler option and blanks the screen: a null
+            // loader state becomes a SUCCESSFUL PagedData.empty() in FeedData.getFeedSourceData,
+            // and PagedSource.load serves that empty page from `loaded` without ever reaching its
+            // cached fallback. Only a FAILED `loaded` reaches that fallback, so the cached feed -
+            // the thing the bundle ids were added for - renders only if this throws.
+            // ⚠️ Cached.NotFound SPECIFICALLY, because it is already routed:
+            // FeedLoadingAdapter.getStateViewType maps it to the NotLoading row, while any other
+            // exception falls to the Error row and renders its message. It is also inert - the
+            // only other reference to the type in the app is that `when` arm (nothing catches it,
+            // re-invokes a loader on it, or reports it to throwFlow/Crashlytics).
+            // ⚠️ RESIDUAL, AND THE DECISION ON IT - NOT A TO-DO. With NO cached
+            // copy this shows the empty row, whose Retry cannot succeed: a retry re-enters this
+            // lambda and vm.feed is still null. Feed<Shelf> carries lambdas and cannot be
+            // parcelled, so nothing here can rebuild it; BACK, then re-opening the shelf, is the
+            // working recovery. USER DECISION 2026-10-23: left as is, and a pop-back-to-parent on
+            // this condition was WEIGHED AND DECLINED, because the case is rare - the feed the
+            // user just opened is the MOST RECENTLY USED entry in App.getCache's kache, so the
+            // 50 MB LRU evicts it LAST, and an OS cache clear would have to land in the window
+            // between the process kill and the reopen. It comes back if that proves wrong on a
+            // device: an empty row on a see-all the user had just been looking at.
+            // ⚠️ AND THE cacheDir ARGUMENT FOR THE OPPOSITE IS THE TRAP: an
+            // earlier draft of this note read "cacheDir + LRU" as making the no-cache case
+            // common. Evictable does not mean evicted-soon under LRU, and MRU ordering is the
+            // half that reading left out. (Routing read from PagedSource.load and
+            // FeedLoadingAdapter; the no-cache outcome is INFERRED from that reading, never
+            // observed on a device.)
+            val feedId = vm.feedId ?: throw Cached.NotFound("feed")
+            val restored = vm.feed ?: throw Cached.NotFound("feed-" + vm.extensionId + "-" + feedId)
             val extension = music.getExtensionOrThrow(vm.extensionId)
-            val feed = savingFeed(app, extension, vm.feedId!!, vm.feed!!)
+            val feed = savingFeed(app, extension, feedId, restored)
             FeedData.State(extension.id, null, feed)
         }
     }

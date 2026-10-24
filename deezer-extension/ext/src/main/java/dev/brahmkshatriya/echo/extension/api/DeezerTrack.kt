@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extension.api
 
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -83,15 +84,56 @@ class DeezerTrack(private val deezerApi: DeezerApi) {
         )
     }
 
+    /**
+     * ⚠⚠ ALREADY LIKED IS SUCCESS, AND THE CALLER MUST SEE IT THAT WAY. The
+     * gateway answers ERROR_DATA_EXISTS when the song is already in Loved Tracks, which is the
+     * state the caller asked for - so swallowing it here lets likeItem return normally, and the
+     * HOST then does what it does on success: PlayerCallback.applyRating writes the metadata
+     * rating AND Cached.setTrackLiked, so the heart ends up correct instead of a snackbar plus a
+     * report plus a heart still showing the stale value. See
+     * DeezerGatewayException.isAlreadyFavorite for the 1144 report this comes from.
+     * ⚠️ THE SESSION SET NEEDS NOTHING, AND THAT IS WORTH CHECKING RATHER
+     * THAN ASSUMING. DeezerExtension.likeItem adds to likedTrackIds BEFORE this call, so on the
+     * swallowed path the set already says liked - which is exactly right. (The inverse is a
+     * pre-existing gap and is not touched here: on a GENUINE failure the set keeps the
+     * optimistic value. isItemLiked would then lie until the next fetchLikedTrackIds.)
+     * ⚠️ HERE RATHER THAN IN likeItem, so saveToLibrary's Track branch - the
+     * other caller of this method, with the same meaning - gets it too. Only the SONG add is
+     * wrapped; album/playlist/show favourites are left exactly as they are, because none of them
+     * has produced this report and the narrow-match rule applies to call sites as well as codes.
+     */
     suspend fun addFavoriteTrack(id: String) {
-        deezerApi.callApi(
-            method = "favorite_song.add",
-            paramsBuilder = {
-                put("SNG_ID", id)
-            }
-        )
+        try {
+            deezerApi.callApi(
+                method = "favorite_song.add",
+                paramsBuilder = {
+                    put("SNG_ID", id)
+                }
+            )
+        } catch (e: DeezerGatewayException) {
+            if (!e.isAlreadyFavorite) throw e
+        }
     }
 
+    /**
+     * ⚠⚠ THE MIRROR CASE IS UNHANDLED BECAUSE THE CODE IS UNKNOWN, NOT
+     * BECAUSE IT CANNOT HAPPEN. Unliking a song Deezer does not have liked is the same shape as
+     * the add above (a song unliked in the Deezer app after our media-state was cached), and the
+     * honest answer would be the same: the state the caller asked for already holds.
+     * ⚠️ WHAT WAS SEARCHED, 2026-10-24, SO IT IS NOT REPEATED: d-fi
+     * (d-fi-core/src/lib/request.ts) handles only NEED_API_AUTH_REQUIRED, code 4, GATEWAY_ERROR
+     * and VALID_TOKEN_REQUIRED; refreezer (lib/api/deezer.dart:331) calls favorite_song.remove
+     * with NO error handling at all; deezer-py's gw.py was not reachable at the paths tried.
+     * No open-source client handles a failed favourite REMOVE, which is consistent with clients
+     * only removing what they just listed. GUESSING A CODE HERE WOULD BE THE EXACT THING
+     * [DeezerGatewayException.isEmptyTracklist]'s note forbids: widen on an observed string,
+     * never pre-emptively.
+     * ⚠️ THE INSTRUMENT ALREADY EXISTS, WHICH IS WHY THIS IS A WAIT AND NOT
+     * A TODO. App.kt's deezer_gateway key writes method AND errorText for every
+     * DeezerGatewayException - it is what produced the 1144 report - so the first real occurrence
+     * arrives as `gw=favorite_song.remove err=<the code>`. Add the mirror test then, against that
+     * string.
+     */
     suspend fun removeFavoriteTrack(id: String) {
         deezerApi.callApi(
             method = "favorite_song.remove",

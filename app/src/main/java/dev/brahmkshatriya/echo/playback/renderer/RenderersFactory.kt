@@ -27,6 +27,24 @@ class RenderersFactory(
             256,
         )
 
+        // ⚠⚠ FLOAT OUTPUT MUST STAY OFF, AND THIS IS NOT A TASTE QUESTION.
+        // DefaultAudioSink.configure (media3 1.11.0, :754-761) adds
+        // audioProcessorChain.getAudioProcessors() ONLY in the non-float arm; with float output on
+        // and a high-resolution PCM decode (shouldUseFloatOutput = `enableFloatOutput &&
+        // isEncodingHighResolutionPcm`, :1733-1735) the sink adds toFloatPcmAudioProcessor INSTEAD
+        // and this chain never runs - so AudioEffectsProcessor, the crossfade's hand-off mute, both
+        // ramps, the pre-roll discard, the EQ and the normalization LUT all disappear, on high-res
+        // tracks only, with no error. Deezer's HiFi FLAC (24-bit / up to 192 kHz) is precisely such
+        // a decode, which is why this is written here now.
+        // ⚠️ THE VALUE IS DefaultRenderersFactory'S PARAMETER, WHICH IS FALSE
+        // UNLESS setEnableAudioFloatOutput(true) IS CALLED - nothing in this app calls it. Passing
+        // it through rather than hardcoding false keeps that single source of truth; do not pass
+        // `true` here, and do not call that setter without reading the note at
+        // AudioEffectsProcessor.onConfigure first.
+        // ⚠️ AUDIO OFFLOAD IS THE OTHER WAY TO LOSE THIS CHAIN and it is
+        // disabled unconditionally at PlayerService.offloadPreferences
+        // (AUDIO_OFFLOAD_MODE_DISABLED, 7c6b37d1) - offload bypasses the processor chain
+        // altogether, so the crossfade would not merely sound wrong, it would not happen.
         DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setAudioProcessorChain(

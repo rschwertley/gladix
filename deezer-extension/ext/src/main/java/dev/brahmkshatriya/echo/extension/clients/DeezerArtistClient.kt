@@ -9,6 +9,8 @@ import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.serialization.json.JsonObject
@@ -21,7 +23,7 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
     fun getShelves(artist: Artist): Feed<Shelf> = PagedData.Single {
         deezerExtension.handleArlExpiration()
         val jsonObject = api.artist(artist.id)
-        val resultsObject = jsonObject["results"]?.jsonObject ?: return@Single emptyList()
+        val resultsObject = jsonObject["results"].objOrNull() ?: return@Single emptyList()
 
         orderedKeys.flatMap { key ->
             val payload = resultsObject[key] ?: return@flatMap emptyList()
@@ -103,15 +105,17 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
     suspend fun loadArtist(artist: Artist): Artist {
         deezerExtension.handleArlExpiration()
         val jsonObject = api.artist(artist.id)
-        val resultsObject = jsonObject["results"]?.jsonObject ?: return artist
+        val resultsObject = jsonObject["results"].objOrNull() ?: return artist
         return parser.run { resultsObject.toArtist() }
     }
 
     suspend fun isFollowing(item: EchoMediaItem): Boolean {
-        val dataArray = api.getArtists()["results"]?.jsonObject
-            ?.get("TAB")?.jsonObject
-            ?.get("artists")?.jsonObject
-            ?.get("data")?.jsonArray ?: return false
+        // Lenient at every hop: "not following" is the honest answer when the shape is not what
+        // we expect, and it is also what an absent key already produced. See DeezerJson.
+        val dataArray = api.getArtists()["results"].objOrNull()
+            ?.get("TAB")?.objOrNull()
+            ?.get("artists")?.objOrNull()
+            ?.get("data")?.arrOrNull() ?: return false
 
         return dataArray.any { artistItem ->
             val artistId = artistItem.jsonObject["ART_ID"]?.jsonPrimitive?.content

@@ -8,6 +8,9 @@ import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
+import dev.brahmkshatriya.echo.extension.requireObj
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import java.util.Locale
@@ -74,17 +77,20 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         deezerExtension.handleArlExpiration()
         return if (query.isBlank()) {
             val jsonObject = api.getSearchHistory()
-            val resultObject = jsonObject["results"]!!.jsonObject
-            val searchObject = resultObject["SEARCH_HISTORY"]?.jsonObject
-            val dataArray = searchObject?.get("data")?.jsonArray
-            val trendingObject = resultObject["TRENDING_QUERIES"]?.jsonObject
-            val dataTrendingArray = trendingObject?.get("data")?.jsonArray
+            // STRICT on the envelope (an empty history still returns results with empty data,
+            // so a missing or literal `results` is a failure), LENIENT on the two sections -
+            // either can legitimately be absent. See DeezerJson.
+            val resultObject = jsonObject["results"].requireObj("results")
+            val searchObject = resultObject["SEARCH_HISTORY"].objOrNull()
+            val dataArray = searchObject?.get("data")?.arrOrNull()
+            val trendingObject = resultObject["TRENDING_QUERIES"].objOrNull()
+            val dataTrendingArray = trendingObject?.get("data")?.arrOrNull()
             dataArray.toQueryList("query", true) + dataTrendingArray.toQueryList("QUERY", false)
         } else {
             runCatching {
                 val jsonObject = api.searchSuggestions(query)
-                val resultObject = jsonObject["results"]?.jsonObject
-                val suggestionArray = resultObject?.get("SUGGESTION")?.jsonArray
+                val resultObject = jsonObject["results"].objOrNull()
+                val suggestionArray = resultObject?.get("SUGGESTION")?.arrOrNull()
                 suggestionArray.toQueryList("QUERY", false)
             }.getOrElse {
                 emptyList()
@@ -144,7 +150,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
     }
 
     private fun JsonObject.toBrowseShelves(shelf: String): List<Shelf> {
-        val browsePageResults = this["results"]!!.jsonObject
+        // STRICT: a browse page that silently renders nothing misstates the catalogue.
+        val browsePageResults = this["results"].requireObj("results")
         val browseSections = browsePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
         return browseSections.mapNotNull { section ->
             val id = section.jsonObject["module_id"]!!.jsonPrimitive.content
@@ -337,8 +344,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         // Replacing TRACK's data here fixes both from one edit; doing it in the lambda instead would
         // leave "All" with no Tracks shelf - and "All" is the tab CombineExtension reads, because it takes
         // `feed.tabs.firstOrNull()` and ours is Tab("All", "All").
-        val resultObject = jsonObject["results"]?.jsonObject?.let { withPipeTracks(it, query) }
-        val orderObject = resultObject?.get("ORDER")?.jsonArray
+        val resultObject = jsonObject["results"].objOrNull()?.let { withPipeTracks(it, query) }
+        val orderObject = resultObject?.get("ORDER")?.arrOrNull()
 
         val tabs = orderObject?.mapNotNull { tab ->
             val tabId = tab.jsonPrimitive.content
@@ -368,7 +375,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
 
     companion object {
         private fun logSections(label: String, page: JsonObject) {
-            val sections = page["results"]?.jsonObject?.get("sections")?.jsonArray ?: JsonArray(emptyList())
+            val sections = page["results"].objOrNull()
+                ?.get("sections")?.arrOrNull() ?: JsonArray(emptyList())
             val summary = sections.joinToString(", ") { section ->
                 val obj = section.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"

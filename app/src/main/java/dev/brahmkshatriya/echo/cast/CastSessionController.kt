@@ -5,11 +5,15 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.content.edit
 import androidx.media3.cast.RemoteCastPlayer
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import dev.brahmkshatriya.echo.common.models.ExtensionType
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
 import androidx.media3.session.MediaSession
 import com.google.android.gms.cast.MediaError
 import com.google.android.gms.cast.MediaStatus
@@ -84,6 +88,59 @@ class CastSessionController(
     private val isAndroidAutoConnected: () -> Boolean,
     private val abortCrossfade: () -> Unit,
 ) {
+
+    /**
+     * ⚠⚠ TELLS THE DEEZER EXTENSION TO ASK FOR PLAIN FLAC WHILE CASTING,
+     * BECAUSE IT CANNOT SEE CastState ITSELF. Google's Cast media documentation lists FLAC only
+     * up to 96 kHz / 24-bit, and a Deezer HiFi master can be 192 kHz - so the receiver would be
+     * handed something it is not documented to decode, AFTER we had materialised the whole file
+     * (about 145 MB for a four-minute 24/192 track, against CastStreamStore's 256 MB cap).
+     *
+     * ⚠⚠ A SECOND KEY, NEVER THE USER'S. The switch lives at `flac_24` in the
+     * extension's own prefs; this writes `flac_24_cast_off` beside it and DeezerMedia.hiFiWanted
+     * ANDs the two. Writing the user's key instead would need a save/restore pair around every
+     * session - and any crash in between would silently change a setting they chose.
+     * ⚠️ WHY THE APP REACHES INTO AN EXTENSION'S PREFS AT ALL: the decision
+     * needs app-side knowledge (a live Cast session) and the formats list is extension-side, and
+     * there is no channel between them - the extension module has no Android Context and no
+     * access to app classes. Streamable carries no per-request flag either. The precedent for
+     * app-side Deezer knowledge is TvPairingFragment.getArl, which reads that extension's user
+     * row by the same literal id.
+     * ⚠️ CLEARED AT CONSTRUCTION AS WELL AS AT SESSION END, so a process
+     * death mid-session cannot latch it: the only cost of a stale true is plain FLAC on the
+     * phone, but it would persist until the next cast session ended, which is worse than one
+     * write at service create.
+     * ⚠️ BEST-EFFORT. A prefs write cannot be allowed to fail a cast start, so
+     * the failure mode is the status quo (HiFi requested) rather than no session.
+     *
+     * ⚠⚠ IT DOES NOT COVER THE TRACK THAT WAS ALREADY RESOLVED - EXPOSURE IS
+     * THE FIRST TRACK OF A SESSION, AND THAT IS ACCEPTED RATHER THAN MISSED. [planFor] reads
+     * state.servers[track.id], i.e. the stream the LOCAL resolve already produced, so a track
+     * resolved before the session started keeps whatever format it was resolved at - this flag
+     * only reaches resolves that happen after it. It is exactly one track: per the note at
+     * [advanceLocalQueue], the next item is NOT resolved while the local player is parked, so
+     * every later track in the session is resolved after this write and gets plain FLAC. And if
+     * casting starts from a state where nothing is resolved yet, planFor returns null and the
+     * resolution re-enters later - already after the write.
+     * ⚠️ WHY NOT FORCE A RE-RESOLVE: dropping state.servers[id] would not
+     * cause one - nothing re-prepares a parked player - so planFor would find no plan and the
+     * session would stall. Making it real means replaceMediaItem(withRetry) on the local player
+     * at cast start, which spends a fresh resolve (and a token) on every session and touches the
+     * parked-player path at the moment CastSwitchPlayer is being installed. Do that only if a
+     * device actually shows the FIRST cast track failing to load; the failure mode today is the
+     * handled receiver error (failAndStop), not a crash.
+     */
+    private fun setHiFiSuppressed(suppressed: Boolean) {
+        runCatching {
+            extensionPrefId(ExtensionType.MUSIC.name, DEEZER_EXTENSION_ID)
+                .prefs(app.context)
+                .edit { putBoolean(HIFI_CAST_OFF_KEY, suppressed) }
+        }
+    }
+
+    init {
+        setHiFiSuppressed(false)
+    }
 
     private var remote: RemoteCastPlayer? = null
     private var wrapper: CastSwitchPlayer? = null
@@ -446,6 +503,9 @@ class CastSessionController(
         // Flag first, so every gate - ShufflePlayer.play, the crossfade arm, the watchdog - is closed
         // before anything else moves.
         CastState.setCasting(true)
+        // BEFORE loadCurrentOnCast below, which is what resolves the stream: set after it, the
+        // first cast track would already have been requested in HiFi. See [setHiFiSuppressed].
+        setHiFiSuppressed(true)
         abortCrossfade()
         runCatching { localPlayer.pause() }
         tracking()?.castSource = castPlayer
@@ -771,6 +831,7 @@ class CastSessionController(
         } ?: C.TIME_UNSET
 
         CastState.setCasting(false)
+        setHiFiSuppressed(false)
         tracking()?.castSource = null
         castedMediaId = null
         pendingMediaId = null
@@ -928,6 +989,15 @@ class CastSessionController(
 
     companion object {
         private const val TAG = CastAvailability.TAG
+
+        /** The extension whose HiFi request is suppressed while casting. See setHiFiSuppressed. */
+        private const val DEEZER_EXTENSION_ID = "deezer"
+
+        /**
+         * App-written key in that extension's own prefs, ANDed with the user's `flac_24` switch by
+         * DeezerMedia.hiFiWanted. Deliberately NOT the user's key - see setHiFiSuppressed.
+         */
+        private const val HIFI_CAST_OFF_KEY = "flac_24_cast_off"
 
         /**
          * Matches CastStreamStore's stall window, so a stalled copy and a stalled receiver surface in

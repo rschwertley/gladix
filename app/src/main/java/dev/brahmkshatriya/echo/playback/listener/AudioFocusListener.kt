@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
 import androidx.media3.common.Player
+import kotlin.math.PI
+import kotlin.math.sin
 
 @Suppress("DEPRECATION")
 class AudioFocusListener(
@@ -57,6 +59,110 @@ class AudioFocusListener(
 
     private var loweringVolume = false
 
+    /**
+     * ⚠⚠ WE RESUME BEFORE THE SYSTEM'S OUTPUT HAS SETTLED, AND THIS MAKES
+     * THAT INAUDIBLE RATHER THAN TRYING TO WAIT IT OUT. Measured from dumpsys audio on a
+     * Pixel 10 (build 1144, two alarms, identical shape): the alarm's player is released, our
+     * AudioTrack starts 5-11 ms later on this listener's AUDIOFOCUS_GAIN, and 200-270 ms after
+     * that the system MUTES our track ("muted updated source:streamVolume") while it flips the
+     * shared output back off the interrupter's route - unmuting 260-390 ms later again. A plain
+     * pause -> play shows neither the mute nor the flip, which is what identifies the route
+     * switch rather than anything of ours. So the first ~0.6 s of a focus resume is cut.
+     * With a 1 s sin² ramp the gain is about -32 dB at the first step, -20 dB where the
+     * mute lands and -3 dB around the unmute edge: the system cuts near-silence, and the
+     * audio is most of the way up by the time it hands the route back.
+     *
+     * ⚠⚠ player.volume, NOT AudioEffectsProcessor's FADE - AND THE PROCESSOR
+     * FADE WOULD ARRIVE TOO LATE TO HELP. A pause does not flush the sink, so the already
+     * processed, full-level PCM queued in the AudioTrack is what plays FIRST on resume - which
+     * is exactly the window before the mute. startFadeIn only attenuates frames processed
+     * after the call, so it could not reach that audio; a player volume write is a per-track
+     * gain at the sink and attenuates what is already queued. Two further reasons it had to
+     * be this side: the processor's rampTotalFrames/fadeIn/fadeOut registers belong to the
+     * crossfade and a focus resume mid-overlap would stomp a live hand-off ramp, and they are
+     * per-processor, so the tail (its own instance) would have kept playing at full level.
+     *
+     * ⚠️ sin², NOT sin: THIS IS ONE LEG, NOT A CROSSOVER. Equal power
+     * (sin/cos, unsquared) is what two summed legs need - see the note at
+     * AudioEffectsProcessor.OVERLAP_PEDESTAL. A single leg fading up from silence wants the
+     * squared curve, which is also what the retired Track Fade used.
+     * ⚠️ 10 STEPS OF 100 ms, NOT 20 OF 50: every write reaches every
+     * Player.Listener AND every connected MediaController (Android Auto, the notification) as
+     * an onVolumeChanged, so the step count is traffic. USER DECISION 2026-10-23: halve it.
+     * ⚠️ EVERY FOCUS-DRIVEN RESUME GETS IT, which is all three things
+     * [armPausedForFocus] can be armed by, so there is deliberately no label test here:
+     * AUDIOFOCUS_LOSS and AUDIOFOCUS_LOSS_TRANSIENT are the alarm/ringtone/call-pause shapes
+     * measured above, and AUDIOFOCUS_REQUEST_DELAYED is NOT a track start - per the May 24
+     * record it is set when we request focus DURING AN ACTIVE CALL, so its resume lands on the
+     * call ending and crosses a call-mode and route change, i.e. the worst case of this same
+     * glitch. What is excluded is excluded structurally, not by a test: a user play never sets
+     * the latch (and [onTransportIntent] clears it), and a duck restore never pauses, so it
+     * never reaches the play() below.
+     */
+    private var fadeStepsDone = 0
+    private var pendingFade = false
+
+    private val fadeRunnable = object : Runnable {
+        override fun run() {
+            fadeStepsDone++
+            if (fadeStepsDone >= FOCUS_FADE_STEPS) {
+                // Written as exactly 1f rather than the curve's endpoint, so float error can
+                // never leave the player a hair under unity for the rest of the session.
+                pendingFade = false
+                player.volume = 1f
+                return
+            }
+            val p = fadeStepsDone.toFloat() / FOCUS_FADE_STEPS
+            val s = sin(p * (PI / 2).toFloat())
+            player.volume = s * s
+            handler.postDelayed(this, FOCUS_FADE_STEP_MS)
+        }
+    }
+
+    /**
+     * Silences the player and starts the ramp. MUST be called BEFORE play(): the point is to
+     * attenuate the PCM the sink already holds, and that plays from the first instant.
+     *
+     * ⚠️ SELF-COMPLETING, SO A play() THAT NEVER STARTS CANNOT STRAND THE
+     * PLAYER AT 0f. The ramp is driven by [handler] and reads no player state, so it reaches
+     * its last step - an exact 1f - whatever happened to the play request. The case that
+     * raises the question is real: ShufflePlayer.play REFUSES while a Cast session is live and
+     * returns without touching playWhenReady, so no callback follows and nothing else would
+     * restore the level. It ends at 1f 1 s later regardless, on a local leg that is silent
+     * during a Cast session anyway. Called only from the branch that actually calls play()
+     * (inside the RESUME_WINDOW_MS test); the stale-blocked branch never touches volume.
+     *
+     * ⚠️ [CORRECTED 2026-10-23] THIS CLASS IS NOT THE ONLY WRITER OF THE
+     * MAIN PLAYER'S VOLUME, whatever the note at ShufflePlayer.play says. PlayerFragment's
+     * playerSheetOffset observer writes `browser.value?.volume = 1 + min(0f, offset)` - a
+     * MediaController write, which reaches this same player - so a sheet drag during the ramp
+     * overwrites a step with 1f and ends the fade early. It fires only while that fragment is
+     * STARTED and only when the offset CHANGES, so a background focus resume (the measured
+     * case) cannot hit it; the worst outcome is the glitch returning for one resume, never a
+     * stranded level, since the competing write is itself 1f.
+     */
+    private fun startFocusFadeIn() {
+        cancelFocusFade()
+        fadeStepsDone = 0
+        pendingFade = true
+        player.volume = 0f
+        handler.postDelayed(fadeRunnable, FOCUS_FADE_STEP_MS)
+    }
+
+    /**
+     * ⚠️ A CANCEL ALWAYS LEAVES A SANE LEVEL, NEVER A PARTIAL ONE: 1f, or
+     * DUCK_VOLUME while a duck is in force. Anything else would strand the player quiet with
+     * no event left to fix it - the failure the dual-manager note warns about at
+     * ShufflePlayer.play. Cheap when idle: the [pendingFade] guard skips both the
+     * removeCallbacks main-queue scan and the volume write, as [cancelCommit] does.
+     */
+    private fun cancelFocusFade() {
+        if (!pendingFade) return
+        handler.removeCallbacks(fadeRunnable)
+        pendingFade = false
+        player.volume = if (loweringVolume) DUCK_VOLUME else 1f
+    }
+
     // Mirrors whether commitPauseRunnable is actually queued. cancelCommit() reads it to skip
     // handler.removeCallbacks — the framework's full MAIN-looper MessageQueue scan (removeMessagesLegacy),
     // which ANR'd on budget devices during onDestroy — when nothing is pending (the usual state at teardown).
@@ -76,6 +182,7 @@ class AudioFocusListener(
                 Log.d("GladixAudio", "AUDIOFOCUS_GAIN: playbackState=${player.playbackState} pausedForFocus=$pausedForFocus playWhenReady=${player.playWhenReady}")
                 cancelCommit()
                 if (loweringVolume) {
+                    cancelFocusFade()
                     player.volume = 1f
                     loweringVolume = false
                 }
@@ -97,7 +204,11 @@ class AudioFocusListener(
                     val armedAt = pausedForFocusProcessAgeMs
                     pausedForFocus = false
                     pausedForFocusArmedBy = null
-                    if (ageMs <= RESUME_WINDOW_MS) player.play()
+                    if (ageMs <= RESUME_WINDOW_MS) {
+                        // Before play(), and on this same thread - see [pendingFade].
+                        startFocusFadeIn()
+                        player.play()
+                    }
                     else {
                         Log.w(
                             "GladixAudio", "stale focus resume blocked: armedBy=" + armedBy +
@@ -114,6 +225,7 @@ class AudioFocusListener(
                 Log.d("GladixAudio", "AUDIOFOCUS_LOSS: playWhenReady=${player.playWhenReady}")
                 if (player.playWhenReady) {
                     cancelCommit()
+                    cancelFocusFade()
                     armPausedForFocus(ARMED_BY_LOSS)
                     player.pause()
                     postCommit()
@@ -126,11 +238,15 @@ class AudioFocusListener(
                 // player was already paused, so nothing was armed here. The latch that fired
                 // was older. Do not "fix" the auto-resume by touching this guard.
                 if (player.playWhenReady) {
+                    cancelFocusFade()
                     armPausedForFocus(ARMED_BY_TRANSIENT)
                     player.pause()
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // First: the duck is the newer decision, and a surviving ramp step would
+                // overwrite DUCK_VOLUME 100 ms later.
+                cancelFocusFade()
                 player.volume = DUCK_VOLUME
                 loweringVolume = true
             }
@@ -244,6 +360,9 @@ class AudioFocusListener(
      */
     internal fun onTransportIntent() {
         cancelCommit()
+        // The user has taken over; a ramp we started for a focus resume is no longer ours to
+        // finish, and leaving it running would walk the volume up under a user pause.
+        cancelFocusFade()
         pausedForFocus = false
         pausedForFocusArmedBy = null
         handler.postDelayed({
@@ -252,9 +371,15 @@ class AudioFocusListener(
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        // ⚠️ UNCONDITIONAL ON THE PAUSE SIDE, AND IT HAS TO BE: our own
+        // focus pauses arrive here as USER_REQUEST with pausedForFocus set, which falls past
+        // every reason test below. Cancelling on the state rather than the reason is the only
+        // form that covers them.
+        if (!playWhenReady) cancelFocusFade()
         if (playWhenReady) {
             requestFocus()
             if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && loweringVolume) {
+                cancelFocusFade()
                 player.volume = 1f
                 loweringVolume = false
             }
@@ -280,12 +405,17 @@ class AudioFocusListener(
     }
 
     fun release() {
+        cancelFocusFade()
         abandonFocus()
     }
 
     companion object {
         private const val GRACE_WINDOW_MS = 750L
         private const val DUCK_VOLUME = 0.4f
+
+        /** 10 x 100 ms = a 1 s fade-in on a focus resume. See [fadeRunnable]. */
+        private const val FOCUS_FADE_STEPS = 10
+        private const val FOCUS_FADE_STEP_MS = 100L
 
         /** How long a focus-driven pause stays resumable. See [pausedForFocusAtMs]. */
         private const val RESUME_WINDOW_MS = 30 * 60 * 1000L

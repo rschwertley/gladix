@@ -195,6 +195,12 @@
                  would make that link launch the app instead, breaking pairing for exactly the people
                  who have Gladix installed. Nothing here references that page, so the constraint is
                  invisible from this file.
+                 ⚠️ [CORRECTED 2026-10-23] R.string.tv_pairing_option_3 NO LONGER EXISTS. The
+                 browser pairing route was removed from the TV screen, and as of 2026-10-23
+                 rschwertley.github.io/gladix/pair.html returns 404. The pairing worker also accepts only
+                 POST /pair and answers no OPTIONS preflight, so that page could not have reached it
+                 anyway. THE NARROW pathPrefix STANDS ON ITS OWN MERITS - it is simply no longer
+                 protecting that link, so do not widen it on the grounds that the reason above has gone.
                  ⚠️ THIS LINE READ /gladix/open/ UNTIL 2026-09-24 WHILE THE data ELEMENT BELOW
                  HAS ALWAYS SAID /gladix/o/. Noted rather than silently corrected because the wrong
                  value very nearly got an open/index.html built on the Pages site - the landing page

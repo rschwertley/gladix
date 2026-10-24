@@ -482,8 +482,41 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         muted = false
     }
 
+    /**
+     * ⚠⚠ WHY A 16-BIT-ONLY PROCESSOR IS CORRECT, AND WHAT WOULD MAKE IT
+     * WRONG. Everything here assumes PCM 16-bit: the 65,536-entry LUT is indexed by the sample
+     * itself, and [framesFor], [frameSizeBytes] and [emittedOutputMs] all refuse any other
+     * encoding. That holds because the SINK CONVERTS BEFORE US. DefaultAudioSink.configure
+     * (media3 1.11.0, :754-761) builds the pipeline as
+     *     pipelineProcessors.addAll(availableAudioProcessors)
+     *     if (shouldUseFloatOutput(encoding)) { add(toFloatPcmAudioProcessor) }
+     *     else { add(toInt16PcmAudioProcessor); add(audioProcessorChain.getAudioProcessors()) }
+     * - so with float output off a 24-bit or 32-bit decode reaches us already converted to
+     * 16-bit. Deezer's HiFi FLAC (24-bit, up to 192 kHz) is the format that makes this worth
+     * writing down: MediaCodecAudioRenderer takes the decoder's own KEY_PCM_ENCODING when it
+     * declares one (:650-660), so the SINK may well be handed 24-bit packed - but this chain is
+     * not.
+     * ⚠️ THE RATE IS NOT CONVERTED, ONLY THE DEPTH. Nothing in that list
+     * resamples, so a 96/176.4/192 kHz stream arrives at its own rate and every per-frame cost
+     * here runs up to ~4.35x more often than at 44.1 kHz. That is a CPU fact, not a correctness
+     * one: the LUT is indexed by sample value, and every ms<->frame conversion in this file goes
+     * through the configured rate.
+     * ⚠⚠ TWO SETTINGS WOULD REMOVE THIS PROCESSOR FROM THE PIPELINE
+     * ENTIRELY, SILENTLY, AND ONLY ON HIGH-RES TRACKS. Float output is one (the branch above
+     * adds the chain's processors ONLY in the else arm, and shouldUseFloatOutput is
+     * `enableFloatOutput && isEncodingHighResolutionPcm`, :1733-1735); audio offload is the
+     * other, since it bypasses the processor chain altogether. Both are off - see the note at
+     * RenderersFactory.buildAudioSink - and both must stay off, because losing this processor
+     * loses the crossfade's hand-off mute and both ramps with no error anywhere.
+     * ⚠️ [PcmFormatProbe] IS THE CANARY FOR EXACTLY THAT. If the premise
+     * ever fails, queueInput's pass-through would hand the audio through ungained and unramped
+     * and nothing would say so; the probe reports it once per process instead.
+     */
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         configuredFormat = inputAudioFormat
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) PcmFormatProbe.onUnexpectedFormat(
+            inputAudioFormat.encoding, inputAudioFormat.sampleRate, inputAudioFormat.channelCount
+        )
         // The biquad coefficients are a function of the SAMPLE RATE, so a format change
         // invalidates them - a 44.1k shelf run at 48k sits at the wrong frequency. This is the
         // only other place [rebuildBands] is called, and between the two of them the audio thread

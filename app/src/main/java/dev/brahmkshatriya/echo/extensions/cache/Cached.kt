@@ -350,12 +350,75 @@ object Cached {
     // verifyCleanKotlinOutput enforces that for release/nightly/stable, but it cannot help a local
     // install. `inline` is required here only for `reified T`; if that need ever goes away, drop the
     // keyword and this whole hazard with it.
+    /**
+     * ⚠⚠ THE ONE DEFINITION OF THE MEDIA-STATE CACHE KEY. It used to be
+     * written out at both ends - the read in [getMedia] and the write in [loadMedia] - and a third
+     * copy was about to appear in [setTrackLiked]. A key that is spelled in three places is a key
+     * that can be spelled differently in one of them, and the failure would be silent: a write
+     * nobody reads back.
+     * ⚠️ extensionId IS THE ONE THE ITEM CARRIES, NOT A SUB-EXTENSION'S.
+     * MediaItemUtils defines `MediaItem.extensionId` AS `state.extensionId`, and the playback read
+     * resolves its Extension with getExtensionOrThrow(mediaItem.extensionId) - so the two sides are
+     * literally the same string for a Unified/Combine item too (the container's id), and there is
+     * no sub-extension variant to reconcile.
+     */
+    fun mediaStateId(extensionId: String, itemId: String) = "media-$extensionId-$itemId-state"
+
     suspend inline fun <reified T : EchoMediaItem> getMedia(
         app: App, extensionId: String, itemId: String,
     ) = runCatching {
         val fileCache = app.awaitFileCache()
-        val id = "media-$extensionId-$itemId-state"
-        fileCache.getData<MediaState.Loaded<T>>(id).getOrThrow()
+        fileCache.getData<MediaState.Loaded<T>>(mediaStateId(extensionId, itemId)).getOrThrow()
+    }
+
+    /**
+     * ⚠⚠ MAKES A LIKE SURVIVE THE NEXT REBUILD OF THE SAME TRACK. The player's
+     * heart reads MediaItem.isLiked, i.e. the userRating on the timeline item's metadata, and
+     * PlayerCallback.applyRating writes that - but the timeline item is REPLACED by
+     * StreamableMediaSource with the one StreamableLoader built from a cached MediaState.Loaded
+     * (MediaItemUtils.toMetaData derives userRating from its isLiked). So without this the next
+     * separately-built MediaItem for a liked track - re-tapping it in a playlist, a second copy
+     * further down the queue, a cold restore - came back with the PRE-LIKE heart, while the
+     * overflow sheet beside it correctly offered "Unlike" from a fresh probe.
+     * REPRODUCED ON DEVICE 2026-10-23 (Pixel 10, Deezer): liked from the player heart, re-tapped
+     * the same track in the playlist, heart empty.
+     *
+     * ⚠️ READ-MODIFY-WRITE OF A STATE THAT IS ALREADY THERE, WHICH IS WHY IT
+     * CANNOT POISON THE CACHE. It never calls loadItem and never invents an item, so the
+     * wrong-item guard in [loadMedia] has nothing to guard here: the only thing written is the
+     * state this just read back, under the key it was read from.
+     * ⚠️ A MISS IS A NO-OP, DELIBERATELY. With no cached state there is nothing
+     * stale to correct, and the next full load runs the isItemLiked probe for real - fabricating a
+     * state here would also have to invent the other four capability fields.
+     * ⚠️ MediaState.Loaded IS NOT A data class, so this spells out all nine
+     * fields rather than using copy(). A field added there must be mirrored here, AND THE COMPILER
+     * WILL NOT CATCH IT: these are named arguments, so a new field carrying a DEFAULT compiles
+     * cleanly and is silently dropped from every state this rewrites. There is a matching note at
+     * that constructor.
+     * ⚠️ THE EXTENSION IS NOT CONSULTED. The caller has already told the
+     * extension (LikeClient.likeItem succeeded); this only aligns our cache with it.
+     */
+    suspend fun setTrackLiked(
+        app: App, extensionId: String, trackId: String, liked: Boolean,
+    ) {
+        val cached = getMedia<Track>(app, extensionId, trackId).getOrNull() ?: return
+        if (cached.isLiked == liked) return
+        runCatching {
+            app.awaitFileCache().putData(
+                mediaStateId(extensionId, trackId),
+                MediaState.Loaded(
+                    extensionId = cached.extensionId,
+                    item = cached.item,
+                    isFollowed = cached.isFollowed,
+                    followers = cached.followers,
+                    isSaved = cached.isSaved,
+                    isLiked = liked,
+                    isHidden = cached.isHidden,
+                    showRadio = cached.showRadio,
+                    showShare = cached.showShare,
+                )
+            )
+        }
     }
 
     // Normalize a media id before the round-trip equality check in loadMedia below. Some extensions return a
@@ -436,6 +499,12 @@ object Cached {
             // SKIPPED ENTIRELY on this path, not half-refreshed. None of them is displayed for a queue
             // item being resolved for playback, and skipping them is exactly what happens today via the
             // throw — half-refreshing would be new behaviour nobody asked for.
+            // ⚠️ [CORRECTED 2026-10-23] "SKIPPED ENTIRELY ON THIS PATH" IS TRUE ONLY OF A
+            // CACHE HIT. preferCache short-circuits only when getMedia RETURNS something; on a miss the
+            // full load below runs with all five probes and writes the state, so a track's FIRST play
+            // does probe isLiked and does populate the cache. That is what makes a stale like possible
+            // at all - the first play stores isLiked, a later like updates the player and the extension
+            // but not that entry - and why [setTrackLiked] exists.
             // ⚠⚠ A CACHED TRACK WITH NO SERVERS IS TREATED AS A MISS, BECAUSE SUCH A STATE WAS
             // WRITTEN AS A LEGITIMATE SUCCESS AND THEN SERVED FOREVER. An extension can return a track
             // with zero streamables WITHOUT THROWING - Spotify did exactly that while it was answering
@@ -530,7 +599,7 @@ object Cached {
                     showShare = new.isShareable && extension.isClient<ShareClient>(),
                 )
                 val fileCache = app.awaitFileCache()
-                val id = "media-${extension.id}-${newState.item.id}-state"
+                val id = mediaStateId(extension.id, newState.item.id)
                 fileCache.putData(id, newState)
                 newState
             }

@@ -141,7 +141,15 @@ open class FeedClickListener(
         vm.extensionId = extensionId ?: return notFoundSnack(R.string.extension)
         vm.feedId = feedId ?: return notFoundSnack(R.string.item)
         vm.feed = feed ?: return notFoundSnack(R.string.feed)
-        fragment.openFragment<FeedFragment>(view, FeedFragment.getBundle(title.orEmpty(), subtitle))
+        // ⚠️ THE IDS GO IN THE BUNDLE TOO, NOT INSTEAD OF THE VM. Both come
+        // from the same two locals assigned just above, so this cannot change WHICH ids are
+        // used - only whether they survive a process kill. The Feed still travels via the VM
+        // because it cannot be parcelled. Adapted from Evoe (github.com/Doggo785/evoe),
+        // 27eac710, UPL.
+        fragment.openFragment<FeedFragment>(
+            view,
+            FeedFragment.getBundle(title.orEmpty(), subtitle, vm.extensionId, vm.feedId)
+        )
         afterOpen()
         return true
     }

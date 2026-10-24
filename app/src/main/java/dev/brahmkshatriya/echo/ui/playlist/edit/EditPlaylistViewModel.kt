@@ -23,8 +23,10 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.writePlaylistTracksCache
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getOrThrow
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
+import dev.brahmkshatriya.echo.extensions.InstallationUtils.NoFileSelected
 import dev.brahmkshatriya.echo.extensions.InstallationUtils.openFileSelector
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.combineTransformLatest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -251,10 +253,29 @@ class EditPlaylistViewModel(
     }.stateIn(viewModelScope, Eagerly, SaveState.Initial)
 
     fun save() = viewModelScope.launch { saveFlow.emit(Unit) }
+    /**
+     * ⚠⚠ BACKING OUT OF THE PICKER IS SILENT, AND IT WAS NOT. This used to end
+     * in getOrThrow(app.throwFlow), which emits to the flow whose collector shows a snackbar AND
+     * files a Crashlytics non-fatal (App's throwFlow collector) - so a user who opened the cover
+     * picker and pressed back got "No file selected" on screen and a crash report filed, every
+     * time. Same rule the installer work applied to a cancelled uninstall: a cancellation is not
+     * a defect.
+     * ⚠️ [NoFileSelected] COVERS BOTH CANCEL CASES - a back-out and a result
+     * lost to an Activity recreation, which InstallationUtils.waitForResult now delivers as a
+     * cancel instead of stranding this coroutine on viewModelScope forever (a ViewModel store
+     * survives the recreation, so nothing would ever have resumed it).
+     * ⚠️ EVERY OTHER FAILURE STILL REPORTS: an unreadable URI or a copy error
+     * throws from getTempFile and reaches throwFlow exactly as before. CancellationException is
+     * rethrown rather than swallowed - runCatching captures it, and dropping it here would make
+     * a cancelled scope look like a completed one.
+     */
     fun changeCover(activity: FragmentActivity) = viewModelScope.launch {
-        runCatching {
-            coverFlow.value = CoverState.Changed(activity.openFileSelector(fileType = "image/*"))
-        }.getOrThrow(app.throwFlow)
+        val file = runCatching { activity.openFileSelector(fileType = "image/*") }.getOrElse {
+            if (it is CancellationException) throw it
+            if (it !is NoFileSelected) app.throwFlow.emit(it)
+            null
+        } ?: return@launch
+        coverFlow.value = CoverState.Changed(file)
     }
 
     init {

@@ -7,6 +7,9 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.arrOrNull
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.requireObj
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.serialization.json.JsonArray
@@ -40,7 +43,13 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         if (playlist.extras.containsKey(SMART_TRACKLIST_EXTRA)) return playlist
         deezerExtension.handleArlExpiration()
         val jsonObject = api.playlist(playlist)
-        val resultsObject = jsonObject["results"]!!.jsonObject
+        // STRICT ON THE TYPE ONLY: a playlist whose envelope is a literal is a failed load, not
+        // an empty playlist - the same argument loadTracks below already makes.
+        // ⚠️ THE `!!` STAYS FOR THE ABSENT CASE, for the reason recorded at
+        // DeezerAlbumClient.results: absent threw a NullPointerException before this sweep and
+        // did not reach any "no longer available" handling, so re-typing it would change a
+        // user-visible message on a path nobody has reported. Only the literal is upgraded.
+        val resultsObject = jsonObject["results"]?.requireObj("results")!!
         return parser.run { resultsObject.toPlaylist() }
     }
 
@@ -55,7 +64,9 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // is a genuine Deezer error response (callApi returns non-CSRF errors un-thrown). Surface it with
         // Deezer's error message if available — do NOT degrade to empty, which would mask the failure as an
         // empty playlist. (message extraction is runCatching-guarded so it can never throw over the real error.)
-        val results = jsonObject["results"]?.jsonObject ?: run {
+        // objOrNull so a PRESENT literal takes this same path rather than throwing an opaque
+        // IllegalArgumentException - the error below is the readable one. See DeezerJson.
+        val results = jsonObject["results"].objOrNull() ?: run {
             val message = runCatching {
                 jsonObject["error"]?.jsonObject?.entries
                     ?.joinToString { (key, value) -> value.jsonPrimitive.contentOrNull ?: key }
@@ -171,7 +182,7 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // song.getListData returns results.data[] per chunk — the SAME shape playlist.getSongs returns, so
         // the parse below mirrors loadTracks' rather than inventing a second one.
         val entries = api.getListData(ids).flatMap { page ->
-            (page["results"] as? JsonObject)?.get("data")?.jsonArray
+            (page["results"] as? JsonObject)?.get("data")?.arrOrNull()
                 ?.filterIsInstance<JsonObject>().orEmpty()
         }
         val baseTracks = entries.mapNotNull { entry ->

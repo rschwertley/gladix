@@ -506,9 +506,26 @@ class CrossfadeController(
         runCatching { sidecar.pause() }
     }
 
-    /** playWhenReady went true again. Mirrored immediately rather than on the next tick. */
+    /**
+     * playWhenReady went true again. Mirrored immediately rather than on the next tick.
+     *
+     * ⚠⚠ THE VOLUME MIRROR IS GUARDED BY `phase == Phase.ACTIVE` AND MUST
+     * STAY INSIDE IT. Since 2026-10-22 the pre-roll is silenced with `sidecar.volume = 0f`
+     * (see [startPreRoll]), so mirroring the main player's volume in ARMED or PREROLL would
+     * UNMUTE the pre-roll and bring back the audible repeat that design removed. In ACTIVE the
+     * tail is supposed to be at the main player's level, which is the same reason [tickActive]
+     * and [activate] mirror it there and nowhere else.
+     * ⚠️ WHY IT IS HERE AT ALL: AudioFocusListener now fades the main
+     * player's volume in over 1 s on a focus resume (see its [fadeRunnable] note), and the
+     * only other mirror runs on the tick - TICK_MS = 200 ms - so without this the tail would
+     * play up to a tick LOUDER than the head, un-balancing an equal-power overlap for as long.
+     * ⚠️ BEFORE play(), so the tail never renders a frame at the wrong level.
+     */
     fun onResumed() {
-        if (phase == Phase.ACTIVE) runCatching { sidecar.play() }
+        if (phase == Phase.ACTIVE) runCatching {
+            sidecar.volume = exoPlayer.volume
+            sidecar.play()
+        }
         startTick()
     }
 

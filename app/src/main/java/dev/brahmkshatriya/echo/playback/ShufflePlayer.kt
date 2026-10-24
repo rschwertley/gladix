@@ -496,6 +496,11 @@ class ShufflePlayer(
      * ⚠️ NOT player.volume, DELIBERATELY. AudioFocusListener is the sole writer of
      * volume (the dual-manager fix), so muting here would fight it and leave the phone silent after
      * the session ends if any write were missed. Refusing to PLAY has no such failure mode.
+     * ⚠️ [CORRECTED 2026-10-23] "SOLE WRITER" IS NOT TRUE: PlayerFragment's
+     * playerSheetOffset observer also writes `browser.value?.volume = 1 + min(0f, offset)`, a
+     * MediaController write that reaches this same player. The DECISION above still holds - two
+     * writers is a stronger reason not to add a third here, not a weaker one - but do not quote the
+     * claim itself; see AudioFocusListener.startFocusFadeIn, whose fade that write can cut short.
      * ⚠️ setPlayWhenReady(false) IS STILL ALLOWED, and must be: it is how the
      * controller parks the local player at session start, and how a pause reaches the local leg
      * after the session ends. Only `true` is refused.

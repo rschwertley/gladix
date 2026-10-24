@@ -123,6 +123,25 @@ class DeezerGatewayException(
     val isAlreadyInPlaylist: Boolean
         get() = errorText.contains("ERROR_DATA_EXISTS", ignoreCase = true)
 
+    // ⚠⚠ LIKING A SONG DEEZER ALREADY HAS LIKED IS NOT A FAILURE EITHER, AND
+    // THIS IS THE SAME CODE WEARING A DIFFERENT METHOD. Reported from 1144 (Xiaomi, lang=ru):
+    // deezer_gateway = `gw=favorite_song.add err=ERROR_DATA_EXISTS ("This song already exists in
+    // this playlist")` reached the user as the fixed "Deezer refused this request." string and
+    // filed a report, for a track that WAS liked - the heart had simply gone stale, which is the
+    // Item C cache write-through fixed on 2026-10-23. It stays reachable without that bug: a song
+    // liked in the Deezer app after our media-state was cached reads as unliked here.
+    // ⚠️ SCOPED BY METHOD, NOT SHARED WITH [isAlreadyInPlaylist], EVEN THOUGH
+    // THE CODE IS IDENTICAL. That one is consulted on playlist paths and its name would lie
+    // about a favourite; this one is pinned to `favorite_*.add`, where "already exists" can only
+    // mean the thing the caller asked for is already true. Do NOT widen either to the bare code:
+    // the same narrow-match argument as [isEmptyTracklist].
+    // ⚠️ `.add` ONLY, AND THE REMOVE SIDE IS DELIBERATELY ABSENT - SEE
+    // DeezerTrack.removeFavoriteTrack. ERROR_DATA_EXISTS on a remove would be nonsense, and the
+    // code Deezer answers for removing something that is not there is NOT KNOWN.
+    val isAlreadyFavorite: Boolean
+        get() = method.startsWith("favorite_") && method.endsWith(".add") &&
+            errorText.contains("ERROR_DATA_EXISTS", ignoreCase = true)
+
     // ⚠⚠ THE STORED SESSION IS DEAD - THIS IS A SIGN-IN, NOT A REFUSAL. The gateway answers
     // NEED_USER_AUTH_REQUIRED "Require user auth" when the credentials we sent are no longer
     // accepted by a method that needs a user. Observed on 1118 (Crashlytics 8eb50552,
@@ -840,7 +859,7 @@ class DeezerApi(private val session: DeezerSession) {
 
     //<============= Media =============>
 
-    private val deezerMedia by lazy { DeezerMedia(this, clientNP) }
+    private val deezerMedia by lazy { DeezerMedia(this, session, clientNP) }
 
     suspend fun getMP3MediaUrl(track: Track, is128: Boolean): JsonObject = deezerMedia.getMP3MediaUrl(track, arl, sid, licenseToken, is128)
 
@@ -1085,8 +1104,11 @@ class DeezerApi(private val session: DeezerSession) {
             }
         }
         val body = pipeGraphQl(params)
-        val edges = body["data"]?.jsonObject?.get("search")?.jsonObject
-            ?.get("results")?.jsonObject?.get("tracks")?.jsonObject
+        // Lenient at every hop, which is the existing intent - the `as? JsonArray` at the end was
+        // already type-safe while the hops above it were not. Partial GraphQL errors are normal
+        // here (see the note below), so a missing branch means "no rows", never a throw.
+        val edges = body["data"].objOrNull()?.get("search").objOrNull()
+            ?.get("results").objOrNull()?.get("tracks").objOrNull()
             ?.get("edges") as? JsonArray
         // ⚠⚠ PARTIAL ERRORS ARE NORMAL HERE AND MUST NOT DISCARD THE ROWS. GraphQL answers HTTP
         // 200 with BOTH a populated `data` and a non-empty `errors[]` when one field of one node fails to

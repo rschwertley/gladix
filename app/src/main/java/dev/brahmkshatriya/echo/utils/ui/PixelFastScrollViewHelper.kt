@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.utils.ui
 import android.graphics.Canvas
 import android.util.Log
 import android.view.MotionEvent
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.AppBarLayout
 import me.zhanghai.android.fastscroll.FastScroller
@@ -171,6 +172,18 @@ class PixelFastScrollViewHelper(
 
     /** Sub-pixel remainder carried between frames so a long slow drag cannot drift. */
     private var pendingPixels = 0.0
+
+    /**
+     * True once this gesture has landed on the last adapter position - see [scrollTo]'s
+     * end-of-rail branch. Cleared on the first call of a gesture and on the first call that is
+     * not at the rail's end, so a finger that leaves the end and returns lands again.
+     *
+     * ⚠️ NOT AN OPTIMISATION. FastScroller re-issues the same target on every move
+     * event while the finger is held, so without this the landing would schedule a layout pass
+     * per event - and [addOnPreDrawListener] installs an ItemDecoration, which is why no layout
+     * pass here is free (the same reason [scrollTo]'s zero-delta return is load-bearing).
+     */
+    private var landedAtEnd = false
 
     // ── TRACE (2026-09-05, temporary, GladixScroll). REMOVE WITH THE INVESTIGATION. ──────────────────
     // Two lines, because the open questions live at two different moments and one cannot answer the other.
@@ -445,7 +458,63 @@ class PixelFastScrollViewHelper(
         // one to ship.
         val librarySpan = (getScrollRange() - view.height).coerceAtLeast(1)
         val fraction = offset.toDouble() / librarySpan
-        if (!gestureActive || lastFraction.isNaN()) {
+        // Computed once and reused by the end-of-rail branch below, so the two cannot drift apart.
+        val firstCall = !gestureActive || lastFraction.isNaN()
+        if (firstCall) landedAtEnd = false
+        // ⚠⚠ THE END OF THE RAIL LANDS ON THE LAST ITEM, BECAUSE THE PIXEL
+        // CEILING RECEDES AS THE DRAG DESCENDS AND THE DELTA PATH CANNOT REACH IT. The ceiling
+        // is getScrollRange() - view.height, and getScrollRange() GROWS as taller children attach
+        // (ScrollbarHelper extrapolates laidOutArea / laidOutRange * itemCount from the attached
+        // window - see [getScrollOffset]'s note and the Search capture below, 4082 at the top and
+        // 5918 further down on 33 items). So the bottom moves away from the finger: ON DEVICE, one
+        // full-rail drag down a large playlist stops just short and a second drag arrives. The TOP
+        // needs nothing - a target below 0 is clamped by scrollBy, which is exactly why song 1 was
+        // always reachable and only the bottom was not.
+        // ⚠️ THE CONDITION IS GEOMETRY, NOT THE ESTIMATE, WHICH IS WHY IT CANNOT
+        // FIRE MID-LIST. FastScroller hands us scrollOffset = scrollOffsetRange *
+        // clamp(thumbOffset, 0, thumbOffsetRange) / thumbOffsetRange, with thumbOffset =
+        // mDragStartThumbOffset + (eventY - mDragStartY) - pure finger pixels - and
+        // thumbOffsetRange = height - padding - thumbHeight, pure view geometry (AndroidFastScroll
+        // 1.3.0, decoded from the AAR). scrollOffsetRange IS our librarySpan, read in the same
+        // synchronous call, so `offset >= librarySpan` holds if and only if the library's own clamp
+        // fired: the finger is at or past the bottom of the track. For any clamped value below
+        // thumbOffsetRange the integer division gives strictly less than librarySpan, so there is
+        // no fuzzy band to choose and no tolerance to tune.
+        // ⚠️ A TRACK TAP AT THE VERY BOTTOM TAKES THIS BRANCH TOO, which is
+        // intended: FastScroller builds mDragStartThumbOffset from the tap position and clamps it
+        // the same way, so a tap on the last pixels of the rail now means "the end".
+        // ⚠️ THE SEEDING ASSIGNMENTS BELOW MUST NOT BE SKIPPED. If a gesture's
+        // FIRST call is already at the end (that track tap), returning without setting gestureSpan
+        // would leave the next move computing a delta against the PREVIOUS gesture's span - the
+        // mismatched-span failure of 2026-09-05, which on device was a 60Hz alternation between two
+        // scroll positions.
+        // ⚠️ scrollToPositionWithOffset DISPATCHES NO NESTED SCROLL, so it cannot
+        // collapse a header on its own - hence the setExpanded; and it is also why nothing else in
+        // this file's parent analysis (SwipeRefreshLayout, BottomSheetBehavior, AppBarLayout)
+        // changes: the whole drag still travels through nestedScrollBy, only the landing does not.
+        // The snap is a no-op when the header is already collapsed, which it is after any drag
+        // that crossed the first appBarRange pixels of the composite range.
+        // ⚠️ THE RAIL'S BOTTOM IS THE LAST LOADED ITEM, NOT THE LAST TRACK.
+        // PagedSource sets enablePlaceholders = false, so adapter.itemCount counts loaded items
+        // only; landing there trips Paging's prefetch and the list grows underneath. That is what
+        // the delta path already did at the loaded edge - the landing does not change which items
+        // exist, only that the edge is reached in one drag instead of approached.
+        if (offset >= librarySpan) {
+            val last = (view.adapter?.itemCount ?: 0) - 1
+            if (last >= 0 && !landedAtEnd) {
+                landedAtEnd = true
+                if (appBarRange > 0 && appBarConsumed < appBarRange)
+                    appBar?.setExpanded(false, false)
+                (view.layoutManager as? LinearLayoutManager)
+                    ?.scrollToPositionWithOffset(last, 0)
+            }
+            gestureSpan = librarySpan
+            lastFraction = fraction
+            pendingPixels = 0.0
+            return
+        }
+        landedAtEnd = false
+        if (firstCall) {
             // ⚠️ FOURTH ATTEMPT AT gestureSpan, AND IT WORKS BY DELETING WHAT THE OTHER THREE WERE TUNING.
             // DO NOT REINTRODUCE AN ESTIMATE HERE. Three revisions calibrated a running per-item mean —
             // live sample, then asymmetric EMA, then symmetric EMA — and each was wrong by a different

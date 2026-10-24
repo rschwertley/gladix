@@ -5,6 +5,8 @@ import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +34,10 @@ class DeezerHomeFeedClient(
         val jsonObject = api.page("home")
         logSections("home", jsonObject, parser)
 
-        val homePageResults = jsonObject["results"]?.jsonObject ?: JsonObject(emptyMap())
-        val homeSections = homePageResults["sections"]?.jsonArray ?: JsonArray(emptyList())
+        // Lenient, matching the existing degrade-to-empty decision: the home feed has other
+        // shelves and a page-level oddity must not take the screen down. See DeezerJson.
+        val homePageResults = jsonObject["results"].objOrNull() ?: JsonObject(emptyMap())
+        val homeSections = homePageResults["sections"].arrOrNull() ?: JsonArray(emptyList())
 
         supervisorScope {
             val shelves = homeSections.mapNotNull { section ->
@@ -91,7 +95,8 @@ class DeezerHomeFeedClient(
 
     companion object {
         private fun logSections(label: String, page: JsonObject, parser: DeezerParser) {
-            val sections = page["results"]?.jsonObject?.get("sections")?.jsonArray ?: JsonArray(emptyList())
+            val sections = page["results"].objOrNull()
+                ?.get("sections")?.arrOrNull() ?: JsonArray(emptyList())
             val summary = sections.joinToString(", ") { section ->
                 val obj = section.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "?"

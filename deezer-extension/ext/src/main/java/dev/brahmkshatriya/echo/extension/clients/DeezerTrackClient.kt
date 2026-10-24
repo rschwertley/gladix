@@ -7,6 +7,8 @@ import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSourc
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.AudioStreamProvider
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.requireObj
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import dev.brahmkshatriya.echo.extension.Utils
@@ -183,8 +185,34 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // in the abstract. The implementation above is the whole design; it is ~6 lines
                     // and no new requests.
                     val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
+                    // ⚠⚠ NO FALLBACK_ID MEANS NO REQUEST, AND api.track("") WAS
+                    // WORSE THAN USELESS. The gateway cannot return anything playable for an
+                    // empty id, so the call was spent to produce a response with no `results` -
+                    // and the `!!` below then threw an NPE into this function's own catch, which
+                    // read it as "this rung failed" and stepped down. The cost was the refused
+                    // request AND a doomed api.track("") at flac, 320 and 128 before the ladder
+                    // ran out. Throwing here instead reaches the same place by the same route
+                    // with two fewer requests.
+                    // ⚠️ THE TYPE IS DELIBERATELY THE LADDER'S OWN, NOT A NEW ONE.
+                    // MediaUnavailableException is what the !allowFallback terminators above and
+                    // the bottom rung below already throw, and this catch treats it exactly like
+                    // the NPE it replaces - descend, then surface as Unavailable. So nothing that
+                    // works today changes type: PlayerEventListener.skipFamilyOf still files it as
+                    // SkipFamily.Unavailable and the unavailable-skip path still handles it.
+                    // ⚠️ A REFETCH OF THE CURRENT TRACK WAS REJECTED HERE, and the
+                    // reason is one branch down: the token self-heal below already recovers that
+                    // way, and doing it from THIS branch would re-introduce the art overwrite the
+                    // Aug 6 merge-instead-of-replace change fixed. Blank means give up, not retry.
+                    // Adapted from Evoe (github.com/Doggo785/evoe), 409c4c5e, UPL - their version
+                    // refetches the current track; ours declines to, for the reason above.
+                    if (fallBackId.isBlank())
+                        throw MediaUnavailableException("Track not available on server")
                     val fallbackObject = api.track(fallBackId)
-                    val resultOj = fallbackObject["results"]?.jsonObject!!
+                    // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
+                    // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
+                    // this type anyway - via the catch below, two wasted rungs later.
+                    val resultOj = fallbackObject["results"].objOrNull()
+                        ?: throw MediaUnavailableException("Track not available on server")
                     val fallBackTrack = parser.run { resultOj.toTrack() }
                     val fbStreamable =
                         descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
@@ -218,7 +246,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // also fails to decode lands on THIS branch again, with the same id, forever.
                     if (!allowFallback) throw MediaUnavailableException("Track not available on server")
                     val fallbackObject = api.track(currentTrackId)
-                    val resultOj = fallbackObject["results"]?.jsonObject!!
+                    // STRICT: this re-fetch IS the recovery, so a bad shape must surface rather
+                    // than produce a track built from nothing. See DeezerJson.
+                    val resultOj = fallbackObject["results"].requireObj("results")
                     val fallBackTrack = parser.run { resultOj.toTrack() }
                     return descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
                 }
@@ -518,7 +548,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // Do not reuse this condition as an availability test. See the pattern note at HistoryEntity.toSlim.
         val track = if (original.extras["TRACK_TOKEN"].isNullOrEmpty()) {
             val fresh = runCatching {
-                api.track(original.id)["results"]?.jsonObject?.let { results ->
+                api.track(original.id)["results"].objOrNull()?.let { results ->
                     parser.run { results.toTrack() }
                 }
             }.getOrElse { if (it is CancellationException) throw it else null }

@@ -42,6 +42,8 @@ import dev.brahmkshatriya.echo.common.settings.SettingSlider
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.DeezerCountries.getDefaultCountryIndex
+import dev.brahmkshatriya.echo.extension.objOrNull
+import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerCountries.getDefaultLanguageIndex
 import dev.brahmkshatriya.echo.extension.clients.DeezerAlbumClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerArtistClient
@@ -121,6 +123,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                         // mobile data would stream 320kbps. Pinning it here caps mobile data while
                         // Wi-Fi stays on index 3 (Auto) and therefore still gets the app's Medium.
                         2
+                    ),
+                    SettingSwitch(
+                        "Use HiFi FLAC",
+                        "flac_24",
+                        "Use HiFi FLAC when available (up to 24 Bit / 192 kHz)",
+                        true
                     ),
                     SettingSlider(
                         "Image Quality",
@@ -301,6 +309,19 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      */
     override suspend fun onExtensionSelected() {
         session.settings?.let { setSettings(it) }
+        // ⚠⚠ EVERYTHING IS SWALLOWED HERE, CancellationException INCLUDED, AND
+        // THAT IS DELIBERATE - DO NOT ADD A RETHROW OF ANY TYPE. Any throw out of this
+        // function aborts Injectable.value() before injectionsMap reaches setLoginUser, and a
+        // throwing injection block is never cleared - so every later value() re-runs and
+        // re-throws. That is the 1108 lockout (Sep 14-23 record, section 7): a healthy account
+        // was locked out of the extension with valid credentials in Room, and the login screen
+        // reported "login is not supported" because the same value() gated it.
+        // ⚠️ A CANCELLATION RETHROW WAS PROPOSED AND DROPPED, 2026-10-22 (Evoe
+        // 31af449c). Structured concurrency would prefer it, but the benefit here is near zero -
+        // selection-time work is fire-and-forget and nothing awaits its result - against the
+        // same mechanism and the same line that produced the lockout. The sign-in prompt does
+        // not depend on this site: every other handleArlExpiration caller still throws, and
+        // ExceptionUtils routes AppException.LoginRequired to the login screen.
         runCatching { handleArlExpiration() }
     }
 
@@ -395,19 +416,25 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     override suspend fun listEditablePlaylists(track: Track?): List<Pair<Playlist, Boolean>> {
         handleArlExpiration()
-        val playlistList = mutableListOf<Pair<Playlist, Boolean>>()
-        val jsonObject = api.getPlaylists()
-        val resultObject = jsonObject["results"]!!.jsonObject
-        val tabObject = resultObject["TAB"]!!.jsonObject
-        val playlistObject = tabObject["playlists"]!!.jsonObject
-        val dataArray = playlistObject["data"]!!.jsonArray
-        dataArray.forEach {
-            val playlist = parser.run { it.jsonObject.toPlaylist() }
-            if (playlist.isEditable) {
-                playlistList.add(Pair(playlist, false))
-            }
+        // ⚠⚠ EVERY HOP IS A `?.objOrNull()`, NOT `!!.jsonObject`, AND THE
+        // DIFFERENCE IS A CRASH. Build 876 (June): IllegalArgumentException "Element class
+        // JsonLiteral is not a JsonObject" from this function - the gateway answered a bare
+        // literal (a `false`) where an object was expected, and `.jsonObject` throws on a
+        // PRESENT value of the wrong type. `?.` would not have helped: it guards an absent key
+        // only. See DeezerJson for the accessor's source and the two-helper rule.
+        // ⚠️ EMPTY, NOT AN ERROR, BECAUSE EMPTY IS A REAL ANSWER HERE. This
+        // feeds the add-to-playlist sheet, where "no editable playlists" is an ordinary account
+        // state the UI already renders. A genuine gateway refusal still throws earlier, from
+        // callApi's DeezerGatewayException - nothing real is swallowed by this.
+        val dataArray = api.getPlaylists()["results"]?.objOrNull()
+            ?.get("TAB")?.objOrNull()
+            ?.get("playlists")?.objOrNull()
+            ?.get("data")?.arrOrNull()
+            ?: return emptyList()
+        return dataArray.filterIsInstance<JsonObject>().mapNotNull { element ->
+            val playlist = parser.run { element.toPlaylist() }
+            if (playlist.isEditable) playlist to false else null
         }
-        return playlistList
     }
 
     override suspend fun moveTrackInPlaylist(
@@ -449,14 +476,16 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         idKey: String,
         itemId: String
     ): Boolean {
-        val dataObject = getItems()["results"]?.jsonObject
+        // objOrNull/arrOrNull rather than .jsonObject/.jsonArray: a literal here means the same
+        // thing as an absent key - we cannot tell, so the item is not saved. See DeezerJson.
+        val dataObject = getItems()["results"].objOrNull()
         val dataArray = if (idKey == "SNG_ID") {
-            dataObject?.get("data")?.jsonArray ?: return false
+            dataObject?.get("data")?.arrOrNull() ?: return false
 
         } else {
-            dataObject?.get("TAB")?.jsonObject
-                ?.values?.firstOrNull()?.jsonObject
-                ?.get("data")?.jsonArray ?: return false
+            dataObject?.get("TAB")?.objOrNull()
+                ?.values?.firstOrNull()?.objOrNull()
+                ?.get("data")?.arrOrNull() ?: return false
         }
         return dataArray.any { item ->
             val id = item.jsonObject[idKey]?.jsonPrimitive?.content
