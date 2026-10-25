@@ -21,6 +21,15 @@ object PlayerCommands {
     // changeQueue, so a client-side in-order start-playback path can correct a stale shuffle icon without reordering.
     val syncShuffleFlagCommand = SessionCommand("sync_shuffle_flag", Bundle.EMPTY)
 
+    // A queue set that must HONOUR THE CURRENT SHUFFLE STATE (Bundle "respect": Boolean). Primes the
+    // service to decide on the PLAYER THREAD as it applies the very next queue - see
+    // ShufflePlayer.notifyTapRespectShuffle. Deliberately NOT a variant of syncShuffleFlagCommand:
+    // that one is the unconditional cosmetic OFF an in-order queue set sends AFTERWARDS, and this is
+    // sent BEFORE the queue and replaces it outright - which is the whole point. A client that sent
+    // sync-off and then shuffle-on published a false OFF in between, and a second tap landing in that
+    // window read it and played in order.
+    val tapShuffleCommand = SessionCommand("tap_shuffle", Bundle.EMPTY)
+
     // Backward edge swipe on the full player. Distinct from Player.seekToPrevious so the button keeps
     // its 3s-restart behaviour - see ShufflePlayer.handlePrevious.
     val previousTrackCommand = SessionCommand("previous_track", Bundle.EMPTY)

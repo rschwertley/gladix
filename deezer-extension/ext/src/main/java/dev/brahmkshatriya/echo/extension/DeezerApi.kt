@@ -322,6 +322,25 @@ class DeezerApi(private val session: DeezerSession) {
     private val pass: String
         get() = credentials.pass
 
+    /**
+     * Does this session belong to a REAL Deezer account?
+     *
+     * ⚠⚠ TWO VALUES MEAN "NOBODY", AND BOTH ARE REACHABLE. Blank is the stored
+     * default (DeezerSession's DeezerCredentials("", "", ...)), i.e. before any credential
+     * hydration. "0" is what deezer.getUserData answers for an ANONYMOUS session - a dead ARL
+     * that Deezer accepted as a guest - and it arrives through the normal success path, so
+     * nothing upstream treats it as a failure.
+     * ⚠️ 1146 (ru, SM-G781B): user_id=0 on favorite_song.getList was refused
+     * with UNKNOWN=No loved track playlist for user "0" - Deezer correctly saying a guest has no
+     * Loved Tracks - and that refusal failed a track's PREPARE. Asking here costs nothing and is
+     * independent of Deezer's wording, which an error-text match would not be.
+     * ⚠️ NOT CONSULTED INSIDE getTracks(). The library's Tracks tab must keep
+     * surfacing the real refusal to a user who is looking at their own library; only the two
+     * best-effort membership probes short-circuit. See DeezerExtension.isTrackLoved.
+     */
+    val hasUserId: Boolean
+        get() = userId.isNotBlank() && userId != "0"
+
     private fun createOkHttpClient(useProxy: Boolean, login: Boolean = false): OkHttpClient {
         val configuredProxy = session.settings
             ?.getString("proxy")

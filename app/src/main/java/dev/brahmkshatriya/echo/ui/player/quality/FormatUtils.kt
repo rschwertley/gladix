@@ -8,6 +8,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Streamable
+import java.util.Locale
 
 object FormatUtils {
     // Every label below is BARE - no separator - and joinParts adds " • " only between the pieces that
@@ -29,16 +30,40 @@ object FormatUtils {
         else -> mime?.uppercase()
     }
 
-    private fun Format.hertzLabel() = sampleRate.takeIf { it > 0 }?.let { "$it Hz" }
+    /**
+     * kHz, not Hz: "44.1 kHz" rather than "44100 Hz". It is how sample rates are written
+     * everywhere else, and it is also the widest piece of this string - see the note on
+     * [toAudioDetails] - so the shorter form buys the bitrate room before the ellipsis reaches it.
+     *
+     * ⚠️ ONE DECIMAL ONLY WHEN IT IS NOT A WHOLE NUMBER, so the common rates read
+     * as "48 kHz" / "96 kHz" / "192 kHz" and the 44.1 family as "44.1 kHz" / "88.2 kHz" /
+     * "176.4 kHz". The one case that rounds is 22050 Hz (some podcast streams), which prints
+     * "22.1 kHz"; a second decimal for that alone would widen every other label.
+     * ⚠️ Locale.ROOT, SO THE SEPARATOR IS ALWAYS A DOT. Nothing else in this pill
+     * is localised ("320 kbps", "2ch"), and a comma decimal in a de/ru locale would read as a
+     * thousands separator on a number that is already small.
+     */
+    private fun Format.hertzLabel() = sampleRate.takeIf { it > 0 }?.let { hz ->
+        val khz = if (hz % 1000 == 0) (hz / 1000).toString()
+        else String.format(Locale.ROOT, "%.1f", hz / 1000.0)
+        "$khz kHz"
+    }
 
     private fun Format.channelLabel() = channelCount.takeIf { it > 0 }?.let { "${it}ch" }
 
     // Codec and bitrate are joined by a SPACE, not a separator, so they read as one fact ("MPEG 320 kbps",
     // "FLAC 1411 kbps", "Opus 70 kbps" - the conventional form) and, more to the point, so truncation
-    // cannot split them. These are the only two fields that VARY: sample rate and channel count are
-    // constant per extension, and sample rate is the widest piece of the string (63dp at 12sp against the
-    // bitrate's 59dp), so the old order spent the most width on the least information and pushed the
-    // bitrate to where the ellipsis reaches first. See the pill note in item_player_controls.xml.
+    // cannot split them. Codec and bitrate are also the fields that vary MOST, and sample rate was the
+    // widest piece of the string (63dp at 12sp against the bitrate's 59dp), so the old order spent the
+    // most width on the least information and pushed the bitrate to where the ellipsis reaches first.
+    // See the pill note in item_player_controls.xml.
+    // ⚠️ [CORRECTED 2026-10-24] "SAMPLE RATE AND CHANNEL COUNT ARE CONSTANT PER
+    // EXTENSION" IS NO LONGER TRUE, AND THE ORDERING ARGUMENT DOES NOT DEPEND ON IT. Deezer's HiFi
+    // FLAC is 24-bit at up to 192 kHz and is served PER SONG ("not all songs have it"), so one
+    // extension now yields 44.1 and 96 and 192 kHz on consecutive tracks - which makes the sample
+    // rate a varying field worth reading, not a constant. It keeps its position because of the WIDTH
+    // argument above, which stands on its own, and because [hertzLabel] now prints kHz and is no
+    // longer the widest piece.
     @OptIn(UnstableApi::class)
     fun Format.toAudioDetails() = joinParts(
         listOfNotNull(getMimeType(), bitrateLabel()).joinToString(" ").takeIf { it.isNotEmpty() },

@@ -49,6 +49,7 @@ import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isReplayableContext
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.queueSlim
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
@@ -110,13 +111,23 @@ private data class AutoId(
     val cst: String? = null, // album subtype (Album.Type name) — album-only; preserves Show/Book so a
                              // type-aware extension's loadAlbum branches correctly on a thin cache-miss item.
                              // New optional field; ignoreUnknownKeys makes it safe for old builds to drop.
+    val l: String? = null,  // DECLARED-LIST key: the feed said "these tracks are one list"
+                            // (Feed.Buttons.customTrackList) and the list itself is cached under this key
+                            // — see saveDeclaredList. Present only for tracks browsed through a feed
+                            // that declared one; a tap then queues the whole list from the tapped track
+                            // instead of starting a radio, matching the phone (GitHub issue #4).
+                            // Optional and additive, like cst above: an id written by an older build has
+                            // no `l` and decodes to null, which is exactly today's behaviour, and an
+                            // older build reading a new id drops the key via ignoreUnknownKeys.
 )
 
 @OptIn(ExperimentalEncodingApi::class)
-private fun encodeAutoId(trackId: String, extId: String, con: EchoMediaItem?): String {
+private fun encodeAutoId(
+    trackId: String, extId: String, con: EchoMediaItem?, listKey: String? = null
+): String {
     val payload = AutoId(
         t = trackId, e = extId, ct = con?.autoContextType(), ci = con?.id, cn = con?.title,
-        cst = (con as? Album)?.type?.name,
+        cst = (con as? Album)?.type?.name, l = listKey,
     )
     return "auto/" + Base64.UrlSafe.encode(payload.toJson().encodeToByteArray())
 }
@@ -934,6 +945,24 @@ abstract class AndroidAutoCallback(
         }
     }
 
+    /**
+     * Tell the player that the queue it is about to be handed must honour shuffle.
+     *
+     * ⚠️ CALLED IMMEDIATELY BEFORE THE RETURN, NEVER AT THE TOP OF THE BRANCH.
+     * The latch is consumed by the NEXT 3-arg setMediaItems, and the resolution work above each
+     * return site is suspending network I/O — arming before it would let an unrelated queue set
+     * (a cold-start restore landing mid-fetch) consume it instead. Same placement rule the shuffle
+     * tile's notifyShuffleTileOriginal states.
+     * ⚠️ Main thread for the player READ as well as the write: session.player is
+     * app-thread-only from Media3 1.11.0.
+     */
+    private suspend fun MediaSession.primeTapShuffle(tapShuffled: Boolean) {
+        if (!tapShuffled) return
+        withContext(Dispatchers.Main) {
+            (player as? ShufflePlayer)?.notifyTapRespectShuffle(true)
+        }
+    }
+
     @CallSuper
     override fun onSetMediaItems(
         mediaSession: MediaSession,
@@ -975,16 +1004,65 @@ abstract class AndroidAutoCallback(
 
         // Single-track tap from a playlist/album: expand to full queue at correct position
         if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith("auto/")) {
-            // In-order tap (all branches below build current+upcoming): sync the shuffle flag/icon OFF WITHOUT
-            // changeQueue. Set here (not after the framework applies the returned queue) because the ensuing
-            // setMediaItems doesn't touch the flag, so this survives — and `original` becomes the in-order queue.
-            // Main-thread hop: this future runs on a background dispatcher, but syncShuffleFlag mutates the
-            // ExoPlayer (setShuffleModeEnabled), which asserts main-thread access — the build-999 "wrong
-            // thread" crash. Only the player mutation moves to Main; resolution/build below stay on IO.
-            withContext(Dispatchers.Main) {
-                (mediaSession.player as? ShufflePlayer)?.syncShuffleFlag(false)
+            // ⚠⚠ THE SHUFFLE STATE IS READ ONCE, HERE, AND ACTED ON AT THE APPLY.
+            // A car tap now follows the same rule as a phone tap: shuffle ON keeps the tapped track
+            // first and shuffles the rest behind it, and the flag stays ON. Shuffle OFF behaves exactly
+            // as this branch always has.
+            // ⚠️ THE OFF CASE IS THE ORIGINAL CODE, UNMOVED. In-order tap (all
+            // branches below build current+upcoming): sync the shuffle flag/icon OFF WITHOUT changeQueue.
+            // Done here (not after the framework applies the returned queue) because the ensuing
+            // setMediaItems doesn't touch the flag, so this survives — and `original` becomes the
+            // in-order queue. Main-thread hop: this future runs on a background dispatcher, but
+            // syncShuffleFlag mutates the ExoPlayer (setShuffleModeEnabled), which asserts main-thread
+            // access — the build-999 "wrong thread" crash. Reading mediaSession.player is itself
+            // main-thread-only from Media3 1.11.0, which is the second reason it is inside the hop.
+            // ⚠️ THE ON CASE SYNCS NOTHING AND REORDERS NOTHING YET: it only
+            // remembers, and each return site below primes the player immediately before handing the
+            // queue back (primeTapShuffle) — the same "latch consumed by the next setMediaItems"
+            // mechanism the shuffle tile above has used since July, for the same race-free reason.
+            val tapShuffled = withContext(Dispatchers.Main) {
+                val shuffle = mediaSession.player as? ShufflePlayer
+                val on = shuffle?.shuffleModeEnabled == true
+                if (!on) shuffle?.syncShuffleFlag(false)
+                on
             }
             val auto = parseAutoId(mediaItems[0].mediaId)
+            // ⚠⚠ A DECLARED LIST WINS, AND IT IS WHAT MAKES A LIKED TRACK QUEUE
+            // THE LIKED LIST IN THE CAR. The feed said "these tracks are one list"
+            // (Feed.Buttons.customTrackList) and the browse pass cached it — see saveDeclaredList. A
+            // library Tracks tab has no Album/Playlist context, so without this the item falls through to
+            // the generic rebuild, gets a trackRadioPlaceholder and plays a radio: the car half of
+            // GitHub issue #4. Checked BEFORE the context branches, matching the phone's precedence in
+            // FeedClickListener (in practice the two are mutually exclusive: a declared key is stamped
+            // only where there is no collection context).
+            // ⚠️ EVERY MISS FALLS THROUGH TO TODAY'S BEHAVIOUR, BY DESIGN: no key
+            // (an id written by an older build), an evicted or over-gate file, or a track that is no
+            // longer in the stored list all leave this block without returning.
+            val declaredKey = auto?.l
+            val declaredExt = auto?.e
+            if (declaredKey != null && declaredExt != null) {
+                val stored = context.getFromCache<List<Track>>(
+                    declaredKey, AUTO_LIST_FOLDER, durable = true, maxBytes = AUTO_LIST_MAX_BYTES
+                )
+                val tappedIndex = stored?.indexOfFirst { it.id == auto.t } ?: -1
+                if (stored != null && tappedIndex >= 0) {
+                    // Current+upcoming from the tapped track, capped — see AA_DECLARED_QUEUE_CAP.
+                    // Context stays null: a declared list is not a collection the app can re-fetch, and a
+                    // trackRadioPlaceholder here would label a real queue as a radio. Same as the phone's
+                    // declared branch, which passes null too.
+                    val upcoming = stored.subList(tappedIndex, stored.size)
+                        .take(AA_DECLARED_QUEUE_CAP)
+                        .map {
+                            MediaItemUtils.build(
+                                app, downloadFlow.value, MediaState.Unloaded(declaredExt, it), null
+                            )
+                        }
+                    mediaSession.primeTapShuffle(tapShuffled)
+                    return@future super.onSetMediaItems(
+                        mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
+                    ).await(context)
+                }
+            }
             val cached = auto?.let {
                 context.getFromCache<Triple<Track, String, EchoMediaItem?>>(it.t, "auto", durable = true)
             }
@@ -1016,6 +1094,7 @@ abstract class AndroidAutoCallback(
                         val upcomingItems = allTracks.subList(tappedIndex, allTracks.size).map {
                             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
                         }
+                        mediaSession.primeTapShuffle(tapShuffled)
                         return@future super.onSetMediaItems(
                             mediaSession, controller, upcomingItems.toMutableList(), 0, startPositionMs
                         ).await(context)
@@ -1026,6 +1105,7 @@ abstract class AndroidAutoCallback(
                         // empty result (context load failed) falls through to the stored-track path below.
                         val upcoming = freshContextUpcoming(extId, con, track.id)
                         if (upcoming.isNotEmpty()) {
+                            mediaSession.primeTapShuffle(tapShuffled)
                             return@future super.onSetMediaItems(
                                 mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
                             ).await(context)
@@ -1041,6 +1121,7 @@ abstract class AndroidAutoCallback(
                 if (thinContext != null) {
                     val upcoming = freshContextUpcoming(auto.e, thinContext, auto.t)
                     if (upcoming.isNotEmpty()) {
+                        mediaSession.primeTapShuffle(tapShuffled)
                         return@future super.onSetMediaItems(
                             mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
                         ).await(context)
@@ -1133,6 +1214,77 @@ abstract class AndroidAutoCallback(
 
         private const val MAX_MAP_SIZE = 500
 
+        // ── Declared track lists (Feed.Buttons.customTrackList) ───────────────────────────
+        // ⚠⚠ THIS IS THE LIST THE BROWSE LAYER USED TO THROW AWAY.
+        // Feed<Shelf>.toMediaItems kept only `getPagedData(tab).pagedData` and dropped the Buttons
+        // beside it, so Android Auto never learned that a library's Tracks tab IS a collection —
+        // which is why a liked-track tap radioed while the phone (after issue #4) queues the list.
+        // ⚠️ THE FILE IS THE CARRIER, NOT THIS MAP. A tap arrives as a fresh
+        // onSetMediaItems, possibly in a later process, so the list is written to the same durable
+        // 50 MB-LRU cache the per-track "auto" Triples use and read back by key at tap time. This
+        // map only records WHICH keys have a list, so a mediaId does not advertise one that was
+        // never written; it holds no tracks and so adds nothing to the Car/AA heap.
+        // ⚠️ ITS OWN FOLDER, DELIBERATELY. The LRU is per folder and evicts
+        // oldest-first on every save, so putting multi-MB lists next to the small per-track Triples
+        // would let one list write evict thousands of them — and a missing Triple silently drops a
+        // queue item (the #1 note at Track.toItem).
+        private const val AUTO_LIST_FOLDER = "autolist"
+
+        // Same figure, same reason, as FeedClickListener.DECLARED_QUEUE_CAP on the phone: it matches
+        // ResumptionUtils' persisted-upcoming cap, so a queue cannot outlive its own restore. Keep the
+        // three in step.
+        private const val AA_DECLARED_QUEUE_CAP = 2000
+
+        // ⚠⚠ SAME FIGURE AS ResumptionUtils.QUEUE_FILE_MAX_BYTES, AND THE SAME
+        // ARITHMETIC BEHIND IT. The note at that constant measures a SLIM entry at ~0.74-1.2 KB, so
+        // a full 2000-entry slim list tops out at ~2.4 MB — this leaves ~1.7x headroom, and the
+        // read is a decodeFromStream, never a whole-file String.
+        // ⚠️ IT IS A GATE ON A FILE WE CONTROL THE SIZE OF, WHICH IS WHY IT CAN
+        // BE THIS TIGHT. The first version of this stored FULL tracks and gated at 8 MB: fat entries
+        // are tens of KB (the same constant's note measures a fat History row at ~38 KB), so a large
+        // library produced a file over ANY sane gate and the tap silently fell back to radio — the
+        // failure mode being guarded against here, caused by the thing being guarded. Slim first,
+        // gate second.
+        private const val AUTO_LIST_MAX_BYTES = 4L * 1024 * 1024
+
+        private val declaredListKeys = boundedMap<String, Boolean>()
+
+        // Id-sequence fingerprint of what was last written under each key, so re-browsing a tab
+        // (back and forward, or paging) does not rewrite an identical multi-MB file. Order-sensitive
+        // on purpose: a re-sorted list IS a different queue.
+        private val declaredListSigs = boundedMap<String, Int>()
+
+        /**
+         * Cache a feed's declared track list for a tap to queue from. Called wherever a feed's
+         * Buttons are in hand; an absent or empty list REMOVES the key, so a tab that stops
+         * declaring one stops stamping ids with it rather than pointing at a stale file.
+         *
+         * ⚠⚠ SLIM ENTRIES, FOR THE REASON THE QUEUE FILE IS SLIM. Full Tracks
+         * carry streamables/extras/description and run to tens of KB each (ResumptionUtils'
+         * QUEUE_FILE_MAX_BYTES note), which at 2000 entries is a file no gate can admit and a read
+         * no heap should take — the 1008/1013 OOM shape exactly. queueSlim is the queue's own rule,
+         * reused rather than restated, and it keeps the Unified routing key the slim drops.
+         * ⚠️ THE TAP RE-RESOLVES, SO NOTHING SLIM-DROPPED IS NEEDED: the items are
+         * built as MediaState.Unloaded and loadTrack repopulates streamables by id, which is the
+         * same contract a restored queue runs on every cold start (see Track.toSlim).
+         * ⚠️ OFF THE MAIN THREAD, CONFIRMED AT THE ENTRY POINT: every caller
+         * reaches here from onGetChildren, which is scope.futureCatching { } — CoroutineUtils'
+         * default context is Dispatchers.IO.
+         */
+        private fun saveDeclaredList(context: Context, key: String, tracks: List<Track>?) {
+            val capped = tracks?.takeIf { it.isNotEmpty() }?.take(AA_DECLARED_QUEUE_CAP)
+            if (capped == null) {
+                declaredListKeys.remove(key)
+                declaredListSigs.remove(key)
+                return
+            }
+            declaredListKeys[key] = true
+            val signature = capped.map { it.id }.hashCode()
+            if (declaredListSigs[key] == signature) return
+            context.saveToCache(key, capped.map { it.queueSlim() }, AUTO_LIST_FOLDER, durable = true)
+            declaredListSigs[key] = signature
+        }
+
         private fun <K, V> boundedMap(): MutableMap<K, V> =
             Collections.synchronizedMap(object : LinkedHashMap<K, V>(16, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?) = size > MAX_MAP_SIZE
@@ -1148,6 +1300,8 @@ abstract class AndroidAutoCallback(
             tracksMap.clear()
             continuations.clear()
             extensionIconCache.clear()
+            declaredListKeys.clear()
+            declaredListSigs.clear()
         }
 
         private fun shuffleItem(id: String, extId: String, context: Context) = MediaItem.Builder()
@@ -1254,13 +1408,15 @@ abstract class AndroidAutoCallback(
             .build()
 
         private fun Track.toItem(
-            context: Context, extensionId: String, con: EchoMediaItem? = null
+            context: Context, extensionId: String, con: EchoMediaItem? = null,
+            listKey: String? = null
         ): MediaItem {
             // #1 durable = true → filesDir, so an OS cacheDir wipe can't evict it. #3/#4 encodeAutoId →
-            // self-describing mediaId carrying extId + context for cache-miss re-resolution.
+            // self-describing mediaId carrying extId + context for cache-miss re-resolution. listKey →
+            // the declared-list key, when the feed this item came from declared one (see AutoId.l).
             context.saveToCache(id, Triple(this, extensionId, con), "auto", durable = true)
             return MediaItem.Builder()
-                .setMediaId(encodeAutoId(id, extensionId, con))
+                .setMediaId(encodeAutoId(id, extensionId, con, listKey))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setIsPlayable(true)
@@ -1367,9 +1523,9 @@ abstract class AndroidAutoCallback(
         private val extensionIconCache = boundedMap<String, ByteArray?>()
         private val itemMap = boundedMap<String, EchoMediaItem>()
         private fun EchoMediaItem.toMediaItem(
-            context: Context, extId: String
+            context: Context, extId: String, listKey: String? = null
         ): MediaItem = when (this) {
-            is Track -> toItem(context, extId)
+            is Track -> toItem(context, extId, listKey = listKey)
             else -> {
                 val id = hashCode().toString()
                 itemMap[id] = this
@@ -1412,7 +1568,7 @@ abstract class AndroidAutoCallback(
         }
 
         private fun Shelf.toMediaItem(
-            context: Context, extId: String
+            context: Context, extId: String, listKey: String? = null
         ): MediaItem = when (this) {
             is Shelf.Category -> {
                 val items = feed
@@ -1420,7 +1576,7 @@ abstract class AndroidAutoCallback(
                 browsableItem("$ROOT/$extId/$FEED/$id", title, subtitle, items != null)
             }
 
-            is Shelf.Item -> media.toMediaItem(context, extId)
+            is Shelf.Item -> media.toMediaItem(context, extId, listKey)
             is Shelf.Lists<*> -> {
                 val id = "${id.hashCode()}"
                 listsMap[id] = this
@@ -1438,8 +1594,10 @@ abstract class AndroidAutoCallback(
             val shelf = shelvesMap[id] ?: return emptyList()
             val (list, next) = shelf.loadPage(continuations[id to page])
             continuations[id to page + 1] = next
+            // Read AFTER loadPage: for a tab node the loader above is what captures the Buttons.
+            val listKey = id.takeIf { declaredListKeys[it] == true }
             return listOfNotNull(
-                *list.map { it.toMediaItem(context, extId) }.toTypedArray()
+                *list.map { it.toMediaItem(context, extId, listKey) }.toTypedArray()
             )
         }
 
@@ -1451,12 +1609,22 @@ abstract class AndroidAutoCallback(
             if (notSortTabs.isNotEmpty()) {
                 return notSortTabs.map { tab ->
                     val shelfKey = "${feedKey}_${tab.id.hashCode()}"
-                    shelvesMap[shelfKey] = PagedData.Suspend { getPagedData(tab).pagedData }
+                    // The declared list is captured INSIDE the lazy loader, because that is the first
+                    // point the tab's Feed.Data exists — this branch only builds browsable nodes.
+                    // It therefore lands before getShelfItems reads declaredListKeys for the same key,
+                    // which is the same call that drains this PagedData.
+                    shelvesMap[shelfKey] = PagedData.Suspend {
+                        val data = getPagedData(tab)
+                        saveDeclaredList(context, shelfKey, data.buttons?.customTrackList)
+                        data.pagedData
+                    }
                     browsableItem("$ROOT/$extId/$SHELF/$shelfKey", tab.title)
                 }
             }
             if (shelvesMap[feedKey] == null) {
-                shelvesMap[feedKey] = getPagedData(null).pagedData
+                val data = getPagedData(null)
+                saveDeclaredList(context, feedKey, data.buttons?.customTrackList)
+                shelvesMap[feedKey] = data.pagedData
             }
             return getShelfItems(context, feedKey, extId, page)
         }

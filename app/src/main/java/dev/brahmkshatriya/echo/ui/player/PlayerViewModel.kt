@@ -48,6 +48,7 @@ import dev.brahmkshatriya.echo.playback.PlayerCommands.radioCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.seekToFullCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.sleepTimer
 import dev.brahmkshatriya.echo.playback.PlayerCommands.syncShuffleFlagCommand
+import dev.brahmkshatriya.echo.playback.PlayerCommands.tapShuffleCommand
 import dev.brahmkshatriya.echo.playback.PlayerCommands.trackRadioCommand
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.getController
 import dev.brahmkshatriya.echo.playback.PlayerState
@@ -622,7 +623,10 @@ class PlayerViewModel(
     // reuse one via canUpdateMediaItem), so no instance crosses a queue replace. Kept because a future
     // reader meeting "prepare accepted, nothing happened" should recognise it immediately rather than
     // re-derive it.
-    fun setQueue(id: String, list: List<Track>, index: Int, context: EchoMediaItem?) {
+    fun setQueue(
+        id: String, list: List<Track>, index: Int, context: EchoMediaItem?,
+        respectShuffle: Boolean = false,
+    ) {
         // [TEMPORARY 2026-10-19] ColdStartPlayProbe - a track tap plays through prepare(), which
         // is not a controller play COMMAND, so it has to be recorded here or it reads as unsourced.
         ColdStartPlayProbe.recordUi()
@@ -641,14 +645,31 @@ class PlayerViewModel(
                     context
                 )
             }
+            // ⚠⚠ respectShuffle = "HONOUR WHATEVER SHUFFLE STATE THE PLAYER IS IN",
+            // AND THE DECISION IS NOT MADE HERE. This side cannot make it: viewModel.shuffleMode is a
+            // mirror seeded only when PlayerUiListener attaches, so a tap before that reads a default
+            // `false`; and the old client sequence (sync-off here, setShuffle(true) at the caller) put a
+            // false OFF on the wire between two dispatches, which a second quick tap could read. So the
+            // flag is primed BEFORE the queue and read service-side on the player thread, inside the
+            // same statement that applies it - see ShufflePlayer.notifyTapRespectShuffle.
+            // ⚠️ SENT BEFORE setMediaItems, AND THAT ORDER IS LOAD-BEARING: the
+            // latch is consumed by the NEXT 3-arg setMediaItems, which is the line below. Same
+            // controller, so FIFO; same mechanism the AA shuffle tile has used since July.
+            if (respectShuffle) controller.sendCustomCommand(
+                tapShuffleCommand, Bundle().apply { putBoolean("respect", true) }
+            )
             controller.setMediaItems(mediaItems, 0, upcoming.first().playedDuration ?: 0)
             controller.prepare()
-            // In-order queue set (track tap / History) — sync the shuffle flag/icon OFF on the service player
-            // WITHOUT changeQueue (pure primitive), so the icon can't stay stale-ON from prior playback.
-            // `original` is already the in-order queue from setMediaItems, so this is cosmetic-only. FIFO after
-            // setMediaItems, and idempotent regardless of arrival order. (The feed Play/Shuffle buttons call
-            // setShuffle(...) AFTER this, which correctly overrides the flag for the Shuffle-button case.)
-            controller.sendCustomCommand(
+            // In-order queue set with no shuffle opinion (History's single-track seed) — sync the shuffle
+            // flag/icon OFF on the service player WITHOUT changeQueue (pure primitive), so the icon can't
+            // stay stale-ON from prior playback. `original` is already the in-order queue from
+            // setMediaItems, so this is cosmetic-only. FIFO after setMediaItems, and idempotent
+            // regardless of arrival order. (The feed Play/Shuffle buttons call setShuffle(...) AFTER
+            // this, which correctly overrides the flag for the Shuffle-button case.)
+            // ⚠️ SKIPPED WHEN respectShuffle IS SET, because the service then does
+            // the equivalent itself on the shuffle-is-off branch. Sending both would reintroduce the
+            // very OFF-then-ON pair this change removes.
+            if (!respectShuffle) controller.sendCustomCommand(
                 syncShuffleFlagCommand, Bundle().apply { putBoolean("enabled", false) }
             )
         }
@@ -656,6 +677,7 @@ class PlayerViewModel(
 
     fun backfillQueue(
         extensionId: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String,
+        respectShuffle: Boolean = false,
     ) = viewModelScope.launch {
         // [TEMPORARY 2026-10-20] ColdStartPlayProbe - the History tap, which had no record site
         // and filed a false ColdStartAutoplayUnexplained on 1140. Not sufficient on its own: the
@@ -668,6 +690,7 @@ class PlayerViewModel(
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
                 putString("startTrackId", startTrackId)
+                putBoolean("respect", respectShuffle)
             })
         }
     }

@@ -34,7 +34,13 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
             // Load the context fresh and play current+upcoming from the tapped track's fresh version
             // (backfillQueue now sets+plays the whole queue). The stored track is NOT replayed — only
             // its id locates the fresh one — so a frozen/stale streamable token can't skip the tap.
-            playerViewModel.backfillQueue(item.extensionId, context, false, track.id)
+            // respectShuffle: a History tap rebuilds the whole album/playlist, so it is a queue set
+            // like any other and follows the same rule as a feed tap - shuffle ON keeps the tapped
+            // track first and shuffles the rest. The seed path below sets a ONE-TRACK queue, where
+            // there is nothing to shuffle, so it stays as it was.
+            playerViewModel.backfillQueue(
+                item.extensionId, context, false, track.id, respectShuffle = true
+            )
         } else {
             // Seed path: force the STARTING TRACK, keep the station. The queue is set to the tapped track
             // alone; PlayerRadio then generates from it and APPENDS (PlayerRadio.play uses addMediaItems),

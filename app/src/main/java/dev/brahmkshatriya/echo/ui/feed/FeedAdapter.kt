@@ -201,6 +201,10 @@ class FeedAdapter(
         fragment.observe(viewModel.tabsFlow) { tabs.data = it }
         fragment.observe(viewModel.selectedTabIndexFlow) { tabs.selected = it }
         var buttonsAdapter: ButtonsAdapter? = null
+        // Last declared track list for this feed, read by the tap path AT TAP TIME rather than
+        // captured when it arrives - see FeedClickListener.declaredTracks.
+        var declaredTracks: List<Track>? = null
+        listener.declaredTracks = { declaredTracks }
         val speechLauncher = fragment.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -225,6 +229,12 @@ class FeedAdapter(
         fragment.observe(viewModel.buttonsFlow) {
             buttons.buttons = it
             isPlayButtonShown = it?.buttons?.showPlayAndShuffle == true
+            // The same Feed.Buttons the Play/Shuffle buttons read, handed to the tap path: a
+            // track the extension declared as part of a collection queues the whole collection
+            // instead of starting a radio. See FeedClickListener.declaredTracks. Set here and not
+            // only where isPlayButtonShown is, because a feed may declare the list WITHOUT
+            // showing the buttons - Library -> All does exactly that.
+            declaredTracks = it?.buttons?.customTrackList
         }
         val loadStateListener = fragment.createListener { retry() }
         val header = FeedLoadingAdapter(loadStateListener) { LoadingViewHolder(it) }

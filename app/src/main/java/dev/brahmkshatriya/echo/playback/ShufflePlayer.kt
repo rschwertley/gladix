@@ -98,6 +98,84 @@ class ShufflePlayer(
         pendingShuffleTileOriginal = unshuffled
     }
 
+    // ── Shuffle-respecting queue set (tap), and the restored un-shuffle order ──────────────
+    // Both are one-shot latches consumed by the next 3-arg [setMediaItems], the same mechanism
+    // pendingShuffleTileOriginal has used since July: set by the entry point immediately before the
+    // queue is applied, with no other setMediaItems able to intervene.
+    private var pendingTapRespectShuffle = false
+    private var pendingOriginalIds: List<String>? = null
+
+    /**
+     * "The queue about to be applied is a TAP, and it must honour whatever shuffle state the player is
+     * actually in."
+     *
+     * ⚠⚠ THE READ HAPPENS AT THE APPLY, NOT HERE, AND THAT IS THE ENTIRE REASON
+     * THIS EXISTS. A client cannot do it: PlayerViewModel.shuffleMode is a mirror that starts at a
+     * default `false` before the controller attaches, and the old client sequence (setQueue's
+     * sync-off, then setShuffle(true)) published a false OFF between two dispatches - a second tap
+     * landing in that window read OFF and played in order. Here the flag is read on the player
+     * thread, in the same statement that applies the queue, so there is no second moment to race.
+     * ⚠️ `respect = false` IS NOT A NO-OP: it means "in-order queue set", and
+     * [setMediaItems] then syncs isShuffled off for it, which is the job the client's
+     * syncShuffleFlagCommand(false) used to do on that path.
+     */
+    fun notifyTapRespectShuffle(respect: Boolean) {
+        pendingTapRespectShuffle = respect
+    }
+
+    /**
+     * The persisted un-shuffled order, as mediaIds, for the queue about to be restored.
+     *
+     * ⚠️ WITHOUT THIS, UN-SHUFFLING AFTER A RESTART RESTORED THE SHUFFLED ORDER.
+     * `original` is in-memory, so a cold restore left it equal to the restored (shuffled) queue and a
+     * toggle-OFF was a no-op wearing the right icon. Ids rather than items: the order is a permutation
+     * of a queue the restore already carries, so ~20 bytes per entry keeps it far inside
+     * ResumptionUtils' 4 MB per-file gate - and an over-gate file is dropped unread there, which
+     * degrades to exactly the old behaviour rather than failing the restore.
+     */
+    fun notifyRestoredOriginalOrder(ids: List<String>) {
+        pendingOriginalIds = ids
+    }
+
+    /**
+     * Is a shuffle-respecting queue set already on its way?
+     *
+     * ⚠⚠ READ BY PlayerCallback.applyRestoreIfCold, WHICH MUST NOT APPLY A QUEUE
+     * INTO THAT WINDOW. The latch is armed by one command and consumed by the NEXT 3-arg
+     * setMediaItems, so a cold-start restore landing between the two would consume it: it would
+     * reshuffle the RESTORED queue, and the tap that armed it would then play in order. A tap that
+     * has already been dispatched supersedes the restore anyway — the restore exists to fill an
+     * EMPTY player at app open, and this says the player is about to stop being empty.
+     * ⚠️ onPlaybackResumption IS DELIBERATELY NOT GATED ON THIS. Reaching it
+     * needs a media button inside the same few-millisecond window as a track tap, it is already
+     * bounded by resumptionApplying, and the cost if it ever happened is one mis-ordered queue that
+     * the tap's own setMediaItems replaces microseconds later — not worth declining a resume for.
+     */
+    val isTapShufflePending: Boolean get() = pendingTapRespectShuffle
+
+    /** `original` as mediaIds (= track ids), for [ResumptionUtils]. Empty when nothing is queued. */
+    val originalOrderIds: List<String> get() = original.map { it.mediaId }
+
+    // Re-apply a saved order to the items actually restored. By POOL rather than by map, because a
+    // playlist may hold the same track twice and a plain associateBy would collapse the pair and lose
+    // one of them. Anything the saved order does not name - cap drift, a queue edit after the last
+    // save - keeps its live relative order at the end, so `original` can never hold FEWER items than
+    // the queue and a later toggle-OFF cannot drop a track that is playing.
+    private fun reorderedOriginal(
+        items: List<MediaItem>, ids: List<String>
+    ): List<MediaItem> {
+        val pools = items.groupByTo(HashMap<String, MutableList<MediaItem>>()) { it.mediaId }
+        val ordered = ArrayList<MediaItem>(items.size)
+        ids.forEach { id ->
+            val pool = pools[id]
+            if (pool != null && pool.isNotEmpty()) ordered.add(pool.removeAt(0))
+        }
+        items.forEach { item ->
+            if (pools[item.mediaId]?.remove(item) == true) ordered.add(item)
+        }
+        return ordered
+    }
+
     // Sync the shuffle flag/icon to what a start-playback entry point actually did, WITHOUT physically
     // reordering (no changeQueue). The inner ExoPlayer's shuffleOrder is UnshuffledShuffleOrder (identity), so
     // setting the flag alone never changes advance order — it only fires onShuffleModeEnabledChanged (the icon).
@@ -382,20 +460,49 @@ class ShufflePlayer(
         clearErrorBeforeQueueReplace()
         val tileOriginal = pendingShuffleTileOriginal
         pendingShuffleTileOriginal = null
+        val respectShuffle = pendingTapRespectShuffle
+        pendingTapRespectShuffle = false
+        val restoredIds = pendingOriginalIds
+        pendingOriginalIds = null
+        val index = startIndex.coerceAtMost(mediaItems.size - 1)
+        // ⚠⚠ THE ONE PLACE A TAP'S SHUFFLE DECISION IS MADE, AND IT IS MADE HERE
+        // BECAUSE THIS IS THE ONLY POINT THAT IS BOTH ON THE PLAYER THREAD AND ATOMIC WITH THE APPLY.
+        // The flag read, the reorder and the application are one statement sequence with no dispatch
+        // between them, so nothing can observe a half-applied shuffle state. The physical reorder is
+        // done HERE rather than by changeQueue afterwards: the queue is applied already shuffled,
+        // which costs no remove/add churn and publishes no intermediate timeline.
+        // ⚠️ THE TAPPED TRACK STAYS FIRST. It is the item at [startIndex] (every
+        // caller builds current+upcoming with the tap at 0), so it is lifted out and the REST is
+        // shuffled behind it - never `shuffled()` over the whole list.
+        // ⚠️ `original` IS ALWAYS THE IN-ORDER LIST, which is what makes a later
+        // toggle-OFF restore the real order from the current track (changeQueue keeps current at 0).
+        val tapShuffled = respectShuffle && tileOriginal == null &&
+            player.shuffleModeEnabled && mediaItems.size > 1
+        val headIndex = index.coerceAtLeast(0)
+        val applied = if (!tapShuffled) mediaItems else (
+            listOf(mediaItems[headIndex]) +
+                mediaItems.filterIndexed { i, _ -> i != headIndex }.shuffled()
+            ).toMutableList()
         original = tileOriginal ?: mediaItems
+        // Cold restore: the queue on disk is a shuffled order, and the saved id list is what it was
+        // shuffled FROM. See notifyRestoredOriginalOrder.
+        if (tileOriginal == null && !restoredIds.isNullOrEmpty())
+            original = reorderedOriginal(mediaItems, restoredIds)
         backStack.clear()
         markQueueReplaced()
-        player.setMediaItems(
-            mediaItems,
-            startIndex.coerceAtMost(mediaItems.size - 1),
-            startPositionMs
-        )
-        if (tileOriginal != null) {
-            // AA shuffle tile: the queue was just applied ALREADY shuffled; keep the unshuffled album order as
-            // `original` and flip the flag ON without changeQueue (identity shuffleOrder → no reorder). A later
-            // toggle-OFF then changeQueue(original) restores album order, matching the phone Shuffle button.
+        player.setMediaItems(applied, if (tapShuffled) 0 else index, startPositionMs)
+        if (tileOriginal != null || tapShuffled) {
+            // AA shuffle tile, or a tap with shuffle already ON: the queue was just applied ALREADY
+            // shuffled; keep the unshuffled order as `original` and assert the flag without changeQueue
+            // (identity shuffleOrder → no reorder). A later toggle-OFF then changeQueue(original)
+            // restores the in-order run, matching the phone Shuffle button.
             isShuffled = true
             player.shuffleModeEnabled = true
+        } else if (respectShuffle) {
+            // Shuffle is OFF and this was an in-order queue set. The flag is already off (we just read
+            // it), so only isShuffled needs saying - this is the work the client's
+            // syncShuffleFlagCommand(false) used to do on this path, now with no second dispatch.
+            isShuffled = false
         }
     }
 
@@ -711,6 +818,16 @@ class ShufflePlayer(
     private fun markQueueReplaced() {
         queueEpoch++
         cancelPendingReconstitution()
+        // ⚠️ DROP ANY UNCONSUMED TAP/RESTORE LATCH, AND HERE BECAUSE THIS IS THE
+        // ONE FUNCTION EVERY QUEUE REPLACEMENT PASSES THROUGH. Both latches are armed for the 3-arg
+        // setMediaItems, which reads them BEFORE calling this, so clearing here never cancels a live
+        // one. What it does stop is a latch outliving the queue it was armed for: Media3 applies a
+        // returned queue through MediaUtils.setMediaItemsWithStartIndexAndPosition
+        // (MediaUtils.java:227-246, media3-session 1.11.0), which falls back to setMediaItem when
+        // COMMAND_CHANGE_MEDIA_ITEMS is unavailable - a path that would leave a respect-shuffle armed
+        // to reorder a LATER queue nobody tapped.
+        pendingTapRespectShuffle = false
+        pendingOriginalIds = null
     }
 
     private fun cancelPendingReconstitution() {

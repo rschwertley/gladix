@@ -58,43 +58,74 @@ class DeezerLibraryClient(
     ).associateBy { it.id.id }
 
 
+    /**
+     * ⚠⚠ customTrackList IS THE FAVORITES LIST ITSELF, AND IT IS WHAT MAKES A
+     * TAP QUEUE THE WHOLE COLLECTION. GitHub issue #4: tapping a liked track started that
+     * track's radio instead of playing the liked list, because the app's queue-vs-radio test is
+     * isOrderedCollection(context) and a library feed has no context item - Deezer's favorites
+     * are a gateway method (favorite_song.getList, tab="loved"), not a playlist we can hand over.
+     * Declaring the tracks here lets FeedClickListener.onTracksClicked recognise a tapped track
+     * as part of a collection the EXTENSION says is one, with no tab-id string in app code.
+     *
+     * ⚠⚠ BOTH TABS, AND THE All TAB GETS IT WITHOUT THE BUTTONS. A liked track
+     * is the same track from the same list whether it is tapped on the Tracks tab or in the All
+     * tab's Tracks row, so both must queue it the same way. showPlayAndShuffle stays FALSE on
+     * All - ButtonsAdapter gates the two buttons on that flag alone (binding.playButton.isVisible
+     * = buttons.showPlayAndShuffle), so the list travels without adding a Play/Shuffle pair to a
+     * tab that also holds playlists, albums and artists.
+     * ⚠️ THE OTHER TABS PASS null AND ARE UNCHANGED: Playlists, Albums and
+     * Artists hold no tracks, so there is nothing to declare and nothing in them can match.
+     * ⚠️ NO SECOND REQUEST. Both loaders already materialise the grafted
+     * favorites to build their shelves; this returns the same list rather than fetching it
+     * again, which at nb=10000 would be the expensive mistake.
+     */
     suspend fun loadLibraryFeed(): Feed<Shelf> {
         deezerExtension.handleArlExpiration()
         return Feed(tabs) { tab ->
             val id = tab?.id
-            val data = when (id) {
+            val (data, liked) = when (id) {
                 TabId.ALL.id -> loadAll()
                 else -> loadSingle(id)
             }
-            val buttons = if (id == TabId.TRACKS.id) Feed.Buttons(showPlayAndShuffle = true)
-            else Feed.Buttons()
+            val buttons = Feed.Buttons(
+                showPlayAndShuffle = id == TabId.TRACKS.id,
+                customTrackList = liked,
+            )
             data.toFeedData(buttons)
         }
     }
 
-    private suspend fun loadAll(): List<Shelf> = supervisorScope {
+    /** Shelves for the All tab, plus the grafted favorites so [loadLibraryFeed] can declare them. */
+    private suspend fun loadAll(): Pair<List<Shelf>, List<Track>?> = supervisorScope {
         deezerExtension.handleArlExpiration()
-        configs.values.map { cfg ->
+        val results = configs.values.map { cfg ->
             async(cpuDispatcher) {
                 val json = cfg.request(api)
-                val items = cfg.extractor(json) ?: return@async null
+                val items = cfg.extractor(json) ?: return@async null to null
                 if (cfg.id == TabId.TRACKS) {
                     val grafted = items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-                    grafted.takeIf { it.isNotEmpty() }
+                    val shelf = grafted.takeIf { it.isNotEmpty() }
                         ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) }
-                } else parser.run { items.toShelfItemsList(cfg.title) }
+                    shelf to grafted
+                } else parser.run { items.toShelfItemsList(cfg.title) } to null
             }
-        }.awaitAll().filterNotNull()
+        }.awaitAll()
+        results.mapNotNull { it.first } to results.firstNotNullOfOrNull { it.second }
     }
 
-    private suspend fun loadSingle(id: String?): List<Shelf> {
-        val cfg = configs[id] ?: return emptyList()
+    /** As [loadAll], for one tab: shelves plus the favorites when this IS the Tracks tab. */
+    private suspend fun loadSingle(id: String?): Pair<List<Shelf>, List<Track>?> {
+        val cfg = configs[id] ?: return emptyList<Shelf>() to null
         deezerExtension.handleArlExpiration()
         val json = cfg.request(api)
-        val arr = cfg.extractor(json) ?: return emptyList()
-        return if (id == TabId.TRACKS.id)
-            arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it).toShelf() } }
-        else parser.run { arr.mapNotNull { it.jsonObject.toEchoMediaItem()?.toShelf() } }
+        val arr = cfg.extractor(json) ?: return emptyList<Shelf>() to null
+        return if (id == TabId.TRACKS.id) {
+            // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed.
+            val liked = arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+            liked.map { it.toShelf() } to liked
+        } else parser.run {
+            arr.mapNotNull { it.jsonObject.toEchoMediaItem()?.toShelf() }
+        } to null
     }
 
     // Lenient at every hop (DeezerJson): an empty library tab is a genuine state, and every

@@ -399,10 +399,39 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         }
     }
 
-    override suspend fun isItemLiked(item: EchoMediaItem): Boolean {
-        if (item !is Track) return false
+    override suspend fun isItemLiked(item: EchoMediaItem): Boolean =
+        item is Track && isTrackLoved(item)
+
+    /**
+     * Loved-list membership, session-cached. ONE definition, because for a Deezer TRACK the heart
+     * ([isItemLiked]) and the library toggle ([isItemSaved]) are the SAME question against the SAME
+     * endpoint: favorite_song.getList with tab="loved", matched on SNG_ID.
+     *
+     * ⚠⚠ isItemSaved USED TO FETCH THE LIST ITSELF, PER TRACK, AND THAT IS WHAT
+     * BROKE PLAYBACK. Cached.loadMedia runs five capability probes on every UNCACHED load, and a
+     * track's prepare is one of those loads (StreamableLoader.loadTrack → loadMedia). Track
+     * .isSaveable defaults to true and DeezerParser never clears it for a track, so a fresh install
+     * with an empty cache fetched nb=10000 loved tracks ONCE PER TRACK just to answer one boolean -
+     * and when the session had no real user id, the refusal failed the prepare outright (1146).
+     * ⚠⚠ THE SAME SHAPE THE MAY 2026 FIX ALREADY CLOSED FOR THE HEART, AND
+     * THIS IS THE TWIN IT MISSED. e93d17b2 (2026-05-29, "battery drain") added likedTrackIds +
+     * fetchLikedTrackIds so isItemLiked stopped fetching per call; isItemSaved's Track branch was
+     * already routed through api::getTracks at that point (present since the module landed,
+     * 8f4c2f29, 2026-04-22) and was left alone. Nothing was re-introduced - one of two call sites
+     * of one endpoint was fixed. If a third ever appears, it belongs here too.
+     * ⚠️ NO REQUEST WITHOUT A REAL USER - see DeezerApi.hasUserId. Checked
+     * BEFORE the cache read deliberately: a short-circuit must not populate likedTrackIds, or a
+     * login later in the same session would keep answering from an empty set.
+     * ⚠️ A FAILED FETCH STILL CACHES AN EMPTY SET, UNCHANGED AND ON PURPOSE.
+     * That is what keeps "one fetch per session" true on the failure path too; the cost is that
+     * hearts read empty until the next session, which is the pre-existing trade recorded at
+     * DeezerTrack.addFavoriteTrack. Do not "fix" it by retrying - that is the per-track fetch
+     * above, back again.
+     */
+    private suspend fun isTrackLoved(track: Track): Boolean {
+        if (!api.hasUserId) return false
         val ids = likedTrackIds ?: fetchLikedTrackIds().also { likedTrackIds = it }
-        return item.id in ids
+        return track.id in ids
     }
 
     private suspend fun fetchLikedTrackIds(): HashSet<String> {
@@ -464,7 +493,12 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             }
 
             is Track -> {
-                getIsItemSaved(api::getTracks, "SNG_ID", item.id)
+                // The loved list IS the saved state for a track, so this reads the shared
+                // session set rather than re-fetching it. See [isTrackLoved] for why that
+                // matters on the playback path. Non-Track branches are untouched: each of them
+                // hits a DIFFERENT endpoint (favorite_album/show/playlist) with no session cache,
+                // and none of them has produced a report.
+                isTrackLoved(item)
             }
 
             else -> false
@@ -514,7 +548,25 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             }
 
             is Track -> {
-                if (shouldSave) api.addFavoriteTrack(item.id) else api.removeFavoriteTrack(item.id)
+                // ⚠⚠ THE SAME OPTIMISTIC WRITE likeItem DOES, AND NOW IT IS
+                // LOAD-BEARING RATHER THAN TIDY. isItemSaved reads [isTrackLoved]'s shared set, so a
+                // save made here must be visible to it immediately - otherwise the host writes a
+                // MediaState.Loaded carrying the PRE-SAVE value and the next heart/library read comes
+                // back stale, which is the 2026-10-23 defect Cached.setTrackLiked closed arriving
+                // through the save path instead.
+                // ⚠️ BEFORE THE CALL, MIRRORING likeItem EXACTLY: addFavoriteTrack
+                // swallows ERROR_DATA_EXISTS ("already in Loved Tracks") as success, and on that path
+                // the set must already say loved. See DeezerTrack.addFavoriteTrack.
+                // ⚠️ `?.` - no set, no write. An unfetched set stays unfetched and
+                // the next real fetch gets the truth from the server; inventing one here would mean
+                // answering "not loved" for every other track in the account.
+                if (shouldSave) {
+                    likedTrackIds?.add(item.id)
+                    api.addFavoriteTrack(item.id)
+                } else {
+                    likedTrackIds?.remove(item.id)
+                    api.removeFavoriteTrack(item.id)
+                }
             }
 
             else -> {}

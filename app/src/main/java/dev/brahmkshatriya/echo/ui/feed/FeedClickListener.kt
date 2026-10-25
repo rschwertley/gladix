@@ -27,6 +27,32 @@ open class FeedClickListener(
     private val containerId: Int,
     private val afterOpen: () -> Unit = {}
 ) {
+
+    /**
+     * ⚠⚠ THE TRACKS THE EXTENSION DECLARED AS ONE COLLECTION FOR THE FEED ON
+     * SCREEN, or null when it declared none. Written by FeedAdapter from the same
+     * Feed.Buttons the Play/Shuffle buttons read (buttonsFlow), so it follows a tab switch
+     * without any extra plumbing, and read by [onTracksClicked].
+     * ⚠️ A FIELD RATHER THAN A PARAMETER, AND THE REASON IS THE NESTED ROW.
+     * Six call sites reach onTracksClicked, and the one that matters most for this -
+     * ShelfViewHolder's card inside a HorizontalList - sits under a nested adapter that is
+     * never handed the outer feed's buttons. Threading a parameter would mean changing the
+     * listener signature, four view holders, the nested adapter and one override; the listener
+     * is already shared by all of them, so it is the one place that needs no plumbing.
+     * ⚠️ ONE FEED PER LISTENER, WHICH IS WHAT MAKES A MUTABLE FIELD SAFE
+     * HERE: getFeedListener builds one per fragment, and a fragment hosts one feed. It is set
+     * from the buttons observer, so switching Library tabs replaces it rather than leaving a
+     * stale list from the previous tab.
+     * ⚠⚠ A LAMBDA, NOT A SNAPSHOT, SO THE READ HAPPENS AT TAP TIME. Rows and
+     * buttons both come from FeedData.dataFlow - buttonsFlow is `dataFlow.combine(feedSortState)`
+     * and the paging source is built from the same emission - so a row cannot be on screen
+     * before the Feed.Data carrying its buttons exists. What a snapshot WOULD leave open is the
+     * gap between the paging submit and the buttons observer running on the same looper, plus a
+     * tab switch landing between them. Reading late closes both for free: the default returns
+     * null, which is the radio behaviour, so nothing regresses if a feed declares nothing.
+     */
+    var declaredTracks: () -> List<Track>? = { null }
+
     companion object {
         // ⚠⚠ DOES THIS FEED BELONG TO A COLLECTION WHOSE ORDER MATTERS? Tapping a track inside
         // one queues it from that point; tapping a lone track anywhere else starts a radio.
@@ -60,6 +86,25 @@ open class FeedClickListener(
         // positively cannot capture anything else now or later. Checked, not assumed.
         fun isOrderedCollection(context: EchoMediaItem?) =
             context is Album || context is Playlist
+
+        /**
+         * ⚠⚠ HOW MANY TRACKS A DECLARED COLLECTION MAY PUT IN THE QUEUE, AND
+         * IT IS NOT A FIGURE INVENTED HERE. ResumptionUtils.QUEUE_CAP_UPCOMING is 2000 and
+         * trims the PERSISTED upcoming queue for exactly this class of "play all" list, so a
+         * larger in-memory queue would be silently truncated on the next cold restore anyway.
+         * Matching it keeps memory and disk telling the same story. 2000 tracks is ~130 hours
+         * ahead; a user with more than 2000 favorites gets the first 2000 from the tapped track
+         * and then a radio, which is the same ending the list has at its true end.
+         * ⚠️ KEEP THE TWO IN STEP. If that constant moves, move this one - the
+         * failure mode of a mismatch is a queue that plays longer than it survives a restart.
+         * ⚠️ WHY NOT THE WHOLE LIST AT nb=10000: MediaItemUtils' parked memory
+         * note measures a built MediaItem at ~20-30 KB (heap_used_mb_build 45-63 MB at 2,001
+         * items), so 10,000 would be 200-300 MB of timeline against a 384 MB growth limit - the
+         * 1008/1013/1032 OOM territory. Chunk-and-append as it plays is the better answer and is
+         * a separate design: PlayerRadio.topUpQueue is radio-keyed, and the backfill command
+         * rebuilds from a CONTEXT item, which favorites do not have.
+         */
+        private const val DECLARED_QUEUE_CAP = 2000
 
         fun Fragment.getFeedListener(
             navFragment: Fragment = this,
@@ -219,16 +264,82 @@ open class FeedClickListener(
         // size term would silently stop radioing on the one screen that already worked. And `context == null`
         // is too coarse in the other direction: an Artist page has a non-null context but its top-tracks row
         // is discrete, so radio is right there. See isOrderedCollection above for both.
+        // ⚠⚠ A TRACK THE EXTENSION DECLARED AS PART OF A COLLECTION QUEUES THE
+        // WHOLE COLLECTION, AND THIS BRANCH IS FIRST BECAUSE IT IS THE STRONGEST SIGNAL.
+        // [declaredTracks] is Feed.Buttons.customTrackList for the feed on screen - the
+        // extension saying "these tracks are one list" - which is what a library of liked tracks
+        // has instead of an Album or Playlist context. GitHub issue #4: tapping a liked track
+        // radioed, because isOrderedCollection(context) is false on every library feed and the
+        // run getAllTracks could offer was the ~100-item paging window.
+        // ⚠️ MEMBERSHIP, NOT THE ROW, WHICH IS WHY Library -> All WORKS TOO.
+        // The All tab's tracks arrive as cards inside a HorizontalList (Shelf.Lists.Items
+        // defaults to Type.Linear), and ShelfViewHolder passes `listOf(item)` - a one-element
+        // list that would always radio. Testing the TAPPED TRACK against the declared list needs
+        // nothing from the row, so both tabs behave identically with one test.
+        // ⚠️ BY ID, NOT BY IDENTITY: the row's Track and the declared Track are
+        // separately parsed objects from the same response, so equals() is not safe to rely on.
+        // ⚠️ VIDEOS ARE NOT EXCLUDED HERE, DELIBERATELY. The exclusion below
+        // exists because "<title> Radio" makes no sense for a video; a declared collection is
+        // ordered content, so a video inside one queues like everything else in it.
+        // ⚠️ STILL NO tracks.size TERM, ANYWHERE. See the 2026-09-12 correction
+        // below: `tracks.size == 1` only ever held because SearchFragment manufactured
+        // one-element lists, and reintroducing it here would make the All tab's one-element taps
+        // the test rather than the declared list.
+        // ⚠️ WHO ACTUALLY DECLARES A LIST, BECAUSE THIS BRANCH RUNS AHEAD OF
+        // THE ARTIST-PAGE REASONING IN [isOrderedCollection]'s NOTE. Four producers, grep
+        // customTrackList: DeezerLibraryClient (liked tracks, Tracks and All), Convertors'
+        // folder Shelf.Category (the Offline folder browse), OfflineExtension.loadFeed(Artist),
+        // and UnifiedExtension's Feed.Buttons.withExtensionId, which passes a sub-extension's
+        // list through. The third is the interesting one: that note says an Artist page's
+        // top-tracks row is discrete so radio is right there, and that stays true of
+        // isOrderedCollection - but Offline's artist page DECLARES its tracks, so taps there now
+        // queue instead. That is the extension's own statement and it is the better answer for
+        // local files, where a radio has nothing to generate from. Nothing here special-cases
+        // Offline; a remote artist page that declares no list still radios.
+        // ⚠️ ID COMPARISON SURVIVES UNIFIED: withExtensionId only ever
+        // copies extras and capability flags - never `id` - and rows and buttons are injected by
+        // the same injectExtensionId pass, so both sides carry identical ids.
+        val declared = declaredTracks()
+        val declaredPos = tracks.getOrNull(pos)?.id?.let { tapped ->
+            declared?.indexOfFirst { it.id == tapped }?.takeIf { it >= 0 }
+        }
+        val vm by fragment.activityViewModels<PlayerViewModel>()
+        // ⚠⚠ A TAP RESPECTS THE SHUFFLE STATE, AND THIS SIDE DOES NOT DECIDE IT.
+        // `respectShuffle` asks the SERVICE to read its own flag on the player thread as it applies
+        // the queue - see ShufflePlayer.notifyTapRespectShuffle. Reading viewModel.shuffleMode here
+        // instead was wrong twice over: it is a mirror that starts at a default `false` before the
+        // controller attaches, and the follow-up setShuffle(true) left a window (after setQueue's
+        // sync-off, before the re-assert) in which a second quick tap read OFF and played in order.
+        // ⚠️ SHUFFLE HERE IS A PHYSICAL REORDER, which is why a flag flip would
+        // not do: the inner ExoPlayer's shuffleOrder is UnshuffledShuffleOrder (identity), so the
+        // service applies the queue already shuffled with the tapped track lifted to index 0, and
+        // keeps the in-order list as `original`.
+        // ⚠️ NOT THE RADIO BRANCH. A radio is generated in play order and
+        // extends itself (PlayerRadio.topUpQueue); reordering it would fight the station.
+        // ⚠️ TOGGLING SHUFFLE OFF LATER RESTORES THE ORIGINAL ORDER FROM THE
+        // CURRENT TRACK, not from the top: changeQueue(original) keeps current at 0, so tracks that
+        // were before it stay dropped - the current+upcoming model documented at changeQueue. That
+        // now survives a restart too: ResumptionUtils persists the order as ids (see
+        // ShufflePlayer.notifyRestoredOriginalOrder), where it used to be in-memory only.
+        if (declared != null && declaredPos != null) {
+            // From the tapped track onward, capped - see [DECLARED_QUEUE_CAP]. setQueue would drop
+            // the head itself, but slicing here is what lets the cap count from the tap rather
+            // than from the top of a 10,000-track list.
+            val upcoming = declared.subList(declaredPos, declared.size).take(DECLARED_QUEUE_CAP)
+            vm.setQueue(extensionId, upcoming, 0, null, respectShuffle = true)
+            vm.setPlaying(true)
+            return true
+        }
         val single = tracks.getOrNull(pos)?.takeIf {
             !isOrderedCollection(context) &&
                 it.type != Track.Type.Video && it.type != Track.Type.HorizontalVideo
         }
-        val vm by fragment.activityViewModels<PlayerViewModel>()
         if (single != null) {
             vm.playTrackRadio(extensionId, single)
             return true
         }
-        vm.setQueue(extensionId, tracks, pos, context)
+        // Album and playlist taps take the same shuffle treatment - see the note above.
+        vm.setQueue(extensionId, tracks, pos, context, respectShuffle = true)
         vm.setPlaying(true)
         return true
     }

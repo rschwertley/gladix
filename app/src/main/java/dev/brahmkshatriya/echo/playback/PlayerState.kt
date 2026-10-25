@@ -255,4 +255,9 @@ data class RestoreData(
     val pos: Long,
     val shuffle: Boolean,
     val repeat: Int,
+    // The order [items] was shuffled FROM, as mediaIds; empty when the queue was saved un-shuffled or
+    // by a build that did not write it. Both appliers hand it to
+    // ShufflePlayer.notifyRestoredOriginalOrder before the queue is applied, so a toggle-OFF after a
+    // restart restores the real order instead of the shuffled one.
+    val originalIds: List<String> = emptyList(),
 )

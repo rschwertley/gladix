@@ -3,8 +3,8 @@ package dev.brahmkshatriya.echo.playback
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
-import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.Toast
@@ -141,29 +141,36 @@ class PlayerCallback(
         // clear-queue receiver and onTaskRemoved - and they NEED STATE_IDLE (the retries to
         // re-prepare, the breakers to drop the notification and leave foreground). A stop()
         // override on ShufflePlayer would catch all of them; a session callback catches none.
-        // ⚠️ isMediaNotificationController EXCLUDES THE NOTIFICATION SWIPE,
-        // WHICH MUST STILL STOP. DefaultMediaNotificationProvider sets the notification's delete
-        // intent to createNotificationDismissalIntent, whose default is COMMAND_STOP
-        // (MediaNotification.java:124-126, 1.11.0), and MediaSessionService dispatches it with
-        // callerInfo = getMediaNotificationControllerInfo (:548). Converting it would be worse
-        // than a no-op: a paused READY player satisfies
+        // ⚠⚠ [CORRECTED 2026-10-25] THE EXEMPTION WAS isMediaNotificationController
+        // AND IT LET THE WHOLE MEDIA-BUTTON CLASS THROUGH. That test asked "is this OUR
+        // notification controller" (MediaSessionImpl:457-464: our package + non-legacy + the
+        // KEY_MEDIA_NOTIFICATION_CONTROLLER_FLAG connection hint) in order to spare the swipe. But
+        // media3 SUBSTITUTES that identity for every media-button-derived command:
+        // applyMediaButtonKeyEvent reads controllerInfo = getMediaNotificationControllerInfo
+        // (:1705) and dispatches case KEYCODE_MEDIA_STOP as
+        // sessionStub.stopForControllerInfo(controllerInfo) (:1749-1751). So a watch/BT STOP key
+        // that [onMediaButtonEvent] did not claim arrived here wearing the swipe's identity and was
+        // exempted. Field evidence: build 1146, SM-G781B, Android 13 - IdleWithPlayWhenReady with
+        // MediaSessionStub's sendSessionResultSuccess(Player::stop) lambda in the stack, i.e. the
+        // task RAN, i.e. this callback returned RESULT_SUCCESS.
+        // ⚠⚠ SO THE DEFAULT IS INVERTED: CONVERT EVERY CONTROLLER STOP, AND
+        // EXEMPT ONLY A DISMISSAL WE HAVE ACTUALLY SEEN. The identity is unreliable; the Intent is
+        // not, and [onMediaButtonEvent] sees it. The cost of the two failure directions is not
+        // symmetric, which is the whole argument: a missed exemption re-posts a notification, a
+        // missed conversion strands STATE_IDLE with playWhenReady true.
+        // ⚠️ THE SWIPE MUST STILL REALLY STOP. DefaultMediaNotificationProvider
+        // sets the notification's delete intent to createNotificationDismissalIntent, whose default
+        // is COMMAND_STOP (MediaNotification.java:124-126, 1.11.0), and MediaSessionService
+        // dispatches it with callerInfo = getMediaNotificationControllerInfo (:548). Converting it
+        // would be worse than a no-op: a paused READY player satisfies
         // MediaNotificationManager.shouldShowNotification (:382-387), which also RESETS
         // wasNotificationDismissed, so the swiped notification would be re-posted by the pause
-        // event itself. MediaSessionImpl.resolveControllerInfoForCallback (:1178-1187) maps the
-        // System UI controller onto the same info, so one test covers the shade too.
-        // ⚠️ A HARDWARE/BT STOP DOES NOT ARRIVE HERE IN A DISTINGUISHABLE
-        // FORM - see [onMediaButtonEvent], which is where that one is handled. media3 turns a
-        // KEYCODE_MEDIA_STOP into sessionStub.stopForControllerInfo(mediaNotificationController)
-        // (MediaSessionImpl:1749-1751), i.e. it reaches this callback wearing the notification
-        // controller's identity and would be excluded by the line below. Handling it earlier is
-        // not belt-and-braces; it is the only place the two are separable.
+        // event itself. That is what [consumeNotificationDismissal] protects.
         // ⚠️ onTransportIntent() FIRST, AND IT IS NOT COSMETIC: a stop()
         // changes no playWhenReady, so today a STOP leaves a focus-resume authorisation armed -
         // the 1141 shape with a controller instead of a finger. A STOP is the user saying stop,
         // so it revokes the authorisation exactly as a pause press does.
-        if (playerCommand == Player.COMMAND_STOP &&
-            !session.isMediaNotificationController(controller)
-        ) {
+        if (playerCommand == Player.COMMAND_STOP && !consumeNotificationDismissal()) {
             onTransportIntent()
             session.player.pause()
             return SessionResult.RESULT_ERROR_NOT_SUPPORTED
@@ -238,9 +245,13 @@ class PlayerCallback(
         intent: Intent,
     ): Boolean {
         if (state.isPostDisconnect) {
-            val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-            else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            // ⚠️ [CORRECTED 2026-10-25] THIS USED THE TIRAMISU-TYPED
+            // getParcelableExtra(name, Class) AND HAD THE SAME HOLE AS THE STOP READ BELOW ONCE DID.
+            // Media3 parses the same Intent with the UNTYPED call (DefaultActionFactory:44-58), so on
+            // a device where the typed one disagrees, media3 saw a phantom KEYCODE_MEDIA_PLAY that
+            // this suppression did not - and the Aug 7b fix silently stopped working there while
+            // reading as intact. Shared helper now; see [mediaButtonKeyEvent].
+            val keyEvent = intent.mediaButtonKeyEvent()
             if (keyEvent?.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
                 Log.d(
                     "GladixPlayback",
@@ -249,47 +260,92 @@ class PlayerCallback(
                 return true
             }
         }
-        // ⚠⚠ A HARDWARE/BT STOP KEY BECOMES A PAUSE, AND THIS IS THE ONLY
-        // PLACE IT CAN BE TOLD FROM A NOTIFICATION SWIPE. Both end up as COMMAND_STOP on the
-        // media notification controller (MediaSessionImpl.applyMediaButtonKeyEvent:1749-1751,
-        // 1.11.0), so by the time [onPlayerCommandRequest] sees them they are identical. They
-        // differ only in the INTENT, which this callback receives and that one does not:
+        // ⚠⚠ THIS HOOK NOW CLASSIFIES AND DOES NOT CONVERT. The ONLY thing a
+        // notification swipe and an outside STOP key differ in is the INTENT, which this callback
+        // receives and [onPlayerCommandRequest] does not:
         // DefaultActionFactory.createNotificationDismissalIntent (:116-124) puts
-        // NOTIFICATION_DISMISSED_EVENT_KEY=true in the extras, and
-        // createMediaButtonIntentInternal then adds EXTRA_KEY_EVENT = KeyEvent(ACTION_DOWN,
-        // KEYCODE_MEDIA_STOP) to the same Intent - the one MediaSessionImpl.onMediaButtonEvent
-        // (:1613-1625) hands us BEFORE any of its own handling. So the dismissal falls through
-        // to a real stop(), and only a key from outside is converted.
-        // ⚠️ ACTION_DOWN ONLY. A media key arrives as DOWN then UP; media3's
-        // own handler acts on DOWN and merely reports the non-DOWN actions as consumed
-        // (:1629-1659), so letting UP fall through costs nothing and pauses once rather than
-        // twice.
-        // ⚠️ THE READ IS DUPLICATED RATHER THAN SHARED WITH THE BLOCK
-        // ABOVE, DELIBERATELY. That block is the Aug 7b post-disconnect suppression; it is
-        // load-bearing, it is unchanged here, and a refactor to hoist the key event out of it
-        // would make this diff touch it. The two branches are disjoint anyway - that one matches
-        // only KEYCODE_MEDIA_PLAY - so the order between them cannot change either behaviour.
-        if (intent.isMediaStopKeyDown() && !intent.getBooleanExtra(
-                MediaNotification.NOTIFICATION_DISMISSED_EVENT_KEY, false
-            )
-        ) {
-            onTransportIntent()
-            session.player.pause()
-            return true
+        // NOTIFICATION_DISMISSED_EVENT_KEY=true in the extras, and createMediaButtonIntentInternal
+        // then adds EXTRA_KEY_EVENT = KeyEvent(ACTION_DOWN, KEYCODE_MEDIA_STOP) to the same Intent.
+        // So the dismissal is RECORDED here and allowed to fall through to the real stop, and
+        // everything else is converted by the one branch in [onPlayerCommandRequest].
+        // ⚠⚠ WHY CLASSIFY HERE RATHER THAN CONVERT HERE, WHICH IS WHAT 1146
+        // DID AND WHY IT REGRESSED: converting here makes the PAUSE depend on our own KeyEvent
+        // parse, and a parse that disagrees with media3's loses the conversion entirely (the STOP
+        // then reaches the player through media3's fallback). Classifying here makes only the
+        // EXEMPTION depend on a read - and that read is a plain getBooleanExtra, no KeyEvent
+        // involved. Same two signals, failing in the harmless direction.
+        // ⚠️ RETURNS false SO MEDIA3'S OWN FALLBACK STILL RUNS, which is what
+        // makes the swipe behave exactly as before: MediaSessionImpl.onMediaButtonEvent carries on
+        // at :1695-1699, reads isDismissNotificationEvent from this same Intent, sends the
+        // NOTIFICATION_DISMISSED_EVENT_KEY custom command to the notification controller (:1755-1762,
+        // which is what sets wasNotificationDismissed so the notification stays gone) and only THEN
+        // runs the stop. Claiming the event here would skip all three.
+        if (intent.getBooleanExtra(MediaNotification.NOTIFICATION_DISMISSED_EVENT_KEY, false)) {
+            armNotificationDismissal()
         }
         return super.onMediaButtonEvent(session, controllerInfo, intent)
     }
 
     /**
-     * True for the DOWN of a KEYCODE_MEDIA_STOP media-button intent. Safe on the app thread
-     * only, like the rest of this callback.
+     * The media-button KeyEvent, read THE WAY MEDIA3 READS IT, deliberately.
+     *
+     * ⚠⚠ BYTE-FOR-BYTE THE SAME CALL AS DefaultActionFactory.getKeyEvent
+     * (media3-session 1.11.0, DefaultActionFactory.java:44-58): the UNTYPED
+     * Bundle.getParcelable, inside a catch. NOT the TIRAMISU-typed
+     * getParcelableExtra(name, Class) this file used to call on SDK 33+, because media3 decides
+     * what happens to the event and it parses with the untyped call - so any device where the two
+     * disagree is a device where media3 acts on a key we think is absent. That is not a
+     * hypothetical: 1146 lost a STOP conversion exactly that way on Android 13 (SM-G781B), with
+     * media3's own parse of the same Intent succeeding.
+     * ⚠️ THE RULE GENERALISES: WHEN A LIBRARY'S BEHAVIOUR TURNS ON ITS READ
+     * OF SOMETHING, MATCH THE READ, DO NOT MODERNISE IT. A "better" API here buys nothing - the
+     * value was written by the platform or by media3 itself - and silently forks the two views.
+     * ⚠️ runCatching, FOR THE SAME REASON MEDIA3 USES try/catch: unparcelling
+     * a foreign Parcelable can throw (BadParcelableException from a missing classloader), and the
+     * answer we want for that is "no key event", never a crash on a BT keypress.
      */
-    private fun Intent.isMediaStopKeyDown(): Boolean {
-        val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-        else @Suppress("DEPRECATION") getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-        return keyEvent != null && keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_STOP &&
-            keyEvent.action == KeyEvent.ACTION_DOWN
+    @Suppress("DEPRECATION")
+    private fun Intent.mediaButtonKeyEvent(): KeyEvent? = runCatching {
+        extras?.takeIf { it.containsKey(Intent.EXTRA_KEY_EVENT) }
+            ?.getParcelable<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+    }.getOrNull()
+
+    // ── Notification-dismissal handoff ────────────────────────────────────────────────────
+    // elapsedRealtime of the last dismissal Intent seen in [onMediaButtonEvent]; 0 = none armed.
+    private var dismissalArmedAt = 0L
+
+    private fun armNotificationDismissal() {
+        dismissalArmedAt = SystemClock.elapsedRealtime()
+    }
+
+    /**
+     * One-shot: "the COMMAND_STOP now arriving is the dismissal's own stop."
+     *
+     * ⚠⚠ CONSUMED BY THE VERY NEXT COMMAND_STOP, AND IT CANNOT WAIT AROUND.
+     * Cleared on the first read whatever the verdict, so one dismissal can exempt one stop and
+     * never a second; and keyed on a timestamp so that even an unconsumed arm expires. Both halves
+     * matter: without the clear, a dismissal whose stop never arrived would exempt the NEXT
+     * controller STOP minutes later, which is the bug this replaces wearing different clothes.
+     * ⚠⚠ THE WINDOW IS PURE SLACK, NOT A REAL GAP - THE TWO ARRIVE IN ONE
+     * MAIN-THREAD DISPATCH. Traced through media3-session 1.11.0: our callback returns at
+     * MediaSessionImpl.onMediaButtonEvent:1623, that method continues to :1698-1699 ->
+     * applyMediaButtonKeyEvent -> command.run() (:1763) -> MediaSessionStub.stopForControllerInfo
+     * -> queueSessionTaskWithPlayerCommand -> onPlayerCommandRequestOnHandler, every hop a direct
+     * call with no post and no await. So the real gap is zero and [DISMISSAL_WINDOW_MS] exists only
+     * so a future media3 that posts one of those hops does not silently turn the swipe into a
+     * pause. Do not read it as a tolerance for human timing.
+     * ⚠️ 500 ms, AND THE DIRECTION OF THE RISK IS WHY IT CAN BE GENEROUS.
+     * The only way the window is ever reached is a dismissal whose stop media3 declined to dispatch
+     * (getMediaNotificationControllerInfo() == null at :1706). A controller STOP landing inside half
+     * a second of a notification swipe would then stop rather than pause - and the user had just
+     * asked for a stop, so the one case the slack can get wrong is the case where both answers mean
+     * the same thing.
+     */
+    private fun consumeNotificationDismissal(): Boolean {
+        val armedAt = dismissalArmedAt
+        if (armedAt == 0L) return false
+        dismissalArmedAt = 0L
+        return SystemClock.elapsedRealtime() - armedAt <= DISMISSAL_WINDOW_MS
     }
 
     override fun onConnect(
@@ -304,6 +360,7 @@ class PlayerCallback(
                 .add(playCommand).add(addToQueueCommand).add(addToNextCommand)
                 .add(resumeCommand).add(imageCommand).add(backfillCommand)
                 .add(seekToFullCommand).add(syncShuffleFlagCommand).add(previousTrackCommand)
+                .add(tapShuffleCommand)
                 .build()
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
@@ -396,6 +453,15 @@ class PlayerCallback(
                 else shuffled.previousTrackAlways()
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
+            tapShuffleCommand -> run {
+                // Prime only; the decision happens inside ShufflePlayer.setMediaItems, on the player
+                // thread, from the player's OWN flag. Nothing is read or published here, so there is
+                // no window in which a client can observe a shuffle state that is about to change.
+                val shuffled = player as? ShufflePlayer
+                if (shuffled == null) bugAsync("tap_shuffle", "player is not a ShufflePlayer")
+                else shuffled.notifyTapRespectShuffle(args.getBoolean("respect"))
+                Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            }
             syncShuffleFlagCommand -> run {
                 // Pure icon sync from a CLIENT-side in-order start-playback path (track tap / History setQueue):
                 // set the flag WITHOUT changeQueue. `original` is already correct from the preceding setMediaItems,
@@ -471,9 +537,17 @@ class PlayerCallback(
         val data = state.restoreDeferred?.await() ?: return
         withContext(Dispatchers.Main) {
             if (player.mediaItemCount != 0 || state.resumptionApplying) return@withContext
+            // A tap's queue is already in flight (its shuffle latch is armed and unconsumed), so
+            // there is nothing to restore into and applying here would steal that latch. See
+            // ShufflePlayer.isTapShufflePending. Checked BEFORE the CAS so nothing is consumed:
+            // mediaItemCount is still 0 only because the tap's setMediaItems has not landed yet.
+            if ((player as? ShufflePlayer)?.isTapShufflePending == true) return@withContext
             if (!userQueueSet.compareAndSet(false, true)) return@withContext
             player.shuffleModeEnabled = data.shuffle
             player.repeatMode = data.repeat
+            // Before the apply, because the latch is consumed BY it - the same ordering rule as the
+            // AA shuffle tile. See ShufflePlayer.notifyRestoredOriginalOrder.
+            (player as? ShufflePlayer)?.notifyRestoredOriginalOrder(data.originalIds)
             player.setMediaItems(data.items.toMutableList(), data.index, data.pos)
             // Arm the cold-start re-seek: the startPositionMs above is lost at prepare() (see PlayerState).
             // ⚠⚠ THE EPOCH IS READ HERE, AFTER setMediaItems, AND THAT ORDER IS THE WHOLE POINT.
@@ -1117,6 +1191,7 @@ class PlayerCallback(
         )
         val startTrackId = args.getString("startTrackId")
             ?: return@future bug("backfill", "missing startTrackId")
+        val respectShuffle = args.getBoolean("respect", false)
         // ⚠⚠ THE ONLY ASYNC PATH THAT *REPLACES* THE QUEUE RATHER THAN APPENDING TO IT, WHICH
         // MAKES A STALE ONE DESTRUCTIVE, NOT MERELY UNTIDY: freshContextUpcoming is a network fetch, and if
         // the user starts something else while it runs, this setMediaItems WIPES the queue they are now
@@ -1143,9 +1218,12 @@ class PlayerCallback(
                 )
                 return@withContext
             }
+            // History tap: a rebuilt collection, so it honours shuffle exactly like a feed tap. One
+            // mechanism for both - the latch is consumed by the setMediaItems on the next line, which
+            // also does the flag work syncShuffleFlag(false) used to do when shuffle is off.
+            (player as? ShufflePlayer)?.notifyTapRespectShuffle(respectShuffle)
             player.setMediaItems(upcoming, 0, 0)
-            // History tap: in-order current+upcoming — sync the shuffle flag/icon OFF without changeQueue.
-            (player as? ShufflePlayer)?.syncShuffleFlag(false)
+            if (!respectShuffle) (player as? ShufflePlayer)?.syncShuffleFlag(false)
             player.prepare()
             // [TEMPORARY 2026-10-20] ColdStartPlayProbe - re-assert the source HERE, not only at
             // the tap: freshContextUpcoming above is a network fetch, so by this line the tap's own
@@ -1462,6 +1540,11 @@ class PlayerCallback(
                 withContext(Dispatchers.Main) {
                     mediaSession.player.shuffleModeEnabled = data.shuffle
                     mediaSession.player.repeatMode = data.repeat
+                    // The one thing this site CAN hand the player before Media3 applies the queue it
+                    // is about to return: a latch consumed by that apply. Unlike the re-seek epoch
+                    // below, it needs no knowledge of WHEN the apply happens - only that it is next.
+                    (mediaSession.player as? ShufflePlayer)
+                        ?.notifyRestoredOriginalOrder(data.originalIds)
                     // Arm the cold-start re-seek: Media3 applies startPositionMs below via the same 3-arg
                     // setMediaItems and loses it at prepare() identically (see PlayerState).
                     // ⚠⚠ ARMED WITH epoch = null DELIBERATELY - THIS SITE CANNOT READ A VALID
@@ -1536,6 +1619,10 @@ class PlayerCallback(
     }
 
     companion object {
+        // See [consumeNotificationDismissal]: slack for a dispatch that is synchronous today, not a
+        // tolerance for any real delay.
+        private const val DISMISSAL_WINDOW_MS = 500L
+
         fun PagedData<Shelf>.toTracks() = map {
             it.getOrThrow().mapNotNull { shelf ->
                 when (shelf) {

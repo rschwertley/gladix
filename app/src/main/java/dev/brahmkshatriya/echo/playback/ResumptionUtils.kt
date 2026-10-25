@@ -37,6 +37,10 @@ object ResumptionUtils {
     private const val CURRENT_ID = "queue_current_id"
     private const val POSITION = "position"
     private const val SHUFFLE = "shuffle"
+    // The un-shuffled order of the saved queue, as mediaIds. Written ONLY while shuffle is on (and
+    // deleted otherwise), so a non-shuffled queue costs nothing. See
+    // ShufflePlayer.notifyRestoredOriginalOrder for why ids and not items.
+    private const val ORIGINAL = "queue_original"
     private const val REPEAT = "repeat"
 
     // Bound on how much of the persisted queue is materialized/persisted: current + up to this many
@@ -151,8 +155,20 @@ object ResumptionUtils {
      * DO NOT widen it to keep extras generally - that IS the re-fatten the two OOMs forbid, and the
      * difference between the two is the whole point: keep a key, never keep a payload.
      */
-    private fun MediaState<Track>.queueSlim() = item.toSlim().let { slim ->
-        val routing = item.extras.filterKeys { it == UnifiedExtension.EXTENSION_ID }
+    private fun MediaState<Track>.queueSlim() = item.queueSlim()
+
+    /**
+     * The Track-level half of the rule above, extracted so there is ONE definition of "slim enough
+     * to persist, still routable".
+     *
+     * ⚠️ THE SECOND CALLER IS AndroidAutoCallback.saveDeclaredList, which caches a
+     * feed's declared track list for a car tap. It has the same two requirements as a saved queue —
+     * bounded file size, and an extension id that still routes under Unified — and re-resolves the
+     * same way (MediaState.Unloaded → loadTrack by id). Writing the rule twice is how the two
+     * would drift; see this function's own history for what dropping the routing key costs.
+     */
+    fun Track.queueSlim() = toSlim().let { slim ->
+        val routing = extras.filterKeys { it == UnifiedExtension.EXTENSION_ID }
         if (routing.isEmpty()) slim else slim.copy(extras = routing)
     }
 
@@ -367,10 +383,12 @@ object ResumptionUtils {
         val currentId = player.currentMediaItem?.mediaId
         val capped = list.capForPersist(currentIndex)   // currentIndex stays valid within capped
         val currentItem = player.currentMediaItem
+        val originalIds = player.originalOrderIdsIfShuffled()
         withContext(Dispatchers.IO) {
             context.saveToQueue(INDEX, currentIndex)
             context.saveToQueue(CURRENT_ID, currentId)
             context.writeQueueEntries(capped)
+            context.saveOriginalOrder(originalIds)
             context.saveRecentRoot(currentItem)
         }
     }
@@ -392,7 +410,25 @@ object ResumptionUtils {
         context.saveToQueue(INDEX, currentIndex)
         context.saveToQueue(CURRENT_ID, player.currentMediaItem?.mediaId)
         context.writeQueueEntries(list.capForPersist(currentIndex))
+        context.saveOriginalOrder(player.originalOrderIdsIfShuffled())
         context.saveRecentRoot(player.currentMediaItem)
+    }
+
+    /**
+     * The un-shuffled order to persist, read on the main thread by the two savers.
+     *
+     * ⚠️ EMPTY WHEN SHUFFLE IS OFF, AND THAT IS NOT LAZINESS: with shuffle off
+     * `original` IS the queue, so the file would be a second copy of what the queue already carries
+     * - and the restore treats "absent" exactly as every build before this one did.
+     */
+    private fun Player.originalOrderIdsIfShuffled(): List<String> =
+        (this as? ShufflePlayer)?.takeIf { it.shuffleModeEnabled }?.originalOrderIds.orEmpty()
+
+    // Absent means "no saved order" everywhere downstream, so an empty list DELETES the key rather
+    // than writing `[]` - otherwise turning shuffle off would leave the previous order on disk, which
+    // is the one state that could resurrect an order the user has already discarded.
+    private fun Context.saveOriginalOrder(ids: List<String>) {
+        if (ids.isEmpty()) deleteQueueKey(ORIGINAL) else saveToQueue(ORIGINAL, ids)
     }
 
     fun Context.recoverTracks(): List<Pair<MediaState.Unloaded<Track>, EchoMediaItem?>>? {
@@ -576,6 +612,10 @@ object ResumptionUtils {
     private fun Context.recoverPosition() = getFromQueue<Long>(POSITION)
 
     fun Context.recoverShuffle() = getFromQueue<Boolean>(SHUFFLE)
+
+    /** The saved un-shuffled order, or empty when none was written (shuffle off, or an older save). */
+    fun Context.recoverOriginalOrder() = getFromQueue<List<String>>(ORIGINAL).orEmpty()
+
     fun saveShuffle(context: Context, shuffle: Boolean) {
         context.saveToQueue(SHUFFLE, shuffle)
     }

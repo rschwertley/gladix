@@ -58,6 +58,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * ⚠⚠ NEW FIELDS MUST BE DEFAULTED, BECAUSE OLD ENTRIES ON DISK MUST STILL DECODE.
@@ -416,6 +417,10 @@ object Cached {
                     isHidden = cached.isHidden,
                     showRadio = cached.showRadio,
                     showShare = cached.showShare,
+                    // PRESERVED, NOT CLEARED. This learned ONE field from a successful like; the
+                    // flag says some OTHER probe never answered, and that is still true. Clearing
+                    // it here would stop the re-probe that would have filled the rest in.
+                    probesDegraded = cached.probesDegraded,
                 )
             )
         }
@@ -433,6 +438,36 @@ object Cached {
     // @PublishedApi internal so the public inline loadMedia can reference it after inlining.
     @PublishedApi
     internal fun canonicalId(id: String) = id.removePrefix("VL")
+
+    /**
+     * A capability probe's result, degraded to null ("unknown") on failure and reported once.
+     *
+     * ⚠⚠ null ARRIVES TWO WAYS AND THEY MEAN THE SAME THING TO EVERY
+     * CONSUMER: the item did not declare the capability (the Result itself is null, from
+     * [loadMedia]'s `else null`), or the probe failed. Both are "we do not know", which is what
+     * the nullable field on MediaState.Loaded is for.
+     * ⚠️ CancellationException IS RETHROWN, NEVER DEGRADED.
+     * ExtensionUtils.get wraps the call in runCatching, so a cancelled probe arrives here as a
+     * Result.failure rather than unwinding - and swallowing it would detach this coroutine from
+     * its parent's cancellation. Same guard, same reason, as the one in
+     * ExtensionUtils.getOrThrow(throwableFlow).
+     * ⚠️ @PublishedApi internal BECAUSE [loadMedia] IS PUBLIC INLINE. Read the
+     * stale-inline hazard note above that function before changing this signature: a caller that
+     * is not recompiled in the same run keeps its inlined copy and links against whatever was
+     * here before.
+     */
+    @PublishedApi
+    internal fun <T> Result<T?>?.probeOrNull(
+        extensionId: String, probe: String, failed: MutableList<String>
+    ): T? {
+        val result = this ?: return null
+        return result.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
+            failed.add(probe)
+            CapabilityProbeFailure.record(extensionId, probe, throwable)
+            null
+        }
+    }
 
     // Ids are EXTENSION-AUTHORED and unbounded, so cap them HERE rather than letting
     // PlayerEventListener's generic MAX_MSG_LEN absorb an arbitrary one — the same reasoning as
@@ -536,8 +571,24 @@ object Cached {
             // ⚠️ `as?` PLUS `== true` IS DELIBERATE: a non-Track state (album, artist, playlist) has no
             // servers to test, so the predicate must be FALSE for it and the cache still preferred. A
             // direct `!servers.isEmpty()` would make every non-Track cache read a miss.
+            // ⚠⚠ A DEGRADED ENTRY IS ALSO A MISS, AND IT IS THE SAME KIND OF
+            // TEST AS THE EMPTY-SERVERS ONE ABOVE - NOT THE TTL THE NOTE FORBIDS. It asks "did
+            // this state ever find out?", which is a STRUCTURAL property written into the entry at
+            // build time (MediaState.Loaded.probesDegraded), never "how old is it". A state whose
+            // probes all answered is preferred forever, exactly as before.
+            // ⚠️ WHY IT MATTERS ON THIS PATH SPECIFICALLY: a cache hit here
+            // skips all five probes, so a single failed probe would otherwise be remembered as the
+            // answer for the life of the entry - an unfilled heart on every later play of that
+            // track, which is the stale-heart class [setTrackLiked] exists to prevent.
+            // ⚠️ OFFLINE STILL PLAYS, AND THAT IS WHY THE ENTRY IS STILL
+            // WRITTEN RATHER THAN SKIPPED. Bypassing the cache means loadItem runs and fails fast
+            // offline (DNS/connect, not a read timeout), and the getOrElse fallback below re-serves
+            // this very state - so the cost is one doomed attempt, not a track that cannot play.
+            // NOT persisting a degraded load would have left nothing to fall back to at all.
             if (preferCache) getMedia<T>(app, extension.id, state.item.id).getOrNull()
-                ?.takeUnless { (it.item as? Track)?.servers?.isEmpty() == true }
+                ?.takeUnless {
+                    (it.item as? Track)?.servers?.isEmpty() == true || it.probesDegraded
+                }
                 ?.let { return@runCatching it }
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
@@ -587,16 +638,47 @@ object Cached {
                         isItemHidden(new)
                     } else null
                 }
+                // ⚠⚠ A FAILED CAPABILITY PROBE IS "UNKNOWN", NOT A FAILED LOAD.
+                // These five were `.getOrThrow()`, so ANY of them failing failed the whole
+                // MediaState.Loaded - and on a cache miss that failure reached the caller. On the
+                // playback path the caller is StreamableLoader.loadTrack, so a like/save lookup could
+                // stop a track from playing: 1146 (ru, SM-G781B, fresh Obtainium install) died in
+                // prepare because Deezer refused favorite_song.getList for an anonymous session, which
+                // isItemSaved was calling per track.
+                // ⚠⚠ THE TYPE ALREADY SAID THIS WAS ALLOWED. All five fields are
+                // NULLABLE on MediaState.Loaded precisely because "we could not find out" is a real
+                // answer, and every consumer already renders it (the heart falls back to unfilled, the
+                // library row to not-saved). `.getOrThrow()` was converting a representable unknown
+                // into a fatal.
+                // ⚠️ THE FAILURE IS STILL REPORTED, JUST NOT TO THE USER: see
+                // [probeOrNull]. A snackbar per track on a failing queue is noise, and throwableFlow
+                // would deliver exactly that.
+                // ⚠⚠ AND THE STATE REMEMBERS THAT IT IS INCOMPLETE, WHICH IS THE
+                // OTHER HALF OF DEGRADING AT ALL. This state is written to the cache below like any
+                // other, and on the playback path a cache hit SKIPS all five probes - so without the
+                // marker one transient refusal would leave that track's heart unfilled permanently.
+                // See MediaState.Loaded.probesDegraded and the preferCache arm above.
+                // ⚠️ A PLAIN MutableList IS SAFE HERE: the five awaits are
+                // evaluated in order, on this one coroutine, as the constructor's arguments - the
+                // async blocks run concurrently but nothing adds to this list except these five
+                // sequential calls.
+                val failedProbes = mutableListOf<String>()
                 val newState = MediaState.Loaded(
                     item = new,
                     extensionId = extension.id,
-                    isSaved = isSaved.await()?.getOrThrow(),
-                    isFollowed = isFollowed.await()?.getOrThrow(),
-                    followers = followers.await()?.getOrThrow(),
-                    isLiked = isLiked.await()?.getOrThrow(),
-                    isHidden = isHidden.await()?.getOrThrow(),
+                    isSaved = isSaved.await()
+                        .probeOrNull(extension.id, "isItemSaved", failedProbes),
+                    isFollowed = isFollowed.await()
+                        .probeOrNull(extension.id, "isFollowing", failedProbes),
+                    followers = followers.await()
+                        .probeOrNull(extension.id, "getFollowersCount", failedProbes),
+                    isLiked = isLiked.await()
+                        .probeOrNull(extension.id, "isItemLiked", failedProbes),
+                    isHidden = isHidden.await()
+                        .probeOrNull(extension.id, "isItemHidden", failedProbes),
                     showRadio = new.isRadioSupported && extension.isClient<RadioClient>(),
                     showShare = new.isShareable && extension.isClient<ShareClient>(),
+                    probesDegraded = failedProbes.isNotEmpty(),
                 )
                 val fileCache = app.awaitFileCache()
                 val id = mediaStateId(extension.id, newState.item.id)

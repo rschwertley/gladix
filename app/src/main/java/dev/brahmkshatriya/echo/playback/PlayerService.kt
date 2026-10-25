@@ -61,6 +61,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.prefs
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils
+import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverOriginalOrder
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
@@ -638,7 +639,8 @@ class PlayerService : MediaLibraryService() {
                 else RestoreData(
                     items, index, pos,
                     recoverShuffle() ?: false,
-                    recoverRepeat() ?: Player.REPEAT_MODE_OFF
+                    recoverRepeat() ?: Player.REPEAT_MODE_OFF,
+                    recoverOriginalOrder()
                 )
                 // Key on the generation captured BEFORE the read: a write that lands mid-read bumps it,
                 // so the next instance misses this entry and re-reads rather than serving a torn build.
