@@ -103,7 +103,12 @@ class DeezerLibraryClient(
                 val json = cfg.request(api)
                 val items = cfg.extractor(json) ?: return@async null to null
                 if (cfg.id == TabId.TRACKS) {
-                    val grafted = items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                    // One batched availability pass over the same rows - see DeezerApi.markUnplayable.
+                    // Both tab paths get it because the same list is declared to the app from both; see
+                    // the customTrackList note at loadLibraryFeed.
+                    val grafted = api.markUnplayable(
+                        items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                    )
                     val shelf = grafted.takeIf { it.isNotEmpty() }
                         ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) }
                     shelf to grafted
@@ -120,8 +125,11 @@ class DeezerLibraryClient(
         val json = cfg.request(api)
         val arr = cfg.extractor(json) ?: return emptyList<Shelf>() to null
         return if (id == TabId.TRACKS.id) {
-            // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed.
-            val liked = arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+            // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed,
+            // plus one batched availability pass - see DeezerApi.markUnplayable.
+            val liked = api.markUnplayable(
+                arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+            )
             liked.map { it.toShelf() } to liked
         } else parser.run {
             arr.mapNotNull { it.jsonObject.toEchoMediaItem()?.toShelf() }

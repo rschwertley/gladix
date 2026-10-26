@@ -1,6 +1,6 @@
 [versions]
 agp = "9.3.2"
-kotlin = "2.4.10"
+kotlin = "2.4.21"
 # NOTE: Detekt bundles its OWN Kotlin analyzer for PSI parsing; 1.23.8 bundles ~Kotlin 2.0.x, while this
 # project is on Kotlin 2.4.10. PSI-only analysis of ordinary code (incl. reified generics / @OptIn) works,
 # but files using brand-new 2.4-only SYNTAX may report a parse error for that file (NOT a hang — detekt is a
@@ -9,12 +9,12 @@ kotlin = "2.4.10"
 detekt = "1.23.8"
 
 car-app = "1.7.0"
-androidx-paging = "3.5.1"
-room = "3.0.2"
-sqlite = "2.7.0"
-firebase-bom = "34.18.0"
+androidx-paging = "3.5.3"
+room = "3.0.3"
+sqlite = "2.7.1"
+firebase-bom = "35.0.2"
 koinAndroid = "4.2.2"
-media3 = "1.11.0"
+media3 = "1.11.1"
 # Cast. NOT version.ref'd to media3: play-services-cast-framework has its own release train,
 # and media3-cast 1.11.0 declares 22.3.1 (which in turn hard-pins play-services-cast to
 # [22.3.1] - a RANGE, so that one must not be declared here or the pin fights the catalogue).
@@ -35,17 +35,17 @@ play-services-cast = "22.3.1"
 # between builds with no pattern a user could describe. "TV album art was blank in one build and fine in
 # the next" is exactly what this looks like from outside, and is exactly the shape of report that gets
 # written off as a fluke. It is not a fluke; it is this.
-coil = "3.6.1"
+coil = "3.6.3"
 
 [libraries]
-okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.5.0" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version = "5.5.1" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version = "1.11.0" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 
 androidx-car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
 androidx-core-google-shortcuts = { module = "androidx.core:core-google-shortcuts", version = "1.1.0" }
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.19.0" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.19.1" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.8.0" }
 androidx-activity = { group = "androidx.activity", name = "activity", version = "1.13.0" }
 
@@ -53,10 +53,10 @@ protobuf-java = { module = "com.google.protobuf:protobuf-java", version = "4.36.
 recyclerview = { module = "androidx.recyclerview:recyclerview", version = "1.4.0" }
 swiperefresh = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version = "1.2.0" }
 
-fragment = { module = "androidx.fragment:fragment", version = "1.9.0" }
+fragment = { module = "androidx.fragment:fragment", version = "1.9.1" }
 
 splashscreen = { module = "androidx.core:core-splashscreen", version = "1.2.0" }
-palette = { module = "androidx.palette:palette-ktx", version = "1.0.0" }
+palette = { module = "androidx.palette:palette-ktx", version = "1.1.0" }
 material = { group = "com.google.android.material", name = "material", version = "1.14.0" }
 
 preference = { module = "androidx.preference:preference-ktx", version = "1.2.1" }

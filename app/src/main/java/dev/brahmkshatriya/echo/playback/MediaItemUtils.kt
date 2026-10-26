@@ -219,6 +219,33 @@ object MediaItemUtils {
     // CHEAPLY: an extension-version component in the kache key invalidates exactly these entries on
     // upgrade, with no failure needed to trigger it. The rejection above still stands on its other
     // grounds, but do not read it as "D has no case" - it has precisely this one.
+    /**
+     * Force a fresh resolve of this item WITHOUT touching the retry counter.
+     *
+     * ⚠⚠ `loaded = false` ALONE DOES NOT RE-RESOLVE, WHICH IS WHY THIS
+     * BUMPS A COUNTER AT ALL. StreamableMediaSource.canUpdateMediaItem compares retries,
+     * serverIndex, sourceIndex, backgroundIndex and subtitleIndex - NOT `loaded` - so an item
+     * that differs only in `loaded` is updated IN PLACE on the existing source, with no fresh
+     * prepare and therefore no resolve. Some compared field has to change.
+     * ⚠⚠ AND IT MUST NOT BE `retries`, BECAUSE THAT FIELD IS AN ERROR
+     * BUDGET. PlayerEventListener spends it: `mediaItem.retries >= maxSingleItemRetries` (= 1)
+     * decides whether an HTTP 5xx is retried or the track is SKIPPED, and stuckDetail reports it.
+     * A re-resolve we asked for is not an error, so spending that budget would make the next
+     * genuine 5xx on the same track skip immediately. `reresolve` is compared by
+     * canUpdateMediaItem and read by nothing else.
+     * ⚠️ ONE CALLER: CastSessionController, at cast start, for a high-res
+     * stream the receiver cannot be given. Keep it that way - a general "re-resolve this" is a
+     * loaded gun on a path where every resolve costs a request and a token.
+     */
+    fun withReresolve(item: MediaItem): MediaItem {
+        val bundle = Bundle().apply {
+            putAll(item.mediaMetadata.extras!!)
+            putBoolean("loaded", false)
+            putInt("reresolve", getInt("reresolve") + 1)
+        }
+        return buildWithBundle(item, bundle)
+    }
+
     fun withRetry(item: MediaItem): MediaItem {
         val bundle = Bundle().apply {
             putAll(item.mediaMetadata.extras!!)
@@ -463,6 +490,10 @@ object MediaItemUtils {
     val Bundle?.background
         get() = this?.getSerialized<Streamable.Media.Background?>("background")?.getOrNull()
     val Bundle?.retries get() = this?.getInt("retries") ?: 0
+
+    // Bumped only by [withReresolve]; absent (0) on every item built normally. Compared by
+    // StreamableMediaSource.canUpdateMediaItem and read nowhere else - see that function.
+    val Bundle?.reresolve get() = this?.getInt("reresolve") ?: 0
     val Bundle?.unloadedCover
         get() = this?.getSerialized<ImageHolder?>("unloadedCover")?.getOrNull()
     val Bundle?.downloaded get() = this?.getSerialized<List<String>>("downloaded")?.getOrNull()
@@ -480,6 +511,7 @@ object MediaItemUtils {
     val MediaMetadata.isLiked get() = (userRating as? ThumbRating)?.isThumbsUp == true
     val MediaItem.isLiked get() = mediaMetadata.isLiked
     val MediaItem.retries get() = mediaMetadata.extras.retries
+    val MediaItem.reresolve get() = mediaMetadata.extras.reresolve
     val MediaItem.unloadedCover get() = mediaMetadata.extras.unloadedCover
     val MediaItem.downloaded get() = mediaMetadata.extras.downloaded
 

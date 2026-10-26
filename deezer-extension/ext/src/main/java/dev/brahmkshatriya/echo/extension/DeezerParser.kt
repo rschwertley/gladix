@@ -615,21 +615,76 @@ class DeezerParser(private val session: DeezerSession) {
             // ⚠⚠ `isPlayable` IS MISSING HERE, AND THAT IS THE ENTIRE "GREY OUT UNAVAILABLE
             // TRACKS" JOB. It is A FIELD TO POPULATE, NOT A FEATURE TO BUILD - record kept permanently
             // because the task NAME makes it sound like the opposite, and it would be re-scoped as UI work.
+            // [CORRECTED 2026-10-25: BOTH HALVES NOW EXIST, AND "NOT A FEATURE TO BUILD" WAS HALF
+            // WRONG. The field is still not set HERE - this parse cannot know - but
+            // DeezerApi.markUnplayable sets it for liked, playlist and album rows from pipe, and the
+            // DIMMING the task name implied did not exist and had to be built the same day
+            // (UiUtils.dimIfUnplayable). So it was a field to populate AND half a feature to build.
+            // See the two blocks below.]
             // EVERYTHING DOWNSTREAM ALREADY EXISTS AND ALREADY WORKS:
             //   common's Track carries `isPlayable: Playable = Playable.Yes` with Yes / RegionLocked /
             //     Unreleased / No(reason) - polymorphic, already in the ABI, no version-skew question;
-            //   MediaViewHolder, MediaGridViewHolder, ShelfViewHolder and both video holders all grey out
+            //   MediaViewHolder, MediaGridViewHolder, ShelfViewHolder and both video holders all branch
             //     on `isPlayable != Playable.Yes`;
-            //   ShelfViewHolder reroutes the TAP to onMediaClicked instead of playing;
+            //     ⚠⚠ [CORRECTED 2026-10-25] THIS SAID "GREY OUT", NOTHING DID,
+            //     AND THEN THE MISSING HALF WAS BUILT THE SAME DAY. Both states are recorded,
+            //     because the gap between them is the useful part - and note the tense: the claim is
+            //     TRUE TODAY and was FALSE when written.
+            //     AS FOUND, enumerated app-wide (scope: app/src/main/java and common/src,
+            //     recursive): the five holder sites were CLICK ROUTING ONLY, each calling
+            //     onMediaClicked rather than onTracksClicked, and NO view applied alpha, colour,
+            //     strikethrough or a badge for a non-Yes value - the only `alpha` in ui/feed was
+            //     FeedAdapter's unrelated entry animation.
+            //     AND THE FIRST DRAFT OF THIS CORRECTION THEN OVERSTATED IT AS "VISUALLY
+            //     IDENTICAL", WHICH WAS ALSO WRONG: the SUBTITLE always carried the reason, because
+            //     MediaViewHolder.subtitle is `is Track -> playableString(context) ?: subtitleWithE`
+            //     and all five holders use it - so such a row has always READ differently, showing
+            //     "Not playable: <reason>" where the artist line goes. The TEXT half existed, the
+            //     ALPHA half did not, and the original claim conflated the two.
+            //     AS SHIPPED 2026-10-25: UiUtils.dimIfUnplayable at SIX bind sites (the five above
+            //     plus ShelfViewHolder.ThreeTracks, which this enumeration had folded into one)
+            //     dims cover, title and subtitle to DISABLED_CONTENT_ALPHA, and the six click gates
+            //     call FeedClickListener.onUnplayableClicked - a message, no navigation, no play, no
+            //     queue. The consumer set is therefore those six, UiUtils.dimIfUnplayable,
+            //     MediaHeaderAdapter's play-button visibility, MediaHeaderAdapter.playableString,
+            //     StreamableLoader.loadServer, HistoryEntity.resetPlayable and
+            //     AndroidAutoCallback.saveDeclaredList's keepPlayable.
+            //     Kept rather than deleted because it is WHY "grey out unavailable tracks" read as a
+            //     field to populate with the UI already done - and because it was HALF right, which
+            //     is the harder kind of wrong to notice.
+            //   ShelfViewHolder reroutes the TAP instead of playing (to onUnplayableClicked since
+            //     2026-10-25; it was onMediaClicked, which navigated to the track page);
             //   MediaHeaderAdapter hides the play button;
             //   StreamableLoader throws TrackUnavailableException, with a documented silent-skip and a
             //     consecutiveUnavailableSkips breaker (max 3) behind it;
             //   TestExtension already sets Playable.Unreleased, so the path is exercised.
             // Deezer tracks therefore default to Playable.Yes and render as ordinary rows - which is why
-            // Deezer's own app greys these and ours does not.
+            // Deezer's own app greys these and ours does not. [CORRECTED 2026-10-25: liked and playlist
+            // rows no longer default - DeezerApi.markUnplayable sets Playable.No on them from pipe. The
+            // rendering half of this sentence still holds for a different reason: see the correction
+            // above, nothing greys out either way.]
             // ⚠⚠ CLOSED 2026-09-12: THERE IS NO PARSE-TIME FIELD TO SET IT FROM, SO GREYING
             // OUT IN ADVANCE IS NOT ACHIEVABLE HERE. This cost three captures; do not re-open it without
             // reading all four sections below.
+            //
+            // ⚠⚠ [CORRECTED 2026-10-25] THE CLOSURE IS RIGHT ABOUT THIS RECORD AND
+            // WRONG AS A GENERAL CLAIM. "No parse-time field to set it from" holds for the GATEWAY song
+            // record - and the signal exists, in PIPE. Capture of 2026-10-25 over the live liked list:
+            // pipe.deezer.com tracksByIds answers `media: null` for exactly the unplayable rows (50 of
+            // 117, all one pulled release - "Karaoke Hits: Elvis Presley", all STATUS=3) and `media`
+            // present for every control, INCLUDING 69106336 - the RIGHTS={} track named below as a dead
+            // candidate - whose media resolved via substitute 3786363902. So `media` is sharper than
+            // RIGHTS on the very id that refuted RIGHTS. isPlayable is now set from that separate
+            // batched request by DeezerApi.markUnplayable, so NOTHING BELOW BECOMES A FIELD TO READ.
+            // WHAT STILL STANDS: the four dead candidates are still dead, availability is still decided
+            // at token exchange rather than in this record, and the probe-label lesson is still the
+            // transferable part.
+            // ⚠️ AND THE "COMPLETE KEY SET" BELOW IS NOT COMPLETE. AVAILABLE_COUNTRIES
+            // was in the September capture's allKeys (truncated to "{", so its value was never seen) and
+            // is missing from the list - the list is "the keys one capture printed", not an inventory.
+            // Measured 2026-10-25: favorite_song.getList's records carry no AVAILABLE_COUNTRIES at all;
+            // deezer.pageTrack's do, per track only. That per-track-only shape is why the batched pipe
+            // route was taken over the records we already hold.
             //
             // WHY NOT: AVAILABILITY IS DECIDED AT TOKEN EXCHANGE, NOT IN THE CATALOGUE RECORD. Three
             // stream-time failure branches in DeezerTrackClient.createStreamableForQuality prove where the

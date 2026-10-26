@@ -14,6 +14,7 @@ import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.ico
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.placeHolder
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.subtitle
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
 
 class VideoHorizontalViewHolder(
     parent: ViewGroup,
@@ -31,7 +32,7 @@ class VideoHorizontalViewHolder(
         binding.root.setOnClickListener {
             val track = feed?.item
             if (track?.isPlayable != Track.Playable.Yes) {
-                listener.onMediaClicked(it, feed?.extensionId, track, feed?.context)
+                listener.onUnplayableClicked(track)
                 return@setOnClickListener
             }
             val (tracks, pos) = getAllTracks(feed!!)
@@ -63,6 +64,7 @@ class VideoHorizontalViewHolder(
         val artist = track.artists.firstOrNull()
         artist?.cover.loadInto(binding.artistCover, artist?.icon)
         artistCover.isVisible = artist != null
+        dimIfUnplayable(track, cover, artistCover, title, subtitle)
     }
 
     override fun onCurrentChanged(current: PlayerState.Current?) {

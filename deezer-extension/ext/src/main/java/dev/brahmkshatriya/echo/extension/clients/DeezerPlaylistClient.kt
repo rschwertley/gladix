@@ -100,10 +100,14 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
                 }
             }
         }
-        baseTracks.mapIndexed { index, track ->
+        // One batched availability pass before the NEXT/playlist_id stamping - see
+        // DeezerApi.markUnplayable. It changes no ids and drops no rows, so the NEXT chain below is
+        // the same chain; it is read off `marked` only so the two cannot drift apart later.
+        val marked = api.markUnplayable(baseTracks)
+        marked.mapIndexed { index, track ->
             track.copy(
                 extras = track.extras + mapOf(
-                    "NEXT" to baseTracks.getOrNull(index + 1)?.id.orEmpty(),
+                    "NEXT" to marked.getOrNull(index + 1)?.id.orEmpty(),
                     "playlist_id" to playlist.id
                 )
             )

@@ -5,6 +5,7 @@ import androidx.room3.PrimaryKey
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 
 @Entity(primaryKeys = ["trackId", "extensionId"])
@@ -69,6 +70,80 @@ fun Track.toSlim(): Track = copy(
     artists = artists.map { it.copy(bio = null, extras = emptyMap(), background = null, banners = emptyList()) },
     album = album?.copy(description = null, extras = emptyMap(), background = null, artists = emptyList())
 )
+
+// The extension-owned key kept by [toSlimKeepingRoutingKeys], by literal because there is no shared
+// constant: app code cannot see the Deezer extension's strings. The precedent for naming one here is
+// CastSessionController reaching into that extension's prefs by literal id.
+private const val FALLBACK_ID_EXTRA = "FALLBACK_ID"
+
+/**
+ * ⚠⚠ A Playable VERDICT MUST NOT SURVIVE A SLIM - AND isPlayable IS A
+ * FIELD, SO [toSlim]'s `copy` CARRIED IT THROUGH. The Deezer extension stamps Playable.No on
+ * liked/playlist rows whose pipe node has no media (DeezerApi.markUnplayable), and that verdict is a
+ * snapshot of Deezer's catalogue at list-load time, not a fact about the track.
+ * ⚠⚠ PERSISTED, IT BECOMES PERMANENT AND INVERTS THE FAIL-OPEN DESIGN.
+ * StreamableLoader.loadServer throws TrackUnavailableException on any non-Yes value BEFORE making a
+ * request, so a restored queue entry or a history row carrying one would skip instantly and forever
+ * with nothing on any path to re-check it - the "state clearable only by an action its own value
+ * disables" shape. The extension fails open on every uncertainty precisely so a wrong verdict costs
+ * one list load; carrying it into the queue file would make it cost a reinstall.
+ * ⚠️ RESET, NOT DROP, because Yes is the type's own default and every
+ * consumer already reads it as "no opinion". The verdict is cheap to recompute - it comes back with
+ * the next list load - so losing it costs nothing and keeping it costs a track.
+ * ⚠️ ONE CALLER OPTS OUT, AND IT IS NOT AN EXCEPTION TO THE ARGUMENT
+ * ABOVE - IT IS THE ARGUMENT NOT APPLYING. See [toSlimKeepingRoutingKeys]'s `keepPlayable`.
+ */
+private fun Track.resetPlayable(): Track =
+    if (isPlayable == Track.Playable.Yes) this else copy(isPlayable = Track.Playable.Yes)
+
+/**
+ * [toSlim], plus the few NON-DISPLAY keys that routing and stream recovery need. The rule lives
+ * here, beside toSlim, because this file owns slimming; ResumptionUtils.queueSlim and
+ * HistoryRepository.recordTrack are both callers of THIS, not copies of it.
+ *
+ * ⚠⚠ KEEP A KEY, NEVER A PAYLOAD - that is the whole rule, and it is what
+ * separates this from the re-fatten the build-1008/1013 OOMs forbid. Two keys qualify:
+ *   UnifiedExtension.EXTENSION_ID  routes a Unified track to its sub-extension. Without it a
+ *                                  restored Unified track throws ExtensionNotFoundException(null)
+ *                                  in radio(), loadFeed() and loadTrack() - see the restamped()
+ *                                  note in ResumptionUtils for the four symptoms.
+ *   FALLBACK_ID                    IS THE PLAYABLE RECORDING for a FALLBACK-grafted Deezer
+ *                                  favourite: the track's own id is the unavailable original that
+ *                                  Deezer pre-substituted (DeezerLibraryClient.graftFavTrack), so
+ *                                  an entry without this key cannot reach the substitution at all
+ *                                  and the track is skipped as unavailable.
+ * ⚠️ TRACK_TOKEN IS STILL DROPPED, DELIBERATELY. It is the heavy,
+ * perishable half; DeezerTrackClient.loadTrack already re-fetches on an empty one, and persisting
+ * it would store a credential that is stale by the time it is read. See the "Baby Beluga" note at
+ * createStreamableForQuality for what a stale token costs.
+ * ⚠️ NON-BLANK ONLY: DeezerParser.toTrack writes FALLBACK_ID
+ * unconditionally with `.orEmpty()`, so an un-grafted track carries "" - storing that is file size
+ * for no information, and an empty value would also beat a real one in a later `+` merge.
+ *
+ * @param keepPlayable skips [resetPlayable]. FOR ONE CALLER, AndroidAutoCallback.saveDeclaredList,
+ * and it does not weaken that function's rule - it is that rule's premise failing to hold.
+ * ⚠⚠ THE AA FILE CANNOT OUTLIVE ITS LIST: it is rewritten from a fresh
+ * DeezerApi.markUnplayable pass on EVERY browse, and the signature below it now includes
+ * isPlayable, so a changed verdict rewrites the file. The stale-forever failure [resetPlayable]
+ * exists to prevent has no way to happen there.
+ * ⚠⚠ AND KEEPING IT IS WHAT STOPS THE CAR DOING THE WORK TWICE. The AA
+ * tap builds MediaState.Unloaded from these stored Tracks, so a stored Playable.No makes
+ * StreamableLoader.loadServer throw with ZERO requests. Reset, every dead track instead runs the
+ * full DeezerTrackClient.createStreamableForQuality ladder first - up to ~22 Deezer calls each -
+ * and a run of ADJACENT dead likes (a pulled album is exactly that shape) turns one browse-and-play
+ * into hundreds of refused requests against an account with a daily ceiling.
+ * ⚠️ THE SAVED QUEUE AND HISTORY KEEP THE RESET, which is the line
+ * between the two: both are read long after the list that produced them, with nothing to
+ * regenerate them from. Do not add a second opt-out without that same "rewritten every time"
+ * property to point at.
+ */
+fun Track.toSlimKeepingRoutingKeys(keepPlayable: Boolean = false): Track =
+    toSlim().let { if (keepPlayable) it else it.resetPlayable() }.let { slim ->
+        val keep = extras
+            .filterKeys { it == UnifiedExtension.EXTENSION_ID || it == FALLBACK_ID_EXTRA }
+            .filterValues { it.isNotEmpty() }
+        if (keep.isEmpty()) slim else slim.copy(extras = keep)
+    }
 
 // A stored context only needs id/type/title/cover (for the "Go to <context>" button + re-resolution
 // by id, which happens with loaded=false). Radio is the exception: its re-resolution reads extras

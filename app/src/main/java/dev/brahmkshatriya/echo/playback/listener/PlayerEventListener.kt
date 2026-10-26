@@ -27,11 +27,14 @@ import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.clients.LikeClient
+import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
@@ -41,6 +44,8 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getLikeButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getRepeatButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getShuffleButton
@@ -346,6 +351,8 @@ class PlayerEventListener(
             // swaps queues mid-CDN-outage the new queue's server errors should notify again. (serverErrorNotified
             // otherwise only re-arms on a successful STATE_READY, i.e. the CDN recovering.)
             serverErrorNotified = false
+            // A new queue has proved nothing yet - see [lastReadyItem].
+            lastReadyItem = null
         }
     }
 
@@ -623,6 +630,8 @@ class PlayerEventListener(
             // A track resolved, so any prior run of 5xx server errors has ended — re-arm the one-per-run
             // server-error snackbar for the next run.
             serverErrorNotified = false
+            // The probe's subject: this track demonstrably played. See [lastReadyItem].
+            lastReadyItem = player.currentMediaItem
             retried404MediaId = null
             retriedSocketMediaId = null
             networkRetryCount = 0
@@ -896,7 +905,7 @@ class PlayerEventListener(
                     // The breaker branch has an out the end-of-queue branch does not: it calls
                     // reportAndResetConsecutiveSkips, which does reach Crashlytics. End-of-queue reports
                     // nothing anywhere.
-                    if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                    if (breakerTripped()) {
                         reportAndResetConsecutiveSkips(player.currentMediaItem?.extensionId, "pause")
                         player.pause()
                         return@withContext
@@ -1256,6 +1265,54 @@ class PlayerEventListener(
 
     private val maxConsecutiveUnavailableSkips = 3
     private var consecutiveUnavailableSkips = 0
+
+    /**
+     * ⚠⚠ NOT A LIMIT - THE POINT AT WHICH WE ASK DEEZER WHETHER IT IS
+     * STILL WORKING. Catalogue-dead skips are exempt from [maxConsecutiveUnavailableSkips] (see
+     * [isCatalogueDead] for why a removed track is content, not a spiral), but exempt-with-no-limit
+     * would have removed the only stop for the case the July 18 breaker was built for: a queue
+     * where EVERY track answers "not available" - the relay account hitting its daily cap, say -
+     * would skip up to QUEUE_CAP_UPCOMING tracks at up to ~22 Deezer requests each, silently.
+     * ⚠⚠ A FIXED LIMIT COULD NOT TELL THOSE TWO APART, AND THAT IS WHY IT
+     * WAS REPLACED. Whatever number is chosen, a user whose favourites contain a longer run of
+     * removed tracks than the limit gets stopped mid-library for no reason - and 100 adjacent dead
+     * likes is a perfectly ordinary years-old favourites list. The DISTINCTION is not the count, it
+     * is whether anything can play AT ALL, and that is answerable directly:
+     * [runCatalogueDeadHealthCheck] re-resolves the last track that actually reached STATE_READY.
+     * ⚠️ SO 10 ONLY SETS THE PRICE OF THE ANSWER: one probe per ten dead
+     * skips. A hundred adjacent dead likes plays straight through for ten extra requests; a total
+     * outage is caught after ten skips, as before.
+     */
+    private val catalogueDeadHealthCheckAt = 10
+    private var consecutiveCatalogueDeadSkips = 0
+
+    /**
+     * Set only by [runCatalogueDeadHealthCheck] when the probe says nothing can play. The ONLY
+     * thing that trips the breaker on catalogue-dead skips, and it is cleared by
+     * [resetConsecutiveSkips] - i.e. by any track reaching STATE_READY, which is itself proof the
+     * outage is over.
+     *
+     * ⚠️ THE STOP LANDS ONE SKIP LATE, DELIBERATELY. The probe is
+     * suspending and the seven trip sites are not, so [breakerTripped] reads this flag rather than
+     * waiting on a request. The skip in flight when the verdict arrives therefore completes, and
+     * the stop happens at the next one. One extra skipped track is a better trade than making
+     * every trip site await a network call.
+     */
+    private var deadOutageConfirmed = false
+    private var deadHealthCheckJob: Job? = null
+
+    /**
+     * The last item that reached STATE_READY in this queue - the probe's subject.
+     *
+     * ⚠⚠ IT HAS TO BE A TRACK THAT DEMONSTRABLY PLAYED, or the probe
+     * cannot tell "Deezer is down" from "this track is also dead". A track that reached READY
+     * resolved and decoded moments ago, so a failure to re-resolve it now is environmental with
+     * high probability - which is the whole inference the check rests on.
+     * ⚠️ null MEANS NOTHING HAS PLAYED IN THIS QUEUE, and the probe then
+     * treats the run as an outage: a queue whose FIRST ten tracks are all "not available" has
+     * produced no evidence that anything works. Cleared on a queue replace for the same reason.
+     */
+    private var lastReadyItem: MediaItem? = null
     // The safeCause() of each skip in the current run, oldest→newest, bounded to maxConsecutiveUnavailableSkips.
     // Moves in lockstep with consecutiveUnavailableSkips AND recentSkipFamily below: recordSkip()
     // advances all three, resetConsecutiveSkips() clears all three — they are never mutated apart, so a
@@ -1290,6 +1347,7 @@ class PlayerEventListener(
     // by a 5xx, reset on the next STATE_READY (a track resolved, so the run ended). Keeps a burst of CDN 5xx
     // to a single message instead of one per skipped track.
     private var serverErrorNotified = false
+
 
     private var bufferingWatchdog: Job? = null
 
@@ -1682,20 +1740,116 @@ class PlayerEventListener(
     // The ONLY way to advance the breaker: increments the counter and records this skip's cause together,
     // so they cannot drift. Called at every skip site; never at the exempt (5xx / removed-extension) sites,
     // which do not skip. cause == null for the buffering watchdog (a stuck resolve, no error object).
+    /**
+     * ⚠⚠ A TRACK THE CATALOGUE NO LONGER HAS IS CONTENT, NOT A SPIRAL, AND IT
+     * MUST NOT COUNT TOWARD THE BREAKER. [consecutiveUnavailableSkips] exists to stop REPEATING
+     * SOMETHING HARMFUL - a rate-limit, a dead token, a CDN storm - where carrying on makes it
+     * worse. A removed track is a fact about the library: Deezer favourites accumulate for years
+     * and dead entries CLUSTER (one delisted album = several adjacent dead likes), so three in a
+     * row in a 2000-track liked list is ordinary. Counting them turned a normal library into
+     * "couldn't play this track" and a STOP - observed on a 1147 AA capture after What I Say, Viva
+     * Las Vegas and There's Gold, outcome=stop.
+     * ⚠️ SAME ARGUMENT, SAME SHAPE, AS THE HTTP 5xx EXEMPTION one screen
+     * down: "a CDN wobble can't trip the circuit breaker and halt an otherwise-good queue",
+     * bounded instead by end-of-queue. A fully-dead queue now skips monotonically to the end and
+     * stops there - no loop, no spin.
+     * ⚠⚠ NARROWER THAN SkipFamily.Unavailable, DELIBERATELY. That family also
+     * holds ExtensionNotFoundException (a ROUTING failure - stopping is right), HTTP 4xx and the
+     * IO error codes (a 403 storm or an auth failure is exactly the spiral the breaker is for).
+     * Only the extension's own "this content is not available" verdict is exempt:
+     * MediaUnavailableException and TrackUnavailableException, matched down the cause chain because
+     * ExtensionUtils.get wraps them in AppException.
+     * ⚠️ THE CAUSE AND THE FAMILY ARE STILL RECORDED, so a MIXED run that
+     * trips on something else still names the dead tracks in its report. What is NOT added here is
+     * a user-facing once-per-run message (the 5xx path has one): the skips are already visible as
+     * tracks going past, and a new string is a separate decision.
+     */
+    private fun isCatalogueDead(cause: Throwable?): Boolean {
+        if (cause == null) return false
+        return generateSequence(cause) { it.cause }.take(MAX_CAUSE_DEPTH).any {
+            it is MediaUnavailableException || it is TrackUnavailableException
+        }
+    }
+
     private fun recordSkip(
         cause: Throwable?, playbackError: PlaybackException? = null, detail: String? = null
     ) {
-        consecutiveUnavailableSkips++
+        if (isCatalogueDead(cause)) {
+            consecutiveCatalogueDeadSkips++
+            // One probe in flight at a time, re-armed on every tenth dead skip because the previous
+            // one zeroed the counter. See [catalogueDeadHealthCheckAt].
+            if (consecutiveCatalogueDeadSkips >= catalogueDeadHealthCheckAt &&
+                deadHealthCheckJob == null
+            ) deadHealthCheckJob = scope.launch(Dispatchers.Main) { runCatalogueDeadHealthCheck() }
+        } else consecutiveUnavailableSkips++
         recentSkipCauses.addLast(safeCause(cause, playbackError, detail))
         // maxOf, so the most decision-relevant cause in a mixed run survives — see recentSkipFamily.
         recentSkipFamily = maxOf(recentSkipFamily, skipFamilyOf(cause, playbackError))
         if (recentSkipCauses.size > maxConsecutiveUnavailableSkips) recentSkipCauses.removeFirst()
     }
 
+    /**
+     * Either breaker, so every trip site asks one question.
+     *
+     * ⚠️ SEVEN CALL SITES, AND THEY ALL HAD THE SAME `>=` SPELLED OUT.
+     * Collapsing them is what makes the catalogue-dead limit effective everywhere rather than at
+     * whichever site someone remembered to update - the two counters advance on disjoint skips
+     * (see [recordSkip]), so a run of either kind reaches its own limit independently.
+     */
+    /**
+     * "Is Deezer answering at all?" - one request, asked when a run of catalogue-dead skips
+     * reaches [catalogueDeadHealthCheckAt].
+     *
+     * ⚠⚠ IT RE-RESOLVES THE STREAMABLE OF [lastReadyItem], NOT THE TRACK.
+     * loadStreamableMedia on the server streamable that already played is the smallest question
+     * that distinguishes the two cases: for Deezer it is the relay's get_url call. It does NOT
+     * reload the track record, so no gateway call and no token refresh is involved.
+     * ⚠️ COST: one request on success. On FAILURE it can cost more - the
+     * extension's own quality ladder runs inside loadStreamableMedia, so a hard outage pays that
+     * track's full ladder once (worst case ~11 requests for Deezer, per the note at
+     * createStreamableForQuality) before the verdict. That is paid ONCE per outage, against the
+     * 2000-track runaway it replaces.
+     * ⚠️ SUCCESS → NO LIMIT. The counter is zeroed and skipping
+     * continues, so a hundred adjacent dead likes play straight through at one probe per ten.
+     * ⚠️ OFFLINE IT TRIPS, AND THAT IS CORRECT. The probe fails with a
+     * network error, which is indistinguishable from an outage from here and has the same
+     * consequence for the user: nothing can play. Note the path is rarely reached offline anyway -
+     * an offline failure is the Network family, which is NOT exempt and trips the 3-skip breaker
+     * first; reaching this code needs genuinely cached "not available" verdicts.
+     * ⚠️ CancellationException IS NOT SWALLOWED: getIf routes through
+     * ExtensionUtils.get, whose runCatching captures it into the Result - so a cancelled probe
+     * reads as a failure and would trip. It is launched on the service scope, which is cancelled
+     * only at teardown, where tripping no longer matters.
+     */
+    private suspend fun runCatalogueDeadHealthCheck() {
+        val item = lastReadyItem
+        val healthy = item != null && probeStreamableResolves(item)
+        if (healthy) consecutiveCatalogueDeadSkips = 0 else deadOutageConfirmed = true
+        deadHealthCheckJob = null
+    }
+
+    private suspend fun probeStreamableResolves(item: MediaItem): Boolean {
+        val extension = extensions.music.getExtension(item.extensionId) ?: return false
+        val streamable = item.track.servers.getOrNull(item.serverIndex) ?: return false
+        return extension.getIf<TrackClient, Streamable.Media> {
+            loadStreamableMedia(streamable, false)
+        }.getOrNull() != null
+    }
+
+    private fun breakerTripped() =
+        consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips || deadOutageConfirmed
+
     // The ONLY way to clear the breaker: zeroes the counter and the causes together. Both reset points
     // (STATE_READY and the trip) go through here, so the two fields always reset atomically.
     private fun resetConsecutiveSkips() {
         consecutiveUnavailableSkips = 0
+        // Reset WITH the other counter and from the same one place, so a mixed run cannot leave one
+        // of them carrying a count from a previous one. The outage verdict goes too: this function's
+        // STATE_READY caller IS proof that something plays, which is exactly what the probe asks.
+        consecutiveCatalogueDeadSkips = 0
+        deadOutageConfirmed = false
+        deadHealthCheckJob?.cancel()
+        deadHealthCheckJob = null
         recentSkipCauses.clear()
         recentSkipFamily = SkipFamily.Stall
         lastWatchdogSkipMediaId = null
@@ -1857,17 +2011,22 @@ class PlayerEventListener(
     // moment is the PRE-action state (already IDLE from the error), not the resulting one.
     // Logged BEFORE resetConsecutiveSkips(), which zeroes both the count and the causes.
     private fun reportAndResetConsecutiveSkips(extensionId: String?, outcome: String) {
+        // Whichever counter tripped is the one worth reporting: a catalogue-dead run leaves
+        // consecutiveUnavailableSkips at 0, so reporting that field alone would say "0 skips".
+        // recentSkipFamily is unaffected - recordSkip records the family for BOTH kinds, so a dead
+        // run still reports as ConsecutiveSkipUnavailableException.
+        val skips = maxOf(consecutiveUnavailableSkips, consecutiveCatalogueDeadSkips)
         Log.d(
             "GladixPlayback",
-            "Consecutive-skip breaker TRIPPED after $consecutiveUnavailableSkips skips " +
-                "(ext=${extensionId ?: "unknown"}, outcome=$outcome): " +
+            "Consecutive-skip breaker TRIPPED after $skips skips " +
+                "(ext=${extensionId ?: "unknown"}, outcome=$outcome, " +
+                "dead=$consecutiveCatalogueDeadSkips): " +
                 recentSkipCauses.joinToString(" | ")
         )
         // Family picks the CLASS, which is what Crashlytics groups on — a stall storm and a real error no
         // longer share an issue. Both carry the identical message, so lastCauses and its probe fields are
         // unchanged and the dedupe partitioning is the same as before the split.
         val causes = recentSkipCauses.joinToString(",")
-        val skips = consecutiveUnavailableSkips
         val ext = extensionId ?: "unknown"
         healthMonitor?.report(
             when (recentSkipFamily) {
@@ -1926,7 +2085,7 @@ class PlayerEventListener(
                 retried404MediaId = null
                 Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
                 recordSkip(rootCause, error, probeDetail())
-                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                if (breakerTripped()) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId, "stop")
                     player.stop()
                     return
@@ -2008,7 +2167,7 @@ class PlayerEventListener(
                 retriedSocketMediaId = null
                 Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
                 recordSkip(rootCause, error, probeDetail())
-                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                if (breakerTripped()) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId, "stop")
                     player.stop()
                     return
@@ -2165,7 +2324,7 @@ class PlayerEventListener(
             rootCause.message?.contains("not available", ignoreCase = true) == true
         ) {
             recordSkip(rootCause, error, probeDetail())
-            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+            if (breakerTripped()) {
                 reportAndResetConsecutiveSkips(mediaItem?.extensionId, "stop")
                 player.stop()
                 val isRetryExhausted = rootCause.message?.contains("not available after retries", ignoreCase = true) == true
@@ -2349,7 +2508,7 @@ class PlayerEventListener(
         if (isMissingFile || is401 || isMalformedContent || isTimeout || isExtensionRemoved) {
             if (!isExtensionRemoved) {
                 recordSkip(rootCause, error, probeDetail())
-                if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+                if (breakerTripped()) {
                     reportAndResetConsecutiveSkips(mediaItem?.extensionId, "stop")
                     player.stop()
                     return
@@ -2438,7 +2597,7 @@ class PlayerEventListener(
             // or the "skipping" line below).
             Log.d("GladixPlayback", "onPlayerError: maxRetries exhausted for ${mediaItem.mediaId}")
             recordSkip(rootCause, error, probeDetail())
-            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+            if (breakerTripped()) {
                 reportAndResetConsecutiveSkips(mediaItem.extensionId, "stop")
                 player.stop()
                 return
@@ -2478,7 +2637,7 @@ class PlayerEventListener(
             // against, and it would defer the trip by an unbounded number of tracks.
             Log.d("GladixPlayback", "onPlayerError: item retries exhausted for ${mediaItem.mediaId}")
             recordSkip(rootCause, error, probeDetail())
-            if (consecutiveUnavailableSkips >= maxConsecutiveUnavailableSkips) {
+            if (breakerTripped()) {
                 reportAndResetConsecutiveSkips(mediaItem.extensionId, "stop")
                 player.stop()
                 return

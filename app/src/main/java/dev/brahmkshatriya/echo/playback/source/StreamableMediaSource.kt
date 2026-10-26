@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.backgroundIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.reresolve
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -177,6 +178,9 @@ class StreamableMediaSource(
     override fun canUpdateMediaItem(mediaItem: MediaItem) = run {
         this.mediaItem.apply {
             if (retries != mediaItem.retries) return@run false
+            // Same contract as retries, for a re-resolve nobody treats as an error. See
+            // MediaItemUtils.withReresolve for why `loaded` cannot carry this.
+            if (reresolve != mediaItem.reresolve) return@run false
             if (serverIndex != mediaItem.serverIndex) return@run false
             if (this.sourceIndex != mediaItem.sourceIndex) return@run false
             if (backgroundIndex != mediaItem.backgroundIndex) return@run false

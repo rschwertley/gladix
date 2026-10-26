@@ -24,6 +24,30 @@ data class PlayerState(
     val servers: MutableMap<String, Result<Streamable.Media.Server>> =
         Collections.synchronizedMap(LinkedHashMap())
     val serverChanged = MutableSharedFlow<Unit>(replay = 1)
+
+    /**
+     * "Has this track's stream resolve already COMPLETED AND FAILED?" - not "is it unresolved".
+     *
+     * ⚠⚠ THREE STATES, AND COLLAPSING TWO OF THEM IS THE WHOLE RISK.
+     * ABSENT means no resolve has finished yet (or is still running) and the answer is UNKNOWN -
+     * false. A Result.failure means the loader returned a failure. A Result.success whose server
+     * has no sources is the SAME verdict wearing success: StreamableMediaSource writes the entry
+     * and then treats 0/null sources as an error (its "null/empty sources for <id>" line), so a
+     * present-but-empty entry is as dead as a failure.
+     * ⚠️ THE WRITE HAPPENS BEFORE ANY CONSUMER COULD CARE, MEASURED:
+     * media3 prepares the next item's source well ahead of the transition, so on a 1147 AA capture
+     * the "stream loaded: <id> server=false" + "null/empty sources" pair landed ~60 s before the
+     * end of the outgoing track - against a crossfade arm lead of 25-30 s.
+     * ⚠️ ONE SHAPE IS NOT COVERED AND IT CANNOT BE, TODAY: if
+     * StreamableLoader.load THROWS rather than returning a failed Result, prepareSourceInternal's
+     * `getOrElse { error = it; return@launch }` returns before writing [servers] at all - so that
+     * failure is indistinguishable from "not resolved yet" from out here. Covering it would mean a
+     * second marker written on that path; the captured shape is the returned-failure one.
+     */
+    fun resolveFailed(trackId: String): Boolean {
+        val resolved = servers[trackId] ?: return false
+        return resolved.isFailure || resolved.getOrNull()?.sources.isNullOrEmpty()
+    }
     val activeLoadCount = AtomicInteger(0)
 
     // PROBE (2026-09-16) - epoch ms at which activeLoadCount last rose from 0, or 0 when nothing is

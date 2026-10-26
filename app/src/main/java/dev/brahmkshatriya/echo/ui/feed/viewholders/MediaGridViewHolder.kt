@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.applyCover
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.subtitle
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
 
 class MediaGridViewHolder(
     parent: ViewGroup,
@@ -30,7 +31,7 @@ class MediaGridViewHolder(
             when (val item = feed?.item) {
                 is Track -> {
                     if (item.isPlayable != Track.Playable.Yes) {
-                        listener.onMediaClicked(it, feed?.extensionId, item, feed?.context)
+                        listener.onUnplayableClicked(item)
                         return@setOnClickListener
                     }
                     val (tracks, pos) = getAllTracks(feed!!)
@@ -59,6 +60,7 @@ class MediaGridViewHolder(
         subtitle.text = subtitleText
         subtitle.isVisible = !subtitleText.isNullOrBlank()
         coverContainer.run { applyCover(item, cover, listBg1, listBg2, icon) }
+        dimIfUnplayable(item, coverContainer.root, title, subtitle)
     }
 
 

@@ -21,6 +21,7 @@ import dev.brahmkshatriya.echo.ui.feed.viewholders.CategoryViewHolder.Companion.
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.applyCover
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.bind
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.subtitle
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 
 sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(view) {
@@ -75,7 +76,7 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                 when (val item = shelf?.media) {
                     is Track -> {
                         if (item.isPlayable != Track.Playable.Yes) {
-                            listener.onMediaClicked(it, shelf?.extensionId, item, shelf?.context)
+                            listener.onUnplayableClicked(item)
                         } else listener.onTracksClicked(
                             it, shelf?.extensionId, shelf?.context, listOf(item), 0
                         )
@@ -97,6 +98,7 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
             val shelf = list[index]
             this.shelf = shelf
             binding.bind(shelf.media)
+            dimIfUnplayable(shelf.media, binding.coverContainer.root, binding.title, binding.subtitle)
         }
 
         override fun onCurrentChanged(current: PlayerState.Current?) {
@@ -121,28 +123,43 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
         init {
             bindings.forEachIndexed { index, binding ->
                 binding.coverContainer.cover.clipToOutline = true
-                val actualIndex = shelf?.number?.let { it * 3 + index } ?: index
+                // ⚠⚠ [CORRECTED 2026-10-25] THIS WAS A `val` COMPUTED RIGHT
+                // HERE, IN init, WHERE `shelf` IS STILL NULL - so `shelf?.number` was always null,
+                // the whole expression collapsed to the elvis branch `index` (0..2 within this row
+                // of three), and every shelf after the first reported positions 0, 1, 2 to
+                // onMediaLongClicked instead of its real ones. A FUNCTION, NOT A val: it has to be
+                // evaluated at EVENT time, once bind has assigned `shelf`. Same expression the tap
+                // path's `pos` uses - the two were out of step, and this is the long-press half of
+                // the fault fixed there.
+                fun actualIndex() = shelf?.number?.let { it * 3 + index } ?: index
                 binding.root.setOnClickListener { view ->
                     val tracks = getAllTracks()
                     val pos = shelf?.number?.let { it * 3 + index } ?: index
-                    val track = tracks.getOrNull(index)
-                    if (track?.isPlayable != Track.Playable.Yes) listener.onMediaClicked(
-                        view, shelf?.extensionId, track, shelf?.context
-                    ) else listener.onTracksClicked(
+                    // ⚠⚠ [CORRECTED 2026-10-25] THIS READ `getOrNull(index)` AND
+                    // index IS 0..2 WITHIN THIS ROW OF THREE, WHILE `tracks` IS THE WHOLE FEED'S
+                    // TRACK LIST. So for any shelf after the first (number > 0) the playability gate
+                    // tested the feed's FIRST three tracks instead of this row's, and the item handed
+                    // to the unplayable branch was the wrong track. `pos` is the index the sibling
+                    // onTracksClicked call and bind's display number both already use - the two were
+                    // simply out of step. Visible only once something sets isPlayable, which is why
+                    // it surfaced now rather than when it was written.
+                    val track = tracks.getOrNull(pos)
+                    if (track?.isPlayable != Track.Playable.Yes) listener.onUnplayableClicked(track)
+                    else listener.onTracksClicked(
                         view, shelf?.extensionId, shelf?.context, tracks, pos
                     )
                 }
                 binding.root.setOnLongClickListener {
                     listener.onMediaLongClicked(
                         it, shelf?.extensionId, shelf?.tracks?.toList()?.getOrNull(index),
-                        shelf?.context, shelf?.tabId, actualIndex
+                        shelf?.context, shelf?.tabId, actualIndex()
                     )
                     true
                 }
                 binding.more.setOnClickListener {
                     listener.onMediaLongClicked(
                         it, shelf?.extensionId, shelf?.tracks?.toList()?.getOrNull(index),
-                        shelf?.context, shelf?.tabId, actualIndex
+                        shelf?.context, shelf?.tabId, actualIndex()
                     )
                 }
             }
@@ -158,6 +175,7 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                 view.root.isVisible = track != null
                 if (track == null) return@forEachIndexed
                 view.bind(track, number?.let { it * 3 + index })
+                dimIfUnplayable(track, view.coverContainer.root, view.title, view.subtitle)
             }
         }
 

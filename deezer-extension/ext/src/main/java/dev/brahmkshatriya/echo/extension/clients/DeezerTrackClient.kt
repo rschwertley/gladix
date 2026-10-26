@@ -37,15 +37,36 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * One rung of the quality ladder. `quality` is the rung being ATTEMPTED; [topQuality] is the
      * rung the ladder STARTED at - what the user's selected placeholder asked for - carried
      * unchanged through every descent so a SUBSTITUTE can be fetched at that quality instead of at
-     * whatever rung the original happened to run out on. [allowFallback] is false inside a
-     * substitute's own ladder; see the FALLBACK_ID block below for why that is load-bearing.
+     * whatever rung the original happened to run out on.
+     *
+     * ⚠⚠ TWO TERMINATORS, NOT ONE, AND SPLITTING THEM IS A BUG FIX.
+     * [allowSubstitute] bounds the FALLBACK_ID path (no substitute OF a substitute);
+     * [allowRetoken] bounds the decode-error self-heal (no endless re-fetch of a token that
+     * keeps failing). They were ONE flag until 2026-10-25, which made the two recoveries
+     * mutually exclusive: whichever fired first disabled the other.
+     * ⚠⚠ WHAT THAT COST, MEASURED ON DEVICE: a grafted favourite needs
+     * the substitution to play AT ALL - its top-level SNG_ID is the unavailable original and
+     * FALLBACK_ID is the playable recording (see DeezerLibraryClient.graftFavTrack). "Baby
+     * Beluga" - the Aug 6 graft example - skipped as unplayable from Library -> Tracks while
+     * playing fine from search, intermittently and self-healing: the library feed is served from
+     * DISK CACHE (LibraryFragment's Cached.getFeedShelf arm), so its TRACK_TOKEN can be hours
+     * old, the stale token produced "An error occurred while decoding track token" FIRST, the
+     * self-heal burned the shared flag, and the re-entered ladder then hit the substitute
+     * terminator with nothing left to try. Fresh token, no decode error, substitution
+     * reachable, plays.
+     * ⚠️ NO EXPIRY IS PARSED, DELIBERATELY. TRACK_TOKEN_EXPIRE exists in
+     * the gateway record (see the key list at DeezerParser.toTrack) and is NOT read: loadTrack
+     * re-fetches only on an EMPTY token, so a stale one is indistinguishable from a good one
+     * before the request. Reacting to the refusal is what this function does; pre-empting it is
+     * a separate change with a request cost per stale track.
      */
     private suspend fun createStreamableForQuality(
         track: Track,
         quality: String,
         retry: Boolean = true,
         topQuality: String = quality,
-        allowFallback: Boolean = true,
+        allowSubstitute: Boolean = true,
+        allowRetoken: Boolean = true,
     ): Streamable {
         return try {
             val currentTrackId = track.id
@@ -54,8 +75,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 else api.getMP3MediaUrl(track, quality == "128")
             val mjString = mediaJson.toString()
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
-                "flac" -> descend(track, "320", retry, topQuality, allowFallback)
-                "320" -> descend(track, "128", retry, topQuality, allowFallback)
+                "flac" -> descend(track, "320", retry, topQuality, allowSubstitute, allowRetoken)
+                "320" -> descend(track, "128", retry, topQuality, allowSubstitute, allowRetoken)
                 else -> throw Exception("Track not available on server")
             }
             val trackJsonData = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
@@ -98,7 +119,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // things bound this, and all three are needed:
                     //   1. each ladder strictly descends flac -> 320 -> 128 and the bottom rung has no
                     //      lower quality, so a rung is never revisited WITHIN a ladder;
-                    //   2. allowFallback is false inside the substitute's ladder, so there is no
+                    //   2. allowSubstitute is false inside the substitute's ladder, so there is no
                     //      third ladder - a substitute cannot substitute;
                     //   3. a failure from a nested rung is rethrown rather than re-laddered by the
                     //      outer catch (see the LadderDescentException note there), which is what
@@ -110,6 +131,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // runs exactly ONCE per attempt. Before point 3 the same case cost 15 per attempt
                     // with FALLBACK_ID fetched four times, so this is FEWER requests than before the
                     // substitute ladder existed, not more.
+                    // ⚠️ [AMENDED 2026-10-25, FLAG SPLIT] A DECODE ERROR CAN NOW ADD
+                    // A RE-TOKEN AND A SECOND PASS OF THE ORIGINAL'S LADDER, so the absolute worst
+                    // case is 3 original + 1 api.track(currentTrackId) + 3 re-entered + 1
+                    // api.track(FALLBACK_ID) + 3 substitute = 11 per attempt, 22 per resolve. Point 1
+                    // still bounds each ladder and allowRetoken bounds the re-token at exactly one, so
+                    // 11 is a ceiling and not a new typical cost: reaching it needs every rung of
+                    // three ladders refused AND a stale token. The path this spends it on is the one
+                    // that previously dead-ended at the terminator below with no substitution tried.
                     // In the COMMON case (the substitute is available at the requested quality) the
                     // substitute's first call goes to the relay and SUCCEEDS, replacing the single
                     // media.deezer.com 128 call that used to happen here - one request either way.
@@ -120,7 +149,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                         // substitution below is the only remaining option.
                         else -> null
                     }
-                    if (lower != null) return descend(track, lower, retry, topQuality, allowFallback)
+                    if (lower != null)
+                        return descend(track, lower, retry, topQuality, allowSubstitute, allowRetoken)
 
                     // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
                     // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
@@ -141,11 +171,18 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // ⚠⚠ SO THE SUBSTITUTE NOW RUNS ITS OWN LADDER FROM topQuality, AND
                     // 2419867c's RULE IS UNTOUCHED: the original recording is still tried at EVERY rung
                     // before any substitution, because this block is only reachable once it has been.
-                    // ⚠⚠ allowFallback = false IS WHAT TERMINATES THIS, AND IT IS NOT
-                    // DEFENSIVE. Every descent propagates allowFallback unchanged, so inside a
-                    // substitute's ladder the throw below fires instead of fetching a substitute OF a
-                    // substitute - FALLBACK_ID chains otherwise have no termination condition at all.
-                    if (!allowFallback) throw MediaUnavailableException("Track not available on server")
+                    // ⚠⚠ allowSubstitute = false IS WHAT TERMINATES THIS, AND IT IS
+                    // NOT DEFENSIVE. Every descent propagates it unchanged, so inside a substitute's
+                    // ladder the throw below fires instead of fetching a substitute OF a substitute -
+                    // FALLBACK_ID chains otherwise have no termination condition at all.
+                    // ⚠⚠ IT TERMINATES THE SUBSTITUTION AND NOTHING ELSE. Until
+                    // 2026-10-25 this test read `!allowFallback`, one flag shared with the decode-error
+                    // self-heal below - so a stale TRACK_TOKEN that triggered a re-token BEFORE the
+                    // ladder got here arrived with the flag already spent, and this threw instead of
+                    // substituting. For a FALLBACK-grafted favourite that is the difference between
+                    // playing and being skipped as unplayable; see the note on this function.
+                    if (!allowSubstitute)
+                        throw MediaUnavailableException("Track not available on server")
                     // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
                     // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
                     // absence looks like an oversight and is a choice, and because "declined" is a
@@ -184,6 +221,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // which point the mismatch policy is being chosen against a real case instead of
                     // in the abstract. The implementation above is the whole design; it is ~6 lines
                     // and no new requests.
+                    // [CHECKED 2026-10-25, STILL DECLINED] The one named graft in the liked list was
+                    // compared record to record and it is NOT a wrong-song case: 67239974 "Whistling
+                    // Tune" and its FALLBACK 3427782381 "Worst Pies in London" share an IDENTICAL
+                    // MD5_ORIGIN, duration and filesize - the SAME AUDIO FILE under two titles, so what
+                    // plays is right and only the metadata is wrong. Across all 117 liked ids gw
+                    // FALLBACK.SNG_ID and pipe media.id agreed 16/16 with equal durations, with no
+                    // pipe-only substitutes. So the trigger above - AUDIBLY the wrong song - has NOT
+                    // fired, and this stays declined on evidence rather than on absence.
                     val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
                     // ⚠⚠ NO FALLBACK_ID MEANS NO REQUEST, AND api.track("") WAS
                     // WORSE THAN USELESS. The gateway cannot return anything playable for an
@@ -194,8 +239,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // ran out. Throwing here instead reaches the same place by the same route
                     // with two fewer requests.
                     // ⚠️ THE TYPE IS DELIBERATELY THE LADDER'S OWN, NOT A NEW ONE.
-                    // MediaUnavailableException is what the !allowFallback terminators above and
-                    // the bottom rung below already throw, and this catch treats it exactly like
+                    // MediaUnavailableException is what the !allowSubstitute / !allowRetoken
+                    // terminators above and the bottom rung below already throw, and this catch
+                    // treats it exactly like
                     // the NPE it replaces - descend, then surface as Unavailable. So nothing that
                     // works today changes type: PlayerEventListener.skipFamilyOf still files it as
                     // SkipFamily.Unavailable and the unavailable-skip path still handles it.
@@ -214,8 +260,15 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     val resultOj = fallbackObject["results"].objOrNull()
                         ?: throw MediaUnavailableException("Track not available on server")
                     val fallBackTrack = parser.run { resultOj.toTrack() }
-                    val fbStreamable =
-                        descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
+                    // allowRetoken is passed UNCHANGED, not forced off: the substitute's record was
+                    // just fetched, so its token is fresh, and if it still fails to decode the same
+                    // one-shot recovery that works for any other track should be available to it. It
+                    // stays bounded either way - at most one re-token per resolve attempt, wherever
+                    // in the chain it is spent.
+                    val fbStreamable = descend(
+                        fallBackTrack, topQuality, retry, topQuality,
+                        allowSubstitute = false, allowRetoken = allowRetoken
+                    )
                     // ⚠⚠ STAMPED HERE BECAUSE THE INNER CALL CANNOT KNOW IT IS A
                     // SUBSTITUTE. From inside its own ladder the fallback is just a track being
                     // resolved; it substitutes nothing and so stamps nothing. Without this line the
@@ -241,16 +294,29 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // true) stood here, so a successfully re-tokenised track dropped to 128 even when
                     // the user had asked for FLAC - the same defect as the FALLBACK_ID block above, one
                     // branch over. It now re-enters the ladder at topQuality.
-                    // ⚠⚠ allowFallback = false FOR TERMINATION, and here it stops an
+                    // ⚠⚠ allowRetoken = false FOR TERMINATION, and here it stops an
                     // INFINITE LOOP rather than merely an unbounded chain: a re-fetch whose fresh token
                     // also fails to decode lands on THIS branch again, with the same id, forever.
-                    if (!allowFallback) throw MediaUnavailableException("Track not available on server")
+                    // ⚠⚠ ITS OWN FLAG SINCE 2026-10-25, AND THAT IS THE WHOLE FIX.
+                    // Sharing one flag with the substitution above meant this recovery CONSUMED that
+                    // one: a stale disk-cached TRACK_TOKEN re-tokenised here, re-entered with the
+                    // substitution already disabled, and the grafted favourite that needed it was
+                    // skipped as unplayable. The two bound different recursions - one id re-fetched
+                    // repeatedly here, a chain of different ids there - and neither bounds the other.
+                    if (!allowRetoken)
+                        throw MediaUnavailableException("Track not available on server")
                     val fallbackObject = api.track(currentTrackId)
                     // STRICT: this re-fetch IS the recovery, so a bad shape must surface rather
                     // than produce a track built from nothing. See DeezerJson.
                     val resultOj = fallbackObject["results"].requireObj("results")
                     val fallBackTrack = parser.run { resultOj.toTrack() }
-                    return descend(fallBackTrack, topQuality, retry, topQuality, allowFallback = false)
+                    // allowSubstitute UNCHANGED: the re-tokenised track is the SAME recording, so its
+                    // FALLBACK_ID is still the right last resort if the fresh token turns out not to
+                    // be the problem. Forcing it off here is exactly the bug this split fixes.
+                    return descend(
+                        fallBackTrack, topQuality, retry, topQuality,
+                        allowSubstitute = allowSubstitute, allowRetoken = false
+                    )
                 }
 
                 else -> extractUrlFromJson(mediaJson)!!
@@ -318,7 +384,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     @Suppress("SwallowedException")
                     try {
                         deezerExtension.handleArlExpiration()
-                        return createStreamableForQuality(track, quality, false, topQuality, allowFallback)
+                        return createStreamableForQuality(
+                            track, quality, false, topQuality, allowSubstitute, allowRetoken
+                        )
                     } catch (retryEx: Exception) {
                         // Best-effort: proceed to quality fallback. Log so a failing ARL-refresh retry
                         // (a token issue) isn't invisible — control flow unchanged.
@@ -331,8 +399,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // DELIBERATELY NOT [descend]: a throw from here already propagates out of this catch,
                 // so there is no second ladder to suppress - and tagging it would only hide the cause
                 // from the frame above.
-                "flac" -> createStreamableForQuality(track, "320", retry, topQuality, allowFallback)
-                "320" -> createStreamableForQuality(track, "128", retry, topQuality, allowFallback)
+                "flac" -> createStreamableForQuality(
+                    track, "320", retry, topQuality, allowSubstitute, allowRetoken
+                )
+                "320" -> createStreamableForQuality(
+                    track, "128", retry, topQuality, allowSubstitute, allowRetoken
+                )
                 // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
                 // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
                 // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
@@ -361,9 +433,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         quality: String,
         retry: Boolean,
         topQuality: String,
-        allowFallback: Boolean,
+        allowSubstitute: Boolean,
+        allowRetoken: Boolean,
     ): Streamable = try {
-        createStreamableForQuality(track, quality, retry, topQuality, allowFallback)
+        createStreamableForQuality(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -577,7 +650,20 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 original.cover != null || original.artists.isNotEmpty() || original.album != null ->
                     original.copy(
                         cover = original.cover ?: fresh.cover,
-                        extras = original.extras + fresh.extras
+                        // ⚠⚠ BLANKS FILTERED, AND THIS IS WHAT MAKES A RESTORED
+                        // GRAFT PLAYABLE. `fresh` wins on a key collision, and the parser writes
+                        // FALLBACK_ID unconditionally with `.orEmpty()` - so re-fetching by the
+                        // TOP-LEVEL id (the substitute's own un-grafted record, FALLBACK absent)
+                        // used to overwrite the seed's FALLBACK_ID with "". For a restored grafted
+                        // favourite that is the one key the ladder needs, and losing it here made
+                        // ResumptionUtils' decision to persist it pointless.
+                        // ⚠️ NOTHING NEEDS CLEARING BY THE FRESH FETCH, which is
+                        // why dropping its blanks is safe rather than merely convenient: TRACK_TOKEN
+                        // is non-blank on this path by definition (a blank one means the re-fetch
+                        // achieved nothing), FILESIZE_MP3_MISC is `?: "0"`, TYPE/__TYPE__ are
+                        // literals and `loved` is "0"/"1". A fresh blank is always absence, never a
+                        // correction.
+                        extras = original.extras + fresh.extras.filterValues { it.isNotEmpty() }
                     )
                 // Thin recovered track (context-less/bare, e.g. an Android Auto cache-miss): no display
                 // metadata to preserve → use the full fresh fetch.

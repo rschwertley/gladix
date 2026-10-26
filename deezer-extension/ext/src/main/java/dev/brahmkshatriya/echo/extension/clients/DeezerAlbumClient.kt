@@ -119,7 +119,7 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
             // throws rather than presenting the album as having no tracks.
             val dataArray = resultsObject["SONGS"]?.requireObj("SONGS")
                 ?.get("data")?.requireArr("SONGS.data").orEmpty()
-            dataArray.mapIndexed { index, song ->
+            val baseTracks = dataArray.mapIndexed { index, song ->
                 val currentTrack = parser.run { song.jsonObject.toTrack() }
                 val nextTrack = parser.run { dataArray.getOrNull(index + 1)?.jsonObject?.toTrack() }
                 currentTrack.copy(
@@ -129,6 +129,32 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
                     )
                 )
             }
+            // One batched availability pass, as the playlist path does - see
+            // DeezerApi.markUnplayable for the signal, the fail-open list and the FALLBACK belt. The
+            // NEXT chain above is built from dataArray rather than from this list, so marking after
+            // it cannot disturb the chain.
+            // ⚠️ THE FALLBACK BELT IS LOAD-BEARING HERE AND MEASURED IDLE
+            // ELSEWHERE, WHICH IS NOT THE SAME AS SAFE. Album rows DO carry FALLBACK_ID: the stamp
+            // is unconditional in the shared DeezerParser.toTrack
+            // (`data["FALLBACK"]?.jsonObject?.str("SNG_ID").orEmpty()`), and toTrack unwraps itself,
+            // so it does not depend on the graft that only the playlist and favorites paths run -
+            // those grafts move DISPLAY fields (artists/album/cover/background), never this extra.
+            // What is NOT measured is pipe's behaviour on an ALBUM top-level id that has a FALLBACK.
+            // The 2026-10-25 capture covered the liked list only, where every FALLBACK-carrying id
+            // answered with media PRESENT pointing at that same FALLBACK (16/16, equal durations) and
+            // none answered null, so the belt never fired. Albums carry FALLBACK in the OPPOSITE
+            // direction (top-level already correct for display), so if pipe ever answers media:null
+            // for one, this belt is the only thing stopping a row that plays through its substitute
+            // from being greyed out. Do not remove it as dead code on the strength of that 16/16.
+            // ⚠⚠ THE SHOW BRANCH ABOVE DELIBERATELY DOES NOT GET THIS, and it
+            // is not an oversight about podcasts being less important: pipe has NO episode in
+            // `tracksByIds`. PodcastEpisode is its own type with its own root field
+            // (`podcastEpisodesByIds(ids: [String!]!): [PodcastEpisode]!`), so episode ids sent to
+            // tracksByIds come back as NULL NODES - which markUnplayable reads as "unknown" and
+            // leaves alone, correctly. The result would be one wasted request per show open and not
+            // one row marked. If episode availability is ever wanted it needs that other field and
+            // its own mapping, not this call moved up a branch.
+            api.markUnplayable(baseTracks)
         }
     }.toFeed()
 }

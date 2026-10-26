@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.history.db.toSlim
 import dev.brahmkshatriya.echo.history.db.toSlimContext
+import dev.brahmkshatriya.echo.history.db.toSlimKeepingRoutingKeys
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.state
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -167,10 +168,17 @@ object ResumptionUtils {
      * same way (MediaState.Unloaded → loadTrack by id). Writing the rule twice is how the two
      * would drift; see this function's own history for what dropping the routing key costs.
      */
-    fun Track.queueSlim() = toSlim().let { slim ->
-        val routing = extras.filterKeys { it == UnifiedExtension.EXTENSION_ID }
-        if (routing.isEmpty()) slim else slim.copy(extras = routing)
-    }
+    // ⚠⚠ THE RULE ITSELF LIVES AT HistoryEntity.toSlimKeepingRoutingKeys,
+    // NEXT TO toSlim, AND THIS IS A DELEGATE RATHER THAN A SECOND COPY. HistoryRepository
+    // .recordTrack needs the same allowlist (a grafted favourite replayed from History has no
+    // context, so it is resolved by its own id and needs FALLBACK_ID), and two call sites with one
+    // rule written twice is how they drift. The queue-side reasoning stays here; the keys and the
+    // blank filter are stated once, there.
+    // ⚠️ SIZE FOR THE QUEUE SPECIFICALLY, COMPUTED NOT MEASURED: FALLBACK_ID
+    // is ~28 bytes of JSON per grafted entry (an 8-10 digit SNG_ID), so ~56 KB on a full
+    // 2000-entry file - +2.3% on the ~2.4 MB ceiling the slim figures above give, against the 4 MB
+    // gate. History is capped at 150 rows, so it is a non-issue there.
+    fun Track.queueSlim() = toSlimKeepingRoutingKeys()
 
     /**
      * Back-fills the stamp for queues saved BEFORE queueSlim existed. New saves carry it already, so

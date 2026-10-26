@@ -1,0 +1,2612 @@
+public abstract class dev/brahmkshatriya/echo/common/Extension {
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getId ()Ljava/lang/String;
+	public fun getInstance ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public fun getMetadata ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public final fun getVersion ()Ljava/lang/String;
+	public final fun isEnabled ()Z
+}
+
+public final class dev/brahmkshatriya/echo/common/LyricsExtension : dev/brahmkshatriya/echo/common/Extension {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)Ldev/brahmkshatriya/echo/common/LyricsExtension;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/LyricsExtension;Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/LyricsExtension;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getInstance ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public fun getMetadata ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/MiscExtension : dev/brahmkshatriya/echo/common/Extension {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)Ldev/brahmkshatriya/echo/common/MiscExtension;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/MiscExtension;Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/MiscExtension;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getInstance ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public fun getMetadata ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/MusicExtension : dev/brahmkshatriya/echo/common/Extension {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)Ldev/brahmkshatriya/echo/common/MusicExtension;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/MusicExtension;Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/MusicExtension;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getInstance ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public fun getMetadata ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/TrackerExtension : dev/brahmkshatriya/echo/common/Extension {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;)Ldev/brahmkshatriya/echo/common/TrackerExtension;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/TrackerExtension;Ldev/brahmkshatriya/echo/common/models/Metadata;Ldev/brahmkshatriya/echo/common/helpers/Injectable;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/TrackerExtension;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getInstance ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public fun getMetadata ()Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/AlbumClient {
+	public abstract fun loadAlbum (Ldev/brahmkshatriya/echo/common/models/Album;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadFeed (Ldev/brahmkshatriya/echo/common/models/Album;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadTracks (Ldev/brahmkshatriya/echo/common/models/Album;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/ArtistClient {
+	public abstract fun loadArtist (Ldev/brahmkshatriya/echo/common/models/Artist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadFeed (Ldev/brahmkshatriya/echo/common/models/Artist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/DownloadClient : dev/brahmkshatriya/echo/common/clients/ExtensionClient {
+	public abstract fun download (Lkotlinx/coroutines/flow/MutableStateFlow;Ldev/brahmkshatriya/echo/common/models/DownloadContext;Ldev/brahmkshatriya/echo/common/models/Streamable$Source;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getConcurrentDownloads ()I
+	public abstract fun getDownloadTracks (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun merge (Lkotlinx/coroutines/flow/MutableStateFlow;Ldev/brahmkshatriya/echo/common/models/DownloadContext;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun selectServer (Ldev/brahmkshatriya/echo/common/models/DownloadContext;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun selectSources (Ldev/brahmkshatriya/echo/common/models/DownloadContext;Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun tag (Lkotlinx/coroutines/flow/MutableStateFlow;Ldev/brahmkshatriya/echo/common/models/DownloadContext;Ljava/io/File;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/DownloadClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/DownloadClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/DownloadClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/ExtensionClient : dev/brahmkshatriya/echo/common/providers/SettingsProvider {
+	public fun onExtensionSelected (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun onInitialize (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/ExtensionClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/ExtensionClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/ExtensionClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/FollowClient {
+	public abstract fun followItem (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getFollowersCount (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun isFollowing (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/HideClient {
+	public abstract fun hideItem (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun isItemHidden (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/HomeFeedClient {
+	public abstract fun loadHomeFeed (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LibraryFeedClient {
+	public abstract fun loadLibraryFeed (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LikeClient {
+	public abstract fun isItemLiked (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun likeItem (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LoginClient {
+	public abstract fun getCurrentUser (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setLoginUser (Ldev/brahmkshatriya/echo/common/models/User;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LoginClient$CustomInput : dev/brahmkshatriya/echo/common/clients/LoginClient {
+	public abstract fun getForms ()Ljava/util/List;
+	public abstract fun onLogin (Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/LoginClient$Form {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/util/List;)Ldev/brahmkshatriya/echo/common/clients/LoginClient$Form;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/clients/LoginClient$Form;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/util/List;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/clients/LoginClient$Form;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIcon ()Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public final fun getInputFields ()Ljava/util/List;
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/LoginClient$InputField {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/lang/String;Ljava/lang/String;ZLkotlin/text/Regex;)V
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/lang/String;Ljava/lang/String;ZLkotlin/text/Regex;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Lkotlin/text/Regex;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/lang/String;Ljava/lang/String;ZLkotlin/text/Regex;)Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField;Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;Ljava/lang/String;Ljava/lang/String;ZLkotlin/text/Regex;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getRegex ()Lkotlin/text/Regex;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public fun hashCode ()I
+	public final fun isRequired ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type : java/lang/Enum {
+	public static final field Email Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static final field Misc Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static final field Number Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static final field Password Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static final field Url Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static final field Username Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/clients/LoginClient$InputField$Type;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LoginClient$WebView : dev/brahmkshatriya/echo/common/clients/LoginClient {
+	public abstract fun getWebViewRequest ()Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LyricsClient : dev/brahmkshatriya/echo/common/clients/ExtensionClient {
+	public abstract fun loadLyrics (Ldev/brahmkshatriya/echo/common/models/Lyrics;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun searchTrackLyrics (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/LyricsClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/LyricsClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/LyricsClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/LyricsSearchClient : dev/brahmkshatriya/echo/common/clients/LyricsClient {
+	public abstract fun searchLyrics (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/LyricsSearchClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/LyricsSearchClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/LyricsSearchClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/PlaylistClient {
+	public abstract fun loadFeed (Ldev/brahmkshatriya/echo/common/models/Playlist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadPlaylist (Ldev/brahmkshatriya/echo/common/models/Playlist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadTracks (Ldev/brahmkshatriya/echo/common/models/Playlist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/PlaylistEditClient : dev/brahmkshatriya/echo/common/clients/PlaylistClient {
+	public abstract fun addTracksToPlaylist (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/util/List;ILjava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun createPlaylist (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun deletePlaylist (Ldev/brahmkshatriya/echo/common/models/Playlist;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun editPlaylistMetadata (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun listEditablePlaylists (Ldev/brahmkshatriya/echo/common/models/Track;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun moveTrackInPlaylist (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/util/List;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun removeTracksFromPlaylist (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/util/List;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/PlaylistEditCoverClient : dev/brahmkshatriya/echo/common/clients/PlaylistEditClient {
+	public abstract fun editPlaylistCover (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/io/File;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/PlaylistEditPrivacyClient : dev/brahmkshatriya/echo/common/clients/PlaylistEditClient {
+	public abstract fun setPrivacy (Ldev/brahmkshatriya/echo/common/models/Playlist;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/PlaylistEditorListenerClient : dev/brahmkshatriya/echo/common/clients/PlaylistEditClient {
+	public abstract fun onEnterPlaylistEditor (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onExitPlaylistEditor (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/QuickSearchClient : dev/brahmkshatriya/echo/common/clients/SearchFeedClient {
+	public abstract fun deleteQuickSearch (Ldev/brahmkshatriya/echo/common/models/QuickSearchItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun quickSearch (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/QuickSearchClient$DefaultImpls {
+	public static fun loadSearchFeed (Ldev/brahmkshatriya/echo/common/clients/QuickSearchClient;Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/RadioClient {
+	public abstract fun loadRadio (Ldev/brahmkshatriya/echo/common/models/Radio;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadTracks (Ldev/brahmkshatriya/echo/common/models/Radio;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun radio (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/SaveClient {
+	public abstract fun isItemSaved (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun saveToLibrary (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/SearchFeedClient {
+	public abstract fun loadSearchFeed (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadSearchFeed (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/SearchFeedClient$DefaultImpls {
+	public static fun loadSearchFeed (Ldev/brahmkshatriya/echo/common/clients/SearchFeedClient;Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/SettingsChangeListenerClient : dev/brahmkshatriya/echo/common/providers/SettingsProvider {
+	public abstract fun onSettingsChanged (Ldev/brahmkshatriya/echo/common/settings/Settings;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/ShareClient {
+	public abstract fun onShare (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/TrackChapterClient {
+	public abstract fun getChapters (Ldev/brahmkshatriya/echo/common/models/Track;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/TrackClient {
+	public abstract fun loadFeed (Ldev/brahmkshatriya/echo/common/models/Track;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadStreamableMedia (Ldev/brahmkshatriya/echo/common/models/Streamable;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadTrack (Ldev/brahmkshatriya/echo/common/models/Track;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/TrackerClient : dev/brahmkshatriya/echo/common/clients/ExtensionClient {
+	public abstract fun onPlayingStateChanged (Ldev/brahmkshatriya/echo/common/models/TrackDetails;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onTrackChanged (Ldev/brahmkshatriya/echo/common/models/TrackDetails;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/TrackerClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/TrackerClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/TrackerClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/clients/TrackerMarkClient : dev/brahmkshatriya/echo/common/clients/TrackerClient {
+	public abstract fun getMarkAsPlayedDuration (Ldev/brahmkshatriya/echo/common/models/TrackDetails;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun onMarkAsPlayed (Ldev/brahmkshatriya/echo/common/models/TrackDetails;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/clients/TrackerMarkClient$DefaultImpls {
+	public static fun onExtensionSelected (Ldev/brahmkshatriya/echo/common/clients/TrackerMarkClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onInitialize (Ldev/brahmkshatriya/echo/common/clients/TrackerMarkClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/helpers/ClientException : java/lang/Exception {
+}
+
+public class dev/brahmkshatriya/echo/common/helpers/ClientException$LoginRequired : dev/brahmkshatriya/echo/common/helpers/ClientException {
+	public fun <init> ()V
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/ClientException$NotSupported : dev/brahmkshatriya/echo/common/helpers/ClientException {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun getOperation ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/ClientException$Unauthorized : dev/brahmkshatriya/echo/common/helpers/ClientException$LoginRequired {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun getUserId ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/ContinuationCallback : kotlin/jvm/functions/Function1, okhttp3/Callback {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/helpers/ContinuationCallback$Companion;
+	public fun <init> (Lokhttp3/Call;Lkotlinx/coroutines/CancellableContinuation;)V
+	public synthetic fun invoke (Ljava/lang/Object;)Ljava/lang/Object;
+	public fun invoke (Ljava/lang/Throwable;)V
+	public fun onFailure (Lokhttp3/Call;Ljava/io/IOException;)V
+	public fun onResponse (Lokhttp3/Call;Lokhttp3/Response;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/ContinuationCallback$Companion {
+	public final fun await (Lokhttp3/Call;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/Injectable {
+	public fun <init> (Lkotlin/jvm/functions/Function0;Ljava/util/List;)V
+	public final fun casted ()Ldev/brahmkshatriya/echo/common/helpers/Injectable;
+	public final fun getData ()Lkotlin/Lazy;
+	public final fun getValue ()Ljava/lang/Object;
+	public final fun injectOrRun (Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun value-IoAF18A (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/MediaUnavailableException : java/lang/Exception {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getCause ()Ljava/lang/Throwable;
+	public fun getMessage ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/Page {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/helpers/Page$Companion;
+	public fun <init> (Ljava/util/List;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/helpers/Page;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/helpers/Page;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/helpers/Page;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContinuation ()Ljava/lang/String;
+	public final fun getData ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/helpers/Page$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public fun <init> (Lkotlinx/serialization/KSerializer;)V
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/helpers/Page;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/helpers/Page;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public final fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/Page$Companion {
+	public final fun serializer (Lkotlinx/serialization/KSerializer;)Lkotlinx/serialization/KSerializer;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/helpers/PagedData {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/helpers/PagedData$Companion;
+	public abstract fun clear ()V
+	public abstract fun invalidate (Ljava/lang/String;)V
+	public final fun loadAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadAllInternal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun loadListInternal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun loadPage (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun map (Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/PagedData$Companion {
+	public final fun empty ()Ldev/brahmkshatriya/echo/common/helpers/PagedData$Single;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/PagedData$Concat : dev/brahmkshatriya/echo/common/helpers/PagedData {
+	public fun <init> ([Ldev/brahmkshatriya/echo/common/helpers/PagedData;)V
+	public fun clear ()V
+	public fun invalidate (Ljava/lang/String;)V
+	public fun loadAllInternal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadListInternal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun map (Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/PagedData$Continuous : dev/brahmkshatriya/echo/common/helpers/PagedData {
+	public fun <init> (Lkotlin/jvm/functions/Function2;)V
+	public fun clear ()V
+	public final fun getLoad ()Lkotlin/jvm/functions/Function2;
+	public fun invalidate (Ljava/lang/String;)V
+	public fun loadAllInternal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadListInternal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun map (Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/PagedData$Single : dev/brahmkshatriya/echo/common/helpers/PagedData {
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public fun clear ()V
+	public final fun getItems ()Ljava/util/List;
+	public final fun getLoad ()Lkotlin/jvm/functions/Function1;
+	public fun invalidate (Ljava/lang/String;)V
+	public fun loadAllInternal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadListInternal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun map (Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/PagedData$Suspend : dev/brahmkshatriya/echo/common/helpers/PagedData {
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public fun clear ()V
+	public fun invalidate (Ljava/lang/String;)V
+	public fun loadAllInternal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadListInternal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun map (Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/helpers/WebViewClient {
+	public abstract fun await-BWLJW6A (ZLjava/lang/String;Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/helpers/WebViewRequest {
+	public fun getDontCache ()Z
+	public abstract fun getInitialUrl ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun getMaxTimeout ()J
+	public abstract fun getStopUrlRegex ()Lkotlin/text/Regex;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Cookie : dev/brahmkshatriya/echo/common/helpers/WebViewRequest {
+	public abstract fun onStop (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Cookie$DefaultImpls {
+	public static fun getDontCache (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Cookie;)Z
+	public static fun getMaxTimeout (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Cookie;)J
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$DefaultImpls {
+	public static fun getDontCache (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest;)Z
+	public static fun getMaxTimeout (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest;)J
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Evaluate : dev/brahmkshatriya/echo/common/helpers/WebViewRequest {
+	public abstract fun getJavascriptToEvaluate ()Ljava/lang/String;
+	public abstract fun getJavascriptToEvaluateOnPageStart ()Ljava/lang/String;
+	public abstract fun onStop (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Evaluate$DefaultImpls {
+	public static fun getDontCache (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Evaluate;)Z
+	public static fun getMaxTimeout (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Evaluate;)J
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Headers : dev/brahmkshatriya/echo/common/helpers/WebViewRequest {
+	public abstract fun getInterceptUrlRegex ()Lkotlin/text/Regex;
+	public abstract fun onStop (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/brahmkshatriya/echo/common/helpers/WebViewRequest$Headers$DefaultImpls {
+	public static fun getDontCache (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Headers;)Z
+	public static fun getMaxTimeout (Ldev/brahmkshatriya/echo/common/helpers/WebViewRequest$Headers;)J
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Album : dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Album$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Album$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;ZLjava/lang/String;Ljava/util/Map;ZZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Album$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;ZLjava/lang/String;Ljava/util/Map;ZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Z
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()Ljava/util/Map;
+	public final fun component15 ()Z
+	public final fun component16 ()Z
+	public final fun component17 ()Z
+	public final fun component18 ()Z
+	public final fun component19 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component20 ()Z
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/lang/Long;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Album$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;ZLjava/lang/String;Ljava/util/Map;ZZZZZZ)Ldev/brahmkshatriya/echo/common/models/Album;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Album;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Album$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;ZLjava/lang/String;Ljava/util/Map;ZZZZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Album;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtists ()Ljava/util/List;
+	public fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getDescription ()Ljava/lang/String;
+	public fun getDuration ()Ljava/lang/Long;
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getLabel ()Ljava/lang/String;
+	public final fun getReleaseDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getTrackCount ()Ljava/lang/Long;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public fun hashCode ()I
+	public fun isExplicit ()Z
+	public fun isFollowable ()Z
+	public fun isHideable ()Z
+	public fun isLikeable ()Z
+	public fun isPrivate ()Z
+	public fun isRadioSupported ()Z
+	public fun isSaveable ()Z
+	public fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Album$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Album$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Album;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Album;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Album$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Album$Type : java/lang/Enum {
+	public static final field Book Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field Compilation Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field EP Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field LP Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field PreRelease Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field Show Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static final field Single Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Album$Type;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Artist : dev/brahmkshatriya/echo/common/models/EchoMediaItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Artist$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/util/Map;ZZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/util/Map;ZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()Z
+	public final fun component13 ()Z
+	public final fun component14 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/util/Map;
+	public final fun component9 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/util/Map;ZZZZZZ)Ldev/brahmkshatriya/echo/common/models/Artist;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Artist;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/util/Map;ZZZZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Artist;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getBanners ()Ljava/util/List;
+	public final fun getBio ()Ljava/lang/String;
+	public fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getDescription ()Ljava/lang/String;
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun isExplicit ()Z
+	public fun isFollowable ()Z
+	public fun isHideable ()Z
+	public fun isLikeable ()Z
+	public fun isPrivate ()Z
+	public fun isRadioSupported ()Z
+	public fun isSaveable ()Z
+	public fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Artist$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Artist$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Artist;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Artist;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Artist$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Chapter {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Chapter$Companion;
+	public fun <init> (Ljava/lang/String;JLjava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;)V
+	public synthetic fun <init> (Ljava/lang/String;JLjava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Ljava/lang/Long;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public final fun copy (Ljava/lang/String;JLjava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;)Ldev/brahmkshatriya/echo/common/models/Chapter;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Chapter;Ljava/lang/String;JLjava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Chapter;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndTime ()Ljava/lang/Long;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getSkipType ()Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public final fun getStartTime ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Chapter$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Chapter$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Chapter;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Chapter;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Chapter$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Chapter$SkipType : java/lang/Enum {
+	public static final field ASK Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public static final field NONE Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public static final field SKIP Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Chapter$SkipType;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Date : java/lang/Comparable {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Date$Companion;
+	public fun <init> (ILjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (ILjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (J)V
+	public fun compareTo (Ldev/brahmkshatriya/echo/common/models/Date;)I
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/brahmkshatriya/echo/common/models/Date;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Date;JILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCalendar ()Ljava/util/Calendar;
+	public final fun getDate ()Ljava/util/Date;
+	public final fun getDay ()Ljava/lang/Integer;
+	public final fun getEpochTimeMs ()J
+	public final fun getMonth ()Ljava/lang/Integer;
+	public final fun getYear ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Date$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Date$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Date;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Date;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Date$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toYearDate (I)Ldev/brahmkshatriya/echo/common/models/Date;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/DownloadContext {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/DownloadContext$Companion;
+	public fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ljava/lang/Integer;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ljava/lang/Integer;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Track;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun copy (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ljava/lang/Integer;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Ldev/brahmkshatriya/echo/common/models/DownloadContext;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/DownloadContext;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ljava/lang/Integer;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/DownloadContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun getExtensionId ()Ljava/lang/String;
+	public final fun getSortOrder ()Ljava/lang/Integer;
+	public final fun getTrack ()Ldev/brahmkshatriya/echo/common/models/Track;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/DownloadContext$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/DownloadContext$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/DownloadContext;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/DownloadContext;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/DownloadContext$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/EchoMediaItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Companion;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public static synthetic fun copyMediaItem$default (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public abstract fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public abstract fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public abstract fun getDescription ()Ljava/lang/String;
+	public abstract fun getExtras ()Ljava/util/Map;
+	public abstract fun getId ()Ljava/lang/String;
+	public abstract fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public abstract fun getSubtitleWithOutE ()Ljava/lang/String;
+	public abstract fun getTitle ()Ljava/lang/String;
+	public fun isExplicit ()Z
+	public abstract fun isFollowable ()Z
+	public abstract fun isHideable ()Z
+	public abstract fun isLikeable ()Z
+	public fun isPrivate ()Z
+	public abstract fun isRadioSupported ()Z
+	public abstract fun isSaveable ()Z
+	public abstract fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/EchoMediaItem$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/EchoMediaItem$DefaultImpls {
+	public static fun copyMediaItem (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public static synthetic fun copyMediaItem$default (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public static fun getSubtitleWithE (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Ljava/lang/String;
+	public static fun isExplicit (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public static fun isPrivate (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public static fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public static fun toShelf (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists : dev/brahmkshatriya/echo/common/models/EchoMediaItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists$Companion;
+	public abstract fun getArtists ()Ljava/util/List;
+	public fun getDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getDuration ()Ljava/lang/Long;
+	public fun getLabel ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public abstract fun getTrackCount ()Ljava/lang/Long;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Album$Type;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists$DefaultImpls {
+	public static fun copyMediaItem (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public static fun getDate (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ldev/brahmkshatriya/echo/common/models/Date;
+	public static fun getDuration (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ljava/lang/Long;
+	public static fun getLabel (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ljava/lang/String;
+	public static fun getSubtitleWithE (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ljava/lang/String;
+	public static fun getSubtitleWithOutE (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ljava/lang/String;
+	public static fun getType (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public static fun isExplicit (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Z
+	public static fun isPrivate (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Z
+	public static fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public static fun toShelf (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists;)Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ExtensionType : java/lang/Enum {
+	public static final field LYRICS Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public static final field MISC Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public static final field MUSIC Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public static final field TRACKER Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getFeature ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Feed {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Feed$Companion;
+	public fun <init> (Ljava/util/List;Lkotlin/jvm/functions/Function2;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Lkotlin/jvm/functions/Function2;
+	public final fun copy (Ljava/util/List;Lkotlin/jvm/functions/Function2;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/List;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGetPagedData ()Lkotlin/jvm/functions/Function2;
+	public final fun getNotSortTabs ()Ljava/util/List;
+	public final fun getTabs ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Feed$Buttons {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Feed$Buttons$Companion;
+	public fun <init> ()V
+	public fun <init> (ZZZLjava/util/List;)V
+	public synthetic fun <init> (ZZZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (ZZZLjava/util/List;)Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;ZZZLjava/util/List;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomTrackList ()Ljava/util/List;
+	public final fun getShowPlayAndShuffle ()Z
+	public final fun getShowSearch ()Z
+	public final fun getShowSort ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Feed$Buttons$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Feed$Buttons$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Feed$Buttons$Companion {
+	public final fun getEMPTY ()Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Feed$Companion {
+	public final fun loadAll (Ldev/brahmkshatriya/echo/common/models/Feed;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun pagedDataOfFirst (Ldev/brahmkshatriya/echo/common/models/Feed;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun toFeed (Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun toFeed (Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public static synthetic fun toFeed$default (Ldev/brahmkshatriya/echo/common/models/Feed$Companion;Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public static synthetic fun toFeed$default (Ldev/brahmkshatriya/echo/common/models/Feed$Companion;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun toFeedData (Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+	public final fun toFeedData (Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+	public static synthetic fun toFeedData$default (Ldev/brahmkshatriya/echo/common/models/Feed$Companion;Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+	public static synthetic fun toFeedData$default (Ldev/brahmkshatriya/echo/common/models/Feed$Companion;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Feed$Data {
+	public fun <init> (Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)V
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Feed$Data;Ldev/brahmkshatriya/echo/common/helpers/PagedData;Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;Ldev/brahmkshatriya/echo/common/models/ImageHolder;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Feed$Data;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getButtons ()Ldev/brahmkshatriya/echo/common/models/Feed$Buttons;
+	public final fun getPagedData ()Ldev/brahmkshatriya/echo/common/helpers/PagedData;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/ImageHolder {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/ImageHolder$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public abstract fun getCrop ()Z
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/ImageHolder;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toImageHolder (Ljava/lang/String;Ljava/util/Map;Z)Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;
+	public static synthetic fun toImageHolder$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$Companion;Ljava/lang/String;Ljava/util/Map;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;
+	public final fun toResourceImageHolder (IZ)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;
+	public static synthetic fun toResourceImageHolder$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$Companion;IZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;
+	public final fun toResourceUriImageHolder (Ljava/lang/String;Z)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;
+	public static synthetic fun toResourceUriImageHolder$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$Companion;Ljava/lang/String;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder : dev/brahmkshatriya/echo/common/models/ImageHolder {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCrop ()Z
+	public final fun getHex ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$HexColorImageHolder$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder : dev/brahmkshatriya/echo/common/models/ImageHolder {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Z)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Z)Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;Ldev/brahmkshatriya/echo/common/models/NetworkRequest;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCrop ()Z
+	public final fun getRequest ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$NetworkRequestImageHolder$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder : dev/brahmkshatriya/echo/common/models/ImageHolder {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder$Companion;
+	public fun <init> (IZ)V
+	public final fun component1 ()I
+	public final fun component2 ()Z
+	public final fun copy (IZ)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;IZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCrop ()Z
+	public final fun getResId ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceIdImageHolder$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder : dev/brahmkshatriya/echo/common/models/ImageHolder {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder$Companion;
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;Ljava/lang/String;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCrop ()Z
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImageHolder$ResourceUriImageHolder$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/ImportType : java/lang/Enum {
+	public static final field App Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public static final field BuiltIn Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public static final field File Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/ImportType;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Lyrics;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Lyrics;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Lyrics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExtras ()Ljava/util/Map;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLyrics ()Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Lyrics$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Lyrics$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Lyrics;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Lyrics;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Item {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$Item$Companion;
+	public fun <init> (Ljava/lang/String;JJ)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun copy (Ljava/lang/String;JJ)Ldev/brahmkshatriya/echo/common/models/Lyrics$Item;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Lyrics$Item;Ljava/lang/String;JJILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Item;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndTime ()J
+	public final fun getStartTime ()J
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Lyrics$Item$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Lyrics$Item$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Item;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Lyrics$Item;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Item$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/Lyrics$Lyric {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/Lyrics$Lyric;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Lyric$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Simple : dev/brahmkshatriya/echo/common/models/Lyrics$Lyric {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Lyrics$Simple$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Lyrics$Simple;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Simple$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Timed : dev/brahmkshatriya/echo/common/models/Lyrics$Lyric {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed$Companion;
+	public fun <init> (Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/util/List;Z)Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed;Ljava/util/List;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFillTimeGaps ()Z
+	public final fun getList ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Lyrics$Timed$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Lyrics$Timed;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$Timed$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$WordByWord : dev/brahmkshatriya/echo/common/models/Lyrics$Lyric {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord$Companion;
+	public fun <init> (Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/util/List;Z)Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord;Ljava/util/List;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFillTimeGaps ()Z
+	public final fun getList ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Lyrics$WordByWord$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Lyrics$WordByWord;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Lyrics$WordByWord$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Message {
+	public fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Message$Action;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Message$Action;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Message$Action;
+	public final fun copy (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Message$Action;)Ldev/brahmkshatriya/echo/common/models/Message;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Message;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Message$Action;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Message;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAction ()Ldev/brahmkshatriya/echo/common/models/Message$Action;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Message$Action {
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlin/jvm/functions/Function0;
+	public final fun copy (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)Ldev/brahmkshatriya/echo/common/models/Message$Action;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Message$Action;Ljava/lang/String;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Message$Action;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHandler ()Lkotlin/jvm/functions/Function0;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Metadata {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Metadata$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImportType;Ldev/brahmkshatriya/echo/common/models/ExtensionType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImportType;Ldev/brahmkshatriya/echo/common/models/ExtensionType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()Ljava/util/List;
+	public final fun component15 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImportType;Ldev/brahmkshatriya/echo/common/models/ExtensionType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Z)Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Metadata;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImportType;Ldev/brahmkshatriya/echo/common/models/ExtensionType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthor ()Ljava/lang/String;
+	public final fun getAuthorUrl ()Ljava/lang/String;
+	public final fun getClassName ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getIcon ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getImportType ()Ldev/brahmkshatriya/echo/common/models/ImportType;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getPreservedPackages ()Ljava/util/List;
+	public final fun getRepoUrl ()Ljava/lang/String;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/ExtensionType;
+	public final fun getUpdateUrl ()Ljava/lang/String;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isEnabled ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Metadata$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Metadata$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Metadata;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Metadata;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Metadata$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/NetworkConnection : java/lang/Enum {
+	public static final field Metered Ldev/brahmkshatriya/echo/common/models/NetworkConnection;
+	public static final field NotConnected Ldev/brahmkshatriya/echo/common/models/NetworkConnection;
+	public static final field Unmetered Ldev/brahmkshatriya/echo/common/models/NetworkConnection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/NetworkConnection;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/NetworkConnection;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/NetworkRequest {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;Ljava/util/Map;[B)V
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;Ljava/util/Map;[BILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Map;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()[B
+	public final fun getBodyBase64 ()Ljava/lang/String;
+	public final fun getHeaders ()Ljava/util/Map;
+	public final fun getLowerCaseHeaders ()Ljava/util/Map;
+	public final fun getMethod ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/NetworkRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/NetworkRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/NetworkRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/NetworkRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toGetRequest (Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public static synthetic fun toGetRequest$default (Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Companion;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/NetworkRequest$Method : java/lang/Enum {
+	public static final field CONNECT Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field DELETE Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field GET Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field HEAD Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field OPTIONS Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field PATCH Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field POST Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field PUT Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static final field TRACE Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/NetworkRequest$Method;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Playlist : dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Playlist$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZZLdev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ZZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZZLdev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component13 ()Ljava/util/Map;
+	public final fun component14 ()Z
+	public final fun component15 ()Z
+	public final fun component16 ()Z
+	public final fun component17 ()Z
+	public final fun component18 ()Z
+	public final fun component19 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZZLdev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ZZZZZZ)Ldev/brahmkshatriya/echo/common/models/Playlist;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Playlist;Ljava/lang/String;Ljava/lang/String;ZZLdev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ZZZZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Playlist;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtists ()Ljava/util/List;
+	public final fun getAuthors ()Ljava/util/List;
+	public fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getCreationDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getDescription ()Ljava/lang/String;
+	public fun getDuration ()Ljava/lang/Long;
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getLabel ()Ljava/lang/String;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getTrackCount ()Ljava/lang/Long;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public fun hashCode ()I
+	public final fun isEditable ()Z
+	public fun isExplicit ()Z
+	public fun isFollowable ()Z
+	public fun isHideable ()Z
+	public fun isLikeable ()Z
+	public fun isPrivate ()Z
+	public fun isRadioSupported ()Z
+	public fun isSaveable ()Z
+	public fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Playlist$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Playlist$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Playlist;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Playlist;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Playlist$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Progress {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Progress$Companion;
+	public fun <init> ()V
+	public fun <init> (JJJ)V
+	public synthetic fun <init> (JJJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun copy (JJJ)Ldev/brahmkshatriya/echo/common/models/Progress;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Progress;JJJILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Progress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getProgress ()J
+	public final fun getSize ()J
+	public final fun getSpeed ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Progress$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Progress$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Progress;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Progress;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Progress$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/QuickSearchItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public abstract fun getSearched ()Z
+	public fun getTitle ()Ljava/lang/String;
+	public final fun sameAs (Ldev/brahmkshatriya/echo/common/models/QuickSearchItem;)Z
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/QuickSearchItem;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Media : dev/brahmkshatriya/echo/common/models/QuickSearchItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Z)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;Z)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMedia ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun getSearched ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Media$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Media;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Media$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Query : dev/brahmkshatriya/echo/common/models/QuickSearchItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query$Companion;
+	public fun <init> (Ljava/lang/String;ZLjava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;ZLjava/util/Map;)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query;Ljava/lang/String;ZLjava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExtras ()Ljava/util/Map;
+	public final fun getQuery ()Ljava/lang/String;
+	public fun getSearched ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Query$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/QuickSearchItem$Query;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/QuickSearchItem$Query$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Radio : dev/brahmkshatriya/echo/common/models/EchoMediaItem$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Radio$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()Z
+	public final fun component13 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/lang/Long;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/util/Map;
+	public final fun component9 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZZZ)Ldev/brahmkshatriya/echo/common/models/Radio;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Radio;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Radio;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtists ()Ljava/util/List;
+	public final fun getAuthors ()Ljava/util/List;
+	public fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public fun getDescription ()Ljava/lang/String;
+	public fun getDuration ()Ljava/lang/Long;
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getLabel ()Ljava/lang/String;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getTrackCount ()Ljava/lang/Long;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Album$Type;
+	public fun hashCode ()I
+	public fun isExplicit ()Z
+	public fun isFollowable ()Z
+	public fun isHideable ()Z
+	public fun isLikeable ()Z
+	public fun isPrivate ()Z
+	public fun isRadioSupported ()Z
+	public fun isSaveable ()Z
+	public fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Radio$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Radio$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Radio;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Radio;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Radio$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/Shelf {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Companion;
+	public abstract fun getExtras ()Ljava/util/Map;
+	public abstract fun getId ()Ljava/lang/String;
+	public abstract fun getTitle ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Category : dev/brahmkshatriya/echo/common/models/Shelf {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Category$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Shelf$Category;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Shelf$Category;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Shelf$Category;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBackgroundColor ()Ljava/lang/String;
+	public fun getExtras ()Ljava/util/Map;
+	public final fun getFeed ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public fun getId ()Ljava/lang/String;
+	public final fun getImage ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Shelf$Category$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Shelf$Category$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Shelf$Category;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Shelf$Category;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Category$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Item : dev/brahmkshatriya/echo/common/models/Shelf {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Item$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Shelf$Item;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public final fun getMedia ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Shelf$Item$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Shelf$Item$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Shelf$Item;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Item$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/Shelf$Lists : dev/brahmkshatriya/echo/common/models/Shelf {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Companion;
+	public abstract fun getList ()Ljava/util/List;
+	public abstract fun getMore ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public abstract fun getSubtitle ()Ljava/lang/String;
+	public abstract fun getType ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories : dev/brahmkshatriya/echo/common/models/Shelf$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public final fun component6 ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun component7 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getList ()Ljava/util/List;
+	public fun getMore ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Categories$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Companion {
+	public final fun serializer (Lkotlinx/serialization/KSerializer;)Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Items : dev/brahmkshatriya/echo/common/models/Shelf$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public final fun component6 ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun component7 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getList ()Ljava/util/List;
+	public fun getMore ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Items$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Items;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Items$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks : dev/brahmkshatriya/echo/common/models/Shelf$Lists {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public final fun component6 ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public final fun component7 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;Ldev/brahmkshatriya/echo/common/models/Feed;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getExtras ()Ljava/util/Map;
+	public fun getId ()Ljava/lang/String;
+	public fun getList ()Ljava/util/List;
+	public fun getMore ()Ldev/brahmkshatriya/echo/common/models/Feed;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun getType ()Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Tracks$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Shelf$Lists$Type : java/lang/Enum {
+	public static final field Grid Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public static final field Linear Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Shelf$Lists$Type;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Companion;
+	public fun <init> (Ljava/lang/String;ILdev/brahmkshatriya/echo/common/models/Streamable$MediaType;Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;ILdev/brahmkshatriya/echo/common/models/Streamable$MediaType;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;ILdev/brahmkshatriya/echo/common/models/Streamable$MediaType;Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable;Ljava/lang/String;ILdev/brahmkshatriya/echo/common/models/Streamable$MediaType;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExtras ()Ljava/util/Map;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getQuality ()I
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Companion {
+	public final fun background (Ljava/lang/String;ILjava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public static synthetic fun background$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Companion;Ljava/lang/String;ILjava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun server (Ljava/lang/String;ILjava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public static synthetic fun server$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Companion;Ljava/lang/String;ILjava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public final fun subtitle (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+	public static synthetic fun subtitle$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Companion;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/Streamable$Decryption {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Decryption$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine : dev/brahmkshatriya/echo/common/models/Streamable$Decryption {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Z)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Z)Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine;Ldev/brahmkshatriya/echo/common/models/NetworkRequest;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLicense ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun hashCode ()I
+	public final fun isMultiSession ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Decryption$Widevine$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/Streamable$InputProvider {
+	public abstract fun provide (JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/Streamable$Media {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/Streamable$Media;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Background : dev/brahmkshatriya/echo/common/models/Streamable$Media {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;Ldev/brahmkshatriya/echo/common/models/NetworkRequest;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRequest ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Media$Background$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Background$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toBackgroundMedia (Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;
+	public static synthetic fun toBackgroundMedia$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Companion;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Background;
+	public final fun toMedia (Ldev/brahmkshatriya/echo/common/models/Streamable$Source;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public final fun toServerMedia (Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;Z)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public static synthetic fun toServerMedia$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Companion;Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public final fun toSubtitleMedia (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Server : dev/brahmkshatriya/echo/common/models/Streamable$Media {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server$Companion;
+	public fun <init> (Ljava/util/List;Z)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/util/List;Z)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;Ljava/util/List;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMerged ()Z
+	public final fun getSources ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Media$Server$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Server;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Server$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle : dev/brahmkshatriya/echo/common/models/Streamable$Media {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle$Companion;
+	public fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public final fun copy (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Media$Subtitle$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$MediaType : java/lang/Enum {
+	public static final field Background Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public static final field Server Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public static final field Subtitle Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Streamable$MediaType;
+}
+
+public abstract class dev/brahmkshatriya/echo/common/models/Streamable$Source {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public abstract fun getId ()Ljava/lang/String;
+	public abstract fun getQuality ()I
+	public abstract fun getTitle ()Ljava/lang/String;
+	public abstract fun isLive ()Z
+	public abstract fun isVideo ()Z
+	public static final synthetic fun write$Self (Ldev/brahmkshatriya/echo/common/models/Streamable$Source;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Source$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toSource (Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ZZ)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;
+	public final fun toSource (Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;ZZ)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;
+	public static synthetic fun toSource$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Companion;Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;
+	public static synthetic fun toSource$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Companion;Ljava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;ZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Source$Http : dev/brahmkshatriya/echo/common/models/Streamable$Source {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;ILjava/lang/String;ZZ)V
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;ILjava/lang/String;ZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;ILjava/lang/String;ZZ)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;Ldev/brahmkshatriya/echo/common/models/NetworkRequest;Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;ILjava/lang/String;ZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDecryption ()Ldev/brahmkshatriya/echo/common/models/Streamable$Decryption;
+	public fun getId ()Ljava/lang/String;
+	public fun getQuality ()I
+	public final fun getRequest ()Ldev/brahmkshatriya/echo/common/models/NetworkRequest;
+	public fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public fun hashCode ()I
+	public fun isLive ()Z
+	public fun isVideo ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Source$Http$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Http;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Source$Http$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Source$Raw : dev/brahmkshatriya/echo/common/models/Streamable$Source {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw$Companion;
+	public fun <init> (Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ILjava/lang/String;ZZ)V
+	public synthetic fun <init> (Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ILjava/lang/String;ZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun copy (Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ILjava/lang/String;ZZ)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;Ljava/lang/String;ILjava/lang/String;ZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getId ()Ljava/lang/String;
+	public fun getQuality ()I
+	public final fun getStreamProvider ()Ldev/brahmkshatriya/echo/common/models/Streamable$InputProvider;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun isLive ()Z
+	public fun isVideo ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Streamable$Source$Raw$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Streamable$Source$Raw;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$Source$Raw$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$SourceType : java/lang/Enum {
+	public static final field DASH Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public static final field HLS Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public static final field Progressive Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Streamable$SourceType;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Streamable$SubtitleType : java/lang/Enum {
+	public static final field ASS Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public static final field SRT Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public static final field VTT Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Streamable$SubtitleType;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Tab {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Tab$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLjava/util/Map;)Ldev/brahmkshatriya/echo/common/models/Tab;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Tab;Ljava/lang/String;Ljava/lang/String;ZLjava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Tab;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExtras ()Ljava/util/Map;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isSort ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Tab$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Tab$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Tab;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Tab;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Tab$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track : dev/brahmkshatriya/echo/common/models/EchoMediaItem {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Track$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Album;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;ZLjava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Track$Playable;Ljava/util/List;ZZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Album;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;ZLjava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Track$Playable;Ljava/util/List;ZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component13 ()Ljava/util/List;
+	public final fun component14 ()Ljava/lang/String;
+	public final fun component15 ()Ljava/lang/Long;
+	public final fun component16 ()Ljava/lang/Long;
+	public final fun component17 ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun component18 ()Z
+	public final fun component19 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component20 ()Ljava/util/Map;
+	public final fun component21 ()Ldev/brahmkshatriya/echo/common/models/Track$Playable;
+	public final fun component22 ()Ljava/util/List;
+	public final fun component23 ()Z
+	public final fun component24 ()Z
+	public final fun component25 ()Z
+	public final fun component26 ()Z
+	public final fun component27 ()Z
+	public final fun component28 ()Z
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public final fun component4 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ldev/brahmkshatriya/echo/common/models/Album;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Album;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;ZLjava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Track$Playable;Ljava/util/List;ZZZZZZ)Ldev/brahmkshatriya/echo/common/models/Track;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Track;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track$Type;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ldev/brahmkshatriya/echo/common/models/Album;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/util/List;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ldev/brahmkshatriya/echo/common/models/Date;ZLjava/lang/String;Ljava/util/Map;Ldev/brahmkshatriya/echo/common/models/Track$Playable;Ljava/util/List;ZZZZZZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Track;
+	public fun copyMediaItem (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ZZZ)Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlbum ()Ldev/brahmkshatriya/echo/common/models/Album;
+	public final fun getAlbumDiscNumber ()Ljava/lang/Long;
+	public final fun getAlbumOrderNumber ()Ljava/lang/Long;
+	public final fun getArtists ()Ljava/util/List;
+	public fun getBackground ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getBackgrounds ()Ljava/util/List;
+	public fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public fun getDescription ()Ljava/lang/String;
+	public final fun getDuration ()Ljava/lang/Long;
+	public fun getExtras ()Ljava/util/Map;
+	public final fun getGenres ()Ljava/util/List;
+	public fun getId ()Ljava/lang/String;
+	public final fun getIsrc ()Ljava/lang/String;
+	public final fun getPlayedDuration ()Ljava/lang/Long;
+	public final fun getPlaylistAddedDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun getPlays ()Ljava/lang/Long;
+	public final fun getReleaseDate ()Ldev/brahmkshatriya/echo/common/models/Date;
+	public final fun getServers ()Ljava/util/List;
+	public final fun getStreamables ()Ljava/util/List;
+	public fun getSubtitle ()Ljava/lang/String;
+	public fun getSubtitleWithE ()Ljava/lang/String;
+	public fun getSubtitleWithOutE ()Ljava/lang/String;
+	public final fun getSubtitles ()Ljava/util/List;
+	public fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public fun hashCode ()I
+	public fun isExplicit ()Z
+	public fun isFollowable ()Z
+	public fun isHideable ()Z
+	public fun isLikeable ()Z
+	public final fun isPlayable ()Ldev/brahmkshatriya/echo/common/models/Track$Playable;
+	public fun isPrivate ()Z
+	public fun isRadioSupported ()Z
+	public fun isSaveable ()Z
+	public fun isShareable ()Z
+	public fun sameAs (Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;)Z
+	public fun toShelf ()Ldev/brahmkshatriya/echo/common/models/Shelf$Item;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Track$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Track$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Track;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Track;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun toDurationString (J)Ljava/lang/String;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/models/Track$Playable {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Track$Playable$Companion;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$No : dev/brahmkshatriya/echo/common/models/Track$Playable {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/Track$Playable$No$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Track$Playable$No;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/Track$Playable$No;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/Track$Playable$No;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/Track$Playable$No$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Track$Playable$No$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/Track$Playable$No;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/Track$Playable$No;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$No$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$RegionLocked : dev/brahmkshatriya/echo/common/models/Track$Playable {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Track$Playable$RegionLocked;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$Unreleased : dev/brahmkshatriya/echo/common/models/Track$Playable {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Track$Playable$Unreleased;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Playable$Yes : dev/brahmkshatriya/echo/common/models/Track$Playable {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/Track$Playable$Yes;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/Track$Type : java/lang/Enum {
+	public static final field HorizontalVideo Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static final field Podcast Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static final field Song Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static final field Video Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static final field VideoSong Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/models/Track$Type;
+	public static fun values ()[Ldev/brahmkshatriya/echo/common/models/Track$Type;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/TrackDetails {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/TrackDetails$Companion;
+	public fun <init> (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;JLjava/lang/Long;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/brahmkshatriya/echo/common/models/Track;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun component4 ()J
+	public final fun component5 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;JLjava/lang/Long;)Ldev/brahmkshatriya/echo/common/models/TrackDetails;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/TrackDetails;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/Track;Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;JLjava/lang/Long;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/TrackDetails;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Ldev/brahmkshatriya/echo/common/models/EchoMediaItem;
+	public final fun getCurrentPosition ()J
+	public final fun getExtensionId ()Ljava/lang/String;
+	public final fun getTotalDuration ()Ljava/lang/Long;
+	public final fun getTrack ()Ldev/brahmkshatriya/echo/common/models/Track;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/TrackDetails$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/TrackDetails$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/TrackDetails;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/TrackDetails;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/TrackDetails$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/User {
+	public static final field Companion Ldev/brahmkshatriya/echo/common/models/User$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;)Ldev/brahmkshatriya/echo/common/models/User;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/models/User;Ljava/lang/String;Ljava/lang/String;Ldev/brahmkshatriya/echo/common/models/ImageHolder;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/models/User;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCover ()Ldev/brahmkshatriya/echo/common/models/ImageHolder;
+	public final fun getExtras ()Ljava/util/Map;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/brahmkshatriya/echo/common/models/User$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/brahmkshatriya/echo/common/models/User$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/brahmkshatriya/echo/common/models/User;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/brahmkshatriya/echo/common/models/User;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/brahmkshatriya/echo/common/models/User$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/GlobalSettingsProvider {
+	public abstract fun setGlobalSettings (Ldev/brahmkshatriya/echo/common/settings/Settings;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/LyricsExtensionsProvider {
+	public abstract fun getRequiredLyricsExtensions ()Ljava/util/List;
+	public abstract fun setLyricsExtensions (Ljava/util/List;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/MessageFlowProvider {
+	public abstract fun setMessageFlow (Lkotlinx/coroutines/flow/MutableSharedFlow;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/MetadataProvider {
+	public abstract fun setMetadata (Ldev/brahmkshatriya/echo/common/models/Metadata;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/MiscExtensionsProvider {
+	public abstract fun getRequiredMiscExtensions ()Ljava/util/List;
+	public abstract fun setMiscExtensions (Ljava/util/List;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/MusicExtensionsProvider {
+	public abstract fun getRequiredMusicExtensions ()Ljava/util/List;
+	public abstract fun setMusicExtensions (Ljava/util/List;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/NetworkConnectionProvider {
+	public abstract fun setNetworkConnection (Ldev/brahmkshatriya/echo/common/models/NetworkConnection;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/SettingsProvider {
+	public abstract fun getSettingItems (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setSettings (Ldev/brahmkshatriya/echo/common/settings/Settings;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/TrackerExtensionsProvider {
+	public abstract fun getRequiredTrackerExtensions ()Ljava/util/List;
+	public abstract fun setTrackerExtensions (Ljava/util/List;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/providers/WebViewClientProvider {
+	public abstract fun setWebViewClient (Ldev/brahmkshatriya/echo/common/helpers/WebViewClient;)V
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/settings/Setting {
+	public abstract fun getKey ()Ljava/lang/String;
+	public abstract fun getTitle ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingCategory : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)Ldev/brahmkshatriya/echo/common/settings/SettingCategory;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingCategory;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingCategory;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getItems ()Ljava/util/List;
+	public fun getKey ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingItem : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/settings/SettingItem;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingItem;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingList : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;)Ldev/brahmkshatriya/echo/common/settings/SettingList;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingList;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingList;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultEntryIndex ()Ljava/lang/Integer;
+	public final fun getEntryTitles ()Ljava/util/List;
+	public final fun getEntryValues ()Ljava/util/List;
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingMultipleChoice : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/util/Set;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;)Ldev/brahmkshatriya/echo/common/settings/SettingMultipleChoice;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingMultipleChoice;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingMultipleChoice;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultEntryIndices ()Ljava/util/Set;
+	public final fun getEntryTitles ()Ljava/util/List;
+	public final fun getEntryValues ()Ljava/util/List;
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingOnClick : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lkotlin/jvm/functions/Function1;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Ldev/brahmkshatriya/echo/common/settings/SettingOnClick;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingOnClick;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingOnClick;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getKey ()Ljava/lang/String;
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function1;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingSlider : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;IILjava/lang/Integer;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;IILjava/lang/Integer;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()I
+	public final fun component6 ()I
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun component8 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;IILjava/lang/Integer;Z)Ldev/brahmkshatriya/echo/common/settings/SettingSlider;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingSlider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;IILjava/lang/Integer;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingSlider;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllowOverride ()Z
+	public final fun getDefaultValue ()Ljava/lang/Integer;
+	public final fun getFrom ()I
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSteps ()Ljava/lang/Integer;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public final fun getTo ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingSwitch : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Ldev/brahmkshatriya/echo/common/settings/SettingSwitch;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingSwitch;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingSwitch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultValue ()Z
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/brahmkshatriya/echo/common/settings/SettingTextInput : dev/brahmkshatriya/echo/common/settings/Setting {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/brahmkshatriya/echo/common/settings/SettingTextInput;
+	public static synthetic fun copy$default (Ldev/brahmkshatriya/echo/common/settings/SettingTextInput;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/brahmkshatriya/echo/common/settings/SettingTextInput;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultValue ()Ljava/lang/String;
+	public fun getKey ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/brahmkshatriya/echo/common/settings/Settings {
+	public abstract fun getBoolean (Ljava/lang/String;)Ljava/lang/Boolean;
+	public abstract fun getInt (Ljava/lang/String;)Ljava/lang/Integer;
+	public abstract fun getString (Ljava/lang/String;)Ljava/lang/String;
+	public abstract fun getStringSet (Ljava/lang/String;)Ljava/util/Set;
+	public abstract fun putBoolean (Ljava/lang/String;Ljava/lang/Boolean;)V
+	public abstract fun putInt (Ljava/lang/String;Ljava/lang/Integer;)V
+	public abstract fun putString (Ljava/lang/String;Ljava/lang/String;)V
+	public abstract fun putStringSet (Ljava/lang/String;Ljava/util/Set;)V
+}
+

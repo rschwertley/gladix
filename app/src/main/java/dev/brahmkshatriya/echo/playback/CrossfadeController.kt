@@ -12,6 +12,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
@@ -122,6 +123,14 @@ class CrossfadeController(
     private val isRestoring: () -> Boolean,
     private val skipFadeOnAlbums: () -> Boolean,
     private val isPausedForFocus: () -> Boolean,
+    /**
+     * PlayerState.resolveFailed - "this track's resolve finished and it cannot play".
+     *
+     * ⚠⚠ A LAMBDA, LIKE EVERY OTHER EXTERNAL FACT THIS CLASS READS, so the
+     * controller still knows nothing about PlayerState and the three-way absent/failed/empty
+     * distinction stays defined once, where state.servers lives.
+     */
+    private val resolveFailed: (String) -> Boolean,
     /**
      * ⚠⚠ MAIN'S EFFECTIVE BASS BOOST FOR THE TRACK PLAYING NOW, READ AT ARM.
      * Per-track effects mean the answer changes with the current item, and the sidecar is a
@@ -1281,10 +1290,48 @@ class CrossfadeController(
         else true
     }
 
+    /**
+     * ⚠⚠ THE GATE USED TO CHECK EVERYTHING EXCEPT WHETHER THE NEXT TRACK
+     * CAN PLAY. [tickArmed] and the ACTIVE gate test the OUTGOING tail (the sidecar) and main's
+     * own buffer - both of which are about the track that is ending - and nothing asked about the
+     * item [activate] is going to seek main onto. For a track Deezer no longer carries, the hand-off
+     * therefore fired into a dead item: main raised a source error, [onPlayerError] aborted with
+     * MAIN_RECOVERY, and the abort stopped the sidecar - so the OUTGOING track lost its last ~10 s
+     * and the listener got silence followed by the error-skip gap.
+     * ⚠️ FROM A 1147 AA CAPTURE, TWICE: Whistling Tune → What I Say and
+     * Healing → Yesterday, both ending `CROSSFADE-FEEL path=preroll reason=MAIN_RECOVERY`,
+     * with the next item's failure already logged ~60 s earlier.
+     * ⚠️ KNOWN-FAILED ONLY, NEVER NOT-YET-RESOLVED. The signal is
+     * PlayerState.resolveFailed, which answers false for an absent entry - so a next item that
+     * simply has not resolved yet still gets a crossfade, exactly as before. Declining on absence
+     * would disable the feature on every fast transition.
+     * ⚠️ CHECKED TWICE, AND THE SECOND IS NOT REDUNDANT: at arm (cheapest -
+     * no sidecar is prepared and no pre-roll is started) and again immediately before [activate],
+     * because the arm lead is 25-30 s and a resolve can complete and fail inside that window.
+     */
+    private fun nextItemKnownUnplayable(): Boolean = runCatching {
+        if (!sessionPlayer.hasNextMediaItem()) return@runCatching false
+        val next = sessionPlayer.getMediaItemAt(sessionPlayer.nextMediaItemIndex)
+        // ⚠️ TWO SIGNALS, AND resolveFailed CANNOT SEE THE SECOND. An
+        // extension-declared verdict (Track.isPlayable, set on Deezer liked/playlist rows by
+        // DeezerApi.markUnplayable) throws out of StreamableLoader.loadServer BEFORE any resolve
+        // runs, so PlayerState.servers is never written for that id and resolveFailed answers false -
+        // "unknown" - for a track we already know cannot play. Asking the item itself closes that,
+        // and it is free: the verdict travels on the MediaItem's own Track.
+        if (next.track.isPlayable != Track.Playable.Yes) return@runCatching true
+        resolveFailed(next.track.id)
+    }.getOrDefault(false)
+
     private fun arm() {
         val item = exoPlayer.currentMediaItem ?: return
         val duration = exoPlayer.duration
         if (duration == C.TIME_UNSET) return
+        // Cheapest possible decline: nothing is prepared yet, so leaving the phase IDLE IS the plain
+        // transition. declinedMediaId stops the tick re-asking for this track - see [nextItemKnownUnplayable].
+        if (nextItemKnownUnplayable()) {
+            declinedMediaId = item.mediaId
+            return
+        }
         val position = exoPlayer.currentPosition
         val remaining = duration - position
         if (remaining < MIN_REMAINING_MS) return
@@ -1482,6 +1529,12 @@ class CrossfadeController(
             return plainTransition(alignmentReject ?: "unmeasured")
         }
         if (playerReady && sidecarReady) {
+            // Last check before main is seeked onto it - see [nextItemKnownUnplayable]. A resolve
+            // that completed and failed INSIDE the arm window lands here, not at arm.
+            if (nextItemKnownUnplayable()) {
+                declinedMediaId = item.mediaId
+                return plainTransition("nextUnplayable")
+            }
             activate(position)
             return
         }

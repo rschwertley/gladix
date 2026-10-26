@@ -16,6 +16,7 @@ import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
 import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
+import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.ui.playlist.edit.search.EditPlaylistSearchClickListener
@@ -203,6 +204,35 @@ open class FeedClickListener(
         val notFound = getString(R.string.no_x_found, getString(id))
         createSnack(notFound)
         false
+    }
+
+    /**
+     * An explicit tap on a row the extension has declared unplayable: SAY SO, DO NOTHING ELSE.
+     *
+     * ⚠⚠ THIS REPLACES A SILENT NAVIGATION, AND THAT IS THE POINT. The five
+     * feed viewholder gates used to answer an unplayable tap with [onMediaClicked], which opens
+     * MediaFragment - so the tap neither played NOR explained itself, it just moved the user to a
+     * page they had not asked for, where the reason happened to be visible. The agreed behaviour is
+     * a brief message and no play, no queue, no navigation.
+     * ⚠️ THE MESSAGE COMES FROM playableString, NOT FROM not_playable_x
+     * DIRECTLY, and that is deliberate: playableString is the single producer of all four Playable
+     * cases - No(reason) -> not_playable_x, RegionLocked -> unavailable_in_your_region, Unreleased ->
+     * releases_on_x or not_yet_released. Reaching for the one string would have been correct for
+     * Deezer today and wrong for TestExtension's Unreleased track, which already exercises this path.
+     * It is also the SAME string the row's own subtitle shows (MediaViewHolder.subtitle), so the
+     * snackbar confirms the tap was received rather than telling the user something new.
+     * ⚠️ LONG-PRESS IS UNCHANGED. onMediaLongClicked still opens the
+     * overflow sheet, which is the remaining route to the track's page - so nothing is unreachable,
+     * only un-TAPPABLE.
+     */
+    open fun onUnplayableClicked(item: EchoMediaItem?): Boolean {
+        val track = item as? Track ?: return notFoundSnack(R.string.item)
+        // No context means the fragment is detached; there is nowhere to show a snackbar and nothing
+        // to recover - the tap is simply dropped, as it would have been before this existed.
+        val context = fragment.context ?: return false
+        val message = track.playableString(context) ?: return false
+        fragment.createSnack(message)
+        return true
     }
 
     open fun onMediaClicked(

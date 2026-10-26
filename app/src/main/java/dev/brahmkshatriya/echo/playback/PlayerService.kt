@@ -213,6 +213,7 @@ class PlayerService : MediaLibraryService() {
             exoPlayer = exoPlayer,
             sessionPlayer = sessionPlayer,
             sidecar = sidecar,
+            resolveFailed = state::resolveFailed,
             tail = CacheOnlyTailSource(app.context, cache, state.servers),
             mainProcessor = audioEffectsProcessor,
             sidecarProcessor = sidecarProcessor,

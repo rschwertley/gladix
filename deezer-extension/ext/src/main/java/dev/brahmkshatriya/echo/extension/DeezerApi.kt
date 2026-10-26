@@ -26,6 +26,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -250,6 +251,31 @@ class DeezerApi(private val session: DeezerSession) {
         // exposes pageInfo.endCursor for paging, but our per-tab lambda does a single loadPage(null), so
         // nothing consumes a cursor today - restoring depth means teaching that lambda to page.
         private const val PIPE_SEARCH_TRACKS = 30
+
+        /**
+         * Ids per `tracksByIds` request in [tracksAvailability].
+         *
+         * ⚠⚠ 100 IS NOT A FRESH GUESS, AND THE SCHEMA CANNOT SETTLE IT.
+         * `tracksByIds(ids: [String!]!)` declares no maximum and carries no `@cost` directive, so
+         * there is no documented ceiling to read - checked against music-assistant/deezer-python-gql's
+         * recorded schema.graphql, where the field is a bare `[Track]!`. What there IS: 117 ids
+         * measured good twice on 2026-10-25 (one request, HTTP 200, 546 ms then 323 ms), and
+         * GET_LIST_DATA_CHUNK in api/DeezerTrack.kt - this extension's existing id-list chunk,
+         * field-proven at 100 (shipped d221f4c2, re-landed after 04c67817). Same number, same
+         * reasoning, one fewer thing to defend.
+         * ⚠️ IF A LARGE LIST EVER FAILS THIS IS THE FIRST SUSPECT, and the
+         * answer is a capture rather than a guess - the same instruction GET_LIST_DATA_CHUNK carries.
+         */
+        private const val PIPE_AVAIL_CHUNK = 100
+
+        // DeezerParser.toTrack writes this key unconditionally; a grafted row has it non-blank.
+        // Named here rather than shared because app code cannot see the extension's strings and the
+        // extension cannot see app code's - HistoryEntity carries its own copy for the same reason.
+        private const val FALLBACK_ID_EXTRA = "FALLBACK_ID"
+
+        // User-visible through R.string.not_playable_x. Factual, short, no id: the row already shows
+        // which track it is.
+        private const val NOT_AVAILABLE_REASON = "Not available on Deezer"
 
         // Deezer picture hashes are 32 lowercase hex. See the ALB_PICTURE note at searchTracksPipe for
         // why a non-matching id yields no cover instead of a broken one.
@@ -1321,6 +1347,130 @@ class DeezerApi(private val session: DeezerSession) {
             response = post(pipeJwt(force = true))
         }
         return response.use { decodeJson(it.body.string()) }
+    }
+
+    /**
+     * "Does Deezer still have a playable media node for each of these ids?" - one batched
+     * `tracksByIds` per [PIPE_AVAIL_CHUNK] against pipe.deezer.com, answering per id.
+     *
+     * An id appears in the returned map ONLY when its node resolved and nothing in `errors[]` named
+     * it; the value is `media != null`. ABSENT MEANS UNKNOWN, NEVER UNAVAILABLE - see
+     * [markUnplayable], the only consumer, which fails open on every absence.
+     *
+     * ⚠⚠ WHY `media` AND NOT `rights`, WHICH IS THE OBVIOUS FIELD. The pipe
+     * schema's own doc on Track.media: it "will be populated only if some rights can be computed. In
+     * some case, it will be null, meaning the track cannot be read at all. Consider using this field
+     * for simple availability check". The rights subtree (media.rights.sub.available,
+     * media.rights.user.full) is the ACCOUNT/OFFER axis and must not be used: DeezerParser.toTrack's
+     * closure records a track with RIGHTS={} that PLAYS (69106336, verified on device), so a
+     * rights-shaped signal greys out playable tracks. `mediaRights`, the "deep check" that doc
+     * mentions, does not exist as a field in the recorded schema - only in that sentence.
+     * ⚠⚠ MEASURED, NOT INFERRED, 2026-10-25 ON THE LIVE LIKED LIST. 50 of 117
+     * ids read media == null, and all 50 are ONE pulled release ("Karaoke Hits: Elvis Presley",
+     * Original Backing Tracks), all STATUS=3, none carrying a FALLBACK - device-confirmed unplayable.
+     * Every control resolved with media PRESENT: 3135556 and 15034635 (play), 67239974 (plays via
+     * its substitute) and 69106336 - the RIGHTS={} case - whose media resolved through substitute
+     * 3786363902. So media is strictly sharper than RIGHTS on the very id that refuted RIGHTS.
+     * ⚠️ THE SIGNAL IS NOT A COUNTRY LIST, AND THE DISTINCTION MATTERS. The
+     * public-REST predicate for these same tracks is "available_countries PRESENT AND EMPTY" -
+     * available in zero countries, 3/3 on the dead ids against ~249 for a live control. That is
+     * REMOVED FROM THE CATALOGUE, which cannot be confused with a REGION LOCK (a non-empty list
+     * missing the user's country) or with ACCOUNT RIGHTS. gw-light carries no equivalent:
+     * favorite_song.getList's records have no AVAILABLE_COUNTRIES at all and deezer.pageTrack's do
+     * but only per track, which is why this goes through pipe instead of the records already in hand.
+     */
+    suspend fun tracksAvailability(ids: List<String>): Map<String, Boolean> {
+        val distinct = ids.filter { it.isNotBlank() }.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+        val out = mutableMapOf<String, Boolean>()
+        distinct.chunked(PIPE_AVAIL_CHUNK).forEach { out += availabilityChunk(it) }
+        return out
+    }
+
+    /**
+     * One chunk. Returns an EMPTY map for anything it cannot interpret, which the caller then reads
+     * as "unknown" for every id in the chunk.
+     *
+     * ⚠️ KEYED ON THE NODE'S OWN `id`, NEVER ON ARRAY POSITION. `tracksByIds`
+     * returns a NULLABLE list, so a dropped or reordered null would shift every id by one and attach
+     * a dead track's verdict to a playable one. Position is used for ONE thing only - matching an
+     * `errors[]` path, which is expressed positionally and has no other form.
+     */
+    private suspend fun availabilityChunk(chunk: List<String>): Map<String, Boolean> {
+        fun JsonObject.s(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
+        val params = encodeJson {
+            put("operationName", "Avail")
+            put("query", $$"query Avail($ids: [String!]!) { tracksByIds(ids: $ids) { id media { id } } }")
+            putJsonObject("variables") {
+                putJsonArray("ids") { chunk.forEach { add(it) } }
+            }
+        }
+        // Covers throw, non-200 (the body then fails to decode) and unparseable alike - all three are
+        // the same answer here, which is "no verdict for this chunk".
+        val body = runCatching { pipeGraphQl(params) }.getOrNull() ?: return emptyMap()
+        val nodes = body["data"].objOrNull()?.get("tracksByIds").arrOrNull() ?: return emptyMap()
+        // A partial GraphQL error is normal on this host - searchTracksPipe's note records an HTTP 200
+        // carrying BOTH good rows and a TrackMediaNotFoundException. So a per-node error excludes only
+        // ITS index, while an error with no tracksByIds/<i> path is unscoped and discards the chunk:
+        // there is no way to tell which ids it affected.
+        val failedIndices = mutableSetOf<Int>()
+        body["errors"].arrOrNull()?.forEach { entry ->
+            val path = (entry as? JsonObject)?.get("path").arrOrNull()
+            val head = (path?.getOrNull(0) as? JsonPrimitive)?.contentOrNull
+            val index = (path?.getOrNull(1) as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+            if (head == "tracksByIds" && index != null) failedIndices += index
+            else return emptyMap()
+        }
+        val verdicts = mutableMapOf<String, Boolean>()
+        nodes.forEachIndexed { index, element ->
+            if (index in failedIndices) return@forEachIndexed
+            // A null node (an id pipe cannot resolve as a Track at all) falls out here and stays
+            // absent from the map - unknown, not unavailable.
+            val node = element as? JsonObject ?: return@forEachIndexed
+            val id = node.s("id") ?: return@forEachIndexed
+            verdicts[id] = node["media"].objOrNull() != null
+        }
+        return verdicts
+    }
+
+    /**
+     * [tracksAvailability]'s only consumer: stamps Playable.No on the rows Deezer no longer carries
+     * and leaves every other row byte-identical.
+     *
+     * ⚠⚠ FAIL OPEN ON EVERY UNCERTAINTY, AND THE LIST IS EXHAUSTIVE BECAUSE THE
+     * COST IS ASYMMETRIC. A missed dead track costs ONE INSTANT SKIP; a wrongly-marked live track is a
+     * row the user CANNOT PLAY AT ALL - MediaHeaderAdapter hides the play button and ShelfViewHolder
+     * reroutes the tap to onMediaClicked. So the map is consulted for a `false` and nothing else.
+     * Request threw, non-200, unparseable, null `data`, an unscoped `errors[]` entry, a per-node
+     * `errors[]` path, a null node, a node with no id: every one of those leaves the id ABSENT, and
+     * an absent id keeps Playable.Yes.
+     * ⚠⚠ THE FALLBACK BELT, WHICH IS TODAY A BELT OVER AN EMPTY POPULATION. A
+     * row carrying FALLBACK_ID is never marked, whatever pipe says. The measured data does not need
+     * it - all 50 media-null ids carry no FALLBACK, and pipe resolves a graft's substitute ITSELF
+     * (67239974 answered media.id = 3427782381, its own FALLBACK_ID; gw FALLBACK and pipe media.id
+     * agreed 16/16 across the liked list with equal durations, and there were no pipe-only
+     * substitutes). But a grafted favourite PLAYS THROUGH that substitute, so marking one would grey
+     * out a track that works. One cheap guard against the only false positive that matters.
+     * ⚠️ THE VERDICT MUST NOT OUTLIVE THE LIST, AND THAT IS ENFORCED
+     * ELSEWHERE. Track.isPlayable is a FIELD, so HistoryEntity.toSlim's `copy` carried it into the
+     * persisted queue and history rows - where StreamableLoader.loadServer throws on any non-Yes
+     * value before making a request and nothing re-checks it. toSlimKeepingRoutingKeys resets it to
+     * Yes for exactly this reason; see the note at resetPlayable.
+     * ⚠️ NO QUEUE FILTERING, DELIBERATELY. A marked row stays in the declared
+     * queue and is still walked past - it just skips INSTANTLY and with zero requests instead of
+     * costing up to ~22 Deezer calls down createStreamableForQuality's ladder. Fewer skips would be a
+     * separate decision about queue construction, not about this verdict.
+     */
+    suspend fun markUnplayable(tracks: List<Track>): List<Track> {
+        if (tracks.isEmpty()) return tracks
+        val verdicts = tracksAvailability(tracks.map { it.id })
+        if (verdicts.isEmpty()) return tracks
+        return tracks.map { track ->
+            val grafted = !track.extras[FALLBACK_ID_EXTRA].isNullOrBlank()
+            if (!grafted && verdicts[track.id] == false)
+                track.copy(isPlayable = Track.Playable.No(NOT_AVAILABLE_REASON))
+            else track
+        }
     }
 
     //<============= Util =============>

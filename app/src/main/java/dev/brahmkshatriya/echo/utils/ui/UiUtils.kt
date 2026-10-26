@@ -20,6 +20,8 @@ import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.BACKGROUND_GRADIENT
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import java.util.Locale
@@ -27,6 +29,40 @@ import kotlin.math.max
 import kotlin.math.roundToLong
 
 object UiUtils {
+
+    /**
+     * Material's disabled-content opacity, which is what an unplayable row IS - present, not
+     * actionable. Material 3 specifies 38% for disabled content, so this is the design system's
+     * number rather than a chosen one; do not nudge it to taste.
+     * NOT android:disabledAlpha, which is 0.5 on the platform themes - an earlier draft of this
+     * note claimed the two agreed and they do not. 0.38 is the Material figure.
+     */
+    const val DISABLED_CONTENT_ALPHA = 0.38f
+
+    /**
+     * Dims a feed row's CONTENT when its item is a track the extension has declared unplayable.
+     *
+     * ⚠⚠ ALWAYS ASSIGNS, WHICH IS THE WHOLE RECYCLING STORY. RecyclerView hands
+     * back a view with whatever alpha the PREVIOUS item left on it, so a one-sided `if (unplayable)`
+     * would smear 0.38 onto playable rows as the user scrolls. Both branches write, so every bind is
+     * self-contained and no reset call is needed anywhere else.
+     * ⚠⚠ CONTENT VIEWS, NOT root. Dimming the row root would take the `more`
+     * button and the ripple with it, and `more` still WORKS on an unplayable row (long-press and the
+     * overflow sheet are deliberately unchanged) - a dimmed control that still works is a worse lie
+     * than no dimming. Callers therefore pass cover, title and subtitle explicitly.
+     * ⚠️ THE SUBTITLE ALREADY SAYS WHY, INDEPENDENTLY OF THIS.
+     * MediaViewHolder.subtitle is `is Track -> playableString(context) ?: subtitleWithE`, so the row
+     * reads "Not playable: <reason>" in place of its artist line. This adds the dimming that was
+     * missing, it does not add the explanation.
+     * ⚠️ NON-TRACKS AND NULLS ARE NEVER DIMMED. Albums, artists and
+     * playlists have no isPlayable, and a null item is "not bound yet", not "unavailable".
+     */
+    fun dimIfUnplayable(item: EchoMediaItem?, vararg views: View) {
+        val track = item as? Track
+        val unplayable = track != null && track.isPlayable != Track.Playable.Yes
+        val alpha = if (unplayable) DISABLED_CONTENT_ALPHA else 1f
+        views.forEach { it.alpha = alpha }
+    }
 
     fun Activity.hideSystemUi(hide: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)

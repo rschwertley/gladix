@@ -49,7 +49,7 @@ import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isReplayableContext
-import dev.brahmkshatriya.echo.playback.ResumptionUtils.queueSlim
+import dev.brahmkshatriya.echo.history.db.toSlimKeepingRoutingKeys
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
@@ -1262,8 +1262,19 @@ abstract class AndroidAutoCallback(
          * ⚠⚠ SLIM ENTRIES, FOR THE REASON THE QUEUE FILE IS SLIM. Full Tracks
          * carry streamables/extras/description and run to tens of KB each (ResumptionUtils'
          * QUEUE_FILE_MAX_BYTES note), which at 2000 entries is a file no gate can admit and a read
-         * no heap should take — the 1008/1013 OOM shape exactly. queueSlim is the queue's own rule,
-         * reused rather than restated, and it keeps the Unified routing key the slim drops.
+         * no heap should take — the 1008/1013 OOM shape exactly. toSlimKeepingRoutingKeys is the
+         * queue's own rule (queueSlim is a thin alias on it), reused rather than restated, and it keeps
+         * the Unified routing key and FALLBACK_ID that the plain slim drops.
+         * ⚠⚠ BUT keepPlayable = true HERE, UNLIKE THE QUEUE AND HISTORY, AND
+         * IT IS A RELAY-LOAD DECISION. These entries keep Track.isPlayable, so a liked track the
+         * extension already marked unplayable throws out of StreamableLoader.loadServer on tap with
+         * NO network at all. Without it the car re-resolves every dead track in full first - the whole
+         * createStreamableForQuality ladder, up to ~22 Deezer calls each - and a pulled album is a run
+         * of ADJACENT dead likes, so one drive can spend hundreds of refused requests against a daily
+         * account ceiling. The usual objection does not apply because THIS FILE IS REGENERATED from a
+         * fresh availability pass on every browse, and isPlayable is in the signature below, so a
+         * verdict cannot go stale here the way it could in the queue file. Full argument at
+         * toSlimKeepingRoutingKeys' keepPlayable.
          * ⚠️ THE TAP RE-RESOLVES, SO NOTHING SLIM-DROPPED IS NEEDED: the items are
          * built as MediaState.Unloaded and loadTrack repopulates streamables by id, which is the
          * same contract a restored queue runs on every cold start (see Track.toSlim).
@@ -1279,9 +1290,18 @@ abstract class AndroidAutoCallback(
                 return
             }
             declaredListKeys[key] = true
-            val signature = capped.map { it.id }.hashCode()
+            // ⚠️ isPlayable IS IN THE SIGNATURE, NOT JUST THE ID LIST, and it
+            // has to be now that the entries carry the verdict: a list whose ids are unchanged but
+            // whose availability MOVED (a track pulled, or restored) must rewrite the file. Keying on
+            // ids alone would serve a stale verdict until the list itself changed - which for a liked
+            // list is rarely. Playable's hashCode is stable within a process, which is all this map
+            // ever is: it is in-memory and cleared with the other browse caches.
+            val signature = capped.map { it.id to it.isPlayable }.hashCode()
             if (declaredListSigs[key] == signature) return
-            context.saveToCache(key, capped.map { it.queueSlim() }, AUTO_LIST_FOLDER, durable = true)
+            context.saveToCache(
+                key, capped.map { it.toSlimKeepingRoutingKeys(keepPlayable = true) },
+                AUTO_LIST_FOLDER, durable = true
+            )
             declaredListSigs[key] = signature
         }
 

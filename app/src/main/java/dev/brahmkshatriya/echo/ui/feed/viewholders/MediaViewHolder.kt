@@ -23,6 +23,7 @@ import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
 
 class MediaViewHolder(
     parent: ViewGroup,
@@ -40,7 +41,7 @@ class MediaViewHolder(
             when (val item = feed?.item) {
                 is Track -> {
                     if (item.isPlayable != Track.Playable.Yes) {
-                        listener.onMediaClicked(it, feed?.extensionId, item, feed?.context)
+                        listener.onUnplayableClicked(item)
                         return@setOnClickListener
                     }
                     val (tracks, pos) = getAllTracks(feed!!)
@@ -74,6 +75,10 @@ class MediaViewHolder(
     override fun bind(feed: FeedType.Media) {
         this.feed = feed
         binding.bind(feed.item, feed.number?.toInt())
+        // NOT inside ItemShelfMediaBinding.bind, even though that would cover this holder and
+        // ThreeTracks in one line: ui/playlist/save/MediaItemAdapter calls that same extension, and
+        // the save-to-playlist picker is not a surface this change was scoped to.
+        dimIfUnplayable(feed.item, binding.coverContainer.root, binding.title, binding.subtitle)
     }
 
     override fun canBeSwiped() = feed?.item is Track

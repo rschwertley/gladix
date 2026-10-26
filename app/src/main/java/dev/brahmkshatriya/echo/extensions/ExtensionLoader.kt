@@ -4,6 +4,7 @@ import androidx.annotation.OptIn
 import androidx.core.content.edit
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.SimpleCache
+import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.LyricsExtension
 import dev.brahmkshatriya.echo.common.MiscExtension
@@ -98,19 +99,44 @@ class ExtensionLoader(
     val fileIgnoreFlow = MutableSharedFlow<File?>()
     private val repository = CombinedRepository(
         scope, app.context, fileIgnoreFlow, parser,
+        // ⚠️ THE ONLY PLACE THE BUILT-IN DEEZER'S DISPLAYED METADATA IS SET.
+        // deezer-extension/gradle.properties and ext/build.gradle.kts look like they define it and do
+        // NOT: the ext build re-declares its own locals and writes them into a shadowJar MANIFEST.MF,
+        // which only matters for a standalone jar. A built-in is constructed directly, so these
+        // values are what the extension info screen and every error header show.
+        // ⚠️ ATTRIBUTION RETAINED AND THE MODIFICATION STATED, WHICH IS A
+        // LICENCE REQUIREMENT, NOT A COURTESY. Upstream (LuftVerbot/echo-deezer-extension) is under
+        // the Unabandon Public License, which incorporates GPLv3 in full - so a modified copy must
+        // keep the original notices AND carry a prominent statement that it was changed. The author
+        // string is where that statement is visible to a user; upstream's own metadata says
+        // extAuthor=Luftnos with extAuthorUrl=github.com/LuftVerbot, and both halves are kept.
         Metadata(
             className = "dev.brahmkshatriya.echo.extension.DeezerExtension",
             path = "",
             importType = ImportType.BuiltIn,
             type = ExtensionType.MUSIC,
+            // UNCHANGED DELIBERATELY: the id keys the settings prefs file (MUSIC-deezer), the
+            // UserEntity/CurrentUser login rows, the ExtensionEntity enable flag, every cached
+            // MediaState (mediaStateId) and every persisted queue entry - changing it signs the user
+            // out, resets their settings and orphans the saved queue.
             id = "deezer",
             name = "Deezer",
-            version = "v1.0.0",
-            description = "Deezer Extension for Echo.",
-            author = "Luftnos",
-            authorUrl = null,
+            // Tracks the app build this is shipped in (versionCode = gitCount, app/build.gradle.kts),
+            // so it needs no hand editing and a report names the build it came from. Nothing parses
+            // it: the only comparison anywhere is a plain string inequality against a GitHub release
+            // tag, and that is unreachable while updateUrl is null.
+            version = "1.0-gladix.${BuildConfig.VERSION_CODE}",
+            description = "Deezer extension for Gladix, based on Luftnos's Echo extension.",
+            author = "Luftnos (LuftVerbot), modified for Gladix by rschwertley",
+            authorUrl = "https://github.com/LuftVerbot",
             icon = "https://cdn-files.dzcdn.net/img/common/og-deezer-logo.png".toImageHolder(),
-            repoUrl = null,
+            // Display-only, and it points at OUR source because this is the modified work - UPL
+            // clauses 2-3 require the source of a derivative to be publicly identifiable.
+            repoUrl = "https://github.com/rschwertley/gladix",
+            // UNCHANGED DELIBERATELY: null is what makes ExtensionsViewModel.getExtensionUpdate
+            // return early. Pointing it at upstream's releases would compare this version string
+            // against their tag name, never match, and offer their build as an update - replacing
+            // the modified built-in on every check.
             updateUrl = null,
             preservedPackages = emptyList(),
             isEnabled = true,

@@ -8,6 +8,7 @@ import androidx.annotation.OptIn
 import androidx.core.content.edit
 import androidx.media3.cast.RemoteCastPlayer
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -26,6 +27,7 @@ import androidx.core.content.ContextCompat
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.di.PermissionRequest
 import dev.brahmkshatriya.echo.di.PermissionResult
+import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -113,6 +115,15 @@ class CastSessionController(
      * ⚠️ BEST-EFFORT. A prefs write cannot be allowed to fail a cast start, so
      * the failure mode is the status quo (HiFi requested) rather than no session.
      *
+     * ⚠⚠ [TRIGGER FIRED 2026-10-25 - NOW HANDLED BY reresolveIfHighRes]
+     * Pink Floyd, "Money", pill showing 96 kHz locally: STUTTERED on an Amazon Fire TV, where
+     * plain-FLAC casts never have. So the exposure below is real, and the revisit condition at
+     * the end of this note was too narrow - it asked for the FIRST CAST TRACK FAILING TO LOAD,
+     * and the device instead played it badly. That is the worse outcome of the two: failAndStop
+     * reports itself, a stutter does not.
+     * ⚠️ AND THE TEST IS NOT "WAS IT FLAC_24" - that cannot be asked,
+     * because nothing records the format the relay chose. It is the DECODED sample rate on the
+     * local player, > 48 kHz. See [reresolveIfHighRes].
      * ⚠⚠ IT DOES NOT COVER THE TRACK THAT WAS ALREADY RESOLVED - EXPOSURE IS
      * THE FIRST TRACK OF A SESSION, AND THAT IS ACCEPTED RATHER THAN MISSED. [planFor] reads
      * state.servers[track.id], i.e. the stream the LOCAL resolve already produced, so a track
@@ -122,14 +133,72 @@ class CastSessionController(
      * every later track in the session is resolved after this write and gets plain FLAC. And if
      * casting starts from a state where nothing is resolved yet, planFor returns null and the
      * resolution re-enters later - already after the write.
-     * ⚠️ WHY NOT FORCE A RE-RESOLVE: dropping state.servers[id] would not
-     * cause one - nothing re-prepares a parked player - so planFor would find no plan and the
-     * session would stall. Making it real means replaceMediaItem(withRetry) on the local player
-     * at cast start, which spends a fresh resolve (and a token) on every session and touches the
-     * parked-player path at the moment CastSwitchPlayer is being installed. Do that only if a
-     * device actually shows the FIRST cast track failing to load; the failure mode today is the
-     * handled receiver error (failAndStop), not a crash.
+     * ⚠️ [DONE 2026-10-25] WHY NOT FORCE A RE-RESOLVE: dropping
+     * state.servers[id] would not cause one - nothing re-prepares a parked player - so planFor
+     * would find no plan and the session would stall. Making it real means replaceMediaItem on
+     * the local player at cast start, which spends a fresh resolve (and a token) on every
+     * session and touches the parked-player path at the moment CastSwitchPlayer is being
+     * installed. THAT IS NOW BUILT - [reresolveIfHighRes], gated on the decoded sample rate so
+     * it costs nothing for the 44.1/48 kHz streams that are almost every track. The analysis
+     * above stands as written; only the verdict changed, and the two halves it names (drop the
+     * entry AND force the resolve) are exactly what that function does.
      */
+    /**
+     * Throw away a high-res stream the phone already resolved, so the first cast track is
+     * re-resolved under [setHiFiSuppressed] and the receiver is handed plain FLAC.
+     *
+     * ⚠⚠ THE TEST IS THE DECODED SAMPLE RATE, NOT "WAS IT FLAC_24",
+     * BECAUSE NOTHING RECORDS THE FORMAT WE ASKED FOR. DeezerMedia sends
+     * arrayOf("FLAC_24", "FLAC") and keeps only the URL the relay answers with; the resulting
+     * Streamable is identical either way (quality 9, "FLAC"). What IS available is the format
+     * the local decoder is actually using - the same value the quality pill prints via
+     * FormatUtils.toAudioDetails - and that is the better test anyway: the receiver cares what
+     * it is being handed, not what we requested, so this also covers any other extension that
+     * ever serves high-res.
+     * ⚠️ > 48 kHz, WHICH IS "ABOVE WHAT EVERY CAST RECEIVER TAKES"
+     * RATHER THAN A MEASURED CLIFF. 44.1 and 48 are the universal rates; 88.2/96/176.4/192 are
+     * the HiFi tier and the one measured failure sits at 96. Format.NO_VALUE (-1) and an
+     * un-started player both fall below it, so nothing happens when nothing is decoding - which
+     * is correct: with no stream resolved there is nothing to throw away and the resolve that
+     * follows is already after the suppression write.
+     * ⚠⚠ BOTH HALVES ARE NEEDED AND NEITHER WORKS ALONE. Dropping
+     * state.servers[id] alone leaves nothing to re-resolve - a parked player never re-prepares -
+     * so planFor would find no plan and the session would stall, which is what the note at
+     * [setHiFiSuppressed] predicted. replaceMediaItem alone races: the stale entry is still in
+     * state.servers when loadCurrentOnCast runs, so the 24-bit plan goes out anyway. Dropping it
+     * makes planFor return null, which is already defined as "not an error; its resolution
+     * re-enters here", and the re-entry is the existing state.current observer.
+     * ⚠️ withReresolve, NOT withRetry: the bump has to be a field
+     * canUpdateMediaItem compares, and `retries` is an error budget PlayerEventListener spends
+     * on skip decisions. See MediaItemUtils.withReresolve.
+     * ⚠️ THE COST, STATED: one extra resolve and one extra Deezer token
+     * per session, only when the current stream is high-res. If it fails, planFor keeps
+     * returning null and the existing loadTimeout/failAndStop path handles it - the same handled
+     * failure as a track that never resolves, not a new one.
+     * ⚠️ BEFORE pause() AND BEFORE CastSwitchPlayer IS INSTALLED, so
+     * the item is replaced on a player that is still prepared and still owns its own session.
+     */
+    private fun reresolveIfHighRes() {
+        val item = localPlayer.currentMediaItem ?: return
+        val index = localPlayer.currentMediaItemIndex
+        val sampleRate = selectedAudioSampleRate()
+        if (sampleRate <= HIGH_RES_SAMPLE_RATE_HZ) return
+        state.servers.remove(item.track.id)
+        runCatching { localPlayer.replaceMediaItem(index, MediaItemUtils.withReresolve(item)) }
+    }
+
+    // The format the local decoder selected, or Format.NO_VALUE when nothing is decoding. Same
+    // selection rule as FormatUtils' own (first selected track of the first audio group), spelled
+    // out here rather than widening that file's private helper for one caller.
+    private fun selectedAudioSampleRate(): Int = runCatching {
+        localPlayer.currentTracks.groups
+            .filter { it.type == C.TRACK_TYPE_AUDIO }
+            .firstNotNullOfOrNull { group ->
+                (0 until group.length).firstOrNull { group.isTrackSelected(it) }
+                    ?.let { group.getTrackFormat(it).sampleRate }
+            }
+    }.getOrNull() ?: Format.NO_VALUE
+
     private fun setHiFiSuppressed(suppressed: Boolean) {
         runCatching {
             extensionPrefId(ExtensionType.MUSIC.name, DEEZER_EXTENSION_ID)
@@ -141,6 +210,24 @@ class CastSessionController(
     init {
         setHiFiSuppressed(false)
     }
+
+    /**
+     * The phone's position at cast start, used by the FIRST LOAD of the session whenever it is
+     * sent.
+     *
+     * ⚠⚠ WITHOUT THIS THE FIRST TRACK WOULD RESTART FROM ZERO ON THE TV
+     * WHENEVER THE LOAD IS DEFERRED. The live position is read ONCE, at the
+     * loadCurrentOnCast call in onCastStarted. If planFor finds no resolved server the LOAD does
+     * not happen there; it happens on the next state.current emission, which arrives through
+     * PlayerService with `positionMs = 0L` - correct for a track CHANGE and wrong for the one
+     * track that was already playing.
+     * ⚠️ THE RE-RESOLVE BELOW MAKES THAT THE NORMAL CASE, which is why
+     * this is here. It was reachable before - casting while the current track had not resolved
+     * yet - but harmless then, because an unresolved track is at position ~0 anyway.
+     * ⚠️ CONSUMED IN [sendLoad], NOT WHERE IT IS READ, so every path to
+     * the first LOAD gets it and the second LOAD cannot.
+     */
+    private var castStartPositionMs: Long? = null
 
     private var remote: RemoteCastPlayer? = null
     private var wrapper: CastSwitchPlayer? = null
@@ -506,6 +593,11 @@ class CastSessionController(
         // BEFORE loadCurrentOnCast below, which is what resolves the stream: set after it, the
         // first cast track would already have been requested in HiFi. See [setHiFiSuppressed].
         setHiFiSuppressed(true)
+        // Read BEFORE the re-resolve and before pause(), and used by whichever round of
+        // loadCurrentOnCast ends up sending the first LOAD - see [castStartPositionMs].
+        castStartPositionMs =
+            runCatching { localPlayer.currentPosition }.getOrNull()?.takeIf { it != C.TIME_UNSET }
+        reresolveIfHighRes()
         abortCrossfade()
         runCatching { localPlayer.pause() }
         tracking()?.castSource = castPlayer
@@ -542,8 +634,11 @@ class CastSessionController(
         if (!force && (current.mediaId == castedMediaId || current.mediaId == pendingMediaId))
             return
 
+        // See [castStartPositionMs]: the session's first LOAD uses the position the phone was at
+        // when casting started, whichever round of this function ends up sending it.
+        val startPos = castStartPositionMs ?: positionMs
         prepared[current.mediaId]?.let { ready ->
-            sendLoad(ready, positionMs, play)
+            sendLoad(ready, startPos, play)
             return
         }
         val plan = planFor(current) ?: return
@@ -582,7 +677,7 @@ class CastSessionController(
                 return@prepare
             }
             if (ready == null) failAndStop(R.string.cast_stopped)
-            else sendLoad(ready, positionMs, play)
+            else sendLoad(ready, startPos, play)
         }
     }
 
@@ -659,6 +754,8 @@ class CastSessionController(
 
     private fun sendLoad(ready: Prepared, positionMs: Long, play: Boolean) {
         val castPlayer = remote ?: return
+        // The start-position override belongs to the FIRST load only - see [castStartPositionMs].
+        castStartPositionMs = null
         // Every send opens a new generation, which is what makes a copy that was started before
         // this - including by the synchronous [prepared] path, which has no generation of its
         // own - stale when it lands. See [loadGeneration].
@@ -992,6 +1089,17 @@ class CastSessionController(
 
         /** The extension whose HiFi request is suppressed while casting. See setHiFiSuppressed. */
         private const val DEEZER_EXTENSION_ID = "deezer"
+
+        /**
+         * Above this, the stream is re-resolved before the first LOAD - see [reresolveIfHighRes].
+         *
+         * ⚠️ "ABOVE WHAT EVERY RECEIVER TAKES", NOT A MEASURED CLIFF. 44.1
+         * and 48 kHz are universal; 88.2/96/176.4/192 are the HiFi tier, and the one measured
+         * failure (Pink Floyd "Money", Amazon Fire TV, 2026-10-25) sits at 96. If a receiver ever
+         * turns out to handle 96 cleanly this is the number to raise - do NOT make it per-device,
+         * which would need a capability probe the Cast SDK does not offer.
+         */
+        private const val HIGH_RES_SAMPLE_RATE_HZ = 48_000
 
         /**
          * App-written key in that extension's own prefs, ANDed with the user's `flac_24` switch by
