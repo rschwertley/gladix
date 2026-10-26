@@ -1,5 +1,5 @@
 [versions]
-agp = "9.3.2"
+agp = "9.4.1"
 kotlin = "2.4.21"
 # NOTE: Detekt bundles its OWN Kotlin analyzer for PSI parsing; 1.23.8 bundles ~Kotlin 2.0.x, while this
 # project is on Kotlin 2.4.10. PSI-only analysis of ordinary code (incl. reified generics / @OptIn) works,

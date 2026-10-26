@@ -1,14 +1,30 @@
 # CRITICAL — DO NOT REMOVE. This block is the COMPLETE extension ABI: everything a dynamically-loaded
 # extension APK links against but does NOT bundle, so the app (parent classloader) must provide it by
-# its ORIGINAL name at runtime. R8 (since AGP 9.1) repackages classes into the default package by
-# default, moving/renaming them and making every extension fail to load (NoClassDefFoundError — first
-# common.**, then kotlin.jvm.functions.Function0, etc.). The set is derived from the canonical extension
+# its ORIGINAL name at runtime. R8 (since AGP 9.2.1 or 9.3.1 — git can't separate them) repackages
+# classes into the default package by default, moving/renaming them and making every extension fail
+# to load (NoClassDefFoundError — first common.**, then kotlin.jvm.functions.Function0, etc.). The
+# set is derived from the canonical extension
 # contract (echo-extension-template / deezer-extension/app: compileOnly(dev.brahmkshatriya.echo:common)
 # + compileOnly(kotlin-stdlib)), where :common api-exposes kotlinx + okhttp + protobuf — NOT from chasing
 # individual crashes. Parent-first DexClassLoader delegation + the extension's own -dontobfuscate mean an
 # in-contract extension cannot reference a host package outside this set. After ANY AGP/R8/proguard change,
 # the verifyExtensionAbi task (app/build.gradle.kts) fails the build if any anchor stops self-mapping in
 # build/outputs/mapping/<variant>/mapping.txt.
+#
+# [CORRECTED 2026-10-26] THE LINE ABOVE SAID "since AGP 9.1", AND GIT REFUTES IT. The repo shipped
+# on agp = 9.1.0 then 9.1.1 from 2026-06-21 (c7680c01, a6ada124) until 2026-07-27 with extensions
+# loading fine; the break arrives in the window after the 9.1.1 -> 9.2.1 bump (5382928f,
+# 2026-07-27). The fix
+# commit e2743274 (2026-07-30) is titled "...broken by R8 repackaging (AGP 9.x)" — deliberately
+# vague — and was authored while agp = 9.3.1 (bumped the day before by cf60b564). So git proves it
+# was NOT 9.1, but cannot separate 9.2.1 from 9.3.1, one day apart; neither the notes nor git pick
+# between them, so both stand above.
+# HOW THE WRONG NUMBER GOT IN, because that is the transferable part: the OTHER July R8 incident —
+# the protobuf finalization LinkageError fixed by dd63cd08 (2026-07-12) — genuinely WAS on AGP
+# 9.1.1, and its note in common/src/commonMain/resources/META-INF/proguard/consumer-proguard-rules.pro
+# correctly says "AGP 9.1's more aggressive R8". That correct attribution was reused for this
+# unrelated, later break. Two R8 regressions five weeks apart, two different AGP versions — do not
+# collapse them again.
 #
 # ⚠️ ADDING A KEEP RULE HERE? ADD AN ANCHOR TO `critical` IN app/build.gradle.kts TOO. A keep rule with no
 # anchor is UNVERIFIED: R8 can repackage that whole package and verifyExtensionAbi still reports "ABI
