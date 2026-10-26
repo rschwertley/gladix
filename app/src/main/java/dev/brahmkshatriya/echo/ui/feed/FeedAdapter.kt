@@ -100,6 +100,13 @@ class FeedAdapter(
     override fun getItemViewType(position: Int) =
         runCatching { peek(position)!! }.getOrNull()?.type?.ordinal ?: 0
 
+    /**
+     * ⚠️ THE NAME IS NARROWER THAN THE JOB. Its only reader is
+     * [getAllTracks], where it means "this feed groups its track rows into one playable run" -
+     * false makes a tap queue THAT ROW ALONE. The visible Play/Shuffle buttons are a separate
+     * path (ButtonsAdapter reads Feed.Buttons directly), so this being true while they are
+     * momentarily not drawn is correct, not a desync.
+     */
     private var isPlayButtonShown = false
     private fun FeedType.toTrack(): Track? = when (this) {
         is FeedType.Media -> item as? Track
@@ -199,12 +206,49 @@ class FeedAdapter(
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
         fragment.observe(viewModel.tabsFlow) { tabs.data = it }
-        fragment.observe(viewModel.selectedTabIndexFlow) { tabs.selected = it }
         var buttonsAdapter: ButtonsAdapter? = null
         // Last declared track list for this feed, read by the tap path AT TAP TIME rather than
         // captured when it arrives - see FeedClickListener.declaredTracks.
         var declaredTracks: List<Track>? = null
         listener.declaredTracks = { declaredTracks }
+        /**
+         * ⚠⚠ THE LAST NON-NULL Buttons, KEPT ACROSS A NULL EMISSION, BECAUSE A
+         * NULL ONE USED TO QUEUE A SINGLE SONG. FeedData.buttonsFlow ends in
+         * `?: return@combine null` and BOTH halves of its dataFlow `emit(null)` on every restart,
+         * so a reload hands this observer a null while the RecyclerView still shows the rows the
+         * PREVIOUS emission produced - the flag clear is a synchronous assignment, the row removal
+         * goes through PagedSource and submitData's async diff.
+         * ⚠⚠ AND IT TOOK BOTH FIELDS TO DO IT, WHICH IS WHY ONE ASSIGNMENT
+         * CAUSED IT. With [isPlayButtonShown] false, getAllTracks returns `listOfNotNull(track) to
+         * 0`; with declaredTracks null, FeedClickListener's declared branch cannot rescue it; so the
+         * fallback setQueue got a ONE-ELEMENT list. Either field alone is harmless - a declared list
+         * survives a false flag, and a true flag queues the whole visible run without a declared
+         * list. They were cleared together because they come from the same `it?.buttons`.
+         * ⚠️ THE WINDOW IS SECONDS, NOT FRAMES, ON THE LIKED LIST.
+         * DeezerApi.tracksAvailability runs one pipe request per 100 ids SEQUENTIALLY, so a
+         * 1000-track favourites list is ~10 round trips before the loaded feed exists. Measured at
+         * 0.3-0.5 s each, that is 3-5 s of reload with rows already on screen and scrollable.
+         * ⚠️ NOT CARRIED ACROSS TABS: the retention is dropped whenever the
+         * selected tab index changes, below. A different tab is a different list, and answering for
+         * content it never described is the one thing worse than answering with nothing. A feed with
+         * no tabs emits index -1 once and keeps its retention, which is what playlist and album
+         * pages need.
+         * ⚠️ THE ButtonsAdapter IS DELIBERATELY NOT GIVEN THE RETAINED
+         * VALUE. FeedData.Buttons also carries sortState, and showing a retained sort chip through a
+         * reload would trade a flicker for a wrong label. The visible row keeps its existing
+         * behaviour; only the tap path reads through the retention.
+         */
+        var retainedButtons: FeedData.Buttons? = null
+        var retainedTabIndex: Int? = null
+        fragment.observe(viewModel.selectedTabIndexFlow) { index ->
+            tabs.selected = index
+            if (retainedTabIndex != index) {
+                retainedTabIndex = index
+                retainedButtons = null
+                isPlayButtonShown = false
+                declaredTracks = null
+            }
+        }
         val speechLauncher = fragment.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -228,13 +272,17 @@ class FeedAdapter(
         if (initialButtons) buttons.buttons = FeedData.Buttons("", "", Feed.Buttons(showPlayAndShuffle = true))
         fragment.observe(viewModel.buttonsFlow) {
             buttons.buttons = it
-            isPlayButtonShown = it?.buttons?.showPlayAndShuffle == true
+            // See the retention note above: a null emission keeps the last description of the rows
+            // that are still drawn; a non-null one always replaces it.
+            if (it != null) retainedButtons = it
+            val effective = it ?: retainedButtons
+            isPlayButtonShown = effective?.buttons?.showPlayAndShuffle == true
             // The same Feed.Buttons the Play/Shuffle buttons read, handed to the tap path: a
             // track the extension declared as part of a collection queues the whole collection
             // instead of starting a radio. See FeedClickListener.declaredTracks. Set here and not
             // only where isPlayButtonShown is, because a feed may declare the list WITHOUT
             // showing the buttons - Library -> All does exactly that.
-            declaredTracks = it?.buttons?.customTrackList
+            declaredTracks = effective?.buttons?.customTrackList
         }
         val loadStateListener = fragment.createListener { retry() }
         val header = FeedLoadingAdapter(loadStateListener) { LoadingViewHolder(it) }

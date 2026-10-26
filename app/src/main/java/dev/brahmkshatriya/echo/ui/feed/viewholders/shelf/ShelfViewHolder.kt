@@ -135,14 +135,19 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                 binding.root.setOnClickListener { view ->
                     val tracks = getAllTracks()
                     val pos = shelf?.number?.let { it * 3 + index } ?: index
-                    // ⚠⚠ [CORRECTED 2026-10-25] THIS READ `getOrNull(index)` AND
-                    // index IS 0..2 WITHIN THIS ROW OF THREE, WHILE `tracks` IS THE WHOLE FEED'S
-                    // TRACK LIST. So for any shelf after the first (number > 0) the playability gate
-                    // tested the feed's FIRST three tracks instead of this row's, and the item handed
-                    // to the unplayable branch was the wrong track. `pos` is the index the sibling
-                    // onTracksClicked call and bind's display number both already use - the two were
-                    // simply out of step. Visible only once something sets isPlayable, which is why
-                    // it surfaced now rather than when it was written.
+                    // ⚠⚠ [CORRECTED 2026-10-25] THIS READ `getOrNull(index)`, AND
+                    // index IS 0..2 WITHIN THIS PAGE OF THREE while `tracks` is the FLAT list this
+                    // carousel was chunked FROM - HorizontalListViewHolder sets
+                    // `adapter.tracks = feed.shelf.list.filterIsInstance<Track>()` and pages it with
+                    // `list.chunked(3)`. So for every page after the first (number > 0) the
+                    // playability gate tested PAGE ONE's tracks and handed the wrong track to the
+                    // unplayable branch. `pos` is the index the sibling onTracksClicked call and
+                    // bind's display number both already use - the two were simply out of step.
+                    // [A first draft of this note said `tracks` was the WHOLE FEED's list. It is one
+                    // shelf's. The fix is unchanged either way - pos indexes whatever list was
+                    // chunked - but the reason is this, not that.]
+                    // Visible only once something sets isPlayable, which is why it surfaced now
+                    // rather than when it was written.
                     val track = tracks.getOrNull(pos)
                     if (track?.isPlayable != Track.Playable.Yes) listener.onUnplayableClicked(track)
                     else listener.onTracksClicked(

@@ -16,9 +16,10 @@ firebase-bom = "35.0.2"
 koinAndroid = "4.2.2"
 media3 = "1.11.1"
 # Cast. NOT version.ref'd to media3: play-services-cast-framework has its own release train,
-# and media3-cast 1.11.0 declares 22.3.1 (which in turn hard-pins play-services-cast to
-# [22.3.1] - a RANGE, so that one must not be declared here or the pin fights the catalogue).
-play-services-cast = "22.3.1"
+# and media3-cast 1.11.1 declares 22.3.1 while we declare 23.0.0 directly, which wins - the
+# SELECTED framework hard-pins play-services-cast to an exact [<its own version>] RANGE, so that
+# one must not be declared here or the pin fights the catalogue.
+play-services-cast = "23.0.0"
 # ⚠️ DO NOT GO BELOW 3.6.0. It ships a shrinker rule inside coil-core that this app needs:
 #   -keep class * extends coil3.target.GenericViewTarget { *; }
 # Without it, R8 9.0+ vertically merges GenericViewTarget into its subclasses and SILENTLY DROPS the

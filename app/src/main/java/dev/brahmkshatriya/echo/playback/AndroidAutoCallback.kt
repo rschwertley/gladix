@@ -47,6 +47,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isReplayableContext
 import dev.brahmkshatriya.echo.history.db.toSlimKeepingRoutingKeys
@@ -986,7 +987,13 @@ abstract class AndroidAutoCallback(
             // ensuing setMediaItems keeps it as `original` and flips the shuffle flag ON (parity with the phone
             // Shuffle button: a later toggle-OFF restores album order). The flag flip is changeQueue-free — the
             // queue is applied already shuffled, so nothing re-shuffles.
-            val unshuffled = tracks.loadAll().map {
+            // ⚠⚠ FILTERED BEFORE THE SHUFFLE AND BEFORE notifyShuffleTileOriginal,
+            // SO BOTH ORDERS AGREE. This tile plays a WHOLE collection, so it is a list path like the
+            // phone Shuffle button - see MediaItemUtils.droppingUnplayable. Filtering after the
+            // shuffle would be equivalent, but filtering after `unshuffled` is recorded would not:
+            // `original` is what a later toggle-OFF restores, and a dropped track must not reappear
+            // in album order. No keepFirst - a shuffle tile has no tapped head.
+            val unshuffled = tracks.loadAll().droppingUnplayable().map {
                 MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
             }
             val shuffled = unshuffled.shuffled()
@@ -1050,7 +1057,12 @@ abstract class AndroidAutoCallback(
                     // Context stays null: a declared list is not a collection the app can re-fetch, and a
                     // trackRadioPlaceholder here would label a real queue as a radio. Same as the phone's
                     // declared branch, which passes null too.
+                    // Marked tracks dropped before the cap, head kept - see
+                    // MediaItemUtils.droppingUnplayable for why the car keeps a marked head where the
+                    // phone refuses one. The stored entries carry the verdict on purpose
+                    // (saveDeclaredList's keepPlayable), so this costs no request.
                     val upcoming = stored.subList(tappedIndex, stored.size)
+                        .droppingUnplayable(keepFirst = true)
                         .take(AA_DECLARED_QUEUE_CAP)
                         .map {
                             MediaItemUtils.build(
@@ -1091,9 +1103,14 @@ abstract class AndroidAutoCallback(
                         // P2 — current+upcoming: drop the tracks before the tapped one so it lands at
                         // index 0 (matches phone playItem + freshContextUpcoming) — no stranded-above,
                         // zero persisted index.
-                        val upcomingItems = allTracks.subList(tappedIndex, allTracks.size).map {
-                            MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
-                        }
+                        // Same filter as the declared branch - see MediaItemUtils.droppingUnplayable.
+                        val upcomingItems = allTracks.subList(tappedIndex, allTracks.size)
+                            .droppingUnplayable(keepFirst = true)
+                            .map {
+                                MediaItemUtils.build(
+                                    app, downloadFlow.value, MediaState.Unloaded(extId, it), item
+                                )
+                            }
                         mediaSession.primeTapShuffle(tapShuffled)
                         return@future super.onSetMediaItems(
                             mediaSession, controller, upcomingItems.toMutableList(), 0, startPositionMs

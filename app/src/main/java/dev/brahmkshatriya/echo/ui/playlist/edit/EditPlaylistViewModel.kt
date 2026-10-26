@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -181,10 +182,38 @@ class EditPlaylistViewModel(
                 }
             }
 
-            val newActions = newActions.value!!
+            // ⚠⚠ COMPUTED HERE, NOT READ FROM THE [newActions] FLOW, BECAUSE A
+            // STALE READ OF THAT FLOW MADE "Remove from playlist" A SILENT NO-OP. This was
+            // `newActions.value!!`, and that flow is
+            // `currentTracks.transformLatest { emit(null); emit(computeActions(...)) }`
+            // .flowOn(Dispatchers.IO).stateIn(Eagerly, null) - so its value trails [currentTracks]
+            // by one IO dispatch. The one-shot remove path in init edits currentTracks and emits
+            // saveFlow with NO suspension point in between, so this line sampled the value computed
+            // for the PREVIOUS currentTracks - which, right after originalList populated it, is
+            // computeActions(list, list) = AN EMPTY LIST. Empty then took the early return below:
+            // SaveState.Saved(success), EditPlaylistBottomSheet saw isSuccess, fired its "reload"
+            // fragment result and dismissed, and nothing had been removed. No error, no snackbar,
+            // no Crashlytics - it read as a completed operation, which is why build 1116 shipped it.
+            // ⚠️ THE EDITOR SCREEN NEVER SHOWED THIS, and that is the tell for
+            // why it went unnoticed: there a human swipes, then taps Save, and the seconds between
+            // let the IO recomputation land. Only the sheet, which saves programmatically in the
+            // same breath as the edit, loses the race - and it loses it every time.
+            // ⚠️ THIS IS THE AUTHORITATIVE PAIR: originalList is what was sent
+            // to the extension as `tracks`, currentTracks is what the user's edits produced, and
+            // computeActions is a pure function of the two. The flow stays for [isSaveable], where
+            // being one dispatch behind only delays a button enabling and cannot lose work.
+            // ⚠️ STILL OFF THE MAIN THREAD: the flow used flowOn(IO) for this
+            // diff and a long playlist is the reason, so the withContext keeps that property.
+            val original = originalList.value!!.getOrThrow()
+            val newActions = withContext(Dispatchers.IO) {
+                computeActions(original, currentTracks.value ?: original)
+            }
             if (newActions.isEmpty()) return@runCatching
 
-            var tracks = originalList.value!!.getOrThrow()
+            // Same value `original` holds - the diff and the list sent to the extension MUST be the
+            // pair computeActions was given, or an index in an action would point into a different
+            // list than the one being edited.
+            var tracks = original
             val selectedTab = selectedTabFlow.value
             extension.getIf<PlaylistEditorListenerClient, Any?> {
                 onEnterPlaylistEditor(playlist, tracks)
@@ -284,11 +313,25 @@ class EditPlaylistViewModel(
                 currentTracks.value = it?.getOrNull()
             }
         }
+        // The one-shot path behind MediaMoreBottomSheet's "Remove from playlist": no editor UI, no
+        // Save button - edit once and commit.
+        // ⚠⚠ THE `newActions.first { it != null }` THAT USED TO SIT BEFORE THE
+        // EMIT IS GONE, AND IT WAS THE BUG, NOT THE GUARD IT LOOKED LIKE. It was there to let the
+        // diff catch up with [edit], but a StateFlow's `first` samples the CURRENT value, and that
+        // value was the previous diff - an EMPTY list, which satisfies `it != null` instantly. So it
+        // waited for nothing, and the save then read that same empty list and no-opped. See the note
+        // at [saveState], which now computes the actions itself; nothing here needs to wait for a
+        // flow at all, because [edit] updates currentTracks SYNCHRONOUSLY.
+        // ⚠️ DO NOT "REPAIR" IT AS `first { !it.isNullOrEmpty() }` INSTEAD.
+        // That waits for the right thing and HANGS FOREVER on the one case it must not: if
+        // removeIndex is out of range, edit()'s runCatching swallows the IndexOutOfBounds, the list
+        // is unchanged, the diff stays empty, and the sheet sits on "Loading" with no way out -
+        // the exact failure the removeIndex note in MediaMoreBottomSheet warns about. Emitting
+        // unconditionally keeps that case ending in a dismissal.
         viewModelScope.launch {
             if (removeIndex == -1) return@launch
             currentTracks.first { it != null }
             edit(Action.Remove(listOf(removeIndex)))
-            newActions.first { it != null }
             saveFlow.emit(Unit)
         }
     }

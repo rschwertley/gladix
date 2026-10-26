@@ -1456,10 +1456,20 @@ class DeezerApi(private val session: DeezerSession) {
      * persisted queue and history rows - where StreamableLoader.loadServer throws on any non-Yes
      * value before making a request and nothing re-checks it. toSlimKeepingRoutingKeys resets it to
      * Yes for exactly this reason; see the note at resetPlayable.
-     * ⚠️ NO QUEUE FILTERING, DELIBERATELY. A marked row stays in the declared
-     * queue and is still walked past - it just skips INSTANTLY and with zero requests instead of
-     * costing up to ~22 Deezer calls down createStreamableForQuality's ladder. Fewer skips would be a
-     * separate decision about queue construction, not about this verdict.
+     * ⚠️ [CORRECTED 2026-10-26] THIS SAID "NO QUEUE FILTERING,
+     * DELIBERATELY", AND THAT DECISION WAS REVERSED THE NEXT DAY. The reasoning it gave still holds
+     * as far as it goes - a marked row in the queue skips instantly at zero requests, instead of
+     * ~22 Deezer calls down createStreamableForQuality's ladder - but it treated the remaining skip
+     * as free, and 50 adjacent dead tracks in one pulled album is 50 silent gaps the listener still
+     * hears. Marked tracks are now dropped when a queue is BUILT FROM A LIST:
+     * MediaItemUtils.droppingUnplayable, called from FeedClickListener's declared branch, its
+     * visible-run fallback and onPlayClicked, from AndroidAutoCallback's declared and context
+     * branches, and from PlayerCallback's freshContextUpcoming and playItem.
+     * ⚠️ THE SKIP PATH IS STILL THE SAFETY NET AND MUST STAY: this verdict
+     * does not exist for other extensions, is stripped from everything persisted
+     * (HistoryEntity.resetPlayable), and cannot see a track that dies between the list load and the
+     * tap. A restored queue therefore still relies entirely on the silent skip, the catalogue-dead
+     * breaker exemption and the crossfade decline.
      */
     suspend fun markUnplayable(tracks: List<Track>): List<Track> {
         if (tracks.isEmpty()) return tracks

@@ -36,6 +36,34 @@ import kotlin.text.Charsets.UTF_8
 object MediaItemUtils {
 
     /**
+     * Drops tracks the extension has declared unplayable from a list that is about to BECOME a
+     * queue. Call it on the slice, never on a single tapped item.
+     *
+     * ⚠⚠ FILTER BEFORE ANY `take(cap)`, OR THE CAP COUNTS CORPSES. A liked
+     * list with 50 dead tracks in one pulled album would otherwise spend 50 of its 2000 queue slots
+     * on tracks that cannot play, and a shorter cap would spend proportionally more. Every caller
+     * here orders it that way.
+     * ⚠⚠ THIS IS A SECOND LINE, NOT THE FIRST OR THE LAST. The verdict only
+     * exists where an extension set it (DeezerApi.markUnplayable: Deezer liked, playlist and album
+     * rows), and HistoryEntity.resetPlayable strips it from anything persisted - so a restored
+     * queue, a radio, a History tap and every other extension arrive here with Playable.Yes and are
+     * untouched. The dead-track handling that already exists stays exactly as it is: the silent skip
+     * in PlayerEventListener, the catalogue-dead breaker exemption with its health check, and
+     * CrossfadeController's decline on a known-unplayable next item. This filter removes the skips
+     * we can SEE coming; those still catch the ones we cannot.
+     * ⚠️ [keepFirst] IS FOR THE CAR, AND IT IS A DELIBERATE ASYMMETRY. On
+     * the phone a tapped row that is marked never reaches a queue at all - the viewholder gates it to
+     * FeedClickListener.onUnplayableClicked, which shows the reason and does nothing else. Android
+     * Auto has no equivalent affordance, so a tap there must still DO something: the head is kept
+     * even when marked (it skips instantly, at zero requests) rather than turning a tap into a
+     * silent no-op or quietly playing a different song than the one touched.
+     */
+    fun List<Track>.droppingUnplayable(keepFirst: Boolean = false): List<Track> =
+        filterIndexed { index, track ->
+            (keepFirst && index == 0) || track.isPlayable == Track.Playable.Yes
+        }
+
+    /**
      * Can this stored context be RE-LOADED and the original track found inside it again?
      *
      * Named for the question because three call sites previously asked it three different ways — each

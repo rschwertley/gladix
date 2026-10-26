@@ -12,6 +12,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
@@ -162,7 +163,12 @@ open class FeedClickListener(
         val vm by fragment.activityViewModels<PlayerViewModel>()
         if (tracks != null) {
             if (tracks.isEmpty()) return notFoundSnack(R.string.tracks)
-            vm.setQueue(extensionId, tracks, 0, context)
+            // Play/Shuffle over a declared or loaded list - see MediaItemUtils.droppingUnplayable.
+            // A list whose every track is marked reports as empty: there is nothing to play, and the
+            // alternative is a queue that skips to the end on its own.
+            val playable = tracks.droppingUnplayable()
+            if (playable.isEmpty()) return notFoundSnack(R.string.tracks)
+            vm.setQueue(extensionId, playable, 0, context)
             vm.setShuffle(shuffle, true)
             vm.setPlaying(true)
             return true
@@ -355,7 +361,18 @@ open class FeedClickListener(
             // From the tapped track onward, capped - see [DECLARED_QUEUE_CAP]. setQueue would drop
             // the head itself, but slicing here is what lets the cap count from the tap rather
             // than from the top of a 10,000-track list.
-            val upcoming = declared.subList(declaredPos, declared.size).take(DECLARED_QUEUE_CAP)
+            // Marked tracks are dropped BEFORE the cap - see MediaItemUtils.droppingUnplayable.
+            // ⚠️ NO keepFirst HERE: the tapped row is already known
+            // playable (the viewholder gate sends a marked one to onUnplayableClicked), so the head
+            // survives the filter on its own. If the DECLARED entry is marked while the ROW was not -
+            // possible when the row came from an earlier emission - the queue correctly starts at the
+            // next playable track instead of opening on a skip.
+            val upcoming = declared.subList(declaredPos, declared.size)
+                .droppingUnplayable()
+                .take(DECLARED_QUEUE_CAP)
+            // Nothing playable from here on: say so rather than setting an empty queue, which would
+            // read as a dead tap.
+            if (upcoming.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
             vm.setQueue(extensionId, upcoming, 0, null, respectShuffle = true)
             vm.setPlaying(true)
             return true
@@ -369,7 +386,15 @@ open class FeedClickListener(
             return true
         }
         // Album and playlist taps take the same shuffle treatment - see the note above.
-        vm.setQueue(extensionId, tracks, pos, context, respectShuffle = true)
+        // ⚠️ `pos` IS AN INDEX, SO FILTERING HAS TO MOVE IT. Counting the
+        // marked entries BEFORE the tap is exact and duplicate-safe, which `indexOfFirst { it.id }`
+        // would not be: a playlist may hold the same track twice, and matching by id would silently
+        // start on the wrong instance. See MediaItemUtils.droppingUnplayable.
+        val playableRun = tracks.droppingUnplayable()
+        val droppedBefore = tracks.take(pos).count { it.isPlayable != Track.Playable.Yes }
+        val runPos = (pos - droppedBefore).coerceIn(0, maxOf(playableRun.size - 1, 0))
+        if (playableRun.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
+        vm.setQueue(extensionId, playableRun, runPos, context, respectShuffle = true)
         vm.setPlaying(true)
         return true
     }

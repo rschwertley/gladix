@@ -51,6 +51,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
+import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.get
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
@@ -59,6 +60,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -919,7 +921,9 @@ class PlayerCallback(
             "tapped track not in freshly loaded context: ext=$extId ctx=${context.id} — starting at 0"
         )
         val correctIndex = foundIndex.coerceAtLeast(0)
-        return list.subList(correctIndex, list.size).map {
+        // Serves the AA context and History taps - head kept, rest filtered, see
+        // MediaItemUtils.droppingUnplayable.
+        return list.subList(correctIndex, list.size).droppingUnplayable(keepFirst = true).map {
             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), context)
         }
     }
@@ -1002,18 +1006,35 @@ class PlayerCallback(
                     }
                     return@future error
                 }
+                // ⚠⚠ FILTERED BEFORE startIndex IS CHOSEN, WHICH IS THE ONLY
+                // PLACE IT CAN GO. startIndex, startPos and both branches below all index into this
+                // list, so filtering afterwards would point them at the wrong tracks. This is the
+                // PLAY/SHUFFLE path for a whole collection - the album and playlist page buttons
+                // reach it through PlayerViewModel.play/shuffle, not through
+                // FeedClickListener.onPlayClicked's list branch. See MediaItemUtils.droppingUnplayable.
+                // ⚠️ THE EMPTY CHECK ABOVE STAYS ON THE UNFILTERED `list`,
+                // deliberately: it distinguishes "the collection is empty" from "the first page
+                // paginates oddly", and folding a fully-marked page into either would misreport it.
+                // A list that is non-empty but entirely marked gets the plain empty message.
+                val queueList = list.droppingUnplayable()
+                if (queueList.isEmpty()) {
+                    app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
+                    return@future error
+                }
                 val startIndex = when {
-                    startTrackId != null -> list.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
-                    shuffle -> list.indices.random()
+                    // A marked start track is no longer in the list, so this falls to 0 - the same
+                    // "not found, start at the top" behaviour a since-removed track already got.
+                    startTrackId != null -> queueList.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
+                    shuffle -> queueList.indices.random()
                     else -> 0
                 }
-                val startPos = list.getOrNull(startIndex)?.playedDuration ?: 0
+                val startPos = queueList.getOrNull(startIndex)?.playedDuration ?: 0
                 if (shuffle) (player as? ShufflePlayer)?.notifyFreshShuffle()
                 player.with {
                     if (shuffle) {
                         // Shuffle keeps the whole list; enabling shuffle triggers changeQueue, which
                         // pulls the current track to index 0 and drops the rest above it.
-                        val mediaItems = list.map {
+                        val mediaItems = queueList.map {
                             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
                         }
                         setMediaItems(mediaItems, startIndex, startPos)
@@ -1023,7 +1044,7 @@ class PlayerCallback(
                         // index 0 (the subList-to-0 pattern freshContextUpcoming/History uses). Prevents
                         // stranded-above tracks and a non-zero persisted index (which would resume restore
                         // mid-queue).
-                        val upcoming = list.subList(startIndex, list.size).map {
+                        val upcoming = queueList.subList(startIndex, queueList.size).map {
                             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
                         }
                         setMediaItems(upcoming, 0, startPos)
@@ -1077,11 +1098,23 @@ class PlayerCallback(
                             if (it is CancellationException) throw it
                             throwableFlow.emit(it)
                             return@launch
-                        }.drop(list.size).map {
-                            MediaItemUtils.build(
-                                app, downloadFlow.value, MediaState.Unloaded(extId, it), item
-                            )
                         }
+                            // ⚠️ `list.size`, NOT `queueList.size`, AND THAT IS
+                            // NOT A LEFTOVER. This drop skips the tracks PAGE ONE CONTRIBUTED TO
+                            // `all`, which is the unfiltered source ordering - page one held
+                            // list.size entries there whatever we chose to queue from it. Using the
+                            // filtered size would re-append one track per dropped one.
+                            .drop(list.size)
+                            // The appended tail gets the same filter as the first page - see
+                            // MediaItemUtils.droppingUnplayable. Without it, Play on a long
+                            // collection filtered page one and then quietly put the dead tracks from
+                            // every later page back.
+                            .droppingUnplayable()
+                            .map {
+                                MediaItemUtils.build(
+                                    app, downloadFlow.value, MediaState.Unloaded(extId, it), item
+                                )
+                            }
                         // Append remaining pages at the END (robust to the first page having been
                         // subList-trimmed to the tapped track, and to mid-load advances) - but only if
                         // this is still the queue they were loaded for.
@@ -1267,11 +1300,36 @@ class PlayerCallback(
             app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
             return@future error
         }
+        // ⚠⚠ ADDS FILTER TOO, AND THIS IS THE ONE PLACE IT WAS NOT OBVIOUS.
+        // `item` here can be a whole Album or Playlist (listTracks pages it), so "Add to queue" on a
+        // Deezer album is a LIST of browsed tracks carrying verdicts - the same population the tap
+        // and Play paths filter. Leaving it out would have let the long-press menu put back exactly
+        // what a tap now keeps out. See MediaItemUtils.droppingUnplayable.
+        // ⚠️ NO keepFirst: nothing here is a "tapped track that must play
+        // first" - an add has no head to protect. A LONE marked track therefore adds nothing and
+        // is ANSWERED rather than silently dropped - see the message below. The queue would have
+        // skipped it instantly anyway, and silence with no message would read as the command
+        // failing.
+        val addable = tracks.droppingUnplayable()
+        if (addable.isEmpty()) {
+            // ⚠️ THE SAME SENTENCE onUnplayableClicked SHOWS, FOR THE SAME
+            // REASON: a lone track the user picked deserves its own verdict, not "the list is
+            // empty" - which is both wrong (there was a track) and useless. playableString is the
+            // single producer of that text, so this says exactly what the row's subtitle and the
+            // phone tap gate say. A COLLECTION that held tracks but none playable keeps
+            // list_is_empty: nothing about one track explains it, and it matches the genuinely-empty
+            // case just above. The elvis also covers the impossible-but-cheap case of a Yes track
+            // reaching here, where playableString answers null.
+            val message = (item as? Track)?.playableString(app.context)
+                ?: app.context.getString(R.string.list_is_empty)
+            app.messageFlow.emit(Message(message))
+            return@future error
+        }
         // P5: give added tracks a source label so they don't show a blank header when reached. A
         // collection (Album/Playlist/Artist/Radio) is its own source; a lone track gets the display-only
         // "<track> Radio" placeholder (stripped in PlayerRadio), consistent with a bare-track play.
         val addedContext = item.takeUnless { it is Track }
-        val mediaItems = tracks.map { track ->
+        val mediaItems = addable.map { track ->
             MediaItemUtils.build(
                 app,
                 downloadFlow.value,
@@ -1327,9 +1385,34 @@ class PlayerCallback(
             app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
             return@future error
         }
+        // ⚠⚠ ADDS FILTER TOO, AND THIS IS THE ONE PLACE IT WAS NOT OBVIOUS.
+        // `item` here can be a whole Album or Playlist (listTracks pages it), so "Add to queue" on a
+        // Deezer album is a LIST of browsed tracks carrying verdicts - the same population the tap
+        // and Play paths filter. Leaving it out would have let the long-press menu put back exactly
+        // what a tap now keeps out. See MediaItemUtils.droppingUnplayable.
+        // ⚠️ NO keepFirst: nothing here is a "tapped track that must play
+        // first" - an add has no head to protect. A LONE marked track therefore adds nothing and
+        // is ANSWERED rather than silently dropped - see the message below. The queue would have
+        // skipped it instantly anyway, and silence with no message would read as the command
+        // failing.
+        val addable = tracks.droppingUnplayable()
+        if (addable.isEmpty()) {
+            // ⚠️ THE SAME SENTENCE onUnplayableClicked SHOWS, FOR THE SAME
+            // REASON: a lone track the user picked deserves its own verdict, not "the list is
+            // empty" - which is both wrong (there was a track) and useless. playableString is the
+            // single producer of that text, so this says exactly what the row's subtitle and the
+            // phone tap gate say. A COLLECTION that held tracks but none playable keeps
+            // list_is_empty: nothing about one track explains it, and it matches the genuinely-empty
+            // case just above. The elvis also covers the impossible-but-cheap case of a Yes track
+            // reaching here, where playableString answers null.
+            val message = (item as? Track)?.playableString(app.context)
+                ?: app.context.getString(R.string.list_is_empty)
+            app.messageFlow.emit(Message(message))
+            return@future error
+        }
         // P5: same source-label treatment as addToQueue — collection context, else track-radio placeholder.
         val addedContext = item.takeUnless { it is Track }
-        val mediaItems = tracks.map { track ->
+        val mediaItems = addable.map { track ->
             MediaItemUtils.build(
                 app,
                 downloadFlow.value,
