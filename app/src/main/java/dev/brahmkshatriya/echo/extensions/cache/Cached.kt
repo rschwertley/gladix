@@ -1118,12 +1118,40 @@ object Cached {
         savingFeed(app, extension, id, feed)
     }
 
+    /**
+     * ⚠⚠ THE FEED CACHE MUST NOT PERSIST A STREAM TOKEN, AND THAT IS THE
+     * WHOLE OF A BUG THAT LOOKED LIKE FOUR. TRACK_TOKEN is perishable; this cache is on disk and
+     * served first on every open of Home, Library, Search and any expanded feed (HomeFragment,
+     * LibraryFragment, SearchFragment, FeedFragment all call [getFeedShelf]). A track queued from a
+     * cached feed therefore arrived with an HOURS-OLD token, and nothing pre-empts that:
+     * DeezerTrackClient.loadTrack re-fetches only on an EMPTY token, so a stale one is
+     * indistinguishable from a good one before the request (the note at createStreamableForQuality).
+     * The track then had to FAIL first and be rescued by the ladder, which is where it went wrong.
+     * ⚠️ THE TRACKS CACHE ALREADY DOES THIS - see [toTracksCacheSlim],
+     * `toSlim().copy(extras = extras - "TRACK_TOKEN")`. That is why album and playlist pages never
+     * showed this: their cached tracks have no token at all, so the empty-token self-heal runs and
+     * they always play on a fresh one. This makes the feed cache behave the same way.
+     * ⚠⚠ TOKEN ONLY, NEVER toSlim(). toSlim also drops streamables,
+     * description and - critically - FALLBACK_ID, which a grafted favourite needs to play AT ALL
+     * (DeezerLibraryClient.graftFavTrack). Removing one key is the fix; slimming here would trade
+     * this bug for the Baby Beluga one.
+     * ⚠️ STRIPPED ON READ, NOT ON WRITE, so caches already on disk are
+     * covered without a migration. Costs one extra gateway fetch per track at play time, which is
+     * the price a restored queue already pays by design.
+     */
+    private fun Track.withoutStreamToken(): Track =
+        if (extras["TRACK_TOKEN"].isNullOrEmpty()) this
+        else copy(extras = extras - "TRACK_TOKEN")
+
+    private fun EchoMediaItem.itemWithoutStreamToken(): EchoMediaItem =
+        (this as? Track)?.withoutStreamToken() ?: this
+
     suspend fun getFeedShelf(
         app: App, extensionId: String, feedId: String,
     ): Result<Feed<Shelf>> = runCatching {
         getFeed<Shelf>(app, extensionId, feedId) { shelf ->
             when (shelf) {
-                is Shelf.Item -> shelf
+                is Shelf.Item -> shelf.copy(media = shelf.media.itemWithoutStreamToken())
                 is Shelf.Category -> shelf.copy(
                     feed = getFeedShelf(app, extensionId, shelf.id).getOrNull()
                 )
@@ -1136,10 +1164,12 @@ object Cached {
                 )
 
                 is Shelf.Lists.Items -> shelf.copy(
+                    list = shelf.list.map { it.itemWithoutStreamToken() },
                     more = getFeedShelf(app, extensionId, shelf.id).getOrNull()
                 )
 
                 is Shelf.Lists.Tracks -> shelf.copy(
+                    list = shelf.list.map { it.withoutStreamToken() },
                     more = getFeedShelf(app, extensionId, shelf.id).getOrNull()
                 )
             }

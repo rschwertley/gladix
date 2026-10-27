@@ -1282,6 +1282,25 @@ class PlayerEventListener(
      * ⚠️ SO 10 ONLY SETS THE PRICE OF THE ANSWER: one probe per ten dead
      * skips. A hundred adjacent dead likes plays straight through for ten extra requests; a total
      * outage is caught after ten skips, as before.
+     * ⚠️ [RE-READ 2026-10-26, AFTER THE BRANCH (b) TOKEN REFRESH] STILL
+     * BEHAVES AS INTENDED, AND THE BOUND GOT TIGHTER RATHER THAN LOOSER. An UNMARKED dead track
+     * now costs 7 requests per attempt instead of 3 before it throws, because
+     * DeezerTrackClient.createStreamableForQuality spends a token refresh and a second ladder at
+     * the blank-FALLBACK_ID terminal (the recomputation is at that function). Three things make
+     * that safe here:
+     *   THE TRIGGER IS UNAFFECTED. The counter advances per SKIP, not per request, so ten dead
+     *     tracks still fire the probe at the same point - they are merely more expensive to reach.
+     *   THE ARITHMETIC ABOVE WAS A CEILING, NOT A TYPICAL. "~22 Deezer requests each" is the
+     *     per-resolve worst case for a track that walks three ladders; an unmarked dead track
+     *     actually costs 14 per resolve now (7 per attempt, attempted twice), well under it.
+     *   THE WORST REAL POPULATION IS A RESTORED QUEUE. HistoryEntity.resetPlayable strips the
+     *     verdict from anything persisted, so a dead run restored from disk is entirely UNMARKED
+     *     and every track pays: ten of them is ~140 requests before the probe, against ~60
+     *     before. Bounded, one probe, then the stop - but it is the number to look at first if a
+     *     cold start on a dead-heavy queue ever reads as slow.
+     * A marked dead track still costs ZERO: MediaItemUtils.droppingUnplayable keeps it out of the
+     * queue and StreamableLoader.loadServer throws before any request, so this only applies to the
+     * unmarked populations (verdict absent, pipe failed, restored queue, other extensions).
      */
     private val catalogueDeadHealthCheckAt = 10
     private var consecutiveCatalogueDeadSkips = 0

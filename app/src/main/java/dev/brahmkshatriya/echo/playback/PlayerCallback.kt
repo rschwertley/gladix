@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Rating
@@ -444,13 +445,13 @@ class PlayerCallback(
                 // out-of-range (stale/racing) index, which the raw controller seekTo can't — that guard
                 // is why this stays a custom command. `play` preserves play()=true / seek()=false. AA's
                 // onSkipToQueueItem path (seekToDefaultPosition) never enters here.
-                val shuffled = player as? ShufflePlayer
+                val shuffled = player.shufflePlayer
                 if (shuffled == null) bugAsync("seek_to_full", "player is not a ShufflePlayer")
                 else shuffled.seekToFullIndex(args.getInt("index"), args.getBoolean("play"))
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
             previousTrackCommand -> run {
-                val shuffled = player as? ShufflePlayer
+                val shuffled = player.shufflePlayer
                 if (shuffled == null) bugAsync("previous_track", "player is not a ShufflePlayer")
                 else shuffled.previousTrackAlways()
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
@@ -459,16 +460,21 @@ class PlayerCallback(
                 // Prime only; the decision happens inside ShufflePlayer.setMediaItems, on the player
                 // thread, from the player's OWN flag. Nothing is read or published here, so there is
                 // no window in which a client can observe a shuffle state that is about to change.
-                val shuffled = player as? ShufflePlayer
+                val shuffled = player.shufflePlayer
                 if (shuffled == null) bugAsync("tap_shuffle", "player is not a ShufflePlayer")
-                else shuffled.notifyTapRespectShuffle(args.getBoolean("respect"))
+                else {
+                    shuffled.notifyTapRespectShuffle(args.getBoolean("respect"))
+                    // Same command, second mode - see ShufflePlayer.notifyFreshListShuffle. Primed
+                    // here for the same reason: the decision stays on the player thread.
+                    if (args.getBoolean("freshList")) shuffled.notifyFreshListShuffle()
+                }
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
             syncShuffleFlagCommand -> run {
                 // Pure icon sync from a CLIENT-side in-order start-playback path (track tap / History setQueue):
                 // set the flag WITHOUT changeQueue. `original` is already correct from the preceding setMediaItems,
                 // so this is cosmetic-only and cannot reorder.
-                val shuffled = player as? ShufflePlayer
+                val shuffled = player.shufflePlayer
                 if (shuffled == null) bugAsync("sync_shuffle_flag", "player is not a ShufflePlayer")
                 else shuffled.syncShuffleFlag(args.getBoolean("enabled"))
                 Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
@@ -1171,6 +1177,46 @@ class PlayerCallback(
         }
 
     // Non-suspend variant for the inline dispatch branches, which are not in a coroutine.
+    /**
+     * The ShufflePlayer behind whatever is currently the session player.
+     *
+     * ⚠⚠ THE HANDLERS USED TO STOP AT THE CAST WRAPPER, AND EVERY QUEUE
+     * COMMAND SILENTLY DIED THERE. CastSessionController sets `session.player` to a
+     * CastSwitchPlayer on cast start, and CastSwitchPlayer is a ForwardingPlayer over the LOCAL
+     * player - so `player as? ShufflePlayer` was null for the whole cast session even though the
+     * ShufflePlayer was one hop away. Reported on 1150: playing from History and then casting filed
+     * `IllegalStateException: custom command 'sync_shuffle_flag': player is not a ShufflePlayer`
+     * as a Crashlytics non-fatal AND a user-visible error, for a sync the handler itself calls
+     * cosmetic. seek_to_full, previous_track and tap_shuffle were blind in the same way, and those
+     * three lose real behaviour rather than an icon.
+     * ⚠⚠ UNWRAPPING IS CORRECT HERE, NOT A WORKAROUND, AND THE OCT 20
+     * DESIGN IS WHY: queue properties stay LOCAL while casting. CastSwitchPlayer overrides no
+     * queue-edit method, so setMediaItems / addMediaItems / setShuffleModeEnabled already forward
+     * to the local player - the player these commands want IS the one behind the wrapper.
+     * ⚠️ TESTS BEFORE IT DESCENDS, because ShufflePlayer is ITSELF a
+     * ForwardingPlayer (over the inner ExoPlayer). Unwrapping first would walk straight past it.
+     * ⚠️ GENERIC OVER ForwardingPlayer, NOT CastSwitchPlayer.
+     * ForwardingPlayer.getWrappedPlayer() is public (media3-common 1.11.1,
+     * ForwardingPlayer.java:889), so this needs no change to CastSwitchPlayer and keeps working if
+     * another wrapper is ever introduced.
+     * ⚠️ BOUNDED, so a wrapper cycle cannot hang a command handler. Two
+     * hops is all today's graph needs (CastSwitchPlayer -> ShufflePlayer); the bound is slack
+     * rather than a guess at a depth.
+     * ⚠️ [bugAsync] IS STILL RIGHT FOR A null RESULT - it now means the
+     * player is genuinely neither a ShufflePlayer nor wrapping one, which is a real bug and should
+     * still be reported. Do not soften it to a silent return.
+     */
+    private val Player.shufflePlayer: ShufflePlayer?
+        get() {
+            var p: Player? = this
+            var hops = 0
+            while (p != null && hops++ < 4) {
+                if (p is ShufflePlayer) return p
+                p = (p as? ForwardingPlayer)?.wrappedPlayer
+            }
+            return null
+        }
+
     private fun bugAsync(command: String, detail: String) {
         scope.launch {
             throwableFlow.emit(IllegalStateException("custom command '$command': $detail"))

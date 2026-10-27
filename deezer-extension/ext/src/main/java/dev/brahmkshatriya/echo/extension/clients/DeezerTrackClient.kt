@@ -60,6 +60,53 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * before the request. Reacting to the refusal is what this function does; pre-empting it is
      * a separate change with a request cost per stale track.
      */
+    /**
+     * ONE token refresh: re-fetch this track's own gateway record and re-enter the ladder at
+     * [topQuality] with the refresh spent.
+     *
+     * ⚠⚠ allowRetoken NOW MEANS "A TOKEN REFRESH IS UNSPENT IN THIS
+     * RESOLVE", NOT "THE DECODE-ERROR SELF-HEAL IS UNSPENT". Same flag, same threading, wider
+     * meaning - which is why this needs no new parameter and inherits the existing termination
+     * argument unchanged: every caller re-enters with allowRetoken = false, so at most ONE refresh
+     * happens per resolve attempt no matter which branch spends it.
+     * ⚠⚠ WHY IT IS CALLED FROM THREE PLACES NOW. A stale TRACK_TOKEN does
+     * not always announce itself as a decode error. Deezer can refuse it as "Track token has no
+     * sufficient rights on requested media", or simply answer with an EMPTY `media` array - both of
+     * which land in the substitute branch instead. For a track WITHOUT FALLBACK_ID that branch used
+     * to throw on the spot, so an ordinary track whose token had gone stale was skipped silently
+     * with no recovery attempted at all. The decode branch's own note still says a refetch there was
+     * "rejected... the token self-heal below already recovers that way" - true only for the one
+     * wording it matches.
+     * ⚠️ WHICH REFUSAL THE 2026-10-26 CASE ACTUALLY HIT WAS NEVER
+     * OBSERVED. "Maria" (P.J. Proby, id 3019874391 - readable, 214 countries, no public
+     * `alternative`) skipped silently and repeatably from Library -> Tracks on 1149 and played from
+     * the same list seconds later via the header Shuffle, which used a list with a fresh token. The
+     * substitute-branch attribution is INFERRED from that and from the code paths, not from a
+     * captured response: no log line or capture ever showed the string Deezer returned. If this is
+     * ever revisited, that capture is the missing evidence.
+     * ⚠️ THE LICENCE BRANCH IS DELIBERATELY NOT A CALLER. Its string is
+     * "License token has no sufficient rights" - a DIFFERENT credential from TRACK_TOKEN, which
+     * api.track() does not refresh. Calling this from there would spend a request and change
+     * nothing. Covering it needs a licence-token refresh, which is a separate decision.
+     * ⚠️ STRICT ON SHAPE, like the decode branch it replaces: a bad
+     * response must surface rather than build a track from nothing.
+     */
+    private suspend fun refreshTokenAndRetry(
+        track: Track, topQuality: String, retry: Boolean, allowSubstitute: Boolean,
+    ): Streamable {
+        val refetched = api.track(track.id)
+        val results = refetched["results"].requireObj("results")
+        val rebuilt = parser.run { results.toTrack() }
+        // FALLBACK_ID carried when the re-fetch omits it - see the [CORRECTED 2026-10-26] note at
+        // the decode branch. deezer.pageTrack wins when it supplies one.
+        val carried = track.extras["FALLBACK_ID"]
+        val fresh =
+            if (rebuilt.extras["FALLBACK_ID"].isNullOrBlank() && !carried.isNullOrBlank())
+                rebuilt.copy(extras = rebuilt.extras + ("FALLBACK_ID" to carried))
+            else rebuilt
+        return descend(fresh, topQuality, retry, topQuality, allowSubstitute, allowRetoken = false)
+    }
+
     private suspend fun createStreamableForQuality(
         track: Track,
         quality: String,
@@ -139,6 +186,21 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // 11 is a ceiling and not a new typical cost: reaching it needs every rung of
                     // three ladders refused AND a stale token. The path this spends it on is the one
                     // that previously dead-ended at the terminator below with no substitution tried.
+                    // ⚠️ [RECOMPUTED 2026-10-26, BRANCH (b) REFRESH] THE CEILING IS
+                    // UNCHANGED AT 11 PER ATTEMPT / 22 PER RESOLVE, AND THAT IS DERIVED, NOT
+                    // ESTIMATED: the BUDGET bounds it and the budget did not change. At most one
+                    // substitution (allowSubstitute) and at most one refresh (allowRetoken) allows at
+                    // most THREE ladder passes - the entry one, the substitute's, and the refreshed
+                    // one - at 3 media calls each, plus the two single fetches that start the latter
+                    // two: 3 + 1 + 3 + 1 + 3 = 11. The new call sites let the refresh be spent from
+                    // the substitute branch as well as the decode branch; they do not add a third
+                    // chance to spend it.
+                    // WHAT DOES CHANGE IS THE COST OF A FAILING TRACK WITH NO FALLBACK_ID, which is
+                    // the unmarked-dead population: it used to leave at the blank terminal after one
+                    // ladder (3 per attempt, 6 per resolve) and now pays a refresh and a second
+                    // ladder first (7 per attempt, 14 per resolve) before the same throw. See the
+                    // note at PlayerEventListener's maxConsecutiveCatalogueDeadSkips for what that
+                    // does to a dead run.
                     // In the COMMON case (the substitute is available at the requested quality) the
                     // substitute's first call goes to the relay and SUCCEEDS, replacing the single
                     // media.deezer.com 128 call that used to happen here - one request either way.
@@ -181,8 +243,13 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // ladder got here arrived with the flag already spent, and this threw instead of
                     // substituting. For a FALLBACK-grafted favourite that is the difference between
                     // playing and being skipped as unplayable; see the note on this function.
-                    if (!allowSubstitute)
+                    if (!allowSubstitute) {
+                        // Last step before giving up - see refreshTokenAndRetry. The substitution is
+                        // already spent here, so a stale token is the only recovery left.
+                        if (allowRetoken)
+                            return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
                         throw MediaUnavailableException("Track not available on server")
+                    }
                     // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
                     // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
                     // absence looks like an oversight and is a choice, and because "declined" is a
@@ -251,8 +318,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // Aug 6 merge-instead-of-replace change fixed. Blank means give up, not retry.
                     // Adapted from Evoe (github.com/Doggo785/evoe), 409c4c5e, UPL - their version
                     // refetches the current track; ours declines to, for the reason above.
-                    if (fallBackId.isBlank())
+                    if (fallBackId.isBlank()) {
+                        // The ordinary-track case that used to dead-end here with nothing tried -
+                        // see refreshTokenAndRetry. Still no api.track(""): the refresh fetches THIS
+                        // track's id, which is a real id, not the blank fallback one.
+                        if (allowRetoken)
+                            return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
                         throw MediaUnavailableException("Track not available on server")
+                    }
                     val fallbackObject = api.track(fallBackId)
                     // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
                     // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
@@ -305,18 +378,17 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // repeatedly here, a chain of different ids there - and neither bounds the other.
                     if (!allowRetoken)
                         throw MediaUnavailableException("Track not available on server")
-                    val fallbackObject = api.track(currentTrackId)
-                    // STRICT: this re-fetch IS the recovery, so a bad shape must surface rather
-                    // than produce a track built from nothing. See DeezerJson.
-                    val resultOj = fallbackObject["results"].requireObj("results")
-                    val fallBackTrack = parser.run { resultOj.toTrack() }
-                    // allowSubstitute UNCHANGED: the re-tokenised track is the SAME recording, so its
-                    // FALLBACK_ID is still the right last resort if the fresh token turns out not to
-                    // be the problem. Forcing it off here is exactly the bug this split fixes.
-                    return descend(
-                        fallBackTrack, topQuality, retry, topQuality,
-                        allowSubstitute = allowSubstitute, allowRetoken = false
-                    )
+                    // [CORRECTED 2026-10-26] THIS BRANCH USED TO REBUILD THE TRACK INLINE AND
+                    // CLAIM "ITS FALLBACK_ID IS STILL THE RIGHT LAST RESORT" WHILE THE REBUILT
+                    // TRACK DID NOT NECESSARILY HAVE ONE: it comes from deezer.pageTrack, while
+                    // FALLBACK is something favorite_song.getList PRE-SUBSTITUTES
+                    // (DeezerLibraryClient.graftFavTrack), so toTrack could write FALLBACK_ID = ""
+                    // and the substitute branch above would then hit its "NO FALLBACK_ID MEANS NO
+                    // REQUEST" throw with allowSubstitute still true. The 2026-10-25 flag split
+                    // preserved the FLAG while this recovery destroyed the DATA the flag protects.
+                    // The carry now lives in refreshTokenAndRetry, shared with the two
+                    // substitute-branch terminals that need the same recovery.
+                    return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
                 }
 
                 else -> extractUrlFromJson(mediaJson)!!

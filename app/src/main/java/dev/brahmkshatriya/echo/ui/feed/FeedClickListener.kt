@@ -168,8 +168,18 @@ open class FeedClickListener(
             // alternative is a queue that skips to the end on its own.
             val playable = tracks.droppingUnplayable()
             if (playable.isEmpty()) return notFoundSnack(R.string.tracks)
-            vm.setQueue(extensionId, playable, 0, context)
-            vm.setShuffle(shuffle, true)
+            // ⚠⚠ SHUFFLE IS APPLIED BY THE SERVICE, NOT BY A FOLLOW-UP
+            // setShuffle, AND THAT IS THE FIX. setQueue + setShuffle(true) left track #1 first every
+            // time: changeQueue pins the current item at index 0, and setQueue had just made track #1
+            // current. shuffleList hands the whole list over and lets ShufflePlayer.setMediaItems
+            // reorder it on the player thread - random first song, nothing dropped, `original` still
+            // the list order. See ShufflePlayer.notifyFreshListShuffle.
+            // ⚠️ PLAY IS UNCHANGED: it still syncs the flag OFF through
+            // setShuffle(false, true). Only the Shuffle branch stops calling it, because the service
+            // sets the flag itself and a second setShuffle(true) would re-enter changeQueue and
+            // re-pin the head.
+            vm.setQueue(extensionId, playable, 0, context, shuffleList = shuffle)
+            if (!shuffle) vm.setShuffle(false, true)
             vm.setPlaying(true)
             return true
         }

@@ -626,6 +626,13 @@ class PlayerViewModel(
     fun setQueue(
         id: String, list: List<Track>, index: Int, context: EchoMediaItem?,
         respectShuffle: Boolean = false,
+        /**
+         * ⚠️ WHOLE-LIST SHUFFLE, AND IT DELIBERATELY IGNORES [index].
+         * A header Shuffle has no tapped track, so there is nothing to slice from: the full list goes
+         * across and the service picks the first song. Slicing instead (`subList(random, size)`)
+         * would give a random start AND throw away everything before it.
+         */
+        shuffleList: Boolean = false,
     ) {
         // [TEMPORARY 2026-10-19] ColdStartPlayProbe - a track tap plays through prepare(), which
         // is not a controller play COMMAND, so it has to be recorded here or it reads as unsourced.
@@ -635,7 +642,7 @@ class PlayerViewModel(
             // P2 — current+upcoming: start at the tapped track (index 0) and drop the tracks before it,
             // so it lands at index 0 with nothing stranded above and a zero persisted index — matching
             // playItem and freshContextUpcoming. `index` locates the tapped track within `list`.
-            val start = index.coerceIn(0, list.size - 1)
+            val start = if (shuffleList) 0 else index.coerceIn(0, list.size - 1)
             val upcoming = list.subList(start, list.size)
             val mediaItems = upcoming.map {
                 MediaItemUtils.build(
@@ -655,8 +662,11 @@ class PlayerViewModel(
             // ⚠️ SENT BEFORE setMediaItems, AND THAT ORDER IS LOAD-BEARING: the
             // latch is consumed by the NEXT 3-arg setMediaItems, which is the line below. Same
             // controller, so FIFO; same mechanism the AA shuffle tile has used since July.
-            if (respectShuffle) controller.sendCustomCommand(
-                tapShuffleCommand, Bundle().apply { putBoolean("respect", true) }
+            if (respectShuffle || shuffleList) controller.sendCustomCommand(
+                tapShuffleCommand, Bundle().apply {
+                    putBoolean("respect", respectShuffle)
+                    putBoolean("freshList", shuffleList)
+                }
             )
             controller.setMediaItems(mediaItems, 0, upcoming.first().playedDuration ?: 0)
             controller.prepare()

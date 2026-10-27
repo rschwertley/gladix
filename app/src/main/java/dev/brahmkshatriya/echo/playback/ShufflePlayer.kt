@@ -119,6 +119,32 @@ class ShufflePlayer(
      * [setMediaItems] then syncs isShuffled off for it, which is the job the client's
      * syncShuffleFlagCommand(false) used to do on that path.
      */
+    private var pendingFreshListShuffle = false
+
+    /**
+     * "The queue about to be applied is a WHOLE LIST the user asked to shuffle."
+     *
+     * ⚠⚠ THE LIBRARY HEADER'S Shuffle PINNED TRACK #1 FOR AS LONG AS IT
+     * EXISTED, AND THIS IS WHY. That path had no command of its own: it called setQueue (queue in
+     * list order, current = track #1) and then setShuffleModeEnabled(true), whose changeQueue keeps
+     * `currentMediaItem` at index 0 by construction (`after = list - currentItem`). So songs 2+ were
+     * shuffled and song #1 was always the list's first - which reads as "it doesn't shuffle".
+     * ⚠️ WHY A THIRD LATCH RATHER THAN REUSING EITHER EXISTING ONE.
+     * pendingShuffleTileOriginal needs the UNSHUFFLED MediaItem list, which only the service-side AA
+     * tile has - a phone caller would have to ship both orders across the controller boundary.
+     * pendingTapRespectShuffle lifts the TAPPED track to the head, which is the opposite of what a
+     * header Shuffle wants. This one needs nothing the service does not already receive: shuffle the
+     * list it was handed and start at 0.
+     * ⚠️ `original` IS STILL THE IN-ORDER LIST, so toggling shuffle OFF
+     * later restores list order - it falls out of `original = tileOriginal ?: mediaItems`, because
+     * `mediaItems` arrives in order and only `applied` is shuffled. Shuffling in the CALLER instead
+     * would have recorded the shuffled order as `original` and broken that.
+     * Consumed by the 3-arg [setMediaItems], one-shot, like its two siblings.
+     */
+    fun notifyFreshListShuffle() {
+        pendingFreshListShuffle = true
+    }
+
     fun notifyTapRespectShuffle(respect: Boolean) {
         pendingTapRespectShuffle = respect
     }
@@ -462,6 +488,8 @@ class ShufflePlayer(
         pendingShuffleTileOriginal = null
         val respectShuffle = pendingTapRespectShuffle
         pendingTapRespectShuffle = false
+        val freshList = pendingFreshListShuffle
+        pendingFreshListShuffle = false
         val restoredIds = pendingOriginalIds
         pendingOriginalIds = null
         val index = startIndex.coerceAtMost(mediaItems.size - 1)
@@ -478,11 +506,18 @@ class ShufflePlayer(
         // toggle-OFF restore the real order from the current track (changeQueue keeps current at 0).
         val tapShuffled = respectShuffle && tileOriginal == null &&
             player.shuffleModeEnabled && mediaItems.size > 1
+        // A whole-list shuffle: no head to preserve, so the whole thing is reordered and playback
+        // starts at 0 of the SHUFFLED list - a random song. See [notifyFreshListShuffle].
+        val freshShuffled = freshList && tileOriginal == null && mediaItems.size > 1
         val headIndex = index.coerceAtLeast(0)
-        val applied = if (!tapShuffled) mediaItems else (
-            listOf(mediaItems[headIndex]) +
-                mediaItems.filterIndexed { i, _ -> i != headIndex }.shuffled()
-            ).toMutableList()
+        val applied = when {
+            freshShuffled -> mediaItems.shuffled().toMutableList()
+            !tapShuffled -> mediaItems
+            else -> (
+                listOf(mediaItems[headIndex]) +
+                    mediaItems.filterIndexed { i, _ -> i != headIndex }.shuffled()
+                ).toMutableList()
+        }
         original = tileOriginal ?: mediaItems
         // Cold restore: the queue on disk is a shuffled order, and the saved id list is what it was
         // shuffled FROM. See notifyRestoredOriginalOrder.
@@ -490,8 +525,8 @@ class ShufflePlayer(
             original = reorderedOriginal(mediaItems, restoredIds)
         backStack.clear()
         markQueueReplaced()
-        player.setMediaItems(applied, if (tapShuffled) 0 else index, startPositionMs)
-        if (tileOriginal != null || tapShuffled) {
+        player.setMediaItems(applied, if (tapShuffled || freshShuffled) 0 else index, startPositionMs)
+        if (tileOriginal != null || tapShuffled || freshShuffled) {
             // AA shuffle tile, or a tap with shuffle already ON: the queue was just applied ALREADY
             // shuffled; keep the unshuffled order as `original` and assert the flag without changeQueue
             // (identity shuffleOrder → no reorder). A later toggle-OFF then changeQueue(original)
@@ -827,6 +862,9 @@ class ShufflePlayer(
         // COMMAND_CHANGE_MEDIA_ITEMS is unavailable - a path that would leave a respect-shuffle armed
         // to reorder a LATER queue nobody tapped.
         pendingTapRespectShuffle = false
+        // Same one-shot discipline, same reason: a Shuffle primed for a queue that never arrived
+        // must not shuffle whatever queue arrives next.
+        pendingFreshListShuffle = false
         pendingOriginalIds = null
     }
 
