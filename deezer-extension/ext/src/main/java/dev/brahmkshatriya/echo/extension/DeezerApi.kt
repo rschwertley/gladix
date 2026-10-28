@@ -910,6 +910,9 @@ class DeezerApi(private val session: DeezerSession) {
 
     suspend fun getMediaUrl(track: Track, quality: String): JsonObject = deezerMedia.getMediaUrl(track, quality)
 
+    // [TEMPORARY 2026-10-27] perishable-cache probe - see DeezerMedia.lastRelayStatus.
+    fun lastRelayStatus(trackId: String): Int? = deezerMedia.lastRelayStatus[trackId]
+
     //<============= Search =============>
 
     private val deezerSearch by lazy { DeezerSearch(this) }

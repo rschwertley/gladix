@@ -660,8 +660,10 @@ class PlayerViewModel(
             // flag is primed BEFORE the queue and read service-side on the player thread, inside the
             // same statement that applies it - see ShufflePlayer.notifyTapRespectShuffle.
             // ⚠️ SENT BEFORE setMediaItems, AND THAT ORDER IS LOAD-BEARING: the
-            // latch is consumed by the NEXT 3-arg setMediaItems, which is the line below. Same
-            // controller, so FIFO; same mechanism the AA shuffle tile has used since July.
+            // latch is consumed by the NEXT 3-arg setMediaItems, which is the line below. Sent first
+            // and, as a custom command, not queued (see the sync note below), so it is always armed
+            // before the queued setMediaItems applies; same mechanism the AA shuffle tile has used
+            // since July.
             if (respectShuffle || shuffleList) controller.sendCustomCommand(
                 tapShuffleCommand, Bundle().apply {
                     putBoolean("respect", respectShuffle)
@@ -670,16 +672,23 @@ class PlayerViewModel(
             )
             controller.setMediaItems(mediaItems, 0, upcoming.first().playedDuration ?: 0)
             controller.prepare()
-            // In-order queue set with no shuffle opinion (History's single-track seed) — sync the shuffle
-            // flag/icon OFF on the service player WITHOUT changeQueue (pure primitive), so the icon can't
-            // stay stale-ON from prior playback. `original` is already the in-order queue from
-            // setMediaItems, so this is cosmetic-only. FIFO after setMediaItems, and idempotent
-            // regardless of arrival order. (The feed Play/Shuffle buttons call setShuffle(...) AFTER
-            // this, which correctly overrides the flag for the Shuffle-button case.)
-            // ⚠️ SKIPPED WHEN respectShuffle IS SET, because the service then does
-            // the equivalent itself on the shuffle-is-off branch. Sending both would reintroduce the
-            // very OFF-then-ON pair this change removes.
-            if (!respectShuffle) controller.sendCustomCommand(
+            // In-order queue set with no shuffle opinion (History's single-track seed, the feed header's
+            // Play) — sync the shuffle flag/icon OFF on the service player WITHOUT changeQueue (pure
+            // primitive), so the icon can't stay stale-ON from prior playback. Cosmetic-only: the inner
+            // shuffleOrder is identity, so this cannot reorder.
+            // ⚠⚠ [CORRECTED 2026-10-27] THIS WAS DESCRIBED AS "FIFO AFTER setMediaItems". IT IS NOT,
+            // AND IT USUALLY ARRIVES FIRST. Media3 runs a custom command the moment it reaches the main
+            // thread (media3-session 1.11.1, MediaSessionStub.java:451-469), while setMediaItems and
+            // prepare wait in the per-controller command queue (MediaSessionStub.java:370-371) behind
+            // onSetMediaItems' future, which completes off-main (ConnectedControllersManager.java:396-403).
+            // So this normally lands on the OUTGOING queue. It is safe only because a 3-arg
+            // setMediaItems with no latch armed leaves the flag alone - the order then cannot matter.
+            // ⚠️ SKIPPED WHENEVER A LATCH IS ARMED (respectShuffle or shuffleList): the service decides
+            // the flag at the apply (ShufflePlayer.setMediaItems, including the one-track Shuffle case),
+            // and a sync(false) racing that apply would be overwritten if it landed first and would undo
+            // the shuffle if it landed second. Shuffle no longer calls setShuffle after this - see
+            // FeedClickListener.onPlayClicked.
+            if (!respectShuffle && !shuffleList) controller.sendCustomCommand(
                 syncShuffleFlagCommand, Bundle().apply { putBoolean("enabled", false) }
             )
         }

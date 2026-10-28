@@ -10,7 +10,8 @@ sealed interface MediaState<T : EchoMediaItem> {
     val loaded: Boolean
 
     @Serializable
-    // No copy(): a new field must be mirrored in Cached.setTrackLiked, which rebuilds this by hand.
+    // No copy(): a new field must be mirrored in Cached.setTrackLiked and Cached.withCallerVerdict,
+    // which both rebuild this by hand.
     class Loaded<T : EchoMediaItem>(
         override val extensionId: String,
         override val item: T,

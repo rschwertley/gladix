@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extensions.cache
 
+import android.util.Log
 import com.mayakapps.kache.FileKache
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
@@ -586,10 +587,11 @@ object Cached {
             // this very state - so the cost is one doomed attempt, not a track that cannot play.
             // NOT persisting a degraded load would have left nothing to fall back to at all.
             if (preferCache) getMedia<T>(app, extension.id, state.item.id).getOrNull()
+                .also { logPreferCache(state.item, it) }
                 ?.takeUnless {
                     (it.item as? Track)?.servers?.isEmpty() == true || it.probesDegraded
                 }
-                ?.let { return@runCatching it }
+                ?.let { return@runCatching withCallerVerdict(state.item, it) }
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
                 // Deleted/unavailable content: some extensions (e.g. Deezer) return a BLANK item (empty id)
@@ -698,6 +700,91 @@ object Cached {
                     ?: throw it
             }
         }
+    }
+
+    /**
+     * ⚠⚠ [TEMPORARY 2026-10-27] PERISHABLE-CACHE PROBE - one line per preferCache evaluation, on EVERY
+     * path (hit / bypass / miss), so silence can only mean the playback path never ran.
+     * WHAT IT ANSWERS: which stored field a failing Library -> Tracks tap was served. Read it next to
+     * DeezerTrackClient's `token=` and `refusal=` lines and StreamableLoader's `safety_net` line.
+     *   hit, playable=No...           the stored verdict skipped it, with no request made;
+     *   hit, fallback=blank on a graft  the entry lost FALLBACK_ID (Baby Beluga needs it);
+     *   hit, neither, then a refusal    the stored token.
+     * REMOVE when, on the build after 1151, a Library -> Tracks capture shows Maria and Baby Beluga
+     * playing with these lines captured. A capture with no `safety_net` line counts only if some
+     * resolve was seen to FAIL online in it (the net's trigger); otherwise keep the probe.
+     * NEVER LOGS THE TOKEN - length only. The Deezer key names here leave with the probe.
+     * ⚠️ streams= AND stubPlayable= ADDED 2026-10-27 BECAUSE THE TOKEN IS NOT THE ONLY CANDIDATE.
+     * On Deezer a 320 rung goes to the relay with the track id ALONE (DeezerMedia.getMediaUrl posts
+     * {formats, ids}) - no token, no ARL. The token is only sent by the 128 and MP3_MISC rungs
+     * (DeezerMedia.getMP3MediaUrl). So a 320 user meets the stored token only after a step-down, or
+     * when the entry offers no 320 at all - which streams= shows: `[MP3]` is the single MP3_MISC
+     * streamable, which skips the relay entirely whatever the quality setting. stubPlayable= is the
+     * verdict the safety net tests; playable= is the one StreamableLoader.loadServer tests first.
+     *   hit, playable!=Yes, stubPlayable=Yes, no rung lines   the stored verdict (net catches it);
+     *   hit, streams=[MP3], rung q=mp3 refused               the stored token on the MP3_MISC path;
+     *   hit, rung q=320 refused then q=128 refused            relay refusal, then the stored token.
+     */
+    @PublishedApi
+    internal fun logPreferCache(stub: EchoMediaItem, cached: MediaState.Loaded<*>?) {
+        val t = cached?.item as? Track
+        val server = t?.servers?.firstOrNull()
+        val decision = when {
+            cached == null -> "miss"
+            t?.servers?.isEmpty() == true || cached.probesDegraded -> "bypass"
+            else -> "hit"
+        }
+        Log.d(
+            "GladixPlayback",
+            "[TEMPORARY 2026-10-27] preferCache=$decision id=${stub.id} " +
+                "tokenLen=${server?.extras?.get("TRACK_TOKEN")?.length ?: 0} " +
+                "fallback=${if (server?.extras?.get("FALLBACK_ID").isNullOrBlank()) "blank" else "set"} " +
+                "playable=${t?.isPlayable} stubPlayable=${(stub as? Track)?.isPlayable} " +
+                "servers=${t?.servers?.size} streams=${t?.servers?.map { it.title ?: it.quality }} " +
+                "degraded=${cached?.probesDegraded}"
+        )
+    }
+
+    /**
+     * ⚠⚠ THE Oct 25 RULE, APPLIED TO THIS STORE: A PERSISTED VERDICT MUST NEVER OUTLIVE A LIST RELOAD.
+     * It was applied to the saved queue and History (HistoryEntity.resetPlayable) and missed here. An
+     * entry's isPlayable is whatever its STUB carried when [loadMedia] wrote it -
+     * DeezerTrackClient.loadTrack returns the stub or a copy of it - and a stub carries Playable.No
+     * when it came from a marked row: the long-press sheet or track page (MediaViewModel) on a dimmed
+     * row, or an Android Auto marked head (droppingUnplayable(keepFirst = true); the car shows no
+     * dimming). A hit then served that No for ever, and StreamableLoader.loadServer throws on it before
+     * any request: an instant silent skip of a row the list shows as playable.
+     * ⚠⚠ A CALLER'S Yes IS ALSO "UNKNOWN", SO IT OVERRIDES ONLY A STORED No. resetPlayable writes Yes
+     * (the type's default, read everywhere as "no opinion"), so History and restored-queue stubs say
+     * Yes without knowing. A stored RegionLocked / Unreleased therefore survives a caller Yes; the
+     * safety net in StreamableLoader.load re-resolves that case if it fails. Any non-Yes caller verdict
+     * comes from a list and wins outright.
+     * ⚠️ ON A HIT ONLY. On a miss the verdict comes from the extension's loadTrack just now, which is at
+     * least as fresh as the caller's, and some extensions may report availability only there.
+     * ⚠️ READ-TIME, so entries already on disk are covered without a migration; nothing is written back.
+     * ⚠️ A THIRD HAND-REBUILD OF MediaState.Loaded (with setTrackLiked) - mirror new fields here too.
+     */
+    @PublishedApi
+    internal fun <T : EchoMediaItem> withCallerVerdict(
+        stub: T, hit: MediaState.Loaded<T>,
+    ): MediaState.Loaded<T> {
+        val stored = hit.item as? Track ?: return hit
+        val caller = (stub as? Track)?.isPlayable ?: return hit
+        val keepStored = caller == Track.Playable.Yes && stored.isPlayable !is Track.Playable.No
+        if (keepStored || stored.isPlayable == caller) return hit
+        @Suppress("UNCHECKED_CAST")
+        return MediaState.Loaded(
+            extensionId = hit.extensionId,
+            item = stored.copy(isPlayable = caller) as T,
+            isFollowed = hit.isFollowed,
+            followers = hit.followers,
+            isSaved = hit.isSaved,
+            isLiked = hit.isLiked,
+            isHidden = hit.isHidden,
+            showRadio = hit.showRadio,
+            showShare = hit.showShare,
+            probesDegraded = hit.probesDegraded,
+        )
     }
 
     suspend inline fun <reified T : EchoMediaItem> loadItem(
@@ -1138,6 +1225,24 @@ object Cached {
      * ⚠️ STRIPPED ON READ, NOT ON WRITE, so caches already on disk are
      * covered without a migration. Costs one extra gateway fetch per track at play time, which is
      * the price a restored queue already pays by design.
+     * ⚠⚠ [CORRECTED 2026-10-27] TWO CLAIMS ABOVE WERE WRONG, AND A THIRD IS UNCONFIRMED.
+     *   "THIS MAKES THE FEED CACHE BEHAVE THE SAME WAY" - it covered the PAGE items only. The feed
+     *   cache also stores each tab's Feed.Buttons (savingFeed's `Pair(buttons, bg)`), and
+     *   Buttons.customTrackList is the DECLARED LIST that a Library -> Tracks tap actually queues
+     *   (FeedClickListener's declaredTracks branch) - not the row. That list kept its token (READ
+     *   from source). Buttons are now stripped too, in getFeedShelf's `buttons` argument to [getFeed].
+     *   "ONE EXTRA GATEWAY FETCH PER TRACK AT PLAY TIME" - only on a media-state MISS. A hit
+     *   (loadMedia's preferCache arm) never reaches loadTrack, so the token baked into that entry's
+     *   streamables is used however old it is (READ).
+     *   "A STALE TOKEN IS THE CAUSE" - the opening of this note, and of the 1151 work - IS UNCONFIRMED.
+     *   Measured on 1151 2026-10-27: Maria and Baby Beluga skipped from Library -> Tracks across
+     *   force-stops and played for good once the long-press sheet rewrote their media-state entries.
+     *   That pins the fault to the saved entry, not to which field in it. And on Deezer a 320 rung
+     *   sends NO token (DeezerMedia.getMediaUrl posts the track id alone to the relay); only the 128
+     *   and MP3_MISC rungs send it, so a 320 user meets a stale token only after a step-down or on an
+     *   MP3_MISC-only entry. A stored Playable verdict is an equal candidate. The temporary
+     *   GladixPlayback lines (Cached.logPreferCache's note says how to read them) settle which; until
+     *   they do, do not cite this block as proof that the token was the cause.
      */
     private fun Track.withoutStreamToken(): Track =
         if (extras["TRACK_TOKEN"].isNullOrEmpty()) this
@@ -1149,7 +1254,12 @@ object Cached {
     suspend fun getFeedShelf(
         app: App, extensionId: String, feedId: String,
     ): Result<Feed<Shelf>> = runCatching {
-        getFeed<Shelf>(app, extensionId, feedId) { shelf ->
+        getFeed<Shelf>(
+            app, extensionId, feedId,
+            buttons = { b ->
+                b?.customTrackList?.let { list -> b.copy(customTrackList = list.map { it.withoutStreamToken() }) } ?: b
+            }
+        ) { shelf ->
             when (shelf) {
                 is Shelf.Item -> shelf.copy(media = shelf.media.itemWithoutStreamToken())
                 is Shelf.Category -> shelf.copy(
@@ -1179,21 +1289,25 @@ object Cached {
 
     // FEED STUFF
 
+    // `buttons` is applied to the stored Feed.Buttons on READ, alongside `transform` for page items -
+    // see the [CORRECTED 2026-10-27] note at withoutStreamToken for why page items alone were not enough.
     suspend inline fun <reified T : Any> getFeed(
-        app: App, extensionId: String, feedId: String, crossinline transform: suspend (T) -> T,
+        app: App, extensionId: String, feedId: String,
+        crossinline buttons: (Feed.Buttons?) -> Feed.Buttons? = { it },
+        crossinline transform: suspend (T) -> T,
     ): Feed<T> {
         val fileCache = app.awaitFileCache()
         val tabId = "feed-$extensionId-$feedId"
         val tabs = fileCache.getData<List<Tab>>(tabId).getOrThrow()
         return Feed(tabs) { tab ->
             val id = "$tabId-${tab?.id}"
-            val (buttons, bg) = fileCache.getData<Pair<Feed.Buttons?, ImageHolder?>>(id)
+            val (storedButtons, bg) = fileCache.getData<Pair<Feed.Buttons?, ImageHolder?>>(id)
                 .getOrThrow()
             PagedData.Continuous { token ->
                 val id = "$id-$token"
                 val page = fileCache.getData<Page<T>>(id).getOrThrow()
                 page.copy(page.data.map { transform(it) })
-            }.toFeedData(buttons, bg)
+            }.toFeedData(buttons(storedButtons), bg)
         }
     }
 

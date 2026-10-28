@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.MusicExtension
+import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
 import dev.brahmkshatriya.echo.common.models.Track
@@ -26,6 +27,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.utils.HealthMonitor
+import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -33,7 +35,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 class StreamableLoader(
     private val app: App,
@@ -44,7 +49,7 @@ class StreamableLoader(
     suspend fun load(mediaItem: MediaItem) = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
         try {
-            withTimeout(30_000) {
+            withTimeout(RESOLVE_BUDGET_MS) {
                 extensionListFlow.first { it.isNotEmpty() }
                 val new = if (mediaItem.isLoaded) mediaItem
                 else MediaItemUtils.buildLoaded(
@@ -56,9 +61,14 @@ class StreamableLoader(
                     async { if (new.backgroundIndex < 0) null else loadBackground(new).getOrNull() }
                 val subtitle = async { if (new.subtitleIndex < 0) null else loadSubtitle(new).getOrNull() }
 
-                MediaItemUtils.buildWithBackgroundAndSubtitle(
+                val first = MediaItemUtils.buildWithBackgroundAndSubtitle(
                     new, background.await(), subtitle.await()
                 ) to server.await()
+                // Normal path ends here unchanged; only a failed server reaches the safety net.
+                if (first.second.isSuccess) {
+                    failedNets.set(0)
+                    first
+                } else safetyNet(mediaItem, first, startMs)
             }
         } catch (e: TimeoutCancellationException) {
             healthMonitor.report(
@@ -67,6 +77,111 @@ class StreamableLoader(
             )
             throw e
         }
+    }
+
+    /**
+     * ⚠⚠ ONE FRESH RELOAD PER RESOLVE, ON FAILURE, ONLINE - THE NET UNDER EVERY STORED COPY.
+     * A cache hit in [loadTrack] (preferCache = true) serves whatever the media-state entry was
+     * first written with, for ever - the 2026-10-27 Maria / Baby Beluga skips on 1151, which played
+     * for good once the long-press sheet's preferCache = false load overwrote that entry. This runs
+     * the SAME load the sheet does, which re-resolves through the extension AND overwrites the entry,
+     * then retries the server once. Third instance of one flaw (1120 empty sources, 1151 feed tokens,
+     * this); the structural fix was proposed and deliberately scaled back to this net for now.
+     * ⚠️ SKIPPED ONLY WHEN THE STUB SAYS Playable.No. History and the saved queue RESET the verdict
+     * (HistoryEntity.resetPlayable), so a No can only have come from a list load - a verdict this
+     * reload could not change, and a marked dead track must stay at zero requests
+     * (PlayerEventListener's skip-cost note). RegionLocked / Unreleased still get the reload.
+     * ⚠️ OFFLINE IS UNCHANGED: no reload, the first failure is returned as before.
+     * ⚠️ BOUNDED BY THE RESOLVE'S OWN 30 s BUDGET, not added to it: it gets what is left minus a
+     * second, so running out returns the FIRST failure instead of tripping [load]'s timeout and
+     * filing an ExtensionResolutionTimeout that the first attempt did not earn.
+     * ⚠️ ONE PER RESOLVE BY CONSTRUCTION: it calls loadServer directly, never [load], so it cannot
+     * re-enter itself. A later retry of the item (MediaItemUtils.withRetry) is a new resolve and gets
+     * its own; the Unavailable family skips instead of retrying (onPlayerError), so a dead track
+     * meets this once.
+     * ⚠️ A RESCUED SONG IS NOT A SKIP: the skip budget and the catalogue-dead health check move only
+     * when an error reaches PlayerEventListener.onPlayerError -> recordSkip, and a rescue returns a
+     * working server, so nothing reaches it; STATE_READY then resets both as for any play.
+     */
+    private suspend fun safetyNet(
+        original: MediaItem,
+        first: Pair<MediaItem, Result<Streamable.Media.Server>>,
+        startMs: Long,
+    ): Pair<MediaItem, Result<Streamable.Media.Server>> {
+        val cause = first.second.exceptionOrNull() ?: return first
+        if (cause is CancellationException) throw cause
+        val id = original.track.id
+        if (app.networkFlow.value == NetworkConnection.NotConnected) {
+            logSafetyNet(id, cause, "skipped_offline")
+            return first
+        }
+        if (original.track.isPlayable is Track.Playable.No) {
+            logSafetyNet(id, cause, "skipped_stub_no")
+            return first
+        }
+        if (failedNets.get() >= MAX_FAILED_NETS) {
+            logSafetyNet(id, cause, "skipped_cap")
+            return first
+        }
+        val remainingMs = RESOLVE_BUDGET_MS - (System.currentTimeMillis() - startMs) - 1_000L
+        if (remainingMs <= 0) {
+            logSafetyNet(id, cause, "no_time")
+            return first
+        }
+        val retried = withTimeoutOrNull(remainingMs) {
+            // A failed reload is a failed retry, never a new throw out of load(): the caller gets a
+            // Result either way. Cancellation (including this block's own timeout, which loadMedia's
+            // runCatching would otherwise capture) is rethrown.
+            val state = withClient(original) { Cached.loadMedia(app, it, original.state) }
+                .getOrElse {
+                    if (it is CancellationException) throw it
+                    return@withTimeoutOrNull first.first to Result.failure(it)
+                }
+            val reloaded = MediaItemUtils.buildLoaded(app, downloadFlow.value, original, state)
+            val server = loadServer(reloaded)
+            val background = if (reloaded.backgroundIndex < 0) null
+            else loadBackground(reloaded).getOrNull()
+            val subtitle = if (reloaded.subtitleIndex < 0) null
+            else loadSubtitle(reloaded).getOrNull()
+            MediaItemUtils.buildWithBackgroundAndSubtitle(reloaded, background, subtitle) to server
+        }
+        val outcome = when {
+            retried == null -> "timeout"
+            retried.second.isSuccess -> "ok"
+            else -> "fail:${retried.second.exceptionOrNull()?.let { it::class.simpleName }}"
+        }
+        logSafetyNet(id, cause, outcome)
+        if (retried?.second?.isSuccess == true) failedNets.set(0) else failedNets.incrementAndGet()
+        return retried ?: first
+    }
+
+    /**
+     * Consecutive safety nets that did not rescue. After [MAX_FAILED_NETS] the net is skipped until any
+     * resolve succeeds - first attempt or rescue - which bounds what a run of dead songs can add.
+     * ⚠️ WHY IT EXISTS: each net is one more loadStreamableMedia, and on Deezer that is up to 6 relay
+     * calls typically and 12 at worst for a 320 user (3 ladder passes x 2 attempts, x2 when the relay
+     * throws). The 320 relay is shared and has a ~1,000/day threshold, so an unmarked dead run - a
+     * restored queue, where the verdict is reset - must not double its relay cost without limit.
+     * With the cap a dead run adds at most +18..36 relay calls. Atomic: loads run concurrently
+     * (preloads, crossfade). The 3 is uncalibrated.
+     */
+    private val failedNets = AtomicInteger(0)
+
+    // [TEMPORARY 2026-10-27] PERISHABLE-CACHE PROBE - the removal condition is at Cached.logPreferCache.
+    // One line on EVERY safety-net evaluation, including the skips, so a missing line means the
+    // first resolve succeeded.
+    // msg= is the DEEPEST message in the chain (the outer one is usually an AppException wrapper),
+    // URL-stripped by the shared scrubbedForCrashlytics, then any run of 40+ token-alphabet characters
+    // redacted - a TRACK_TOKEN or ARL can never print, while track ids (digits, <= ~12) and Deezer's own
+    // sentences survive. Capped at 120.
+    private fun logSafetyNet(id: String, cause: Throwable, outcome: String) {
+        val deepest = generateSequence(cause) { it.cause }.mapNotNull { it.message }.lastOrNull()
+        val msg = deepest?.replace(OPAQUE_RUN, "<redacted>")?.scrubbedForCrashlytics(120)
+        Log.d(
+            "GladixPlayback",
+            "[TEMPORARY 2026-10-27] safety_net id=$id cause=${cause::class.simpleName} " +
+                "msg=\"$msg\" retry=$outcome"
+        )
     }
 
     private suspend fun <T> withClient(
@@ -174,5 +289,16 @@ class StreamableLoader(
                 ).getOrThrow() as Streamable.Media.Subtitle
             }
         }
+    }
+
+    private companion object {
+        // The whole resolve's budget, shared by [load]'s timeout and [safetyNet]'s remainder.
+        const val RESOLVE_BUDGET_MS = 30_000L
+
+        // See [failedNets].
+        const val MAX_FAILED_NETS = 3
+
+        // [TEMPORARY 2026-10-27] logSafetyNet's token guard; leaves with the probe.
+        val OPAQUE_RUN = Regex("[A-Za-z0-9_+/=-]{40,}")
     }
 }

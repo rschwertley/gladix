@@ -11,7 +11,6 @@ import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
-import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Rating
@@ -549,13 +548,17 @@ class PlayerCallback(
             // there is nothing to restore into and applying here would steal that latch. See
             // ShufflePlayer.isTapShufflePending. Checked BEFORE the CAS so nothing is consumed:
             // mediaItemCount is still 0 only because the tap's setMediaItems has not landed yet.
-            if ((player as? ShufflePlayer)?.isTapShufflePending == true) return@withContext
+            // shufflePlayer: `resume` hands us the session player, which is the cast wrapper while
+            // casting. Not reported here - a null falls through to the report below.
+            if (player.shufflePlayer?.isTapShufflePending == true) return@withContext
             if (!userQueueSet.compareAndSet(false, true)) return@withContext
             player.shuffleModeEnabled = data.shuffle
             player.repeatMode = data.repeat
             // Before the apply, because the latch is consumed BY it - the same ordering rule as the
             // AA shuffle tile. See ShufflePlayer.notifyRestoredOriginalOrder.
-            (player as? ShufflePlayer)?.notifyRestoredOriginalOrder(data.originalIds)
+            val shuffled = player.shufflePlayer
+            if (shuffled == null) reportNotShufflePlayer("restore")
+            else shuffled.notifyRestoredOriginalOrder(data.originalIds)
             player.setMediaItems(data.items.toMutableList(), data.index, data.pos)
             // Arm the cold-start re-seek: the startPositionMs above is lost at prepare() (see PlayerState).
             // ⚠⚠ THE EPOCH IS READ HERE, AFTER setMediaItems, AND THAT ORDER IS THE WHOLE POINT.
@@ -804,7 +807,9 @@ class PlayerCallback(
                 // proof, and the fact outlived the question that found it: it is what ruled out "the seed
                 // carries a resume point" when a cold-start tap started mid-song.
                 setMediaItems(listOf(seedItem), 0, seed.playedDuration ?: 0)
-                (this as? ShufflePlayer)?.syncShuffleFlag(false)
+                val shuffled = this.shufflePlayer
+                if (shuffled == null) bugAsync("track_radio", "player is not a ShufflePlayer")
+                else shuffled.syncShuffleFlag(false)
                 if (playbackState == Player.STATE_IDLE) prepare()
                 // [TEMPORARY 2026-10-20] ColdStartPlayProbe - same as backfillQueue: the source
                 // is re-asserted at the forced play, not only at the tap, so async work between
@@ -1035,7 +1040,11 @@ class PlayerCallback(
                     else -> 0
                 }
                 val startPos = queueList.getOrNull(startIndex)?.playedDuration ?: 0
-                if (shuffle) (player as? ShufflePlayer)?.notifyFreshShuffle()
+                if (shuffle) {
+                    val shuffled = player.shufflePlayer
+                    if (shuffled == null) bugAsync("play", "player is not a ShufflePlayer")
+                    else shuffled.notifyFreshShuffle()
+                }
                 player.with {
                     if (shuffle) {
                         // Shuffle keeps the whole list; enabling shuffle triggers changeQueue, which
@@ -1056,7 +1065,9 @@ class PlayerCallback(
                         setMediaItems(upcoming, 0, startPos)
                         // In-order Play: sync the shuffle flag/icon OFF without changeQueue (order-safe,
                         // cosmetic). `original` is already the in-order queue just set above.
-                        (this as? ShufflePlayer)?.syncShuffleFlag(false)
+                        val shuffled = this.shufflePlayer
+                        if (shuffled == null) bugAsync("play", "player is not a ShufflePlayer")
+                        else shuffled.syncShuffleFlag(false)
                     }
                     if (playbackState == Player.STATE_IDLE) prepare()
                     play()
@@ -1177,46 +1188,7 @@ class PlayerCallback(
         }
 
     // Non-suspend variant for the inline dispatch branches, which are not in a coroutine.
-    /**
-     * The ShufflePlayer behind whatever is currently the session player.
-     *
-     * ⚠⚠ THE HANDLERS USED TO STOP AT THE CAST WRAPPER, AND EVERY QUEUE
-     * COMMAND SILENTLY DIED THERE. CastSessionController sets `session.player` to a
-     * CastSwitchPlayer on cast start, and CastSwitchPlayer is a ForwardingPlayer over the LOCAL
-     * player - so `player as? ShufflePlayer` was null for the whole cast session even though the
-     * ShufflePlayer was one hop away. Reported on 1150: playing from History and then casting filed
-     * `IllegalStateException: custom command 'sync_shuffle_flag': player is not a ShufflePlayer`
-     * as a Crashlytics non-fatal AND a user-visible error, for a sync the handler itself calls
-     * cosmetic. seek_to_full, previous_track and tap_shuffle were blind in the same way, and those
-     * three lose real behaviour rather than an icon.
-     * ⚠⚠ UNWRAPPING IS CORRECT HERE, NOT A WORKAROUND, AND THE OCT 20
-     * DESIGN IS WHY: queue properties stay LOCAL while casting. CastSwitchPlayer overrides no
-     * queue-edit method, so setMediaItems / addMediaItems / setShuffleModeEnabled already forward
-     * to the local player - the player these commands want IS the one behind the wrapper.
-     * ⚠️ TESTS BEFORE IT DESCENDS, because ShufflePlayer is ITSELF a
-     * ForwardingPlayer (over the inner ExoPlayer). Unwrapping first would walk straight past it.
-     * ⚠️ GENERIC OVER ForwardingPlayer, NOT CastSwitchPlayer.
-     * ForwardingPlayer.getWrappedPlayer() is public (media3-common 1.11.1,
-     * ForwardingPlayer.java:889), so this needs no change to CastSwitchPlayer and keeps working if
-     * another wrapper is ever introduced.
-     * ⚠️ BOUNDED, so a wrapper cycle cannot hang a command handler. Two
-     * hops is all today's graph needs (CastSwitchPlayer -> ShufflePlayer); the bound is slack
-     * rather than a guess at a depth.
-     * ⚠️ [bugAsync] IS STILL RIGHT FOR A null RESULT - it now means the
-     * player is genuinely neither a ShufflePlayer nor wrapping one, which is a real bug and should
-     * still be reported. Do not soften it to a silent return.
-     */
-    private val Player.shufflePlayer: ShufflePlayer?
-        get() {
-            var p: Player? = this
-            var hops = 0
-            while (p != null && hops++ < 4) {
-                if (p is ShufflePlayer) return p
-                p = (p as? ForwardingPlayer)?.wrappedPlayer
-            }
-            return null
-        }
-
+    // The unwrap these branches use, Player.shufflePlayer, lives in ShufflePlayer.kt.
     private fun bugAsync(command: String, detail: String) {
         scope.launch {
             throwableFlow.emit(IllegalStateException("custom command '$command': $detail"))
@@ -1300,9 +1272,13 @@ class PlayerCallback(
             // History tap: a rebuilt collection, so it honours shuffle exactly like a feed tap. One
             // mechanism for both - the latch is consumed by the setMediaItems on the next line, which
             // also does the flag work syncShuffleFlag(false) used to do when shuffle is off.
-            (player as? ShufflePlayer)?.notifyTapRespectShuffle(respectShuffle)
+            // shufflePlayer, not `as?`: while casting `player` is the CastSwitchPlayer, and the cast
+            // silently skipped both calls - see Player.shufflePlayer.
+            val shuffled = player.shufflePlayer
+            if (shuffled == null) bugAsync("backfill", "player is not a ShufflePlayer")
+            shuffled?.notifyTapRespectShuffle(respectShuffle)
             player.setMediaItems(upcoming, 0, 0)
-            if (!respectShuffle) (player as? ShufflePlayer)?.syncShuffleFlag(false)
+            if (!respectShuffle) shuffled?.syncShuffleFlag(false)
             player.prepare()
             // [TEMPORARY 2026-10-20] ColdStartPlayProbe - re-assert the source HERE, not only at
             // the tap: freshContextUpcoming above is a network fetch, so by this line the tap's own
@@ -1672,8 +1648,9 @@ class PlayerCallback(
                     // The one thing this site CAN hand the player before Media3 applies the queue it
                     // is about to return: a latch consumed by that apply. Unlike the re-seek epoch
                     // below, it needs no knowledge of WHEN the apply happens - only that it is next.
-                    (mediaSession.player as? ShufflePlayer)
-                        ?.notifyRestoredOriginalOrder(data.originalIds)
+                    val shuffled = mediaSession.player.shufflePlayer
+                    if (shuffled == null) reportNotShufflePlayer("resumption")
+                    else shuffled.notifyRestoredOriginalOrder(data.originalIds)
                     // Arm the cold-start re-seek: Media3 applies startPositionMs below via the same 3-arg
                     // setMediaItems and loses it at prepare() identically (see PlayerState).
                     // ⚠⚠ ARMED WITH epoch = null DELIBERATELY - THIS SITE CANNOT READ A VALID

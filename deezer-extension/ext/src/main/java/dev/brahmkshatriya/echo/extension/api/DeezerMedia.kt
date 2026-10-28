@@ -107,7 +107,34 @@ class DeezerMedia(
         return settings.getBoolean("flac_24") != false
     }
 
+    /**
+     * [TEMPORARY 2026-10-27] perishable-cache probe - removal condition at the app's
+     * Cached.logPreferCache. The relay's HTTP status for the LAST getMediaUrl call per track id, read by
+     * DeezerTrackClient's `deezer rung` line for via=relay rungs (http=). Recorded here rather than
+     * returned, so getMediaUrl's return type and exceptions - which the ladder branches on - are
+     * unchanged. Cleared before each call, so a call that never got a response (connect failure, timeout)
+     * reads as absent rather than as the previous call's status. Keyed by id only: two concurrent relay
+     * calls for the SAME id could cross, which a capture can tell from the line order. Unbounded but tiny
+     * (one Int per distinct id) and it leaves with the probe.
+     * ⚠️ THE THEORY THIS SERVES, AND THE OBSERVATION AGAINST IT. Theory (2026-10-27): this shared relay
+     * refuses intermittently (third-party, shared account, ~1,000/day threshold), the ladder steps down to
+     * 128 on the user's own account, and a failure there skips silently - timing alone would then explain
+     * Maria failing on tap but playing via the header Shuffle minutes later (Oct 26), Baby Beluga playing
+     * mid-capture (Oct 26), and the long-press Radio "cure" (1151). It needs the 128 step to fail for a
+     * NON-TOKEN reason, because a stale track token there is re-fetched by refreshTokenAndRetry: i.e. the
+     * licence-token refusal or "Song not available" from media.deezer.com.
+     * AGAINST IT, user-observed 2026-10-27: both songs play in Deezer's own app on the same FREE account,
+     * so the account itself holds rights to them. That rules out "the account cannot serve them at 128".
+     * It does NOT rule out OUR SESSION's licence token being stale or refused (a session credential,
+     * which Deezer's app refreshes itself and api.track does not), and it says nothing about the relay
+     * step. Read this line together with the q=128 line that follows it: a relay refusal followed by
+     * `refusal=licence` keeps the theory alive as a session-licence problem; a relay refusal followed
+     * by `refusal=none` means the relay alone never skips a song.
+     */
+    val lastRelayStatus = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     suspend fun getMediaUrl(track: Track, quality: String): JsonObject {
+        lastRelayStatus.remove(track.id)
         val formats = when (quality) {
             "128" -> arrayOf("MP3_128")
             "flac" -> if (hiFiWanted()) arrayOf("FLAC_24", "FLAC") else arrayOf("FLAC")
@@ -125,6 +152,7 @@ class DeezerMedia(
             .build()
 
         val response = clientNP.newCall(request).await()
+        lastRelayStatus[track.id] = response.code
         val responseBody = response.body.string()
 
         if (responseBody.contains("Song not available")) {

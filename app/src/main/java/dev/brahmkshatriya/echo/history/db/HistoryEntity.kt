@@ -132,6 +132,15 @@ private fun Track.resetPlayable(): Track =
  * full DeezerTrackClient.createStreamableForQuality ladder first - up to ~22 Deezer calls each -
  * and a run of ADJACENT dead likes (a pulled album is exactly that shape) turns one browse-and-play
  * into hundreds of refused requests against an account with a daily ceiling.
+ * ⚠️ [CORRECTED 2026-10-27] "ZERO REQUESTS" IS TRUE ONLY ON A media-state CACHE HIT. loadServer's
+ * verdict check runs AFTER StreamableLoader.loadTrack, and on a MISS that is Cached.loadMedia ->
+ * loadItem -> DeezerTrackClient.loadTrack first: these stored Tracks carry no TRACK_TOKEN (slimmed),
+ * so that is one api.track plus up to three capability probes before the throw. Still far below
+ * the ladder this note compares against, so the argument for keeping the verdict stands.
+ * ⚠️ AND THAT MISS WRITES THE No INTO THE media-state ENTRY (the stub's verdict passes through
+ * loadTrack), where until 2026-10-27 a later phone hit served it for ever - with no dimming, since
+ * the car shows none and the phone's list says Yes. Cached.withCallerVerdict now lets the caller's
+ * list verdict replace a stored No.
  * ⚠️ THE SAVED QUEUE AND HISTORY KEEP THE RESET, which is the line
  * between the two: both are read long after the list that produced them, with nothing to
  * regenerate them from. Do not add a second opt-out without that same "rewritten every time"

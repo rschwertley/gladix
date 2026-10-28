@@ -538,6 +538,12 @@ class ShufflePlayer(
             // it), so only isShuffled needs saying - this is the work the client's
             // syncShuffleFlagCommand(false) used to do on this path, now with no second dispatch.
             isShuffled = false
+        } else if (freshList) {
+            // A whole-list Shuffle with nothing to shuffle (one playable track). OFF, which is what the
+            // client's syncShuffleFlagCommand(false) used to settle for this case before setQueue
+            // stopped sending it on the shuffleList path. Without it the previous queue's flag survives.
+            isShuffled = false
+            player.shuffleModeEnabled = false
         }
     }
 
@@ -1001,4 +1007,51 @@ class ShufflePlayer(
 // comparison is "equal" and behaviour degrades to exactly what it was before the epoch existed - never to
 // dropping everything. Fail-open is deliberate: a missed stale append costs a few wrong tracks, a spurious
 // drop costs the radio.
-val Player.queueEpochOrZero: Long get() = (this as? ShufflePlayer)?.queueEpoch ?: 0L
+// ⚠️ THROUGH [shufflePlayer], NOT `as?`, SINCE 2026-10-27. While casting, the
+// session player is a CastSwitchPlayer, so the plain cast read 0 for the WHOLE cast session and every
+// stale-drop guard in PlayerCallback (playItem, backfill, addToQueue, addToNext) was silently off. No
+// spurious drops came of it - each handler reads the same reference twice - only missed ones.
+val Player.queueEpochOrZero: Long get() = shufflePlayer?.queueEpoch ?: 0L
+
+/**
+ * The ShufflePlayer behind whatever is currently the session player.
+ *
+ * ⚠⚠ THE HANDLERS USED TO STOP AT THE CAST WRAPPER, AND EVERY QUEUE
+ * COMMAND SILENTLY DIED THERE. CastSessionController sets `session.player` to a
+ * CastSwitchPlayer on cast start, and CastSwitchPlayer is a ForwardingPlayer over the LOCAL
+ * player - so `player as? ShufflePlayer` was null for the whole cast session even though the
+ * ShufflePlayer was one hop away. Reported on 1150: playing from History and then casting filed
+ * `IllegalStateException: custom command 'sync_shuffle_flag': player is not a ShufflePlayer`
+ * as a Crashlytics non-fatal AND a user-visible error, for a sync the handler itself calls
+ * cosmetic. seek_to_full, previous_track and tap_shuffle were blind in the same way, and those
+ * three lose real behaviour rather than an icon.
+ * ⚠⚠ UNWRAPPING IS CORRECT HERE, NOT A WORKAROUND, AND THE OCT 20
+ * DESIGN IS WHY: queue properties stay LOCAL while casting. CastSwitchPlayer overrides no
+ * queue-edit method, so setMediaItems / addMediaItems / setShuffleModeEnabled already forward
+ * to the local player - the player these commands want IS the one behind the wrapper.
+ * ⚠️ TESTS BEFORE IT DESCENDS, because ShufflePlayer is ITSELF a
+ * ForwardingPlayer (over the inner ExoPlayer). Unwrapping first would walk straight past it.
+ * ⚠️ GENERIC OVER ForwardingPlayer, NOT CastSwitchPlayer.
+ * ForwardingPlayer.getWrappedPlayer() is public (media3-common 1.11.1,
+ * ForwardingPlayer.java:889), so this needs no change to CastSwitchPlayer and keeps working if
+ * another wrapper is ever introduced. It is a plain read of a final field (ForwardingPlayer.java:58),
+ * so this is safe off the application thread - queueEpochOrZero above is read on IO.
+ * ⚠️ BOUNDED, so a wrapper cycle cannot hang a command handler. Two
+ * hops is all today's graph needs (CastSwitchPlayer -> ShufflePlayer); the bound is slack
+ * rather than a guess at a depth.
+ * ⚠️ A null RESULT IS A REAL BUG at every queue-setting site - it means the player is genuinely
+ * neither a ShufflePlayer nor wrapping one - and those sites report it (PlayerCallback.bugAsync for
+ * custom commands, AndroidAutoCallback.reportNotShufflePlayer elsewhere). Do not soften them to a
+ * silent return. queueEpochOrZero is the exception: 0 is a legitimate value there.
+ * Moved here from PlayerCallback 2026-10-27 so AndroidAutoCallback and queueEpochOrZero can reach it.
+ */
+val Player.shufflePlayer: ShufflePlayer?
+    get() {
+        var p: Player? = this
+        var hops = 0
+        while (p != null && hops++ < 4) {
+            if (p is ShufflePlayer) return p
+            p = (p as? ForwardingPlayer)?.wrappedPlayer
+        }
+        return null
+    }

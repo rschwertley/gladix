@@ -960,8 +960,27 @@ abstract class AndroidAutoCallback(
     private suspend fun MediaSession.primeTapShuffle(tapShuffled: Boolean) {
         if (!tapShuffled) return
         withContext(Dispatchers.Main) {
-            (player as? ShufflePlayer)?.notifyTapRespectShuffle(true)
+            val shuffled = player.shufflePlayer
+            if (shuffled == null) reportNotShufflePlayer("auto_tap_prime")
+            else shuffled.notifyTapRespectShuffle(true)
         }
+    }
+
+    /**
+     * Non-fatal for a session player that is neither a ShufflePlayer nor wrapping one - a real bug,
+     * the same class PlayerCallback.bugAsync reports for the custom commands. A sibling rather than
+     * bugAsync itself: that one is private to the subclass, and its "custom command" label would
+     * misfile these sites, none of which is a custom command. Suspending, because every caller is
+     * already inside a withContext(Main). See Player.shufflePlayer.
+     * ⚠️ FALLS BACK TO app.throwFlow RATHER THAN `throwableFlow?.`, so a report cannot vanish.
+     * [throwableFlow] is null by default here and non-null only because PlayerCallback (the sole
+     * subclass) overrides it with the very same app.throwFlow that PlayerService hands it. A future
+     * subclass that forgot the override would otherwise drop every one of these with no trace.
+     */
+    protected suspend fun reportNotShufflePlayer(site: String) {
+        (throwableFlow ?: app.throwFlow).emit(
+            IllegalStateException("$site: player is not a ShufflePlayer")
+        )
     }
 
     @CallSuper
@@ -1002,7 +1021,9 @@ abstract class AndroidAutoCallback(
             // but it's consumed on the main thread when Media3 applies the returned queue, so hop to Main
             // for ordering/visibility (and parity with the syncShuffleFlag fix below).
             if (unshuffled.isNotEmpty()) withContext(Dispatchers.Main) {
-                (mediaSession.player as? ShufflePlayer)?.notifyShuffleTileOriginal(unshuffled)
+                val shuffled = mediaSession.player.shufflePlayer
+                if (shuffled == null) reportNotShufflePlayer("auto_shuffle_tile")
+                else shuffled.notifyShuffleTileOriginal(unshuffled)
             }
             return@future super.onSetMediaItems(
                 mediaSession, controller, shuffled.toMutableList(), 0, startPositionMs
@@ -1028,7 +1049,8 @@ abstract class AndroidAutoCallback(
             // queue back (primeTapShuffle) — the same "latch consumed by the next setMediaItems"
             // mechanism the shuffle tile above has used since July, for the same race-free reason.
             val tapShuffled = withContext(Dispatchers.Main) {
-                val shuffle = mediaSession.player as? ShufflePlayer
+                val shuffle = mediaSession.player.shufflePlayer
+                if (shuffle == null) reportNotShufflePlayer("auto_tap")
                 val on = shuffle?.shuffleModeEnabled == true
                 if (!on) shuffle?.syncShuffleFlag(false)
                 on

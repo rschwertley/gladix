@@ -505,6 +505,8 @@ class DeezerParser(private val session: DeezerSession) {
             ),
             extras = mapOf(
                 "TRACK_TOKEN" to data.str("TRACK_TOKEN").orEmpty(),
+                // Read by DeezerTrackClient.hasUsableToken; epoch seconds - see the citation there.
+                "TRACK_TOKEN_EXPIRE" to data.str("TRACK_TOKEN_EXPIRE").orEmpty(),
                 "FILESIZE_MP3_MISC" to (data.str("FILESIZE_MP3_MISC") ?: "0"),
                 "TYPE" to "talk",
                 "__TYPE__" to "show"
@@ -741,6 +743,8 @@ class DeezerParser(private val session: DeezerSession) {
             extras = buildMap {
                 put("FALLBACK_ID", data["FALLBACK"]?.jsonObject?.str("SNG_ID").orEmpty())
                 put("TRACK_TOKEN", data.str("TRACK_TOKEN").orEmpty())
+                // Read by DeezerTrackClient.hasUsableToken; epoch seconds - see the citation there.
+                put("TRACK_TOKEN_EXPIRE", data.str("TRACK_TOKEN_EXPIRE").orEmpty())
                 // ⚠⚠ `?: "0"` COLLAPSES "KEY MISSING" AND "VALUE ZERO" INTO ONE STRING, AND
                 // WHOEVER BUILDS isPlayable MUST READ THIS BEFORE CHOOSING FILESIZE AS THE AXIS.
                 // Today's only consumer is DeezerTrackClient's `isMp3Misc = extras[...] != "0"`, whose
