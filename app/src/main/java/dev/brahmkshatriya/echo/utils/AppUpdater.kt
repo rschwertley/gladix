@@ -1,7 +1,8 @@
 // ⚠️ READ BEFORE REMOVING THE SUPPRESSION BELOW (or the @Suppress("KotlinConstantConditions") on
-// updateApp). BuildConfig.BUILD_TYPE is a compile-time constant, so in any single variant every arm of
-// updateApp's `when (appType)` except that variant's own is provably dead, and every `appType == "..."`
-// test is provably true or false. These two suppressions silence exactly the warnings that fact would
+// updateApp, lookUpAppUpdate and installAppUpdate - the `when (appType)` moved to lookUpAppUpdate and
+// the unzip test to installAppUpdate on 2026-10-28). BuildConfig.BUILD_TYPE is a compile-time
+// constant, so in any single variant every arm of that `when (appType)` except that variant's own is
+// provably dead, and every `appType == "..."` test is provably true or false. These two suppressions silence exactly the warnings that fact would
 // raise — and that is the mechanism by which three separate defects lived in this file undetected until
 // 2026-09-05, all of them in code no variant had ever executed:
 //   1. NO "release" ARM AT ALL, so this fork's only distributed variant fell to `else -> return null` and
@@ -167,7 +168,23 @@ object AppUpdater {
     // API 30+ exposes both names. initiatingPackageName is verified by the system, while
     // installingPackageName can be reassigned by the installer via setInstallerPackageName, so a
     // match on EITHER counts. Below 30 only the legacy single value exists.
-    private fun App.isStoreInstall(): Boolean = runCatching {
+    // ⚠⚠ [2026-10-28] NOW DERIVED FROM [installChannel], AND IT GIVES THE SAME ANSWER FOR EVERY INPUT:
+    // Sideload is exactly "non-empty and none in STORE_INSTALLERS" (PLAY_INSTALLERS is a subset), and
+    // empty and thrown both map to Unknown. The reasoning above is unchanged and still governs.
+    private fun App.isStoreInstall(): Boolean = installChannel() != InstallChannel.Sideload
+
+    private val PLAY_INSTALLERS = setOf("com.android.vending", "com.google.android.feedback")
+
+    /**
+     * Where this copy came from - for Settings -> App updates, which shows a different section per
+     * channel. [InstallChannel.Sideload] is what a GitHub download produces (a browser or file manager
+     * recorded as installer); Obtainium lands here too, which is right - it installs GitHub releases.
+     * [InstallChannel.Unknown] keeps isStoreInstall's fail-closed rule: no recorded installer (`adb`),
+     * or a lookup that threw. Settings must not offer an in-app install where the gate refuses one.
+     */
+    enum class InstallChannel { Sideload, Play, OtherStore, Unknown }
+
+    fun App.installChannel(): InstallChannel = runCatching {
         val pm = context.packageManager
         val names = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val info = pm.getInstallSourceInfo(context.packageName)
@@ -182,15 +199,52 @@ object AppUpdater {
         // requirement. Known cost, accepted: `adb install` records no installer, so developer builds
         // no longer self-update. Browser and file-manager sideloads DO record one (the initiating app),
         // so GitHub distribution is unaffected.
-        if (names.isEmpty()) return@runCatching true
-        names.any { it in STORE_INSTALLERS }
-    }.getOrDefault(true)
+        when {
+            names.isEmpty() -> InstallChannel.Unknown
+            names.any { it in PLAY_INSTALLERS } -> InstallChannel.Play
+            names.any { it in STORE_INSTALLERS } -> InstallChannel.OtherStore
+            else -> InstallChannel.Sideload
+        }
+    }.getOrDefault(InstallChannel.Unknown)
+
+    /**
+     * What [updateApp] found. Three-way since 2026-10-28: it returned `File?`, so "the check failed"
+     * and "no update" were both null, and ExtensionsViewModel.update could not reset the 24h throttle
+     * for a failed APP check - only extension failures reached `anyFailed`. A GitHub failure on the app
+     * repo therefore cost a day of not checking.
+     * [Failed] has ALREADY been reported (throwFlow) by updateApp; the caller only decides the throttle.
+     * A cancellation is never a [Failed] - it is rethrown, see getGithubUpdateUrl.
+     */
+    sealed interface AppUpdateCheck {
+        data class Ready(val apk: File) : AppUpdateCheck
+        /** No update, a store install, a local build, or the install permission declined. */
+        data object None : AppUpdateCheck
+        data class Failed(val error: Throwable) : AppUpdateCheck
+    }
+
+    /** What [lookUpAppUpdate] found. Failure is a throw, never a value here. */
+    sealed interface AppLookup {
+        /** A store or Unknown install, or a local build: this copy has no self-update channel. */
+        data object NotApplicable : AppLookup
+        data object UpToDate : AppLookup
+        /** [version] is the release tag (or "nightly run <id>"), shown on Settings' Update row. */
+        data class Available(val version: String, val url: String) : AppLookup
+    }
+
+    /**
+     * getGithubUpdateUrl's answer: the release TAG as well as the asset url, so Settings can name the
+     * version it offers. Extension and add-extension callers read [url] only (getUpdateFileUrl).
+     */
+    data class GithubUpdate(val version: String, val url: String)
+
+    /** Epoch ms of the last app check GitHub ANSWERED, automatic or manual. See [lookUpAppUpdate]. */
+    const val KEY_LAST_APP_UPDATE_CHECK = "last_app_update_check"
 
     @Suppress("KotlinConstantConditions")
     suspend fun updateApp(
         app: App,
         ensureInstallPermission: suspend () -> Boolean = { true }
-    ): File? {
+    ): AppUpdateCheck {
         // Install-source gate. This is the ONLY thing standing between a Play user and a sideloaded
         // APK, and it must run before any network work. It sits ALONGSIDE the build-type check
         // below, it does not replace it: they answer different questions. Build type answers "is
@@ -199,7 +253,7 @@ object AppUpdater {
         // distributed both ways, which is exactly why the build type cannot decide this.
         // Scoped to the APP update only — updateApp has no extension callers, so extension updates
         // (including for Play users, which is intended) are untouched.
-        if (app.isStoreInstall()) return null
+        if (app.isStoreInstall()) return AppUpdateCheck.None
         // Gate PASSED — record it. Placed here, after the isStoreInstall() return and before the
         // build-type branch below, so the key means "the gate let us proceed" rather than "we checked".
         // That is the reading that makes the requirement verifiable: install_source = com.android.vending
@@ -209,7 +263,38 @@ object AppUpdater {
         // "release" arm was added on 2026-09-05 this sentence also said "or plain release build"; release
         // now has its own arm and does reach the network.)
         CrashKeys.onAppUpdateGatePassed()
-        val messageFlow = app.messageFlow
+        val found = runCatching { lookUpAppUpdate(app) }.getOrElse {
+            if (it is CancellationException) throw it
+            // REPORT, then return Failed - already reported, so the caller only decides the throttle
+            // (see AppUpdateCheck). Until 2026-10-28 this returned null, the same value as "no update".
+            // Until the emit below, the app-update CHECK was the only network path in the app that could fail with no
+            // signal anywhere: no snackbar, no Crashlytics non-fatal, and the caller silently falls
+            // through to the extension branch. A user could sit on a months-stale build indefinitely
+            // and it was invisible to them AND to us — so an absence of app-update failures in
+            // Crashlytics was never evidence they weren't happening; this path structurally could
+            // not report one. Emitting to throwFlow also yields a snackbar, which matches what the
+            // extension path already does on the same failure (ExtensionsViewModel.getExtensionUpdate),
+            // and SnackBarHandler collapses the duplicate when both fail for one reason (e.g. offline).
+            app.throwFlow.emit(it)
+            return AppUpdateCheck.Failed(it)
+        }
+        val available = found as? AppLookup.Available ?: return AppUpdateCheck.None
+        return installAppUpdate(app, available, ensureInstallPermission)
+    }
+
+    /**
+     * The release lookup, moved out of [updateApp] (2026-10-28) so Settings -> App updates ->
+     * "Check now" can ask GitHub WITHOUT downloading, installing or touching the shared 24h stamp.
+     * Throws on failure and never reports - each caller decides that (updateApp: throwFlow; the
+     * manual check: its own row, plus silentThrowFlow for the unclassified case). A cancellation is
+     * rethrown by getGithubUpdateUrl / getGithubWorkflowId.
+     * ⚠️ The install-source gate is repeated here, not only in updateApp, because the manual check
+     * reaches this directly. CrashKeys.onAppUpdateGatePassed stays in updateApp: that key means "the
+     * automatic path passed the gate", and a manual check must not set it.
+     */
+    @Suppress("KotlinConstantConditions")
+    suspend fun lookUpAppUpdate(app: App): AppLookup {
+        if (app.isStoreInstall()) return AppLookup.NotApplicable
         // (!) LOCALE-RESOLVED, AND THAT IS A HAZARD, NOT A DETAIL. This getString decides WHICH REPO the
         // app fetches its own updates from, and values-bn/strings.xml carries its own copy of
         // app_github_repo. The two are identical today (rschwertley/gladix, checked 2026-09-05), so
@@ -223,70 +308,79 @@ object AppUpdater {
         val appType = BuildConfig.BUILD_TYPE
         val version = appVersion()
 
-        val url = runCatching {
-            when (appType) {
-                // THIS FORK'S SIDELOAD CHANNEL. `release` is the variant actually distributed outside
-                // Play here (signed with the debug key so it upgrades in place over the historical debug
-                // APKs — see app/build.gradle.kts). Before 2026-09-05 this `when` had no "release" arm, so
-                // every sideloaded user fell to `else -> return null` and was NEVER told about a new
-                // version: no update, no error, no snackbar, indistinguishable from "up to date".
-                //
-                // Same body as "stable" deliberately — both are "check this repo's GitHub releases" — but
-                // kept as a separate arm rather than merged, because "stable" is UPSTREAM's channel and is
-                // never built here (see the buildTypes note). Merging them would re-imply that stable is
-                // one of ours.
-                //
-                // ⚠️ WHAT THE GITHUB RELEASE MUST LOOK LIKE, since getGithubUpdateUrl matches on it:
-                //   TAG   must equal versionName.substringBefore('_'), i.e. "v3.1.NNNNN" zero-padded to 5
-                //         digits (build.gradle.kts: version = "3.1." + gitCount.padStart(5,'0'),
-                //         versionName = "v${'$'}version_${'$'}gitHash(${'$'}gitCount)"). A tag that differs in ANY
-                //         way — no "v", unpadded count, a suffix — compares unequal and offers an update
-                //         forever; a tag equal to the running version correctly offers nothing.
-                //   ASSET must be a file ending ".apk". Assets are sorted so a name CONTAINING the device's
-                //         Build.SUPPORTED_ABIS.first() (e.g. "arm64-v8a") wins; with a single universal
-                //         APK the sort is a no-op and it is picked anyway.
-                //   It reads /releases/LATEST, so the release must be published and not a draft or
-                //         pre-release.
-                "release" -> {
-                    val currentVersion = version.substringBefore('_')
-                    val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
-                    getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
-                        ?: return null
-                }
-
-                // UPSTREAM'S CHANNEL, NOT BUILT HERE — kept so a stable build would still work if one were
-                // ever produced. See the buildTypes note in app/build.gradle.kts.
-                "stable" -> {
-                    val currentVersion = version.substringBefore('_')
-                    val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
-                    getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
-                        ?: return null
-                }
-
-                "nightly" -> {
-                    val hash = version.substringBefore("(").substringAfter('_')
-                    val id = getGithubWorkflowId(hash, githubRepo, client) ?: return null
-                    "https://nightly.link/$githubRepo/actions/runs/$id/artifact.zip"
-                }
-
-                // debug (local dev) and anything unrecognised. NOT "no channel publishes for you" — see
-                // the "release" arm above; this is now genuinely only local builds.
-                else -> return null
+        val found = when (appType) {
+            // THIS FORK'S SIDELOAD CHANNEL. `release` is the variant actually distributed outside
+            // Play here (signed with the debug key so it upgrades in place over the historical debug
+            // APKs — see app/build.gradle.kts). Before 2026-09-05 this `when` had no "release" arm, so
+            // every sideloaded user fell to `else -> return null` and was NEVER told about a new
+            // version: no update, no error, no snackbar, indistinguishable from "up to date".
+            //
+            // Same body as "stable" deliberately — both are "check this repo's GitHub releases" — but
+            // kept as a separate arm rather than merged, because "stable" is UPSTREAM's channel and is
+            // never built here (see the buildTypes note). Merging them would re-imply that stable is
+            // one of ours.
+            //
+            // ⚠️ WHAT THE GITHUB RELEASE MUST LOOK LIKE, since getGithubUpdateUrl matches on it:
+            //   TAG   must equal versionName.substringBefore('_'), i.e. "v3.1.NNNNN" zero-padded to 5
+            //         digits (build.gradle.kts: version = "3.1." + gitCount.padStart(5,'0'),
+            //         versionName = "v${'$'}version_${'$'}gitHash(${'$'}gitCount)"). A tag that differs in ANY
+            //         way — no "v", unpadded count, a suffix — compares unequal and offers an update
+            //         forever; a tag equal to the running version correctly offers nothing.
+            //   ASSET must be a file ending ".apk". Assets are sorted so a name CONTAINING the device's
+            //         Build.SUPPORTED_ABIS.first() (e.g. "arm64-v8a") wins; with a single universal
+            //         APK the sort is a no-op and it is picked anyway.
+            //   It reads /releases/LATEST, so the release must be published and not a draft or
+            //         pre-release.
+            "release" -> {
+                val currentVersion = version.substringBefore('_')
+                val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
+                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
+                    ?.let { AppLookup.Available(it.version, it.url) } ?: AppLookup.UpToDate
             }
-        }.getOrElse {
-            if (it is CancellationException) throw it
-            // REPORT, then keep the existing "return null" contract for the caller. Until this line
-            // the app-update CHECK was the only network path in the app that could fail with no
-            // signal anywhere: no snackbar, no Crashlytics non-fatal, and the caller silently falls
-            // through to the extension branch. A user could sit on a months-stale build indefinitely
-            // and it was invisible to them AND to us — so an absence of app-update failures in
-            // Crashlytics was never evidence they weren't happening; this path structurally could
-            // not report one. Emitting to throwFlow also yields a snackbar, which matches what the
-            // extension path already does on the same failure (ExtensionsViewModel.getExtensionUpdate),
-            // and SnackBarHandler collapses the duplicate when both fail for one reason (e.g. offline).
-            app.throwFlow.emit(it)
-            return null
+
+            // UPSTREAM'S CHANNEL, NOT BUILT HERE — kept so a stable build would still work if one were
+            // ever produced. See the buildTypes note in app/build.gradle.kts.
+            "stable" -> {
+                val currentVersion = version.substringBefore('_')
+                val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
+                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
+                    ?.let { AppLookup.Available(it.version, it.url) } ?: AppLookup.UpToDate
+            }
+
+            "nightly" -> {
+                val hash = version.substringBefore("(").substringAfter('_')
+                getGithubWorkflowId(hash, githubRepo, client)?.let { id ->
+                    AppLookup.Available(
+                        "nightly run $id", "https://nightly.link/$githubRepo/actions/runs/$id/artifact.zip"
+                    )
+                } ?: AppLookup.UpToDate
+            }
+
+            // debug (local dev) and anything unrecognised. NOT "no channel publishes for you" — see
+            // the "release" arm above; this is now genuinely only local builds.
+            else -> return AppLookup.NotApplicable
         }
+        // GitHub ANSWERED - this is what Settings shows as "Last checked". Deliberately not the shared
+        // last_update_check, which records ATTEMPTS and is reset on failure or cancellation, and
+        // SharedPreferences rather than saveToCache, which picks its folder from the value's class.
+        app.settings.edit { putLong(KEY_LAST_APP_UPDATE_CHECK, System.currentTimeMillis()) }
+        return found
+    }
+
+    /**
+     * From "offered" onwards, moved verbatim out of [updateApp] (2026-10-28) so Settings' "Update to
+     * vX" runs the same permission prompt, download, stage keys and failure reporting as the
+     * automatic path.
+     */
+    @Suppress("KotlinConstantConditions")
+    suspend fun installAppUpdate(
+        app: App,
+        available: AppLookup.Available,
+        ensureInstallPermission: suspend () -> Boolean,
+    ): AppUpdateCheck {
+        val messageFlow = app.messageFlow
+        val appType = BuildConfig.BUILD_TYPE
+        val url = available.url
         // An update EXISTS and its asset url resolved. Everything above this line is "we looked";
         // everything below is "we are updating". See CrashKeys.onAppUpdateStage for how to read the
         // furthest-stage-reached semantics.
@@ -297,8 +391,8 @@ object AppUpdater {
         // is available; gating after the download would spend ~40MB on a user who then declines.
         // The default no-op keeps this a pure addition for any caller that doesn't pass one.
         //
-        // A DECLINE MUST NOT BE SILENT, and this is the only `return null` on the path that the user can
-        // do something about. Everything else that returns null here is either correct (no update, a store
+        // A DECLINE MUST NOT BE SILENT, and this is the only `None` return on the path that the user can
+        // do something about. Everything else that returns None here is either correct (no update, a store
         // install) or already reported via throwFlow. This one meant: an update EXISTS, we resolved its
         // url, and we then stopped — with no message, no error, and no way to tell it apart from "you are
         // up to date". The next check is 24h away (ExtensionsViewModel saves last_update_check BEFORE
@@ -415,7 +509,7 @@ object AppUpdater {
                     }
                 )
             )
-            return null
+            return AppUpdateCheck.None
         }
 
         messageFlow.emit(
@@ -475,7 +569,7 @@ object AppUpdater {
                 }
             }
             CrashKeys.onAppUpdateStage("ready")
-            apk
+            AppUpdateCheck.Ready(apk)
         }.getOrElse {
             if (it is CancellationException) throw it
             // Same reasoning as the check above, and this is the likelier half to fail: the APK
@@ -484,7 +578,7 @@ object AppUpdater {
             // it. Note the user has already been told "downloading update" by the emit above, so
             // staying silent here left them watching a download that never resolved.
             app.throwFlow.emit(it)
-            return null
+            return AppUpdateCheck.Failed(it)
         }
     }
 
@@ -681,6 +775,13 @@ object AppUpdater {
                 }
             }
         }.getOrElse {
+            // ⚠⚠ CANCELLATION FIRST, UNWRAPPED, NEVER REPORTED. Until 2026-10-28 it fell to the wrap
+            // below: Crashlytics, build 1136 (GitHub install) - "Failed to fetch latest release for
+            // rschwertley/gladix" caused by JobCancellationException, the Activity destroyed ~1 s after
+            // launch, which cleared viewModelScope mid-request. Wrapped, it slipped past updateApp's own
+            // `is CancellationException` guard, was emitted to throwFlow (a buffered emit does not
+            // suspend, so a cancelled coroutine still reports), and the pass carried on cancelled.
+            if (it is CancellationException) throw it
             // ⚠️ A RATE LIMIT IS RETHROWN UNWRAPPED, DELIBERATELY. The wrapper below exists to
             // attribute a failure to a REPO, and a rate limit is not about the repo - it is about the
             // IP, and the next repo would fail identically. Wrapping it would also make the
@@ -720,11 +821,14 @@ object AppUpdater {
         // the filename rather than recalling it. Whether the tag and the filename actually match is still
         // an unchecked manual step.
         if (res.tagName != currentVersion) {
-            res.assets.sortedByDescending {
-                it.name.contains(Build.SUPPORTED_ABIS.first())
-            }.firstOrNull {
-                it.name.endsWith("apk")
-            }?.browserDownloadUrl ?: throw Exception("No EApk assets found for $user/$repo")
+            GithubUpdate(
+                res.tagName,
+                res.assets.sortedByDescending {
+                    it.name.contains(Build.SUPPORTED_ABIS.first())
+                }.firstOrNull {
+                    it.name.endsWith("apk")
+                }?.browserDownloadUrl ?: throw Exception("No EApk assets found for $user/$repo")
+            )
         } else {
             null
         }
@@ -741,6 +845,8 @@ object AppUpdater {
         client.newCall(request).await().body.string().toData<GithubRunsResponse>().getOrThrow()
             .workflowRuns.firstOrNull { it.sha.take(7) != hash }?.id
     }.getOrElse {
+        // Same as getGithubUpdateUrl: a cancellation is not a failure to fetch.
+        if (it is CancellationException) throw it
         throw Exception("Failed to fetch workflow ID", it)
     }
 
@@ -862,13 +968,26 @@ object AppUpdater {
         // "nothing to download" (silent on auto-checks; a benign "no update available" only when
         // user-triggered), so an unsupported-host extension no longer emits a recurring "error
         // updating extension" via throwFlow.emit on every silent auto-check.
-        apiUrl?.let { getGithubUpdateUrl(currentVersion, it, client, context) }
+        apiUrl?.let { getGithubUpdateUrl(currentVersion, it, client, context)?.url }
     }
 
     private suspend fun <T> runIOCatching(
         block: suspend () -> T
     ) = withContext(Dispatchers.IO) {
-        runCatching { runCatching { block() }.getOrElse { throw UpdateException(it) } }
+        // ⚠⚠ A CANCELLATION IS RETHROWN, NOT WRAPPED (2026-10-28). It used to become
+        // Result.failure(UpdateException(it)) like any other failure, and callers were safe only by
+        // accident: withContext's dispatch back to Main has a prompt cancellation guarantee that DISCARDS
+        // a cancelled caller's result and throws instead (kotlinx-coroutines 1.11.0
+        // Builders.common.kt:452-455, slow path :501-503). A caller already on IO takes the undispatched
+        // path (:487-498), gets the wrapped failure back, and reports a cancellation as an error.
+        // fold, not an inner rethrow: an outer runCatching would catch the rethrow again.
+        runCatching { block() }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = {
+                if (it is CancellationException) throw it
+                Result.failure(UpdateException(it))
+            }
+        )
     }
 
     class UpdateException(

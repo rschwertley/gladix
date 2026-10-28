@@ -14,6 +14,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -52,6 +53,7 @@ import dev.brahmkshatriya.echo.cast.CastSessionController
 import dev.brahmkshatriya.echo.cast.CastStreamStore
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.ExtensionType
+import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
@@ -73,6 +75,7 @@ import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
+import dev.brahmkshatriya.echo.playback.listener.needsNetwork
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
 import dev.brahmkshatriya.echo.playback.renderer.PlayerBitmapLoader
@@ -130,6 +133,10 @@ class PlayerService : MediaLibraryService() {
     }
 
     private lateinit var audioFocusListener: AudioFocusListener
+
+    // Held, not anonymous, because the session callback's onTransportIntent, AudioFocusListener and
+    // the networkFlow collector all talk to its network hold.
+    private lateinit var eventListener: PlayerEventListener
 
     // ⚠⚠ NULL IS THE OFF STATE, AND IT IS THE FIRST OF THE THREE INERTNESS GUARDS. With the
     // slider at 0 this is null, so no sidecar exists, no PlayerMessage is ever scheduled, and every
@@ -383,9 +390,24 @@ class PlayerService : MediaLibraryService() {
     // and the phone snackbar (ExceptionUtils) never disagree; the message/code are AA-tailored with a
     // "check your phone" recovery cue. Never returns null (the null case is handled upstream in
     // ShufflePlayer.getPlayerError before this is called).
+    // ⚠️ THE NETWORK HOLD'S "OFFLINE": the app's own state, OR a live read for the callback's lag -
+    // a resolve that fails on DNS can reach onPlayerError before onLost has flipped networkFlow.
+    // No default network only: Wi-Fi without internet or a captive portal reads ONLINE and keeps
+    // today's routing.
+    private fun isOffline(): Boolean =
+        app.networkFlow.value == NetworkConnection.NotConnected ||
+            runCatching { getSystemService(ConnectivityManager::class.java)?.activeNetwork == null }
+                .getOrDefault(false)
+
     @OptIn(UnstableApi::class)
     private fun mapAaError(raw: PlaybackException): PlaybackException {
-        val (code, message) = when (classify(raw)) {
+        // Offline, a song that needs the network is held, not dead - so the head unit says "No
+        // connection" rather than the Generic "Can't play this track" a bare MediaUnavailableException
+        // classifies as. getPlayerError runs on the app thread, so the exoPlayer read is safe.
+        val category =
+            if (isOffline() && exoPlayer.currentMediaItem?.needsNetwork() == true) ErrorCategory.Network
+            else classify(raw)
+        val (code, message) = when (category) {
             ErrorCategory.Network -> PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED to
                 getString(R.string.playback_error_no_connection)
             ErrorCategory.LoginOrAuth -> PlaybackException.ERROR_CODE_AUTHENTICATION_EXPIRED to
@@ -429,7 +451,12 @@ class PlayerService : MediaLibraryService() {
             app, scope, app.throwFlow, extensions, state, downloadFlow, historyRepository,
             // See the parameter's note: the session callback is the only place user transport
             // intent is distinguishable from our own pauses.
-            onTransportIntent = { audioFocusListener.onTransportIntent() },
+            // The user taking over also cancels a network hold's resume. releaseFocus = false: the
+            // focus listener's own posted check decides, once the command's outcome is known.
+            onTransportIntent = {
+                audioFocusListener.onTransportIntent()
+                eventListener.clearNetworkHold(releaseFocus = false)
+            },
         )
         // [TEMPORARY 2026-10-19] ColdStartPlayProbe needs the two pieces of state it cannot see
         // from the playback package: whether a head unit is connected and whether the queue is
@@ -463,7 +490,7 @@ class PlayerService : MediaLibraryService() {
             )
             .build()
 
-        player.addListener(
+        eventListener =
             PlayerEventListener(this, scope, session, state.current, extensions, app.throwFlow,
                 fullQueueFlow = fullQueueFlow,
                 isAndroidAutoConnected = { isAndroidAutoConnected },
@@ -494,8 +521,21 @@ class PlayerService : MediaLibraryService() {
                 healthMonitor = healthMonitor,
                 // A getter, not a value: the controller is created and destroyed as the slider moves.
                 crossfade = { crossfade },
+                // The network hold - see PlayerEventListener.holdForNetwork.
+                isOffline = ::isOffline,
+                resolveFailed = state::resolveFailed,
+                // ALWAYS only for a hold episode, NEVER otherwise - see the note at
+                // PlayerEventListener.keepIdleNotification for why ALWAYS and not AFTER_STOP_OR_ERROR.
+                onKeepIdleNotification = { keep ->
+                    setShowNotificationForIdlePlayer(
+                        if (keep) SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS
+                        else SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
+                    )
+                },
+                focusAllowsResume = { audioFocusListener.resumeAfterNetworkHold() },
+                onNetworkHoldEnded = { audioFocusListener.onNetworkHoldEnded() },
             )
-        )
+        player.addListener(eventListener)
         player.addListener(
             PlayerRadio(
                 app, scope, player, app.throwFlow, state.radio, extensions.music, downloadFlow
@@ -509,7 +549,11 @@ class PlayerService : MediaLibraryService() {
         trackingListener = tracking
         player.addListener(tracking)
         player.addListener(effects)
-        audioFocusListener = AudioFocusListener(this, player)
+        audioFocusListener = AudioFocusListener(
+            this, player,
+            isNetworkHeld = { eventListener.isNetworkHeld },
+            onFocusLostWhileHeld = { eventListener.clearNetworkHold(releaseFocus = false) },
+        )
         carConnection = CarConnection(this)
         carConnection.type.observeForever(carConnectionObserver)
         // Phantom-PLAY route tracking: observe live BT/wired/USB audio-route changes, and SEED the flag
@@ -521,6 +565,16 @@ class PlayerService : MediaLibraryService() {
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
         recomputeRouteState()
         player.addListener(audioFocusListener)
+        // The network hold's resume trigger. Only a NotConnected -> connected transition counts
+        // (PlayerEventListener.onConnectivity); Wi-Fi <-> mobile does nothing. networkFlow starts at
+        // NotConnected (App's _networkFlow) until the first callback, so an online failure in that
+        // first instant holds briefly and the first onAvailable reloads it into normal routing - one
+        // extra resolve. Devices whose callback registration failed sit at Metered and never resume.
+        scope.launch(Dispatchers.Main) {
+            app.networkFlow.collect {
+                eventListener.onConnectivity(it != NetworkConnection.NotConnected)
+            }
+        }
         // ⚠️ AFTER the listener set, and the sidecar gets NONE of them. Attaching
         // PlayerEventListener / PlayerRadio / TrackingListener / effects / focus to a second player
         // would double-fire history, radio top-up and the skip breakers.

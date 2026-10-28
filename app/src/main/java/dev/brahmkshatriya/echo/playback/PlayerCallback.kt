@@ -172,9 +172,35 @@ class PlayerCallback(
         // changes no playWhenReady, so today a STOP leaves a focus-resume authorisation armed -
         // the 1141 shape with a controller instead of a finger. A STOP is the user saying stop,
         // so it revokes the authorisation exactly as a pause press does.
-        if (playerCommand == Player.COMMAND_STOP && !consumeNotificationDismissal()) {
+        if (playerCommand == Player.COMMAND_STOP) {
+            if (!consumeNotificationDismissal()) {
+                onTransportIntent()
+                session.player.pause()
+                return SessionResult.RESULT_ERROR_NOT_SUPPORTED
+            }
+            // ⚠⚠ [2026-10-28] THE SWIPE: PAUSE AND STOP HERE, BOTH, AND DECLINE MEDIA3'S STOP.
+            // Build 1148 (SM-A256B, Android 16): media3's own stop left STATE_IDLE with playWhenReady
+            // TRUE - the 1144 stuck-UI state the idle guard exists for - and the guard then reported
+            // IdleWithPlayWhenReady. Pausing first ends at IDLE + playWhenReady false, exactly the
+            // device-verified 1147 case (pause, then swipe), so the guard has nothing to settle.
+            // ⚠⚠ BOTH CALLS HERE, NOT pause() HERE AND media3's stop AFTER: the notification follows
+            // MediaNotificationManager's controller, whose state comes from ONE posted, coalescing
+            // PlayerInfo message (MediaSessionImpl.PlayerInfoChangedHandler, 1.11.1). Two calls in this
+            // callback land in that one message as IDLE, which SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
+            // hides. media3's stop is queued (ConnectedControllersManager.flushCommandQueue) and WAITS
+            // behind an unfinished async command, so a lone pause could be published first - not IDLE,
+            // so shouldShowNotification re-posts the swiped notification.
+            // ⚠️ THE DISMISSAL ITSELF IS UNTOUCHED: media3 sent NOTIFICATION_DISMISSED_EVENT_KEY to the
+            // notification controller before calling this (applyMediaButtonKeyEvent:1755-1762);
+            // declining only skips its Player::stop task.
+            // ⚠️ [CORRECTED 2026-10-28] NOT "THE GUARD'S PAUSE RE-POSTS THE NOTIFICATION". That was
+            // claimed for 1148 and is false: ShufflePlayer.getPlaybackState's READY facade is read by
+            // getter only, while the session builds the controller's state from the listener EVENT
+            // (MediaSessionImpl PlayerListener.onPlaybackStateChanged), so a paused IDLE player still
+            // reads IDLE there. The real cost of 1148 was the stuck-UI state, not a re-post.
             onTransportIntent()
             session.player.pause()
+            session.player.stop()
             return SessionResult.RESULT_ERROR_NOT_SUPPORTED
         }
         if (playerCommand == Player.COMMAND_PLAY_PAUSE) {

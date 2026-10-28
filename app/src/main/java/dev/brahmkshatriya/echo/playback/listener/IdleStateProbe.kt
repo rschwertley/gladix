@@ -25,6 +25,12 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * `a.b.c` and stays that way, because nothing maps keys back. So the captured frames are attached
  * with setStackTrace, exactly as ColdStartPlayProbe does, and the `by` key is kept only as a
  * convenience label for the issue list - it will read as minified, and that is expected.
+ * [CORRECTED 2026-10-28] THE `by` KEY IS GONE, AND IT WAS NOT A HARMLESS LABEL. It named the
+ * first frame [ourFrames] kept, and that was a MEDIA3 frame: on 1148, idle_by = hq1.s =
+ * ForwardingPlayer$ForwardingListener.onPlaybackStateChanged - the listener dispatch, not the cause.
+ * No in-process rule can name the cause reliably: R8 renames our classes AND the bundled androidx /
+ * media3 ones, and Crashlytics deobfuscates only the stack. So the cause is read from the
+ * deobfuscated stack - which is why it is now kept whole (see [TRACE_FRAMES]).
  * ⚠️ ONE LIMITATION, STATED SO A REPORT IS NOT OVER-READ: ListenerSet.flushEvents defers
  * when a flush is already in progress, so if stop() is called from inside another listener callback
  * the frame names the OUTER main-thread entry point rather than stop()'s direct caller. Still the
@@ -37,7 +43,10 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * ONE main-thread task, so the 250 ms re-check never sees them. A report therefore means
  * something reached this state and nothing recovered it.
  *
- * ⚠️ WHAT EACH OUTPUT WOULD SETTLE, before the build:
+ * ⚠️ WHAT EACH OUTPUT WOULD SETTLE, before the build. [CORRECTED 2026-10-28] "by=" below now
+ * means "the deepest app or media3 frame that started the call in the deobfuscated stack"; the key
+ * itself is gone. A notification swipe no longer reports at all - see armIdleSettle's third
+ * stand-aside.
  *   by=<a watchdog or onPlayerError frame>  a recovery cleared the error with prepare() and then
  *       failed back to IDLE. The branch is named and the fix belongs there, not here.
  *   by=<no in-package frame>  media3 drove IDLE itself (renderer or release path), which is a
@@ -54,7 +63,6 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
 object IdleStateProbe {
 
     private var pendingFrames: Array<StackTraceElement>? = null
-    private var pendingBy: String? = null
     private var pendingAtMs = 0L
 
     /**
@@ -65,8 +73,6 @@ object IdleStateProbe {
         pendingAtMs = nowMs
         val frames = runCatching { ourFrames() }.getOrNull()
         pendingFrames = frames?.takeIf { it.isNotEmpty() }
-        pendingBy = frames?.firstOrNull()
-            ?.let { it.className.substringAfterLast('.') + "." + it.methodName }
     }
 
     fun onGuardFired(
@@ -76,16 +82,13 @@ object IdleStateProbe {
         items: Int,
         extensionId: String?,
     ) {
-        val by = pendingBy ?: "unknown"
         val frames = pendingFrames
         val sinceMs = if (pendingAtMs == 0L) -1L else nowMs - pendingAtMs
         pendingFrames = null
-        pendingBy = null
         pendingAtMs = 0L
         if (!BuildConfig.HAS_FIREBASE) return
         runCatching {
             val crashlytics = FirebaseCrashlytics.getInstance()
-            crashlytics.setCustomKey("idle_by", by)
             crashlytics.setCustomKey("idle_since_state_change_ms", sinceMs)
             crashlytics.setCustomKey("idle_position", position)
             crashlytics.setCustomKey("idle_buffered", buffered)
@@ -109,7 +112,6 @@ object IdleStateProbe {
     /** Dropped when the guard stands aside, so a later report cannot carry a stale frame. */
     fun clear() {
         pendingFrames = null
-        pendingBy = null
         pendingAtMs = 0L
     }
 
@@ -120,26 +122,33 @@ object IdleStateProbe {
      * the exact shape of the dead `mime` probe this file's sibling records. Platform and stdlib
      * namespaces are NOT renamed, so excluding them leaves our frames whatever they were renamed
      * to, and the result is triaged against mapping.txt like any other report.
+     * [CORRECTED 2026-10-28] "PLATFORM AND STDLIB NAMESPACES ARE NOT RENAMED" WAS HALF WRONG. Only
+     * what the device supplies keeps its name (android.*, java.*, dalvik.*). Libraries BUNDLED in the
+     * APK - androidx, media3, kotlinx, com.google - are renamed like our own code: 1148's mapping
+     * (decoded by the user) has ForwardingPlayer$ForwardingListener as hq1, and 1152's has androidx.work's
+     * ForceStopRunnable as hq1. So the prefix exclusion kept media3 frames as "ours". It now drops only the two classes
+     * whose RUNTIME names are known here (this probe and PlayerEventListener, the transition frames)
+     * and keeps everything below them.
      */
     private fun ourFrames(): Array<StackTraceElement> {
         val own = IdleStateProbe::class.java.name
         val caller = PlayerEventListener::class.java.name
         return Throwable().stackTrace
-            .dropWhile { frame ->
-                val name = frame.className
-                name.startsWith(own) || name.startsWith(caller) ||
-                    FOREIGN_PREFIXES.any { name.startsWith(it) }
-            }
+            .dropWhile { it.className.startsWith(own) || it.className.startsWith(caller) }
             .take(TRACE_FRAMES)
             .toTypedArray()
     }
 
-    private val FOREIGN_PREFIXES = listOf(
-        "android.", "androidx.", "com.android.", "java.", "javax.", "kotlin.", "kotlinx.",
-        "com.google.", "dalvik.", "sun.",
-    )
-
-    private const val TRACE_FRAMES = 12
+    /**
+     * ⚠⚠ 64, WAS 12 - THE WHOLE MAIN-THREAD STACK, BECAUSE THE BOTTOM IS THE ANSWER. 1148's 12 frames
+     * ran from the listener dispatch to MediaSessionStub and stopped there, hiding the one frame that
+     * mattered: below stopForControllerInfo, applyMediaButtonKeyEvent / MediaSessionService.onStartCommand
+     * means a media-button Intent (the swipe), while dispatchPlayerCommand / a Binder or Handler frame
+     * means IPC. Counted for that path: ~20 frames from the dispatch to stopForControllerInfo, 2-4 for
+     * the discriminating frames, ~10 more to ActivityThread.main - about 35. 64 is that with room for a
+     * nested or deferred flush, and still a bound on a pathological stack.
+     */
+    private const val TRACE_FRAMES = 64
 }
 
 /**

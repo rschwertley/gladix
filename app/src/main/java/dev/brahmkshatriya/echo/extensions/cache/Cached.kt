@@ -1243,6 +1243,11 @@ object Cached {
      *   MP3_MISC-only entry. A stored Playable verdict is an equal candidate. The temporary
      *   GladixPlayback lines (Cached.logPreferCache's note says how to read them) settle which; until
      *   they do, do not cite this block as proof that the token was the cause.
+     *   [UPDATED 2026-10-27, 1152 capture] THEY DID, FOR FALLBACK-GRAFTED SONGS: a hit's stale token
+     *   at the 128 rung got an unrecognised answer and the ladder skipped without substituting; the
+     *   safety net's fresh load substituted. The fix is extension-side - DeezerTrackClient checks a
+     *   token's age where it is sent (createStreamableForQuality) - so this strip stays, and the hit
+     *   still serves the entry's token. The answer body is unobserved, and Maria was not in that capture.
      */
     private fun Track.withoutStreamToken(): Track =
         if (extras["TRACK_TOKEN"].isNullOrEmpty()) this

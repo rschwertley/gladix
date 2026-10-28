@@ -69,6 +69,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * media-state entry is the confirmed location of the fault; the field in it is not. The
      * temporary `deezer rung` lines name the rung and the refusal, and the app's preferCache line
      * names the entry's verdict and streams - those settle it.
+     * [UPDATED 2026-10-27, 1152 capture] SETTLED FOR THE SAVED ENTRY: its stale token at 128 got an
+     * answer no branch recognised, the `!!` that stood at the no_url branch threw, and the catch
+     * skipped without substituting; a fresh token for the same id got token_rights and substituted.
+     * The answer body is still unobserved. Fixed by the token-age check and the no_url branch in
+     * createStreamableForQuality. Maria herself was not in that capture.
      * What stays true is the request cost, now paid only when the token has expired or its expiry is
      * unknown rather than on every stale track's FAILURE.
      */
@@ -96,15 +101,23 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * substitute-branch attribution is INFERRED from that and from the code paths, not from a
      * captured response: no log line or capture ever showed the string Deezer returned. If this is
      * ever revisited, that capture is the missing evidence.
+     * [2026-10-27] The 1152 capture observed the REFUSAL CLASS for a stale saved token (unrecognised,
+     * no URL - see the no_url branch), still not the string.
      * ⚠️ THE LICENCE BRANCH IS DELIBERATELY NOT A CALLER. Its string is
      * "License token has no sufficient rights" - a DIFFERENT credential from TRACK_TOKEN, which
      * api.track() does not refresh. Calling this from there would spend a request and change
      * nothing. Covering it needs a licence-token refresh, which is a separate decision.
      * ⚠️ STRICT ON SHAPE, like the decode branch it replaces: a bad
      * response must surface rather than build a track from nothing.
+     *
+     * @param atQuality the rung to resume at. topQuality (the default) for the decode branch and the
+     * refusedAtRung terminals, which re-enter the whole ladder as before; the rung itself for the
+     * token-age check and the no_url branch (2026-10-27), which refresh BEFORE a token rung's request
+     * or after its unrecognised answer, where re-entering higher would only repeat relay calls.
      */
     private suspend fun refreshTokenAndRetry(
         track: Track, topQuality: String, retry: Boolean, allowSubstitute: Boolean,
+        atQuality: String = topQuality,
     ): Streamable {
         val refetched = api.track(track.id)
         val results = refetched["results"].requireObj("results")
@@ -116,7 +129,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             if (rebuilt.extras["FALLBACK_ID"].isNullOrBlank() && !carried.isNullOrBlank())
                 rebuilt.copy(extras = rebuilt.extras + ("FALLBACK_ID" to carried))
             else rebuilt
-        return descend(fresh, topQuality, retry, topQuality, allowSubstitute, allowRetoken = false)
+        return descend(fresh, atQuality, retry, topQuality, allowSubstitute, allowRetoken = false)
     }
 
     private suspend fun createStreamableForQuality(
@@ -128,6 +141,19 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         allowRetoken: Boolean = true,
     ): Streamable {
         return try {
+            // ⚠⚠ THE TOKEN'S AGE IS CHECKED WHERE THE TOKEN IS SENT. Only the 128 and mp3 rungs send
+            // TRACK_TOKEN (getMP3MediaUrl); the relay rungs send the id alone, so checking there would
+            // spend an api.track on every cached play that 320 serves. loadTrack's gate cannot cover
+            // this: a media-state cache hit (Cached.loadMedia's preferCache arm) never calls loadTrack,
+            // and hands loadStreamableMedia the token the entry was written with, however old - the
+            // 1152 capture's mechanism, recorded at the no_url branch below. TRACK_TOKEN_EXPIRE now rides
+            // in each streamable's extras so this can judge it; an entry written before that has no
+            // expiry, reads no_expiry, and refreshes here each time it reaches this rung (a hit never
+            // rewrites the entry), which is one api.track - what a cache miss pays in loadTrack anyway.
+            // Spends the one-refresh budget, and resumes AT THIS RUNG (atQuality) rather than at
+            // topQuality, so a 320 user pays no second relay call for a refusal already received.
+            if ((quality == "128" || quality == "mp3") && allowRetoken && !track.hasUsableToken())
+                return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
             val currentTrackId = track.id
             val mediaJson =
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
@@ -215,159 +241,15 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // ladder first (7 per attempt, 14 per resolve) before the same throw. See the
                     // note at PlayerEventListener's maxConsecutiveCatalogueDeadSkips for what that
                     // does to a dead run.
+                    // ⚠️ [RECHECKED 2026-10-27, TOKEN-AGE CHECK + no_url] STILL 11 / 22, by the same
+                    // budget argument: both new sites SPEND the one refresh rather than adding one, and
+                    // both resume at the token rung (atQuality), so their refreshed pass is ONE call, not
+                    // a ladder - they can only lower a path's cost. The ceiling is still reached through
+                    // the decode branch or a terminal in refusedAtRung, which re-enter at topQuality.
                     // In the COMMON case (the substitute is available at the requested quality) the
                     // substitute's first call goes to the relay and SUCCEEDS, replacing the single
                     // media.deezer.com 128 call that used to happen here - one request either way.
-                    val lower = when (quality) {
-                        "flac" -> "320"
-                        "320" -> "128"
-                        // "128" and "mp3" (MP3_MISC) are bottom rungs - nothing lower exists, so the
-                        // substitution below is the only remaining option.
-                        else -> null
-                    }
-                    if (lower != null)
-                        return descend(track, lower, retry, topQuality, allowSubstitute, allowRetoken)
-
-                    // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
-                    // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
-                    // QUALITY.
-                    // [CORRECTED 2026-10-16] The note that stood here said the flac/320 `else` arm,
-                    // removed by 2419867c, "IS GONE RATHER THAN KEPT AS A BELT, because the step-down
-                    // above makes it unreachable and leaving it would imply the substitution can still
-                    // happen at a high quality. It cannot". The reachability claim was correct; the
-                    // consequence was missed. With no arm above 128 the substitute could only ever be
-                    // FETCHED at 128, so a user who selected 320 got a 128 stream OF A DIFFERENT
-                    // RECORDING - and no other part of the chain was wrong.
-                    // MEASURED, QUALITY-PROBE capture 2026-10-16: for the failing tracks Deezer answers
-                    // code 2002 "Track token has no sufficient rights on requested media" at flac, 320
-                    // AND 128 - from the relay and from the user's own account - so every manual pick in
-                    // the quality sheet reached this block, and p=5-final reported quality=128
-                    // substituted=true every time. Selection, the sheet and the resolve path were all
-                    // verified correct in that capture.
-                    // ⚠⚠ SO THE SUBSTITUTE NOW RUNS ITS OWN LADDER FROM topQuality, AND
-                    // 2419867c's RULE IS UNTOUCHED: the original recording is still tried at EVERY rung
-                    // before any substitution, because this block is only reachable once it has been.
-                    // ⚠⚠ allowSubstitute = false IS WHAT TERMINATES THIS, AND IT IS
-                    // NOT DEFENSIVE. Every descent propagates it unchanged, so inside a substitute's
-                    // ladder the throw below fires instead of fetching a substitute OF a substitute -
-                    // FALLBACK_ID chains otherwise have no termination condition at all.
-                    // ⚠⚠ IT TERMINATES THE SUBSTITUTION AND NOTHING ELSE. Until
-                    // 2026-10-25 this test read `!allowFallback`, one flag shared with the decode-error
-                    // self-heal below - so a stale TRACK_TOKEN that triggered a re-token BEFORE the
-                    // ladder got here arrived with the flag already spent, and this threw instead of
-                    // substituting. For a FALLBACK-grafted favourite that is the difference between
-                    // playing and being skipped as unplayable; see the note on this function.
-                    if (!allowSubstitute) {
-                        // Last step before giving up - see refreshTokenAndRetry. The substitution is
-                        // already spent here, so a stale token is the only recovery left.
-                        if (allowRetoken)
-                            return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
-                        throw MediaUnavailableException("Track not available on server")
-                    }
-                    // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
-                    // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
-                    // absence looks like an oversight and is a choice, and because "declined" is a
-                    // closed question where "parked" would read as a queued task forever.
-                    // FALLBACK_ID is Deezer's own pointer and it demonstrably points at a DIFFERENT
-                    // recording sometimes - the 2026-10 field report quoted in the step-down note
-                    // above is exactly that (two Pretty Reckless "- Acoustic" tracks played the
-                    // standard versions). The step-down made that rarer; it did not make the
-                    // substitute correct when it does happen.
-                    // THE CHECK THAT WOULD WORK, so nobody has to re-derive it: ISRC identifies a
-                    // RECORDING, so an alternate release of the same master shares it while a
-                    // re-recording does not - precisely the distinction that failed. Both halves are
-                    // already parsed: DeezerParser.toTrack sets `isrc = data.str("ISRC")` and ISRC is
-                    // in the gateway song-record key set documented there, so fallBackTrack.isrc is
-                    // FREE - api.track(fallBackId) is already being called below. Duration is free the
-                    // same way and is the weaker variant: a remaster differs by seconds and an
-                    // acoustic can coincidentally match.
-                    // THE ONE ASYMMETRY, and it is the whole cost: the ORIGINAL's isrc is not here.
-                    // `track` is the placeholder loadStreamableMedia synthesises, which carries only
-                    // id + TRACK_TOKEN + FALLBACK_ID. Closing that is a no-request change - loadTrack
-                    // holds the real parsed Track when it builds the streamables, so threading
-                    // "ISRC" through the same extras map that already carries those two keys is all
-                    // it takes. Re-fetching the original instead would add a gateway call to a track
-                    // that has already failed three times; prefer the threading.
-                    // WHY IT WAS DECLINED, which is the part that is not a mechanism question:
-                    // a mismatch has to DO something, and both answers are bad in a way source
-                    // reading cannot rank. Refusing turns tracks that play today - wrongly, but
-                    // audibly - into MediaUnavailableException, which feeds the Unavailable skip
-                    // family and the consecutiveUnavailableSkips breaker. And ISRC is nullable here
-                    // (`data.str("ISRC")`), so the null policy decides a population size nobody has
-                    // measured: fail open and incomplete records keep today's behaviour, fail closed
-                    // and they all lose substitution. Silent-wrong versus silent-skip is a product
-                    // call, not a correctness one, and it was not worth a build on its own.
-                    // WHAT WOULD BRING IT BACK: a field report of a substituted recording that is
-                    // audibly the wrong song, now that the step-down has made substitution rare - at
-                    // which point the mismatch policy is being chosen against a real case instead of
-                    // in the abstract. The implementation above is the whole design; it is ~6 lines
-                    // and no new requests.
-                    // [CHECKED 2026-10-25, STILL DECLINED] The one named graft in the liked list was
-                    // compared record to record and it is NOT a wrong-song case: 67239974 "Whistling
-                    // Tune" and its FALLBACK 3427782381 "Worst Pies in London" share an IDENTICAL
-                    // MD5_ORIGIN, duration and filesize - the SAME AUDIO FILE under two titles, so what
-                    // plays is right and only the metadata is wrong. Across all 117 liked ids gw
-                    // FALLBACK.SNG_ID and pipe media.id agreed 16/16 with equal durations, with no
-                    // pipe-only substitutes. So the trigger above - AUDIBLY the wrong song - has NOT
-                    // fired, and this stays declined on evidence rather than on absence.
-                    val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
-                    // ⚠⚠ NO FALLBACK_ID MEANS NO REQUEST, AND api.track("") WAS
-                    // WORSE THAN USELESS. The gateway cannot return anything playable for an
-                    // empty id, so the call was spent to produce a response with no `results` -
-                    // and the `!!` below then threw an NPE into this function's own catch, which
-                    // read it as "this rung failed" and stepped down. The cost was the refused
-                    // request AND a doomed api.track("") at flac, 320 and 128 before the ladder
-                    // ran out. Throwing here instead reaches the same place by the same route
-                    // with two fewer requests.
-                    // ⚠️ THE TYPE IS DELIBERATELY THE LADDER'S OWN, NOT A NEW ONE.
-                    // MediaUnavailableException is what the !allowSubstitute / !allowRetoken
-                    // terminators above and the bottom rung below already throw, and this catch
-                    // treats it exactly like
-                    // the NPE it replaces - descend, then surface as Unavailable. So nothing that
-                    // works today changes type: PlayerEventListener.skipFamilyOf still files it as
-                    // SkipFamily.Unavailable and the unavailable-skip path still handles it.
-                    // ⚠️ A REFETCH OF THE CURRENT TRACK WAS REJECTED HERE, and the
-                    // reason is one branch down: the token self-heal below already recovers that
-                    // way, and doing it from THIS branch would re-introduce the art overwrite the
-                    // Aug 6 merge-instead-of-replace change fixed. Blank means give up, not retry.
-                    // Adapted from Evoe (github.com/Doggo785/evoe), 409c4c5e, UPL - their version
-                    // refetches the current track; ours declines to, for the reason above.
-                    if (fallBackId.isBlank()) {
-                        // The ordinary-track case that used to dead-end here with nothing tried -
-                        // see refreshTokenAndRetry. Still no api.track(""): the refresh fetches THIS
-                        // track's id, which is a real id, not the blank fallback one.
-                        if (allowRetoken)
-                            return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
-                        throw MediaUnavailableException("Track not available on server")
-                    }
-                    val fallbackObject = api.track(fallBackId)
-                    // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
-                    // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
-                    // this type anyway - via the catch below, two wasted rungs later.
-                    val resultOj = fallbackObject["results"].objOrNull()
-                        ?: throw MediaUnavailableException("Track not available on server")
-                    val fallBackTrack = parser.run { resultOj.toTrack() }
-                    // allowRetoken is passed UNCHANGED, not forced off: the substitute's record was
-                    // just fetched, so its token is fresh, and if it still fails to decode the same
-                    // one-shot recovery that works for any other track should be available to it. It
-                    // stays bounded either way - at most one re-token per resolve attempt, wherever
-                    // in the chain it is spent.
-                    val fbStreamable = descend(
-                        fallBackTrack, topQuality, retry, topQuality,
-                        allowSubstitute = false, allowRetoken = allowRetoken
-                    )
-                    // ⚠⚠ STAMPED HERE BECAUSE THE INNER CALL CANNOT KNOW IT IS A
-                    // SUBSTITUTE. From inside its own ladder the fallback is just a track being
-                    // resolved; it substitutes nothing and so stamps nothing. Without this line the
-                    // marker would never be written at all and the quality sheet's "Alt version"
-                    // label would silently vanish - reintroducing exactly the mislabelling the
-                    // 2026-10 field report was about. THIS IS THE ONLY WRITE SITE for the marker;
-                    // the mechanism is documented at ALT_VERSION_EXTRA in the companion object.
-                    // The Blowfish key needs no equivalent fix: the inner call derives keySourceId
-                    // from its own track id, which IS the fallback's.
-                    return fbStreamable.copy(
-                        extras = fbStreamable.extras + (ALT_VERSION_EXTRA to "1")
-                    )
+                    return refusedAtRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
                 }
 
                 mjString.contains("An error occurred while decoding track token") -> {
@@ -406,7 +288,30 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
                 }
 
-                else -> extractUrlFromJson(mediaJson)!!
+                // ⚠⚠ no_url: AN ANSWER NONE OF THE BRANCHES ABOVE RECOGNISES, AND NO URL IN IT. This
+                // was `extractUrlFromJson(mediaJson)!!`, and the NPE it threw reached the catch below,
+                // whose bottom rung throws MediaUnavailableException - so a FALLBACK-grafted track was
+                // skipped WITHOUT EVER REACHING ITS SUBSTITUTE, which only the token_rights branch runs.
+                // MEASURED, 1152 capture 2026-10-27 (e.g. id 67239924, a substitute song): a saved
+                // media-state entry's stale TRACK_TOKEN met this at 128 on both loadStreamableMedia
+                // attempts (`refusal=thrown:NullPointerException`); StreamableLoader.safetyNet's fresh
+                // load, same id and session minutes later, got `token_rights` at 128 and substituted.
+                // Same tokenLen on both - a token's length says it is present, not that it is current.
+                // ⚠️ THE ANSWER BODY ITSELF IS STILL UNOBSERVED; "a stale token gets an unrecognised
+                // answer" is the capture's pattern, not Deezer's documented behaviour.
+                // ⚠⚠ REFRESH FIRST, NEVER SUBSTITUTE FIRST, at a token rung: the acoustic-versions
+                // report (see the step-down note on the token_rights branch) had FALLBACK_IDs, so a
+                // stale token sent straight to refusedAtRung could play the standard recording under
+                // the acoustic title. Only once the refresh is spent is this handled like token_rights.
+                // ⚠️ NOT AT A RELAY RUNG (flac/320): getMediaUrl sends the id alone, so a refresh would
+                // repeat a byte-identical relay request against its shared daily ceiling. There
+                // refusedAtRung only steps down, and the 128 rung below it applies this rule.
+                else -> extractUrlFromJson(mediaJson) ?: run {
+                    logRung(track, quality, "no_url")
+                    if (allowRetoken && (quality == "128" || quality == "mp3"))
+                        return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
+                    return refusedAtRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+                }
             }
 
             val qualityValue = when (quality) {
@@ -508,6 +413,174 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     }
 
     /**
+     * What a rung does once Deezer has refused THIS track at THIS quality without throwing: step down
+     * on the same track, then - at the bottom rung only - refresh or substitute. Shared by the
+     * token_rights / media_empty branch and the no_url branch of [createStreamableForQuality], so the
+     * two cannot drift. Called from inside that function's try, so everything it throws reaches the
+     * same catch it did when this body was inline. Its notes were written inline in that function's
+     * `when`: "above", "below", "one branch down" and "this catch" in them refer to that function.
+     */
+    private suspend fun refusedAtRung(
+        track: Track,
+        quality: String,
+        retry: Boolean,
+        topQuality: String,
+        allowSubstitute: Boolean,
+        allowRetoken: Boolean,
+    ): Streamable {
+        val lower = when (quality) {
+            "flac" -> "320"
+            "320" -> "128"
+            // "128" and "mp3" (MP3_MISC) are bottom rungs - nothing lower exists, so the
+            // substitution below is the only remaining option.
+            else -> null
+        }
+        if (lower != null)
+            return descend(track, lower, retry, topQuality, allowSubstitute, allowRetoken)
+
+        // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
+        // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
+        // QUALITY.
+        // [CORRECTED 2026-10-16] The note that stood here said the flac/320 `else` arm,
+        // removed by 2419867c, "IS GONE RATHER THAN KEPT AS A BELT, because the step-down
+        // above makes it unreachable and leaving it would imply the substitution can still
+        // happen at a high quality. It cannot". The reachability claim was correct; the
+        // consequence was missed. With no arm above 128 the substitute could only ever be
+        // FETCHED at 128, so a user who selected 320 got a 128 stream OF A DIFFERENT
+        // RECORDING - and no other part of the chain was wrong.
+        // MEASURED, QUALITY-PROBE capture 2026-10-16: for the failing tracks Deezer answers
+        // code 2002 "Track token has no sufficient rights on requested media" at flac, 320
+        // AND 128 - from the relay and from the user's own account - so every manual pick in
+        // the quality sheet reached this block, and p=5-final reported quality=128
+        // substituted=true every time. Selection, the sheet and the resolve path were all
+        // verified correct in that capture.
+        // ⚠⚠ SO THE SUBSTITUTE NOW RUNS ITS OWN LADDER FROM topQuality, AND
+        // 2419867c's RULE IS UNTOUCHED: the original recording is still tried at EVERY rung
+        // before any substitution, because this block is only reachable once it has been.
+        // ⚠⚠ allowSubstitute = false IS WHAT TERMINATES THIS, AND IT IS
+        // NOT DEFENSIVE. Every descent propagates it unchanged, so inside a substitute's
+        // ladder the throw below fires instead of fetching a substitute OF a substitute -
+        // FALLBACK_ID chains otherwise have no termination condition at all.
+        // ⚠⚠ IT TERMINATES THE SUBSTITUTION AND NOTHING ELSE. Until
+        // 2026-10-25 this test read `!allowFallback`, one flag shared with the decode-error
+        // self-heal below - so a stale TRACK_TOKEN that triggered a re-token BEFORE the
+        // ladder got here arrived with the flag already spent, and this threw instead of
+        // substituting. For a FALLBACK-grafted favourite that is the difference between
+        // playing and being skipped as unplayable; see the note on this function.
+        if (!allowSubstitute) {
+            // Last step before giving up - see refreshTokenAndRetry. The substitution is
+            // already spent here, so a stale token is the only recovery left.
+            if (allowRetoken)
+                return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
+            throw MediaUnavailableException("Track not available on server")
+        }
+        // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
+        // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
+        // absence looks like an oversight and is a choice, and because "declined" is a
+        // closed question where "parked" would read as a queued task forever.
+        // FALLBACK_ID is Deezer's own pointer and it demonstrably points at a DIFFERENT
+        // recording sometimes - the 2026-10 field report quoted in the step-down note
+        // above is exactly that (two Pretty Reckless "- Acoustic" tracks played the
+        // standard versions). The step-down made that rarer; it did not make the
+        // substitute correct when it does happen.
+        // THE CHECK THAT WOULD WORK, so nobody has to re-derive it: ISRC identifies a
+        // RECORDING, so an alternate release of the same master shares it while a
+        // re-recording does not - precisely the distinction that failed. Both halves are
+        // already parsed: DeezerParser.toTrack sets `isrc = data.str("ISRC")` and ISRC is
+        // in the gateway song-record key set documented there, so fallBackTrack.isrc is
+        // FREE - api.track(fallBackId) is already being called below. Duration is free the
+        // same way and is the weaker variant: a remaster differs by seconds and an
+        // acoustic can coincidentally match.
+        // THE ONE ASYMMETRY, and it is the whole cost: the ORIGINAL's isrc is not here.
+        // `track` is the placeholder loadStreamableMedia synthesises, which carries only
+        // id + TRACK_TOKEN + FALLBACK_ID. Closing that is a no-request change - loadTrack
+        // holds the real parsed Track when it builds the streamables, so threading
+        // "ISRC" through the same extras map that already carries those two keys is all
+        // it takes. Re-fetching the original instead would add a gateway call to a track
+        // that has already failed three times; prefer the threading.
+        // WHY IT WAS DECLINED, which is the part that is not a mechanism question:
+        // a mismatch has to DO something, and both answers are bad in a way source
+        // reading cannot rank. Refusing turns tracks that play today - wrongly, but
+        // audibly - into MediaUnavailableException, which feeds the Unavailable skip
+        // family and the consecutiveUnavailableSkips breaker. And ISRC is nullable here
+        // (`data.str("ISRC")`), so the null policy decides a population size nobody has
+        // measured: fail open and incomplete records keep today's behaviour, fail closed
+        // and they all lose substitution. Silent-wrong versus silent-skip is a product
+        // call, not a correctness one, and it was not worth a build on its own.
+        // WHAT WOULD BRING IT BACK: a field report of a substituted recording that is
+        // audibly the wrong song, now that the step-down has made substitution rare - at
+        // which point the mismatch policy is being chosen against a real case instead of
+        // in the abstract. The implementation above is the whole design; it is ~6 lines
+        // and no new requests.
+        // [CHECKED 2026-10-25, STILL DECLINED] The one named graft in the liked list was
+        // compared record to record and it is NOT a wrong-song case: 67239974 "Whistling
+        // Tune" and its FALLBACK 3427782381 "Worst Pies in London" share an IDENTICAL
+        // MD5_ORIGIN, duration and filesize - the SAME AUDIO FILE under two titles, so what
+        // plays is right and only the metadata is wrong. Across all 117 liked ids gw
+        // FALLBACK.SNG_ID and pipe media.id agreed 16/16 with equal durations, with no
+        // pipe-only substitutes. So the trigger above - AUDIBLY the wrong song - has NOT
+        // fired, and this stays declined on evidence rather than on absence.
+        val fallBackId = track.extras["FALLBACK_ID"].orEmpty()
+        // ⚠⚠ NO FALLBACK_ID MEANS NO REQUEST, AND api.track("") WAS
+        // WORSE THAN USELESS. The gateway cannot return anything playable for an
+        // empty id, so the call was spent to produce a response with no `results` -
+        // and the `!!` below then threw an NPE into this function's own catch, which
+        // read it as "this rung failed" and stepped down. The cost was the refused
+        // request AND a doomed api.track("") at flac, 320 and 128 before the ladder
+        // ran out. Throwing here instead reaches the same place by the same route
+        // with two fewer requests.
+        // ⚠️ THE TYPE IS DELIBERATELY THE LADDER'S OWN, NOT A NEW ONE.
+        // MediaUnavailableException is what the !allowSubstitute / !allowRetoken
+        // terminators above and the bottom rung below already throw, and this catch
+        // treats it exactly like
+        // the NPE it replaces - descend, then surface as Unavailable. So nothing that
+        // works today changes type: PlayerEventListener.skipFamilyOf still files it as
+        // SkipFamily.Unavailable and the unavailable-skip path still handles it.
+        // ⚠️ A REFETCH OF THE CURRENT TRACK WAS REJECTED HERE, and the
+        // reason is one branch down: the token self-heal below already recovers that
+        // way, and doing it from THIS branch would re-introduce the art overwrite the
+        // Aug 6 merge-instead-of-replace change fixed. Blank means give up, not retry.
+        // Adapted from Evoe (github.com/Doggo785/evoe), 409c4c5e, UPL - their version
+        // refetches the current track; ours declines to, for the reason above.
+        if (fallBackId.isBlank()) {
+            // The ordinary-track case that used to dead-end here with nothing tried -
+            // see refreshTokenAndRetry. Still no api.track(""): the refresh fetches THIS
+            // track's id, which is a real id, not the blank fallback one.
+            if (allowRetoken)
+                return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
+            throw MediaUnavailableException("Track not available on server")
+        }
+        val fallbackObject = api.track(fallBackId)
+        // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
+        // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
+        // this type anyway - via the catch below, two wasted rungs later.
+        val resultOj = fallbackObject["results"].objOrNull()
+            ?: throw MediaUnavailableException("Track not available on server")
+        val fallBackTrack = parser.run { resultOj.toTrack() }
+        // allowRetoken is passed UNCHANGED, not forced off: the substitute's record was
+        // just fetched, so its token is fresh, and if it still fails to decode the same
+        // one-shot recovery that works for any other track should be available to it. It
+        // stays bounded either way - at most one re-token per resolve attempt, wherever
+        // in the chain it is spent.
+        val fbStreamable = descend(
+            fallBackTrack, topQuality, retry, topQuality,
+            allowSubstitute = false, allowRetoken = allowRetoken
+        )
+        // ⚠⚠ STAMPED HERE BECAUSE THE INNER CALL CANNOT KNOW IT IS A
+        // SUBSTITUTE. From inside its own ladder the fallback is just a track being
+        // resolved; it substitutes nothing and so stamps nothing. Without this line the
+        // marker would never be written at all and the quality sheet's "Alt version"
+        // label would silently vanish - reintroducing exactly the mislabelling the
+        // 2026-10 field report was about. THIS IS THE ONLY WRITE SITE for the marker;
+        // the mechanism is documented at ALT_VERSION_EXTRA in the companion object.
+        // The Blowfish key needs no equivalent fix: the inner call derives keySourceId
+        // from its own track id, which IS the fallback's.
+        return fbStreamable.copy(
+            extras = fbStreamable.extras + (ALT_VERSION_EXTRA to "1")
+        )
+    }
+
+    /**
      * A ladder descent: calls [createStreamableForQuality] for a LOWER rung, or for a substitute,
      * and tags any failure so the CALLER's catch rethrows it instead of walking the same rungs a
      * second time. Used for every recursive call made from INSIDE the try block; the catch block's
@@ -552,7 +625,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 title = quality,
                 extras = mapOf(
                     "TRACK_TOKEN" to streamable.extras["TRACK_TOKEN"].orEmpty(),
-                    "FALLBACK_ID" to streamable.extras["FALLBACK_ID"].orEmpty()
+                    "FALLBACK_ID" to streamable.extras["FALLBACK_ID"].orEmpty(),
+                    "TRACK_TOKEN_EXPIRE" to streamable.extras["TRACK_TOKEN_EXPIRE"].orEmpty()
                 )
             )
             var resolved: Streamable? = null
@@ -714,6 +788,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // re-fetched when it has expired or carries no expiry, which is every token stored before this
         // build. That is what stops a token kept in a cache (a feed's buttons, an AA or Unified store,
         // a media-state entry) being used however old it is.
+        // [CORRECTED 2026-10-27, 1152 capture] NOT A MEDIA-STATE ENTRY: a cache hit never calls this
+        // function, so this gate never sees that entry's token. The 1152 capture showed exactly that
+        // token failing at 128. The check for it is at the top of createStreamableForQuality's try,
+        // fed by TRACK_TOKEN_EXPIRE in the streamables built below.
         // [TEMPORARY 2026-10-27] perishable-cache probe - removal condition at the app's
         // Cached.logPreferCache. println, so it lands on logcat's System.out tag, not GladixPlayback:
         // this module is plain JVM and has no android.util.Log. The message carries the prefix.
@@ -780,7 +858,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     title = "MP3",
                     extras = mapOf(
                         "TRACK_TOKEN" to track.extras["TRACK_TOKEN"].orEmpty(),
-                        "FALLBACK_ID" to track.extras["FALLBACK_ID"].orEmpty()
+                        "FALLBACK_ID" to track.extras["FALLBACK_ID"].orEmpty(),
+                        // Read by createStreamableForQuality's token-age check, which a media-state
+                        // cache hit reaches without passing through this function - see the note there.
+                        "TRACK_TOKEN_EXPIRE" to track.extras["TRACK_TOKEN_EXPIRE"].orEmpty()
                     )
                 )
             )
@@ -804,7 +885,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     title = qualityTitle,
                     extras = mapOf(
                         "TRACK_TOKEN" to track.extras["TRACK_TOKEN"].orEmpty(),
-                        "FALLBACK_ID" to track.extras["FALLBACK_ID"].orEmpty()
+                        "FALLBACK_ID" to track.extras["FALLBACK_ID"].orEmpty(),
+                        "TRACK_TOKEN_EXPIRE" to track.extras["TRACK_TOKEN_EXPIRE"].orEmpty()
                     )
                 )
             }
@@ -827,6 +909,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * `str` returns either as its content, and anything toLongOrNull rejects counts as unknown.
      * UNKNOWN EXPIRY COUNTS AS UNUSABLE, so every token stored before this build (none carries the key)
      * re-fetches once and is then stored with its expiry - migration-safe by construction.
+     * [CORRECTED 2026-10-27] "ONCE" holds for stores that loadTrack rewrites. A media-state entry is
+     * not rewritten on a hit, so an old entry (no expiry in its streamables) refreshes at the 128/mp3
+     * rung on EVERY play that reaches that rung, until the entry is replaced - one api.track each.
      * The 5-minute margin covers device-clock skew and the gap between this check and the media
      * request. Uncalibrated.
      */

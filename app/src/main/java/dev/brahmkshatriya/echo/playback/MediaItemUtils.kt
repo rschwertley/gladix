@@ -264,6 +264,10 @@ object MediaItemUtils {
      * ⚠️ ONE CALLER: CastSessionController, at cast start, for a high-res
      * stream the receiver cannot be given. Keep it that way - a general "re-resolve this" is a
      * loaded gun on a path where every resolve costs a request and a token.
+     * [CORRECTED 2026-10-28] TWO CALLERS NOW. PlayerEventListener's network hold
+     * (resumeFromNetworkHold / reresolveNextIfFailed) re-resolves the held song, and the next one only
+     * if its resolve failed or never finished, once per NotConnected -> connected transition: at most
+     * two resolves per connection drop. The warning above still stands for anything wider.
      */
     fun withReresolve(item: MediaItem): MediaItem {
         val bundle = Bundle().apply {

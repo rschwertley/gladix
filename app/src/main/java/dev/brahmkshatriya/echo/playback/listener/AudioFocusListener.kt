@@ -15,8 +15,21 @@ import kotlin.math.sin
 @Suppress("DEPRECATION")
 class AudioFocusListener(
     val context: Context,
-    val player: Player
+    val player: Player,
+    // ⚠⚠ A NETWORK HOLD KEEPS FOCUS, AS A TRANSIENT INTERRUPTION WOULD (PlayerEventListener's
+    // network hold; wired by PlayerService). Its pause arrives here as USER_REQUEST with
+    // pausedForFocus false and an error hold also drives STATE_IDLE - both abandon focus below, so
+    // both stand aside while held. A PERMANENT loss while held cancels the resume
+    // (onFocusLostWhileHeld); a transient one keeps it and defers it to AUDIOFOCUS_GAIN - see
+    // [resumeAfterNetworkHold]. The hold never sets pausedForFocus except in that deferred case, so a
+    // hold pause is never read as a focus pause, and the 1141 latch rules (transport clears it,
+    // RESUME_WINDOW_MS bounds it) apply unchanged.
+    private val isNetworkHeld: () -> Boolean = { false },
+    private val onFocusLostWhileHeld: () -> Unit = {},
 ) : Player.Listener {
+
+    // A transient loss arrived while held and no AUDIOFOCUS_GAIN has followed it yet.
+    private var interruptedWhileHeld = false
 
     private val handler = Handler(context.mainLooper)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -181,6 +194,7 @@ class AudioFocusListener(
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Log.d("GladixAudio", "AUDIOFOCUS_GAIN: playbackState=${player.playbackState} pausedForFocus=$pausedForFocus playWhenReady=${player.playWhenReady}")
                 cancelCommit()
+                interruptedWhileHeld = false
                 if (loweringVolume) {
                     cancelFocusFade()
                     player.volume = 1f
@@ -229,6 +243,10 @@ class AudioFocusListener(
                     armPausedForFocus(ARMED_BY_LOSS)
                     player.pause()
                     postCommit()
+                } else if (isNetworkHeld()) {
+                    // Another app took over audio for good: the held song is no longer ours to resume.
+                    onFocusLostWhileHeld()
+                    abandonFocus()
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -241,7 +259,7 @@ class AudioFocusListener(
                     cancelFocusFade()
                     armPausedForFocus(ARMED_BY_TRANSIENT)
                     player.pause()
-                }
+                } else if (isNetworkHeld()) interruptedWhileHeld = true
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // First: the duck is the newer decision, and a surviving ramp step would
@@ -389,7 +407,9 @@ class AudioFocusListener(
             cancelCommit()
             pausedForFocus = false
             abandonFocus()
-        } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && !pausedForFocus) {
+        } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST && !pausedForFocus &&
+            !isNetworkHeld()
+        ) {
             // User explicitly paused (not focus-driven) — release focus so other apps can play
             cancelCommit()
             abandonFocus()
@@ -397,11 +417,31 @@ class AudioFocusListener(
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        if (playbackState == Player.STATE_IDLE) abandonFocus()
-        else if (playbackState == Player.STATE_BUFFERING && player.playWhenReady) {
+        if (playbackState == Player.STATE_IDLE) {
+            if (!isNetworkHeld()) abandonFocus()
+        } else if (playbackState == Player.STATE_BUFFERING && player.playWhenReady) {
             Log.d("GladixAudio", "STATE_BUFFERING+playWhenReady: re-requesting focus defensively")
             requestFocus()
         }
+    }
+
+    /**
+     * The network hold's resume asks here first. True = play now. False = a transient loss (a call,
+     * an assistant) is still outstanding, so the song is reloaded paused and the existing focus resume
+     * plays it on AUDIOFOCUS_GAIN - with its fade and inside RESUME_WINDOW_MS - armed as
+     * [ARMED_BY_NETWORK_HOLD] so StaleFocusProbe can name it.
+     */
+    internal fun resumeAfterNetworkHold(): Boolean {
+        if (!interruptedWhileHeld) return true
+        interruptedWhileHeld = false
+        armPausedForFocus(ARMED_BY_NETWORK_HOLD)
+        return false
+    }
+
+    /** The hold ended without a resume (cap, song change): release focus if nothing will play. */
+    internal fun onNetworkHoldEnded() {
+        interruptedWhileHeld = false
+        if (!player.playWhenReady && !pausedForFocus) abandonFocus()
     }
 
     fun release() {
@@ -432,5 +472,6 @@ class AudioFocusListener(
         private const val ARMED_BY_LOSS = "loss"
         private const val ARMED_BY_TRANSIENT = "transientLoss"
         private const val ARMED_BY_DELAYED = "delayedGrant"
+        private const val ARMED_BY_NETWORK_HOLD = "networkHold"
     }
 }

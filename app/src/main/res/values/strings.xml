@@ -93,6 +93,7 @@
     <string name="playback_error_no_connection">No connection — check your phone</string>
     <string name="playback_error_login_required">Sign in on your phone to continue</string>
     <string name="playback_error_generic">Can\'t play this track</string>
+    <string name="network_hold_will_resume">No connection. Playback will resume when you\'re back online.</string>
     <string name="playback_stream_stalling">Connection is stalling — playback paused</string>
     <string name="error_x">Error: %1$s</string>
     <string name="str_copy">Copy</string>
@@ -176,6 +177,29 @@
     <string name="system">System</string>
     <string name="check_for_updates">Check for Updates</string>
     <string name="check_for_updates_summary">Look for new updates of both app and extensions, when you open the app.</string>
+    <string name="app_updates">App updates</string>
+    <string name="app_update_last_checked_x">Last checked %1$s</string>
+    <string name="app_update_never_checked">Not checked yet</string>
+    <string name="app_update_check_now">Check now</string>
+    <string name="app_update_check_now_summary">Ask GitHub for a newer version of %1$s</string>
+    <string name="app_update_checking">Checking GitHub…</string>
+    <string name="app_update_busy">An update check is already running</string>
+    <string name="app_update_up_to_date">%1$s is up to date</string>
+    <string name="app_update_available_x">Update to %1$s</string>
+    <string name="app_update_available_summary">Download and install the new version</string>
+    <string name="app_update_downloading">Downloading…</string>
+    <string name="app_update_no_connection">No connection. Check your network and try again.</string>
+    <string name="app_update_rate_limited_x">GitHub is limiting requests. Try again after %1$s.</string>
+    <string name="app_update_rate_limited">GitHub is limiting requests. Try again later.</string>
+    <string name="app_update_no_release">No release found on GitHub.</string>
+    <string name="app_update_failed">Couldn\'t check for updates. Try again later.</string>
+    <string name="open_in_play_store">Open in Play Store</string>
+    <string name="open_in_play_store_summary">Updates for this copy come from Google Play</string>
+    <string name="could_not_open_play_store">Couldn\'t open the Play Store</string>
+    <string name="app_update_other_store">Updates for this copy come from the store you installed it from</string>
+    <string name="app_update_unknown_source">%1$s can\'t tell where this copy was installed from, so it won\'t update itself</string>
+    <string name="open_github_releases">Open releases on GitHub</string>
+    <string name="could_not_open_github">Couldn\'t open GitHub</string>
 
     <string name="install">Install</string>
     <string name="update">Update</string>

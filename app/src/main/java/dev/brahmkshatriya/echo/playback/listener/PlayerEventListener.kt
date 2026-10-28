@@ -24,6 +24,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoTimeoutException
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import androidx.media3.session.MediaSessionService
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.clients.LikeClient
@@ -36,11 +37,13 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
+import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
 import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.downloaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
@@ -139,6 +142,17 @@ class PlayerEventListener(
     // itself, so media3 reports PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST for both. Inferring it is
     // how the reference implementation loses the tail on an interruption.
     private val crossfade: () -> CrossfadeController? = { null },
+    // ⚠⚠ OFFLINE IS NEVER A DEAD SONG - THE NETWORK HOLD'S HOOKS, all wired by PlayerService.
+    // isOffline: the app's own offline state plus a live ConnectivityManager read (PlayerService.isOffline).
+    // resolveFailed: PlayerState.resolveFailed, for the next song's sticky resolve error.
+    // onKeepIdleNotification: switches media3's idle-notification mode for the hold episode - see
+    // [keepIdleNotification]. focusAllowsResume / onNetworkHoldEnded: AudioFocusListener's halves.
+    // The defaults make the whole feature inert, as the crossfade getter's null does.
+    private val isOffline: () -> Boolean = { false },
+    private val resolveFailed: (String) -> Boolean = { false },
+    private val onKeepIdleNotification: (Boolean) -> Unit = {},
+    private val focusAllowsResume: () -> Boolean = { true },
+    private val onNetworkHoldEnded: () -> Unit = {},
 ) : Player.Listener {
 
     // CACHED at construction, deliberately not `get() = session.player`.
@@ -245,6 +259,161 @@ class PlayerEventListener(
         }
     }
 
+    // ⚠⚠ THE NETWORK HOLD: OFFLINE, A SONG THAT NEEDS THE NETWORK PAUSES IN PLACE AND RESUMES ONCE
+    // PER DROP. Entered from onPlayerError (case e, and the offline halves of c) and the buffering
+    // watchdog (case d) when isOffline() and the song needs the network - never recordSkip, never a
+    // retry, never a health check or outage report. The Deezer ladder's bare MediaUnavailableException
+    // (deliberate, Oct 24) is why the app's own offline state decides and the cause chain does not.
+    // RESUME RULES: only on a NotConnected -> connected transition ([onConnectivity]), after
+    // RESUME_SETTLE_MS re-checked against isOffline, only if the hold still names the current song,
+    // nothing set playWhenReady meanwhile, and it is younger than HOLD_RESUME_WINDOW_MS. The hold is
+    // consumed BEFORE the reload, so a drop during the reload re-holds through onPlayerError (play()
+    // has just set playWhenReady, so resume is re-armed) and the next transition resumes again.
+    // A user transport press, a different song, or a permanent focus loss clears the resume intent.
+    // THE NOTIFICATION EPISODE OUTLIVES THE RESUME INTENT ON PURPOSE: the ALWAYS idle mode is kept
+    // until STATE_READY, an error the hold does not take, login-stop or the cap - not on a user pause,
+    // so a paused held song keeps its notification and Play button for the rest of the window.
+    // RESOLVE COST: withReresolve on the current song plus at most the next, so <= 2 resolves per
+    // reconnect - see MediaItemUtils.withReresolve for why not withRetry.
+    // AA: the May 11 pause();delay(50) guard is NOT needed here. Per the Oct 17 record its silence came
+    // from the May 10 - Jun 5 dual audio-focus period (fixed in June by handleAudioFocus=false), it
+    // guards only error/watchdog ADVANCES, and the resume replaces the SAME song in place.
+    private data class NetworkHold(val mediaId: String?, val atMs: Long)
+    private var networkHold: NetworkHold? = null
+    private var holdExpiry: Job? = null
+    private var pendingResume: Job? = null
+    private var lastOnline: Boolean? = null
+    private var idleNotificationKept = false
+
+    /** True while a resume is owed. Read by AudioFocusListener to keep focus across the hold. */
+    val isNetworkHeld get() = networkHold != null
+
+    /**
+     * Pauses in place. A resume is owed only if music was meant to be playing, or a hold for the SAME
+     * song already owes one (a second failure while held - e.g. the paused source's background load
+     * failing - must not cancel it). State is set BEFORE pause(): on the watchdog path pause() flushes
+     * inline, and AudioFocusListener must already see the hold when its USER_REQUEST pause arrives.
+     * The message is quiet by design: messageFlow, no Crashlytics, lost if no UI is attached.
+     */
+    private fun holdForNetwork(wasPlaying: Boolean, announce: Boolean = true) {
+        val id = player.currentMediaItem?.mediaId
+        val prior = networkHold?.takeIf { it.mediaId == id }
+        if (wasPlaying || prior != null) {
+            if (prior == null) {
+                networkHold = NetworkHold(id, SystemClock.elapsedRealtime())
+                holdExpiry?.cancel()
+                holdExpiry = scope.launch(Dispatchers.Main) {
+                    delay(HOLD_RESUME_WINDOW_MS)
+                    endNetworkEpisode()
+                }
+                if (announce) scope.launch {
+                    extensions.app.messageFlow.emit(
+                        Message(context.getString(R.string.network_hold_will_resume))
+                    )
+                }
+            }
+            keepIdleNotification(true)
+        }
+        player.pause()
+    }
+
+    /**
+     * Drops the resume intent. releaseFocus = false from a user transport press: AudioFocusListener's
+     * own posted onTransportIntent check abandons focus once the command's OUTCOME is known, and an
+     * abandon here would be the abandon-then-request blip that note warns about.
+     */
+    fun clearNetworkHold(releaseFocus: Boolean = true) {
+        pendingResume?.cancel(); pendingResume = null
+        if (networkHold == null) return
+        networkHold = null
+        if (releaseFocus) onNetworkHoldEnded()
+    }
+
+    private fun endNetworkEpisode() {
+        holdExpiry?.cancel(); holdExpiry = null
+        clearNetworkHold()
+        keepIdleNotification(false)
+    }
+
+    /**
+     * ⚠⚠ ALWAYS, NEVER AFTER_STOP_OR_ERROR, AND ONLY FOR THE EPISODE. Under PlayerService's
+     * SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER an error hold's IDLE removes the notification and
+     * stops the foreground at once (MediaNotificationManager.shouldShowNotification /
+     * removeNotification, media3-session 1.11.1), so a later resume would have to start the
+     * foreground from the background. ALWAYS has no hasBeenPrepared latch - the reason the STATE_ENDED
+     * note in onPlaybackStateChanged closes AFTER_STOP_OR_ERROR - and respects the dismissed flag.
+     * Set inside onPlayerError, which ExoPlayerImpl delivers before the IDLE state change
+     * (ExoPlayerImpl.java:2382 vs :2419, 1.11.1), and the controller's update is posted, so the mode
+     * is in place before the notification controller sees IDLE. Restored only when the player is no
+     * longer IDLE or the episode is over - restoring it at the resume itself would remove the
+     * notification against the controller's still-IDLE state.
+     */
+    private fun keepIdleNotification(keep: Boolean) {
+        if (idleNotificationKept == keep) return
+        idleNotificationKept = keep
+        onKeepIdleNotification(keep)
+    }
+
+    /** Fed by PlayerService's networkFlow collector. Only NotConnected -> connected counts. */
+    fun onConnectivity(online: Boolean) {
+        val cameBack = online && lastOnline == false
+        lastOnline = online
+        if (!online) { pendingResume?.cancel(); pendingResume = null; return }
+        if (!cameBack || networkHold == null) return
+        pendingResume?.cancel()
+        pendingResume = scope.launch(Dispatchers.Main) {
+            delay(RESUME_SETTLE_MS)
+            if (!isOffline()) resumeFromNetworkHold()
+        }
+    }
+
+    /**
+     * Reloads the held song IN PLACE and plays - the same ShufflePlayer.replaceMediaItem the
+     * generic-tail and 5xx retries use, so the shuffle order, the queue save and crossfade's
+     * onQueueEdit behave as they do there. withReresolve, not withRetry: `retries` is the 5xx skip
+     * budget. If a transient focus loss is still outstanding the song is reloaded paused and
+     * AudioFocusListener resumes it on AUDIOFOCUS_GAIN.
+     */
+    private fun resumeFromNetworkHold() {
+        val hold = networkHold ?: return
+        val item = player.currentMediaItem
+        if (CastState.isCasting || player.playWhenReady || item == null ||
+            item.mediaId != hold.mediaId ||
+            SystemClock.elapsedRealtime() - hold.atMs > HOLD_RESUME_WINDOW_MS
+        ) {
+            endNetworkEpisode()
+            return
+        }
+        networkHold = null
+        holdExpiry?.cancel(); holdExpiry = null
+        val index = player.currentMediaItemIndex
+        val position = player.currentPosition
+        player.replaceMediaItem(index, MediaItemUtils.withReresolve(item))
+        reresolveNextIfFailed(index)
+        internalSeek { player.seekTo(index, position) }
+        player.prepare()
+        if (focusAllowsResume()) {
+            player.play()
+            requestAudioFocus()
+        }
+    }
+
+    /**
+     * ⚠️ A NEXT SONG RESOLVED WHILE OFFLINE KEEPS ITS ERROR. StreamableMediaSource stores a failed
+     * load in `error` and rethrows it from maybeThrowSourceInfoRefreshError until it is prepared again,
+     * so online it would fail - and Deezer's bare exception would skip a good song. !isLoaded covers a
+     * resolve that THREW (PlayerState.resolveFailed cannot see that shape - see its note); resolveFailed
+     * covers a returned failure. Also clears crossfade's refusal to cross into it.
+     */
+    private fun reresolveNextIfFailed(index: Int) {
+        val next = index + 1
+        if (next >= player.mediaItemCount) return
+        val item = player.getMediaItemAt(next)
+        if (!item.needsNetwork()) return
+        if (!item.isLoaded || resolveFailed(item.track.id))
+            player.replaceMediaItem(next, MediaItemUtils.withReresolve(item))
+    }
+
     // ⚠⚠ THIS DEBOUNCE STARVES UNDER A QUEUE DRAG, AND THAT BROKE REORDERING FOR THREE MONTHS.
     // THE ARITHMETIC, which reads as obvious once stated and is invisible otherwise:
     //   a drag fires QueueFragment's onMove roughly every 16ms (once per frame);
@@ -338,6 +507,8 @@ class PlayerEventListener(
         session.notifyChildrenChanged("recent", 1, null)
         retriedMediaId = null
         retriedWatchdogCount = 0
+        // The user (or anything else) moved to another song: the held one is no longer owed a resume.
+        if (mediaItem.mediaId != networkHold?.mediaId) clearNetworkHold()
         // A fresh queue (replace / cold-restore) moves the current item with this reason; queue EDITS that
         // leave the current item in place (radio top-up append, etc.) and our own skips (SEEK) do not. So
         // this marks "a new queue that hasn't played anything yet", arming the removed-extension exhaustion
@@ -635,6 +806,9 @@ class PlayerEventListener(
             retried404MediaId = null
             retriedSocketMediaId = null
             networkRetryCount = 0
+            // Something played: any network-hold episode is over, and the player is not IDLE, so the
+            // idle-notification mode can go back to NEVER without removing anything.
+            endNetworkEpisode()
             // Cold-start re-seek: the saved position was lost when prepare() resolved the deferred source's
             // placeholder->real timeline to the default (0). The real timeline now exists (STATE_READY), so a
             // seek sticks. Position-only on the current window (no index form — sidesteps ShufflePlayer's
@@ -774,6 +948,16 @@ class PlayerEventListener(
                 // false) must re-prepare WITHOUT resuming, else the watchdog converts a paused
                 // cold-start restore into active playback. Captured before stop()/pause() below.
                 val wasPlaying = player.playWhenReady
+                // ⚠️ OFFLINE: HOLD, DON'T RETRY OR SKIP - case (d). Ahead of the stop/prepare retries
+                // because those would be immediate retries against no network. A paused stall
+                // (wasPlaying false) holds without owing a resume. Downloads and local files are
+                // excluded by needsNetwork and keep today's retry-then-skip.
+                if (!CastState.isCasting && player.currentMediaItem?.needsNetwork() == true &&
+                    isOffline()
+                ) {
+                    holdForNetwork(wasPlaying)
+                    return@withContext
+                }
                 val currentMediaId = player.currentMediaItem?.mediaId
                 if (retriedMediaId != currentMediaId) {
                     retriedMediaId = currentMediaId
@@ -986,6 +1170,10 @@ class PlayerEventListener(
      * playerError != null means an error path owns the player and has decided to stay stopped;
      * mediaItemCount == 0 means there is nothing to settle to. Neither is a degenerate case of
      * the other, and dropping either would make this fight a subsystem that is working.
+     * ⚠️ [2026-10-28] A NOTIFICATION SWIPE NEVER REACHES THIS STATE: PlayerCallback's dismissal
+     * branch pauses before it stops, so the swipe ends at IDLE with playWhenReady false and the
+     * playWhenReady test below stands aside. Build 1148 reported here because media3's own stop
+     * used to run with playWhenReady still true.
      */
     private fun armIdleSettle() {
         idleSettleJob?.cancel()
@@ -1089,6 +1277,22 @@ class PlayerEventListener(
         )
 
         private const val BUFFERING_WATCHDOG_MS = 5_000L
+
+        /**
+         * ⚠⚠ 10 MINUTES, NOT THE 30 FIRST ASKED FOR: MEDIA3 CANNOT HOLD THE FOREGROUND LONGER.
+         * After a pause media3 keeps the service in the foreground for its user-engaged timeout, and
+         * setForegroundServiceTimeoutMs clamps that to this constant (MediaSessionService.java:186,
+         * :660-667, media3-session 1.11.1). Past it media3 calls stopForeground(false), and a resume
+         * would have to START the foreground from the background, which Android 12+ refuses
+         * (ForegroundServiceStartNotAllowedException - caught today, but playback would run in a
+         * non-foreground process). So the auto-resume window IS the foreground window. User decision
+         * 2026-10-28.
+         */
+        private const val HOLD_RESUME_WINDOW_MS =
+            MediaSessionService.DEFAULT_FOREGROUND_SERVICE_TIMEOUT_MS
+
+        /** A reconnect must survive this long, re-checked against isOffline, before it reloads. */
+        private const val RESUME_SETTLE_MS = 1_000L
 
         /**
          * How long after a STATE_IDLE transition the settle check runs. Long enough that every
@@ -2084,9 +2288,42 @@ class PlayerEventListener(
         // is kept so play() after logging in re-resolves this same track.
         if (classify(error) == ErrorCategory.LoginOrAuth) {
             scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
+            endNetworkEpisode()
             player.stop()
             return
         }
+
+        // Computed HERE, above the socket branch, because ConnectException IS a SocketException: without
+        // this precedence ECONNREFUSED would take the retry-then-SKIP path below and advance the breaker,
+        // which is exactly the build-1037 outcome we are removing. A network-level failure is never a
+        // per-track fault, so it must reach the hold branch instead. Consumed again at the hold branch.
+        val isNetworkDown = error.anyCause {
+            it is UnknownHostException || it is UnresolvedAddressException ||
+                it is ConnectException || it is NoRouteToHostException
+        }
+        val isMissingFile = rootCause is FileDataSource.FileDataSourceException
+                || rootCause is FileNotFoundException
+                || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
+
+        // ⚠⚠ CASE (e): OFFLINE, A FAILING SONG THAT NEEDS THE NETWORK IS A NETWORK FAILURE, WHATEVER
+        // THE EXTENSION TURNED IT INTO. Deezer's ladder throws a bare MediaUnavailableException on purpose
+        // (Oct 24, for the Aug 13-24 routing), so the cause chain cannot decide; the app's offline state
+        // does. AFTER login (an auth failure is real offline too) and BEFORE every retry and skip branch
+        // below, each of which would retry, skip or spend the budget against no network. Also takes the
+        // offline halves of (c) - a connection reset - and the SSL / timeout shapes.
+        // ⚠️ needsNetwork and !isMissingFile keep downloads and local files on today's skip, so offline
+        // listening cannot get stuck on one bad file (the May ENOENT case). Online, this is inert and the
+        // routing below is unchanged. Not while casting: the receiver fetches the stream.
+        if (!CastState.isCasting && mediaItem?.needsNetwork() == true && !isMissingFile &&
+            isOffline()
+        ) {
+            holdForNetwork(player.playWhenReady)
+            return
+        }
+        // Any error the hold does not take ends its episode (the online isNetworkDown hold below
+        // re-enters it). Called while the notification controller still holds the pre-error state, so
+        // restoring NEVER here removes nothing until that controller sees IDLE - as today.
+        if (!isNetworkDown) endNetworkEpisode()
 
         if (rootCause is HttpDataSource.InvalidResponseCodeException && rootCause.responseCode == 404) {
             val currentMediaId = mediaItem?.mediaId
@@ -2155,15 +2392,6 @@ class PlayerEventListener(
             player.prepare()
             player.play()
             return
-        }
-
-        // Computed HERE, above the socket branch, because ConnectException IS a SocketException: without
-        // this precedence ECONNREFUSED would take the retry-then-SKIP path below and advance the breaker,
-        // which is exactly the build-1037 outcome we are removing. A network-level failure is never a
-        // per-track fault, so it must reach the hold branch instead. Consumed again at the hold branch.
-        val isNetworkDown = error.anyCause {
-            it is UnknownHostException || it is UnresolvedAddressException ||
-                it is ConnectException || it is NoRouteToHostException
         }
 
         // A mid-stream SocketException (connection reset) stays here deliberately: it IS a per-track
@@ -2263,7 +2491,9 @@ class PlayerEventListener(
                     "onPlayerError: network down, retry budget spent for $currentMediaId, holding"
                 )
                 scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
-                player.pause()
+                // A hold like the offline one, so a later NotConnected -> connected transition can
+                // resume it. Unannounced: the emit above already tells the user.
+                holdForNetwork(wasPlaying = true, announce = false)
             }
             return
         }
@@ -2371,9 +2601,7 @@ class PlayerEventListener(
             return
         }
 
-        val isMissingFile = rootCause is FileDataSource.FileDataSourceException
-                || rootCause is FileNotFoundException
-                || rootCause.message?.contains("ENOENT", ignoreCase = true) == true
+        // isMissingFile is computed above the offline hold branch, which also reads it.
         val is401 = (rootCause is HttpDataSource.InvalidResponseCodeException
                 && rootCause.responseCode in listOf(401, 403))
                 || (rootCause is IllegalStateException
@@ -2707,3 +2935,15 @@ class PlayerEventListener(
 // drift would reintroduce that risk by a different route.
 internal fun Throwable.anyCause(predicate: (Throwable) -> Boolean): Boolean =
     generateSequence(this) { it.cause }.any(predicate)
+
+// ⚠⚠ "DOES THIS SONG NEED THE NETWORK TO PLAY?" - THE NETWORK HOLD'S GATE. A song of the Offline
+// extension (local MediaStore files) does not, and neither does a download: that is the SAME test
+// StreamableLoader.loadServer uses to serve the file (`downloaded` non-empty and serverIndex ==
+// servers.size, which PlayerService.selectServerIndex picks whenever downloads exist). Everything else
+// does. A local song wrapped by another extension (Unified) reads as network here; onPlayerError's
+// isMissingFile belt still keeps its file errors on today's skip.
+internal fun MediaItem.needsNetwork(): Boolean {
+    if (extensionId == OfflineExtension.metadata.id) return false
+    val files = downloaded
+    return files.isNullOrEmpty() || serverIndex != track.servers.size
+}

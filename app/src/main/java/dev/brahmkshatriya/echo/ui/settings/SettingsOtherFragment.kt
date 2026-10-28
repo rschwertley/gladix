@@ -2,16 +2,28 @@ package dev.brahmkshatriya.echo.ui.settings
 
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.text.format.DateUtils
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
+import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
+import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
+import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
+import dev.brahmkshatriya.echo.utils.AppUpdater
+import dev.brahmkshatriya.echo.utils.AppUpdater.InstallChannel
+import dev.brahmkshatriya.echo.utils.AppUpdater.installChannel
 import dev.brahmkshatriya.echo.utils.ContextUtils.SETTINGS_NAME
+import dev.brahmkshatriya.echo.utils.ContextUtils.copyToClipboard
+import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.registerActivityResultLauncher
 import dev.brahmkshatriya.echo.utils.exportSettings
 import dev.brahmkshatriya.echo.utils.importSettings
@@ -19,6 +31,7 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasCreateDocument
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.hasOpenDocument
 import dev.brahmkshatriya.echo.utils.ui.prefs.SwitchLongClickPreference
 import dev.brahmkshatriya.echo.utils.ui.prefs.TransitionPreference
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 
 class SettingsOtherFragment : BaseSettingsFragment() {
@@ -28,9 +41,15 @@ class SettingsOtherFragment : BaseSettingsFragment() {
 
     class OtherPreference : PreferenceFragmentCompat() {
 
+        private val app by inject<App>()
+        private val extVM by activityViewModel<ExtensionsViewModel>()
+
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             super.onViewCreated(view, savedInstanceState)
             configure()
+            // Re-rendered on every state change AND on every return to this screen (flowWithLifecycle
+            // restarts on STARTED), so "Last checked" also picks up an automatic check made meanwhile.
+            viewLifecycleOwner.observe(extVM.appUpdateUi) { renderAppUpdates(it) }
         }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -39,6 +58,99 @@ class SettingsOtherFragment : BaseSettingsFragment() {
             preferenceManager.sharedPreferencesMode = Context.MODE_PRIVATE
             val screen = preferenceManager.createPreferenceScreen(context)
             preferenceScreen = screen
+
+            // ⚠⚠ APP UPDATES (2026-10-28). ~90% of users install from GitHub and had no visible way to
+            // check by hand - only two long-presses (this screen's switch, the settings sheet's version
+            // line), both running the full app + extensions pass. One section per install channel
+            // (AppUpdater.installChannel).
+            // ⚠️ TV: EVERY ACTION IS A WHOLE Preference ROW, NEVER A BUTTON INSIDE ONE. The framework
+            // makes each row a single focusable, clickable item the D-pad centre activates; a nested
+            // button needs hand-wired nextFocus and is where TV focus usually gets lost. The Version row
+            // is selectable for the same reason (an unbroken focus chain from the toolbar down), and
+            // the Update row is inserted BELOW Check now, so focus stays on the pressed row.
+            PreferenceCategory(context).apply {
+                title = getString(R.string.app_updates)
+                key = "app_updates"
+                isIconSpaceReserved = false
+                layoutResource = R.layout.preference_category
+                screen.addPreference(this)
+
+                Preference(context).apply {
+                    key = KEY_APP_VERSION
+                    title = getString(R.string.version)
+                    layoutResource = R.layout.preference
+                    isIconSpaceReserved = false
+                    setOnPreferenceClickListener {
+                        context.copyToClipboard(getString(R.string.version), BuildConfig.VERSION_NAME)
+                        true
+                    }
+                    addPreference(this)
+                }
+
+                when (app.installChannel()) {
+                    InstallChannel.Sideload -> {
+                        Preference(context).apply {
+                            key = KEY_APP_CHECK_NOW
+                            title = getString(R.string.app_update_check_now)
+                            layoutResource = R.layout.preference
+                            isIconSpaceReserved = false
+                            setOnPreferenceClickListener { extVM.checkAppNow(); true }
+                            addPreference(this)
+                        }
+                        Preference(context).apply {
+                            key = KEY_APP_UPDATE
+                            summary = getString(R.string.app_update_available_summary)
+                            layoutResource = R.layout.preference
+                            isIconSpaceReserved = false
+                            isVisible = false
+                            setOnPreferenceClickListener { extVM.installAppNow(requireActivity()); true }
+                            addPreference(this)
+                        }
+                    }
+
+                    InstallChannel.Play -> Preference(context).apply {
+                        key = "app_open_play"
+                        title = getString(R.string.open_in_play_store)
+                        summary = getString(R.string.open_in_play_store_summary)
+                        layoutResource = R.layout.preference
+                        isIconSpaceReserved = false
+                        setOnPreferenceClickListener { openPlayListing(); true }
+                        addPreference(this)
+                    }
+
+                    InstallChannel.OtherStore -> Preference(context).apply {
+                        key = "app_other_store"
+                        summary = getString(R.string.app_update_other_store)
+                        layoutResource = R.layout.preference
+                        isIconSpaceReserved = false
+                        isSelectable = false
+                        addPreference(this)
+                    }
+
+                    // Fail-closed like AppUpdater.isStoreInstall: no in-app install, only the releases
+                    // page, so the user - not the app - decides what goes over this copy.
+                    InstallChannel.Unknown -> Preference(context).apply {
+                        key = "app_open_releases"
+                        title = getString(R.string.open_github_releases)
+                        summary = getString(R.string.app_update_unknown_source, getString(R.string.app_name))
+                        layoutResource = R.layout.preference
+                        isIconSpaceReserved = false
+                        setOnPreferenceClickListener {
+                            // Not openLink, for the reason at openPlayListing: it fails silently
+                            // without a browser, which is the usual TV case.
+                            val repo = getString(R.string.app_github_repo)
+                            val releases = Intent(Intent.ACTION_VIEW, "https://github.com/$repo/releases".toUri())
+                            try {
+                                startActivity(releases)
+                            } catch (_: ActivityNotFoundException) {
+                                createSnack(R.string.could_not_open_github)
+                            }
+                            true
+                        }
+                        addPreference(this)
+                    }
+                }
+            }
 
             SwitchLongClickPreference(context).apply {
                 title = getString(R.string.check_for_updates)
@@ -109,6 +221,75 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                     true
                 }
             }
+        }
+
+        private fun renderAppUpdates(ui: ExtensionsViewModel.AppUpdateUi) {
+            if (!isAdded) return
+            findPreference<Preference>(KEY_APP_VERSION)?.summary = run {
+                // The version NAME only: it already carries the build number (v3.1.NNNNN).
+                val name = BuildConfig.VERSION_NAME.substringBefore('_')
+                val last = app.settings.getLong(AppUpdater.KEY_LAST_APP_UPDATE_CHECK, 0L)
+                val checked = if (last <= 0L) getString(R.string.app_update_never_checked)
+                else getString(
+                    R.string.app_update_last_checked_x,
+                    DateUtils.getRelativeTimeSpanString(last, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+                )
+                "$name\n$checked"
+            }
+            val appName = getString(R.string.app_name)
+            findPreference<Preference>(KEY_APP_CHECK_NOW)?.summary = when (ui) {
+                ExtensionsViewModel.AppUpdateUi.Idle ->
+                    getString(R.string.app_update_check_now_summary, appName)
+                ExtensionsViewModel.AppUpdateUi.Checking -> getString(R.string.app_update_checking)
+                ExtensionsViewModel.AppUpdateUi.Busy -> getString(R.string.app_update_busy)
+                ExtensionsViewModel.AppUpdateUi.UpToDate -> getString(R.string.app_update_up_to_date, appName)
+                is ExtensionsViewModel.AppUpdateUi.Available,
+                is ExtensionsViewModel.AppUpdateUi.Downloading ->
+                    getString(R.string.app_update_check_now_summary, appName)
+                is ExtensionsViewModel.AppUpdateUi.Failed -> ui.text
+            }
+            findPreference<Preference>(KEY_APP_UPDATE)?.run {
+                val found = when (ui) {
+                    is ExtensionsViewModel.AppUpdateUi.Available -> ui.found
+                    is ExtensionsViewModel.AppUpdateUi.Downloading -> ui.found
+                    else -> null
+                }
+                // Stays ENABLED while downloading, and taps are ignored by installAppNow instead:
+                // disabling a focused row on TV makes focus jump.
+                isVisible = found != null
+                if (found != null) {
+                    title = getString(R.string.app_update_available_x, found.version)
+                    summary = getString(
+                        if (ui is ExtensionsViewModel.AppUpdateUi.Downloading) R.string.app_update_downloading
+                        else R.string.app_update_available_summary
+                    )
+                }
+            }
+        }
+
+        // Gladix's own listing: packageName at runtime IS the listed package for a Play install
+        // (build.gradle.kts applicationId), so nothing is hard-coded. Not ExtensionInfoFragment.openLink,
+        // which swallows a failure silently - a TV without a browser would then do nothing at all.
+        private fun openPlayListing() {
+            val id = requireContext().packageName
+            val market = Intent(Intent.ACTION_VIEW, "market://details?id=$id".toUri())
+                .setPackage("com.android.vending")
+            val web = Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$id".toUri())
+            try {
+                startActivity(market)
+            } catch (_: ActivityNotFoundException) {
+                try {
+                    startActivity(web)
+                } catch (_: ActivityNotFoundException) {
+                    createSnack(R.string.could_not_open_play_store)
+                }
+            }
+        }
+
+        private companion object {
+            const val KEY_APP_VERSION = "app_version"
+            const val KEY_APP_CHECK_NOW = "app_check_now"
+            const val KEY_APP_UPDATE = "app_update_install"
         }
     }
 }

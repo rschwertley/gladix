@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.ImportType
 import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
@@ -21,6 +22,8 @@ import dev.brahmkshatriya.echo.extensions.InstallationUtils.uninstallApp
 import dev.brahmkshatriya.echo.extensions.InstallationUtils.uninstallFile
 import dev.brahmkshatriya.echo.extensions.db.models.ExtensionEntity
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
+import dev.brahmkshatriya.echo.ui.common.ErrorCategory
+import dev.brahmkshatriya.echo.ui.common.classify
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionInstallerBottomSheet.Companion.createLinksDialog
 import dev.brahmkshatriya.echo.ui.extensions.list.ExtensionListViewModel
 import dev.brahmkshatriya.echo.utils.AppUpdater
@@ -42,9 +45,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import java.io.File
+import java.text.DateFormat
+import java.util.Date
 
 class ExtensionsViewModel(
     val extensionLoader: ExtensionLoader,
@@ -109,7 +116,28 @@ class ExtensionsViewModel(
     fun update(activity: FragmentActivity, force: Boolean) = viewModelScope.launch {
         if (!force) extensionLoader.isLoaded.first { it }
         if (!force && !shouldCheckForExtensionUpdates()) return@launch
+        // ⚠⚠ STAMPED ON ATTEMPT, BEFORE ANY NETWORK WORK - AND KEPT THAT WAY AS THE DOUBLE-PASS GUARD.
+        // configureExtensionsUpdater calls update(this, false) on EVERY Activity creation, and this
+        // ViewModel survives rotation, so a stamp written at the END would let a rotation mid-check start
+        // a second pass. No recorded reason exists for the early write (upstream d7184731, 2025-06-28;
+        // the Aug 24 note only says the window starts on attempt) - this is the role it is kept for.
+        // ⚠⚠ A CANCELLED PASS GIVES THE WINDOW BACK (2026-10-28). Crashlytics, build 1136: the Activity
+        // was destroyed ~1 s after launch, viewModelScope was cleared mid-check, and the stamp written
+        // here stood for 24 hours although nothing was checked. Rotation does not cancel this scope, so
+        // the guard above is untouched. previousCheck, not 0L: an automatic pass only starts once that
+        // value is over 24h old, so restoring it re-arms the next launch, while a manual check (force)
+        // inside the window gets back exactly the window it had.
+        val previousCheck = app.context.getFromCache<Long>("last_update_check") ?: 0L
         app.context.saveToCache("last_update_check", System.currentTimeMillis())
+        try {
+            runUpdatePass(activity, force)
+        } catch (e: CancellationException) {
+            app.context.saveToCache("last_update_check", previousCheck)
+            throw e
+        }
+    }
+
+    private suspend fun runUpdatePass(activity: FragmentActivity, force: Boolean) {
         activity.cleanupTempApks()
         // Automatic (force = false) is an UNPROMPTED background check and must stay silent unless
         // something actually happens — Play doesn't announce that it looked, and F-Droid removed even
@@ -123,7 +151,17 @@ class ExtensionsViewModel(
         // only ever fires once an update actually exists (updateApp calls it after resolving the
         // URL, before downloading). Declining returns null, which falls through to the extension
         // branch below exactly as "no app update" already does.
-        val appApk = updateApp(app) { activity.ensureCanInstallPackages() }
+        // Under appUpdateMutex so Settings' Check now / Update cannot overlap this app check; the
+        // manual side uses tryLock and shows "already running" rather than waiting.
+        val appCheck = appUpdateMutex.withLock { updateApp(app) { activity.ensureCanInstallPackages() } }
+        val appApk = (appCheck as? AppUpdater.AppUpdateCheck.Ready)?.apk
+        // A failed APP check resets the throttle like `anyFailed` below (see AppUpdater.AppUpdateCheck),
+        // with the same two exceptions the extension pass has: a rate limit (retrying sooner is the loop
+        // the note below closes) and "no releases" (a draft or missing release on our own repo, which a
+        // retry every launch cannot fix - ExtUpdate.PermanentlyFailed's reasoning). Already reported by
+        // updateApp, so nothing is emitted here.
+        val appFailed = appCheck is AppUpdater.AppUpdateCheck.Failed &&
+            !appCheck.error.isGithubRateLimit() && !appCheck.error.isGithubNoReleases()
         runCatching {
             if (appApk != null) {
                 // 0L, not 0: saveToCache picks its folder from T::class.java.simpleName, so an Int
@@ -205,7 +243,7 @@ class ExtensionsViewModel(
                 // summary note. Same user-visible outcome, unrelated mechanism - so a report of
                 // over-frequent checking does NOT identify its own cause.
                 if (rateLimited != null) {
-                    // Back off until the limit actually resets rather than for a full day: line ~109
+                    // Back off until the limit actually resets rather than for a full day: update()
                     // already stamped `now`, so subtracting the window and adding the wait lands the
                     // next eligible check just after the reset. No reset time -> leave the 24h stamp.
                     val waitMs = rateLimited.githubRateLimitReset()
@@ -215,11 +253,123 @@ class ExtensionsViewModel(
                         "last_update_check",
                         System.currentTimeMillis() - updateTime + waitMs + 60_000L
                     )
-                } else if (anyFailed) app.context.saveToCache("last_update_check", 0L)
+                } else if (anyFailed || appFailed) app.context.saveToCache("last_update_check", 0L)
                 else if (!anyUpdateFound && force)
                     message(app.context.getString(R.string.all_extensions_up_to_date))
             }
         }.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
+    }
+
+    /**
+     * Settings -> App updates (SettingsOtherFragment), Sideload installs only. Rendered as the Check now
+     * row's summary and the Update row's visibility - a persistent row rather than a snackbar, because
+     * messageFlow drops what is emitted while the Activity is stopped (see updateApp's residual-risk
+     * note) and a TV user has just come back from the installer.
+     */
+    sealed interface AppUpdateUi {
+        data object Idle : AppUpdateUi
+        data object Checking : AppUpdateUi
+        /** The automatic pass (or another manual action) holds [appUpdateMutex]. */
+        data object Busy : AppUpdateUi
+        data object UpToDate : AppUpdateUi
+        data class Available(val found: AppUpdater.AppLookup.Available) : AppUpdateUi
+        data class Downloading(val found: AppUpdater.AppLookup.Available) : AppUpdateUi
+        data class Failed(val text: String) : AppUpdateUi
+    }
+
+    val appUpdateUi = MutableStateFlow<AppUpdateUi>(AppUpdateUi.Idle)
+
+    // One app check or app install at a time: the automatic pass's updateApp, Check now, Update.
+    // ⚠️ ACCEPTED EDGE: the automatic pass releases it before awaitInstallation, so pressing Update while
+    // the automatic pass's system install dialog is open can start a second download. Rare, and the
+    // installer handles a repeated same-version install.
+    private val appUpdateMutex = Mutex()
+
+    /**
+     * Settings -> App updates -> Check now. APP ONLY, not update(force = true), for three reasons:
+     * update() installs straight away (this shows the version and waits for Update); it spends one
+     * GitHub request per extension against the 60/hour unauthenticated limit on every press; and it
+     * writes and resets the shared last_update_check.
+     * ⚠⚠ THIS NEVER WRITES last_update_check, so the automatic window is left EXACTLY as it was
+     * whether the check succeeds, fails or is cancelled - restore-on-cancel has nothing to restore here.
+     * "Last checked" is AppUpdater.KEY_LAST_APP_UPDATE_CHECK, written by lookUpAppUpdate when GitHub
+     * answers.
+     */
+    fun checkAppNow() = viewModelScope.launch {
+        if (!appUpdateMutex.tryLock()) {
+            appUpdateUi.value = AppUpdateUi.Busy
+            return@launch
+        }
+        try {
+            if (app.networkFlow.value == NetworkConnection.NotConnected) {
+                appUpdateUi.value = AppUpdateUi.Failed(
+                    app.context.getString(R.string.app_update_no_connection)
+                )
+                return@launch
+            }
+            appUpdateUi.value = AppUpdateUi.Checking
+            appUpdateUi.value = when (val found = AppUpdater.lookUpAppUpdate(app)) {
+                is AppUpdater.AppLookup.Available -> AppUpdateUi.Available(found)
+                else -> AppUpdateUi.UpToDate
+            }
+        } catch (e: CancellationException) {
+            appUpdateUi.value = AppUpdateUi.Idle
+            throw e
+        } catch (e: Exception) {
+            appUpdateUi.value = AppUpdateUi.Failed(appUpdateFailureText(e))
+        } finally {
+            appUpdateMutex.unlock()
+        }
+    }
+
+    /**
+     * Settings -> App updates -> Update to vX. The automatic path's own install code
+     * (AppUpdater.installAppUpdate + awaitInstallation), so permission prompt, download, stage keys
+     * and failure reporting are identical. Never touches last_update_check either.
+     */
+    fun installAppNow(activity: FragmentActivity) = viewModelScope.launch {
+        val offered = (appUpdateUi.value as? AppUpdateUi.Available)?.found ?: return@launch
+        if (!appUpdateMutex.tryLock()) {
+            appUpdateUi.value = AppUpdateUi.Busy
+            return@launch
+        }
+        try {
+            appUpdateUi.value = AppUpdateUi.Downloading(offered)
+            val result = AppUpdater.installAppUpdate(app, offered) { activity.ensureCanInstallPackages() }
+            // Failed and None (permission declined) were already reported or messaged by installAppUpdate.
+            if (result is AppUpdater.AppUpdateCheck.Ready) awaitInstallation(result.apk).onFailure {
+                if (it is CancellationException) throw it
+                app.throwFlow.emit(it)
+            }
+        } finally {
+            // A successful install replaces this process; anything else offers the update again.
+            if (appUpdateUi.value is AppUpdateUi.Downloading) appUpdateUi.value = AppUpdateUi.Available(offered)
+            appUpdateMutex.unlock()
+        }
+    }
+
+    /**
+     * Plain, actionable text for a failed manual check. Only the unclassified case is REPORTED, to
+     * silentThrowFlow (Crashlytics, never the screen - the row already says it): no connection, a rate
+     * limit and a missing release are expected outcomes, and reporting them would bury an unexpected one.
+     */
+    private suspend fun appUpdateFailureText(e: Throwable): String = app.context.run {
+        when {
+            e.isGithubRateLimit() -> e.githubRateLimitReset()?.let {
+                getString(
+                    R.string.app_update_rate_limited_x,
+                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it * 1000))
+                )
+            } ?: getString(R.string.app_update_rate_limited)
+
+            e.isGithubNoReleases() -> getString(R.string.app_update_no_release)
+            // classify walks the cause chain; getGithubUpdateUrl wraps the network cause.
+            classify(e) == ErrorCategory.Network -> getString(R.string.app_update_no_connection)
+            else -> {
+                app.silentThrowFlow.emit(e)
+                getString(R.string.app_update_failed)
+            }
+        }
     }
 
     data class PromptResult(
