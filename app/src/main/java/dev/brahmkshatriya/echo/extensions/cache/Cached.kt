@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.extensions.cache
 
-import android.util.Log
 import com.mayakapps.kache.FileKache
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
@@ -587,7 +586,6 @@ object Cached {
             // this very state - so the cost is one doomed attempt, not a track that cannot play.
             // NOT persisting a degraded load would have left nothing to fall back to at all.
             if (preferCache) getMedia<T>(app, extension.id, state.item.id).getOrNull()
-                .also { logPreferCache(state.item, it) }
                 ?.takeUnless {
                     (it.item as? Track)?.servers?.isEmpty() == true || it.probesDegraded
                 }
@@ -700,49 +698,6 @@ object Cached {
                     ?: throw it
             }
         }
-    }
-
-    /**
-     * ⚠⚠ [TEMPORARY 2026-10-27] PERISHABLE-CACHE PROBE - one line per preferCache evaluation, on EVERY
-     * path (hit / bypass / miss), so silence can only mean the playback path never ran.
-     * WHAT IT ANSWERS: which stored field a failing Library -> Tracks tap was served. Read it next to
-     * DeezerTrackClient's `token=` and `refusal=` lines and StreamableLoader's `safety_net` line.
-     *   hit, playable=No...           the stored verdict skipped it, with no request made;
-     *   hit, fallback=blank on a graft  the entry lost FALLBACK_ID (Baby Beluga needs it);
-     *   hit, neither, then a refusal    the stored token.
-     * REMOVE when, on the build after 1151, a Library -> Tracks capture shows Maria and Baby Beluga
-     * playing with these lines captured. A capture with no `safety_net` line counts only if some
-     * resolve was seen to FAIL online in it (the net's trigger); otherwise keep the probe.
-     * NEVER LOGS THE TOKEN - length only. The Deezer key names here leave with the probe.
-     * ⚠️ streams= AND stubPlayable= ADDED 2026-10-27 BECAUSE THE TOKEN IS NOT THE ONLY CANDIDATE.
-     * On Deezer a 320 rung goes to the relay with the track id ALONE (DeezerMedia.getMediaUrl posts
-     * {formats, ids}) - no token, no ARL. The token is only sent by the 128 and MP3_MISC rungs
-     * (DeezerMedia.getMP3MediaUrl). So a 320 user meets the stored token only after a step-down, or
-     * when the entry offers no 320 at all - which streams= shows: `[MP3]` is the single MP3_MISC
-     * streamable, which skips the relay entirely whatever the quality setting. stubPlayable= is the
-     * verdict the safety net tests; playable= is the one StreamableLoader.loadServer tests first.
-     *   hit, playable!=Yes, stubPlayable=Yes, no rung lines   the stored verdict (net catches it);
-     *   hit, streams=[MP3], rung q=mp3 refused               the stored token on the MP3_MISC path;
-     *   hit, rung q=320 refused then q=128 refused            relay refusal, then the stored token.
-     */
-    @PublishedApi
-    internal fun logPreferCache(stub: EchoMediaItem, cached: MediaState.Loaded<*>?) {
-        val t = cached?.item as? Track
-        val server = t?.servers?.firstOrNull()
-        val decision = when {
-            cached == null -> "miss"
-            t?.servers?.isEmpty() == true || cached.probesDegraded -> "bypass"
-            else -> "hit"
-        }
-        Log.d(
-            "GladixPlayback",
-            "[TEMPORARY 2026-10-27] preferCache=$decision id=${stub.id} " +
-                "tokenLen=${server?.extras?.get("TRACK_TOKEN")?.length ?: 0} " +
-                "fallback=${if (server?.extras?.get("FALLBACK_ID").isNullOrBlank()) "blank" else "set"} " +
-                "playable=${t?.isPlayable} stubPlayable=${(stub as? Track)?.isPlayable} " +
-                "servers=${t?.servers?.size} streams=${t?.servers?.map { it.title ?: it.quality }} " +
-                "degraded=${cached?.probesDegraded}"
-        )
     }
 
     /**
@@ -1241,7 +1196,7 @@ object Cached {
      *   sends NO token (DeezerMedia.getMediaUrl posts the track id alone to the relay); only the 128
      *   and MP3_MISC rungs send it, so a 320 user meets a stale token only after a step-down or on an
      *   MP3_MISC-only entry. A stored Playable verdict is an equal candidate. The temporary
-     *   GladixPlayback lines (Cached.logPreferCache's note says how to read them) settle which; until
+     *   GladixPlayback lines (removed after the 1153 capture) settle which; until
      *   they do, do not cite this block as proof that the token was the cause.
      *   [UPDATED 2026-10-27, 1152 capture] THEY DID, FOR FALLBACK-GRAFTED SONGS: a hit's stale token
      *   at the 128 rung got an unrecognised answer and the ladder skipped without substituting; the

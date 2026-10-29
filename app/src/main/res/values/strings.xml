@@ -177,6 +177,9 @@
     <string name="system">System</string>
     <string name="check_for_updates">Check for Updates</string>
     <string name="check_for_updates_summary">Look for new updates of both app and extensions, when you open the app.</string>
+    <string name="check_for_extension_updates">Check for extension updates</string>
+    <string name="check_for_extension_updates_summary">Look for new versions of your extensions when you open the app.</string>
+    <string name="tap_to_copy">Tap to copy</string>
     <string name="app_updates">App updates</string>
     <string name="app_update_last_checked_x">Last checked %1$s</string>
     <string name="app_update_never_checked">Not checked yet</string>

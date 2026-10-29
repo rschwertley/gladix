@@ -67,8 +67,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * A 320 rung sends NO token - getMediaUrl posts the track id alone to the relay - so the token
      * only matters at the 128 and MP3_MISC rungs (getMP3MediaUrl), after a step-down. The saved
      * media-state entry is the confirmed location of the fault; the field in it is not. The
-     * temporary `deezer rung` lines name the rung and the refusal, and the app's preferCache line
-     * names the entry's verdict and streams - those settle it.
+     * temporary `deezer rung` lines (removed after the 1153 capture) named the rung and the refusal,
+     * and the app's preferCache line the entry's verdict and streams - those settled it.
      * [UPDATED 2026-10-27, 1152 capture] SETTLED FOR THE SAVED ENTRY: its stale token at 128 got an
      * answer no branch recognised, the `!!` that stood at the no_url branch threw, and the catch
      * skipped without substituting; a fresh token for the same id got token_rights and substituted.
@@ -159,7 +159,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
                 else api.getMP3MediaUrl(track, quality == "128")
             val mjString = mediaJson.toString()
-            if (mjString.contains("License token has no sufficient rights on requested media")) logRung(track, quality, "licence")
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
                 "flac" -> descend(track, "320", retry, topQuality, allowSubstitute, allowRetoken)
                 "320" -> descend(track, "128", retry, topQuality, allowSubstitute, allowRetoken)
@@ -176,7 +175,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // lets keySourceId and the ALT marker both collapse to one obvious form each.
             val finalUrl: String = when {
                 mjString.contains("Track token has no sufficient rights on requested media") || mediaIsEmpty -> {
-                    logRung(track, quality, if (mediaIsEmpty) "media_empty" else "token_rights")
                     // ⚠⚠ STEP DOWN ON THE *SAME TRACK* FIRST. THIS BRANCH USED TO JUMP STRAIGHT
                     // TO FALLBACK_ID, WHICH STREAMS A DIFFERENT RECORDING UNDER THE ORIGINAL'S TITLE.
                     // FIELD REPORT (GitHub issue, 2026-10): "Only Love Can Save Me Now - Acoustic" and
@@ -253,7 +251,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 }
 
                 mjString.contains("An error occurred while decoding track token") -> {
-                    logRung(track, quality, "decode")
                     // ⚠⚠ SAME RECORDING, FRESH TOKEN - NOT A SUBSTITUTION. api.track is
                     // called with currentTrackId, not FALLBACK_ID, so no ALT_VERSION stamp belongs on
                     // the result - and the absence of a stamp here is now the ONLY thing that says so,
@@ -307,7 +304,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // repeat a byte-identical relay request against its shared daily ceiling. There
                 // refusedAtRung only steps down, and the 128 rung below it applies this rule.
                 else -> extractUrlFromJson(mediaJson) ?: run {
-                    logRung(track, quality, "no_url")
                     if (allowRetoken && (quality == "128" || quality == "mp3"))
                         return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
                     return refusedAtRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
@@ -343,7 +339,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // the companion object, where those notes moved rather than being deleted.
             val keySourceId = currentTrackId
 
-            logRung(track, quality, "none")
             Streamable.server(
                 id = finalUrl,
                 quality = qualityValue,
@@ -370,8 +365,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // duplicate pass was also an UNDECLARED retry - the declared one is loadStreamableMedia's
             // two attempts with a 2 s delay, which this does not touch.
             if (e is LadderDescentException) throw e.cause ?: e
-            // After the unwrap, so a failure already logged by a nested rung is not logged twice.
-            logRung(track, quality, "thrown:${e::class.simpleName}")
             if (e.message?.contains("Song not available") == true) {
                 if (retry) {
                     // Deliberate best-effort fallback: the cause is logged above; rethrowing would change
@@ -792,10 +785,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // function, so this gate never sees that entry's token. The 1152 capture showed exactly that
         // token failing at 128. The check for it is at the top of createStreamableForQuality's try,
         // fed by TRACK_TOKEN_EXPIRE in the streamables built below.
-        // [TEMPORARY 2026-10-27] perishable-cache probe - removal condition at the app's
-        // Cached.logPreferCache. println, so it lands on logcat's System.out tag, not GladixPlayback:
-        // this module is plain JVM and has no android.util.Log. The message carries the prefix.
-        println("GladixPlayback [TEMPORARY 2026-10-27] deezer loadTrack id=${original.id} token=${original.tokenState()}")
         val track = if (!original.hasUsableToken()) {
             val fresh = runCatching {
                 api.track(original.id)["results"].objOrNull()?.let { results ->
@@ -923,28 +912,6 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     }
 
     private fun Track.hasUsableToken(): Boolean = tokenState() == TOKEN_FRESH
-
-    // [TEMPORARY 2026-10-27] perishable-cache probe - removal condition at the app's
-    // Cached.logPreferCache. One line per rung that ENDS, refused or not, so silence means the
-    // rung never ran. `refusal` names the branch: none | licence | token_rights | media_empty |
-    // decode | thrown. Same System.out note as loadTrack's line.
-    // via= names who was asked, because only one of them is sent the token: `relay` for flac/320
-    // (DeezerMedia.getMediaUrl - track id only), `account` for 128/mp3 (getMP3MediaUrl - the user's
-    // ARL, licence token and TRACK_TOKEN). tokenLen is printed for `account` rungs only; never the token.
-    // http= is printed for `relay` rungs only: the relay's status for this id's last call
-    // (DeezerMedia.lastRelayStatus), `none` when no response arrived. It separates a relay-wide refusal
-    // (a daily-limit or ban status) from a per-song one, which `refusal=thrown:Exception` alone cannot:
-    // both can carry the same "Song not available" text.
-    private fun logRung(track: Track, quality: String, refusal: String) {
-        val viaAccount = quality == "128" || quality == "mp3"
-        val detail =
-            if (viaAccount) " tokenLen=${track.extras["TRACK_TOKEN"]?.length ?: 0}"
-            else " http=${api.lastRelayStatus(track.id) ?: "none"}"
-        println(
-            "GladixPlayback [TEMPORARY 2026-10-27] deezer rung id=${track.id} q=$quality " +
-                "via=${if (viaAccount) "account" else "relay"}$detail refusal=$refusal"
-        )
-    }
 
     companion object {
         private const val TOKEN_FRESH = "fresh"

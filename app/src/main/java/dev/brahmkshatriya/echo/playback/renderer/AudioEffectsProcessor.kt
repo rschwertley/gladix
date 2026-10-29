@@ -46,6 +46,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // tail starving on cache holes was the other candidate, and it was real); if it survives both
     // the upstream fix and the ENDED fix, revisit the curve as a deliberate DEPARTURE from the
     // reference rather than as a correction to it.
+    // ⚠️ [CORRECTED 2026-10-28] NOT AN OPEN COMPLAINT - DO NOT READ THE LINE ABOVE AS A TASK. The
+    // user's later recorded complaint (Oct 19) was that our 10 felt SHORTER than the reference's 10,
+    // not that too much of the old song carried over, and crossfade at 10 was signed off by ear on
+    // Oct 21-22 (speaker, headphones, an AA drive). That sign-off had the crossfade tail compressed
+    // by Pass A - see OVERLAP_PEDESTAL.
     // ⚠️ LENGTH IS PER-RAMP, NOT A SETTING. Track Fade derived the frame count from a
     // prefs field (crossfadeDurationMs) on every buffer; a crossfade's length is decided once per
     // hand-off (min(fade, tail that actually exists), floored at 1s) and cannot come from a
@@ -165,6 +170,13 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // activeLut is always a valid 65536-entry array before the audio thread reads it. The real unity-gain
     // table (~65k pow() — the onCreate ANR when built in the ctor) is generated OFF-MAIN in init{} below
     // and swapped in by the audio thread via pendingLut, exactly like setTrackGain/resetGain.
+    // ⚠️ [CORRECTED 2026-10-28] THAT "REAL UNITY-GAIN TABLE" WAS PASS A + PASS B, NOT UNITY. init{}
+    // called generateDualStageLUT(0f), whose isNormalizationEnabled defaults to TRUE, so the swapped-in
+    // table compressed 2.5:1 above 0.4 whatever the setting. The main player replaced it at its first
+    // EffectsListener.applyGain; the crossfade sidecar never receives setTrackGain, so it kept it for
+    // life - see OVERLAP_PEDESTAL. Now: gain 0 with normalization off IS the passthrough table
+    // (generateDualStageLUT returns it), so init{} had nothing left to build and is gone; the ctor's
+    // table is the live one until a setTrackGain with a real gain replaces it.
     /**
      * ⚠⚠ THE EQ STAGE, AND IT IS AN ARRAY OF BANDS RATHER THAN ONE BASS FILTER
      * BECAUSE THE NEXT BAND SHOULD BE A LINE OF CODE. Today it holds exactly one [LowShelf] -
@@ -213,26 +225,29 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // the renderer. That cost is not worth paying for closed-form CPU work that cannot throw an unknown
     // type. Deferred deliberately, twice; this note exists so a third sweep does not re-surface it.
     // If anything extension-facing is ever launched here, this needs the handler — see App.exceptionHandler.
+    // [CORRECTED 2026-10-28] "All three scope.launch bodies" is now two: the init{} LUT build is gone
+    // (see the LUT infrastructure note above).
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    init {
-        // Defer the unity-gain LUT off the main thread. Stage with the initial token so the audio thread's
-        // swap gate applies it only while no track has set its own gain yet; a later setTrackGain
-        // (unconditional pendingLut.set) always wins, and compareAndSet(null,…) here never disturbs it.
-        scope.launch {
-            val lut = generateDualStageLUT(0f)
-            pendingLut.compareAndSet(null, currentTrackToken.get() to lut)
-        }
-    }
 
     // Clean unprocessed passthrough for the pre-swap window. The read path is index = rawSample + 32768,
     // output = activeLut[index], so lut[i] = i - 32768 maps every input sample back to ITSELF exactly.
     // (lut[i] = i would add a +32768 DC offset and clip — distortion.) No pow(), so it's cheap on main; it
     // only omits the soft-limiter on >half-scale peaks until the real table swaps in — inaudible, and no
     // audio flows at onCreate anyway.
+    // ⚠️ [CORRECTED 2026-10-28] IT OMITTED PASS A TOO, AND IT IS NO LONGER A PRE-SWAP PLACEHOLDER: it is
+    // the LIVE table whenever the gain is 0 dB and normalization is off, which since
+    // normalization_force_disabled_v1 is always. With fadeGain 1 and no bands the output stage in
+    // queueInput is exact (lut / 32768f * 32768f), so that case is BIT-EXACT through this processor.
     private fun passthroughLut() = ShortArray(65536) { (it - 32768).toShort() }
 
     private fun generateDualStageLUT(gainDb: Float, isNormalizationEnabled: Boolean = true): ShortArray {
+        // ⚠⚠ NO GAIN, NO NORMALIZATION: NOTHING CAN EXCEED FULL SCALE, SO NOTHING TO LIMIT.
+        // Pass B was kept on (2026-06) to protect normalization's boost; at 0 dB it only reshaped
+        // every sample above -6 dBFS (full scale -> 0.926), and the 32767 scaling below moved every
+        // non-zero sample one LSB toward zero. EXACT == IS CORRECT: both callers that mean "no gain"
+        // pass a literal 0f (setTrackGain with normalization off, resetGain). It must not be <=:
+        // a negative gain still has to attenuate.
+        if (gainDb == 0f && !isNormalizationEnabled) return passthroughLut()
         val gainMultiplier = 10.0.pow(gainDb / 20.0)
         val lut = ShortArray(65536)
         for (i in 0..65535) {
@@ -795,6 +810,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * to 1.25, flat at 1.0 after. If the table's curve changes, change this.
      * ⚠️ ONLY REACHED WHEN BANDS ARE ACTIVE, and the magnitude test means a
      * sample under half scale costs one comparison. Slider 0 never reaches it at all.
+     * ⚠️ SINCE 2026-10-28 THE TABLE CARRIES PASS B ONLY WHEN A GAIN IS APPLIED (or
+     * normalization is on); at 0 dB it is the passthrough table, so with bass boost on this is
+     * the only limiter in the chain. "Keep the two in step" still holds for the curve.
      */
     private fun softLimit(sample: Float): Float {
         val x = abs(sample)
@@ -858,6 +876,20 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // compress less, and each leg would come out relatively HOTTER — the opposite of the
         // intent. The limiter is also per-leg and pre-mix, so it cannot see the sum at all; that is
         // precisely why this constant exists rather than relying on it.
+        // ⚠⚠ [CORRECTED 2026-10-28] THE PER-LEG CAP IS 1.0, NOT 0.926, AND THE TAIL WAS NOT 0.926
+        // EITHER. Two things were wrong above:
+        //   - From 2026-10-15 to 2026-10-28 the crossfade TAIL ran PASS A: the sidecar processor
+        //     never receives setTrackGain, so it kept the init{} table, built with
+        //     generateDualStageLUT's isNormalizationEnabled default of TRUE. Its full-scale peak was
+        //     0.577 (-4.8 dB) against the main leg's 0.926 - "runs only when normalization is on" was
+        //     true of the main leg only. The Oct 21-22 by-ear sign-off at slider 10 (speaker,
+        //     headphones, an AA drive) was made with that compressed tail.
+        //   - Since 2026-10-28 gain 0 with normalization off is the passthrough table on BOTH legs,
+        //     so the cap per leg is full scale: the correlated worst-case sum is sqrt(2) = 1.41,
+        //     3.0 dB over, and 0.707 is the value that keeps it <= 1.0. Uncorrelated RMS is still
+        //     flat. Stays 1.0 (user-settled 2026-10-15) unless a listening pass hears grit.
+        // ⚠️ STILL OPEN IF NORMALIZATION IS EVER RE-ENABLED: the sidecar still gets no setTrackGain,
+        // so the tail would play ungained against a gained main leg.
         const val OVERLAP_PEDESTAL = 1.0f
     }
 }

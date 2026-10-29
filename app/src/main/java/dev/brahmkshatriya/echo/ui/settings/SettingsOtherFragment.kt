@@ -43,6 +43,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
 
         private val app by inject<App>()
         private val extVM by activityViewModel<ExtensionsViewModel>()
+        private val channel by lazy { app.installChannel() }
 
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             super.onViewCreated(view, savedInstanceState)
@@ -87,7 +88,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                     addPreference(this)
                 }
 
-                when (app.installChannel()) {
+                when (channel) {
                     InstallChannel.Sideload -> {
                         Preference(context).apply {
                             key = KEY_APP_CHECK_NOW
@@ -152,18 +153,56 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                 }
             }
 
-            SwitchLongClickPreference(context).apply {
-                title = getString(R.string.check_for_updates)
-                summary = getString(R.string.check_for_updates_summary)
-                key = "check_for_updates"
-                layoutResource = R.layout.preference_switch
+            // ⚠️ THIS SWITCH GOVERNS THE WHOLE AUTOMATIC PASS, NOT ONE HALF OF IT. Its only reader is
+            // ExtensionsViewModel.shouldCheckForExtensionUpdates, which gates update(force = false):
+            // the app check, then every extension. Outside Sideload the app half returns at
+            // AppUpdater.updateApp's isStoreInstall gate, so there it governs extensions only - hence
+            // the label, and why it is NOT hidden on Play: hiding it would remove the only way to
+            // stop daily extension updates there.
+            // Its own category since 2026-10-28, directly after App updates, so on a store install an
+            // extensions-only switch does not sit under the "App updates" header. The header row
+            // takes no D-pad focus (PreferenceCategory.isEnabled is false, and Preference
+            // .onBindViewHolder disables the row's views from it; androidx.preference 1.2.1), so the
+            // focus order on this screen is unchanged.
+            PreferenceCategory(context).apply {
+                title = getString(R.string.extensions)
+                key = "extension_updates"
                 isIconSpaceReserved = false
-                setDefaultValue(true)
+                layoutResource = R.layout.preference_category
                 screen.addPreference(this)
-                setOnLongClickListener {
-                    val viewModel by activityViewModel<ExtensionsViewModel>()
-                    viewModel.update(requireActivity(), true)
+
+                SwitchLongClickPreference(context).apply {
+                    val checksApp = channel == InstallChannel.Sideload
+                    title = getString(
+                        if (checksApp) R.string.check_for_updates else R.string.check_for_extension_updates
+                    )
+                    summary = getString(
+                        if (checksApp) R.string.check_for_updates_summary
+                        else R.string.check_for_extension_updates_summary
+                    )
+                    key = "check_for_updates"
+                    layoutResource = R.layout.preference_switch
+                    isIconSpaceReserved = false
+                    setDefaultValue(true)
+                    addPreference(this)
+                    setOnLongClickListener {
+                        val viewModel by activityViewModel<ExtensionsViewModel>()
+                        viewModel.update(requireActivity(), true)
+                    }
                 }
+            }
+
+            // Own category (2026-10-28) so Export/Import do not render under the Extensions header above.
+            // Hidden when NEITHER row can show: PreferenceGroupAdapter.createVisiblePreferencesList adds
+            // a visible group's header whatever its children's visibility (androidx.preference 1.2.1),
+            // so a category of two hidden rows would be an empty header.
+            val settingsFile = PreferenceCategory(context).apply {
+                title = getString(R.string.settings)
+                key = "settings_file"
+                isIconSpaceReserved = false
+                layoutResource = R.layout.preference_category
+                screen.addPreference(this)
+                isVisible = context.hasCreateDocument() || context.hasOpenDocument()
             }
 
             TransitionPreference(context).apply {
@@ -172,7 +211,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                 summary = getString(R.string.export_settings_summary)
                 layoutResource = R.layout.preference
                 isIconSpaceReserved = false
-                screen.addPreference(this)
+                settingsFile.addPreference(this)
                 isVisible = context.hasCreateDocument()
                 setOnPreferenceClickListener {
                     val contract = ActivityResultContracts.CreateDocument("application/json")
@@ -197,7 +236,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                 summary = getString(R.string.import_settings_summary)
                 layoutResource = R.layout.preference
                 isIconSpaceReserved = false
-                screen.addPreference(this)
+                settingsFile.addPreference(this)
                 isVisible = context.hasOpenDocument()
                 setOnPreferenceClickListener {
                     val contract = ActivityResultContracts.OpenDocument()
@@ -234,7 +273,11 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                     R.string.app_update_last_checked_x,
                     DateUtils.getRelativeTimeSpanString(last, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
                 )
-                "$name\n$checked"
+                // "Last checked" only where it can move: KEY_LAST_APP_UPDATE_CHECK is written by
+                // AppUpdater.lookUpAppUpdate, which runs only past updateApp's isStoreInstall gate - so
+                // on every other channel it would read "Not checked yet" for ever.
+                val tap = getString(R.string.tap_to_copy)
+                if (channel == InstallChannel.Sideload) "$name\n$checked\n$tap" else "$name\n$tap"
             }
             val appName = getString(R.string.app_name)
             findPreference<Preference>(KEY_APP_CHECK_NOW)?.summary = when (ui) {

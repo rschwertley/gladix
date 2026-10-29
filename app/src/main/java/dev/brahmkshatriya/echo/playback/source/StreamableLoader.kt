@@ -27,7 +27,6 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.exceptions.TrackUnavailableException
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.utils.HealthMonitor
-import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -110,24 +109,11 @@ class StreamableLoader(
     ): Pair<MediaItem, Result<Streamable.Media.Server>> {
         val cause = first.second.exceptionOrNull() ?: return first
         if (cause is CancellationException) throw cause
-        val id = original.track.id
-        if (app.networkFlow.value == NetworkConnection.NotConnected) {
-            logSafetyNet(id, cause, "skipped_offline")
-            return first
-        }
-        if (original.track.isPlayable is Track.Playable.No) {
-            logSafetyNet(id, cause, "skipped_stub_no")
-            return first
-        }
-        if (failedNets.get() >= MAX_FAILED_NETS) {
-            logSafetyNet(id, cause, "skipped_cap")
-            return first
-        }
+        if (app.networkFlow.value == NetworkConnection.NotConnected) return first
+        if (original.track.isPlayable is Track.Playable.No) return first
+        if (failedNets.get() >= MAX_FAILED_NETS) return first
         val remainingMs = RESOLVE_BUDGET_MS - (System.currentTimeMillis() - startMs) - 1_000L
-        if (remainingMs <= 0) {
-            logSafetyNet(id, cause, "no_time")
-            return first
-        }
+        if (remainingMs <= 0) return first
         val retried = withTimeoutOrNull(remainingMs) {
             // A failed reload is a failed retry, never a new throw out of load(): the caller gets a
             // Result either way. Cancellation (including this block's own timeout, which loadMedia's
@@ -145,12 +131,6 @@ class StreamableLoader(
             else loadSubtitle(reloaded).getOrNull()
             MediaItemUtils.buildWithBackgroundAndSubtitle(reloaded, background, subtitle) to server
         }
-        val outcome = when {
-            retried == null -> "timeout"
-            retried.second.isSuccess -> "ok"
-            else -> "fail:${retried.second.exceptionOrNull()?.let { it::class.simpleName }}"
-        }
-        logSafetyNet(id, cause, outcome)
         if (retried?.second?.isSuccess == true) failedNets.set(0) else failedNets.incrementAndGet()
         return retried ?: first
     }
@@ -166,23 +146,6 @@ class StreamableLoader(
      * (preloads, crossfade). The 3 is uncalibrated.
      */
     private val failedNets = AtomicInteger(0)
-
-    // [TEMPORARY 2026-10-27] PERISHABLE-CACHE PROBE - the removal condition is at Cached.logPreferCache.
-    // One line on EVERY safety-net evaluation, including the skips, so a missing line means the
-    // first resolve succeeded.
-    // msg= is the DEEPEST message in the chain (the outer one is usually an AppException wrapper),
-    // URL-stripped by the shared scrubbedForCrashlytics, then any run of 40+ token-alphabet characters
-    // redacted - a TRACK_TOKEN or ARL can never print, while track ids (digits, <= ~12) and Deezer's own
-    // sentences survive. Capped at 120.
-    private fun logSafetyNet(id: String, cause: Throwable, outcome: String) {
-        val deepest = generateSequence(cause) { it.cause }.mapNotNull { it.message }.lastOrNull()
-        val msg = deepest?.replace(OPAQUE_RUN, "<redacted>")?.scrubbedForCrashlytics(120)
-        Log.d(
-            "GladixPlayback",
-            "[TEMPORARY 2026-10-27] safety_net id=$id cause=${cause::class.simpleName} " +
-                "msg=\"$msg\" retry=$outcome"
-        )
-    }
 
     private suspend fun <T> withClient(
         mediaItem: MediaItem,
@@ -297,8 +260,5 @@ class StreamableLoader(
 
         // See [failedNets].
         const val MAX_FAILED_NETS = 3
-
-        // [TEMPORARY 2026-10-27] logSafetyNet's token guard; leaves with the probe.
-        val OPAQUE_RUN = Regex("[A-Za-z0-9_+/=-]{40,}")
     }
 }

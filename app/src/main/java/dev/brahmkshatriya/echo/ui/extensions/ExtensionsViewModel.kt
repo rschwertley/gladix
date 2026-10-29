@@ -520,14 +520,25 @@ class ExtensionsViewModel(
         }
     }
 
+    // ⚠️ ONLY THE BRANCH THAT MATCHES THE IMPORT TYPE RUNS (2026-10-28). Since upstream's d7184731
+    // ("extension loader overhaul", no reason recorded) BOTH ran and only the matching result was
+    // reported: an App extension also had uninstallFile pointed at its installed APK (a double
+    // FileRepository reload and a delete that silently fails), and a File extension also ran
+    // uninstallApp on its file's package name - which would prompt to uninstall an INSTALLED APP of the
+    // same package if one existed. Everything the result handling below relies on lives inside
+    // uninstallApp/waitForResult and is unchanged: completion on Activity destroy, the PackageManager
+    // check before reporting, and CancellationException on a back-out.
+    // BuiltIn never reaches here (ExtensionInfoFragment inflates the menu only for non-BuiltIn); it is
+    // a no-op rather than an uninstallFile on its empty path.
     fun uninstall(activity: FragmentActivity, extension: Extension<*>) = viewModelScope.launch {
-        val fileResult = runCatching {
-            uninstallFile(extensionLoader.fileIgnoreFlow, extension.metadata.path)
-        }.exceptionOrNull()
-        val appResult = runCatching {
-            uninstallApp(activity, extension.metadata.path)
-        }.exceptionOrNull()
-        val result = if (extension.metadata.importType == ImportType.App) appResult else fileResult
+        val path = extension.metadata.path
+        val result = when (extension.metadata.importType) {
+            ImportType.App -> runCatching { uninstallApp(activity, path) }.exceptionOrNull()
+            ImportType.File -> runCatching {
+                uninstallFile(extensionLoader.fileIgnoreFlow, path)
+            }.exceptionOrNull()
+            ImportType.BuiltIn -> return@launch
+        }
         if (result == null) message(app.context.getString(R.string.extension_uninstalled_successfully))
         else if (result is CancellationException) throw result
         else app.throwFlow.emit(result)
