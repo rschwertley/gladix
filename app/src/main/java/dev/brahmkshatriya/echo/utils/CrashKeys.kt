@@ -184,9 +184,12 @@ object CrashKeys {
 
     /**
      * ⚠️ [TEMPORARY 2026-10-19 - COLD-START AUTOPLAY PROBE] Process age in
-     * MILLISECONDS, from the SAME baseline process_age_s uses, so a ColdStartPlayProbe breadcrumb
+     * MILLISECONDS, from the SAME baseline process_age_s uses, so a cold-start probe breadcrumb
      * and the keys in the same report cannot disagree. -1 when markProcessStart never ran (a
-     * pre-unlock spawn). Delete with ColdStartPlayProbe.
+     * pre-unlock spawn). Delete with the cold-start probe.
+     * [CORRECTED 2026-10-29] NOT TEMPORARY ANY MORE, AND IT STAYS. The cold-start probe was deleted on
+     * 2026-10-29 (see ShufflePlayer.play), but IdleStateProbe (the idle_process_ms key) and
+     * StaleFocusProbe.processAge also read this, so "delete with" no longer applies.
      */
     fun processAgeMs(): Long {
         val start = processStartElapsedMs
@@ -417,7 +420,14 @@ object CrashKeys {
     /**
      * How far an app self-update actually got. Written only when a run reaches each point, so the LAST
      * value is the furthest stage reached in this process:
+     *   "awaiting_answer"  (2026-10-30) a release was found and offered in the "Update available"
+     *                dialog; the user has not tapped Update yet. Since 2026-10-30 nothing installs without
+     *                that tap, so this is where a Sideload user sits until they answer.
+     *   "skipped"    (2026-10-30) the user picked Later for that release.
+     *                Both are written only before any install has started in the process
+     *                (AppUpdater.installAttempted), so they never overwrite an install's furthest stage.
      *   "offered"    a release exists whose tag differs from the running build; nothing downloaded yet.
+     *                Since 2026-10-30 written only when Update is tapped (installAppUpdate).
      *                Absence of this key with app_update_gate_passed=true means no update was on offer,
      *                which is the normal state.
      *   "install_permission_missing"  an update existed, was offered, and the install was refused for want
@@ -439,6 +449,10 @@ object CrashKeys {
      * back from the installer. Use it to tell the APP path from the EXTENSION path, which the stack
      * alone cannot do - InstallationUtils.installApp serves both, and ExtensionsViewModel.update
      * takes the app branch and the extension branch as an if/else, never both in one pass.
+     * [CORRECTED 2026-10-30] There is no app branch in the pass any more: it only looks, and the app
+     * install runs from the dialog's or Settings' Update (ExtensionsViewModel.installAppNow). stage=ready
+     * still marks the APP path, since only installAppUpdate writes it; extension installs can now happen
+     * in the same process as an app install, so do not read "the pass did one or the other" from it.
      * First used this way on a build 1100 report (resultCode=1, status=-22); the comment at
      * installApp that claimed the app path could never reach its throw was falsified by it.
      * ⚠⚠ [2026-09-17] ANOTHER WAY THIS PATH PRODUCES NOTHING WITH NOTHING WRONG: A GITHUB

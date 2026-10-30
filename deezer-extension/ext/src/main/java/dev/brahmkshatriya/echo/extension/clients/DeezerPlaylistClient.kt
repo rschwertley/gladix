@@ -50,7 +50,19 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // did not reach any "no longer available" handling, so re-typing it would change a
         // user-visible message on a path nobody has reported. Only the literal is upgraded.
         val resultsObject = jsonObject["results"]?.requireObj("results")!!
-        return parser.run { resultsObject.toPlaylist() }
+        val loaded = parser.run { resultsObject.toPlaylist() }
+        // ⚠️ THE LOVED TRACKS PLAYLIST IS NEVER EDITABLE HERE (2026-10-30). toPlaylist sets isEditable from
+        // PARENT_USER_ID, and the user owns their Loved Tracks, so it would offer edit / remove / reorder
+        // through playlist.deleteSongs etc. - which bypass likeItem's likedTrackIds and may not even be
+        // accepted on that list. Leaving it only by unliking keeps the hearts and the list in one state.
+        // Asked ONLY for a playlist the user owns (isEditable is checked first), so other users' playlists
+        // and non-editable ones make no extra request. Usually answered from the session cache, since the
+        // tile already fetched it; if not (the loved list opened from a Home "Recently played" card before
+        // Library loaded), this is the session's one best-effort getUserData. Opening a playlist is an
+        // ordinary load, not a login or start-up path, so the 1108 rule at lovedTracksIdOrNull holds.
+        return if (loaded.isEditable && loaded.id == deezerExtension.lovedTracksIdOrNull())
+            loaded.copy(isEditable = false)
+        else loaded
     }
 
     fun loadTracks(playlist: Playlist): Feed<Track> = PagedData.Single {

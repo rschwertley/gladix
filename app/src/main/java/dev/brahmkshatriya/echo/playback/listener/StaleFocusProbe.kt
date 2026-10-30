@@ -14,7 +14,7 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * unproven. So the 30-minute window in AudioFocusListener is a bound on an unknown mechanism, and
  * this is the instrument that turns the next occurrence into a named one.
  *
- * ⚠️ NOT A TEMPORARY PROBE, unlike ColdStartPlayProbe. It reports a refusal, not a
+ * ⚠️ NOT A TEMPORARY PROBE, unlike the cold-start probe (deleted 2026-10-29). It reports a refusal, not a
  * suspicion: every report means a real resume was blocked, which stays worth knowing even once the
  * arming path is identified. There is no removal condition - if `armedBy` turns out to be a path
  * worth fixing at source, FIX IT and leave this reporting the residue.
@@ -40,7 +40,7 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * the interesting frame is.
  *
  * ⚠️ recordException DIRECTLY, WHICH IS A THIRD SITE, AND THE REASON IS THE SAME ONE
- * ColdStartPlayProbe GIVES: App.kt and HealthMonitor are the two permanent sites, and the
+ * THE COLD-START PROBE GAVE (deleted 2026-10-29): App.kt and HealthMonitor are the two permanent sites, and the
  * alternative here - app.throwFlow - SHOWS THE USER A SNACKBAR. A diagnostic must not become a
  * behaviour change, least of all one that fires while the user is asleep.
  */
@@ -61,7 +61,7 @@ object StaleFocusProbe {
             val error = StaleFocusResumeBlocked(
                 "blocked a focus resume armed by " + armedBy + " " + ageMs + "ms ago"
             )
-            // Trimmed the same way ColdStartPlayProbe trims: the frames inside this object say
+            // Trimmed the same way the cold-start probe did: the frames inside this object say
             // nothing, and the interesting one - the focus callback - is just above them.
             val all = Throwable().stackTrace
             val own = StaleFocusProbe::class.java.name

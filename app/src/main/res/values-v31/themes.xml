@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: EMPTY, with the same parent as values/themes.xml, so Base.Theme.Echo resolves to exactly
+         the theme it inherited before 2026-10-30 and the content-based DynamicColors keep working. The
+         Gladix-pink roles in values/ are for API 24-30 only. -->
+    <style name="Platform.Theme.Echo" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar" />
+</resources>

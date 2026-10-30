@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gladix-pink text colour below Android 12 (2026-10-30): mirrors Material's m3_dark_primary_text_disable_only with the echo_m3_* roles. See values/colors.xml. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:alpha="0.6" android:color="@color/echo_m3_opposite_on_background" />
+    <item android:color="@color/echo_m3_opposite_on_background" />
+</selector>

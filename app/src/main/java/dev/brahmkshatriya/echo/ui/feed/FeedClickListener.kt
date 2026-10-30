@@ -345,9 +345,16 @@ open class FeedClickListener(
         // ⚠️ ID COMPARISON SURVIVES UNIFIED: withExtensionId only ever
         // copies extras and capability flags - never `id` - and rows and buttons are injected by
         // the same injectExtensionId pass, so both sides carry identical ids.
+        // ⚠️ BY OCCURRENCE, NOT FIRST MATCH (2026-10-29). Since FeedAdapter.inDisplayOrder the
+        // declared list can be the SCREEN, and under the Artists sort the screen lists a two-artist
+        // song once per artist. The tapped row is the Nth copy of its id in its run, so it maps to the
+        // Nth copy here; with no earlier copy (every other case) that is the first match, as before.
+        // A run with no matching Nth (a one-element run from a carousel) also falls back to the first.
         val declared = declaredTracks()
         val declaredPos = tracks.getOrNull(pos)?.id?.let { tapped ->
-            declared?.indexOfFirst { it.id == tapped }?.takeIf { it >= 0 }
+            val nth = tracks.subList(0, pos).count { it.id == tapped }
+            val hits = declared?.indices?.filter { declared[it].id == tapped }.orEmpty()
+            hits.getOrNull(nth) ?: hits.firstOrNull()
         }
         val vm by fragment.activityViewModels<PlayerViewModel>()
         // ⚠⚠ A TAP RESPECTS THE SHUFFLE STATE, AND THIS SIDE DOES NOT DECIDE IT.
@@ -415,7 +422,7 @@ open class FeedClickListener(
         if (extensionId == null) return notFoundSnack(R.string.extension)
         if (track == null) return notFoundSnack(R.string.track)
         val vm by fragment.activityViewModels<PlayerViewModel>()
-        vm.addToNext(extensionId, track, false)
+        vm.addToNext(extensionId, track, false, undo = true)
         return true
     }
 }

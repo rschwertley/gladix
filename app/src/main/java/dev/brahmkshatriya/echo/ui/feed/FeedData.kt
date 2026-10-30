@@ -123,6 +123,27 @@ data class FeedData(
     var searchQuery: String? = null
     val feedSortState = MutableStateFlow<FeedSort.State?>(null)
 
+    /**
+     * ⚠⚠ WHAT THE LAST RENDER APPLIED, WHICH IS NOT WHAT [feedSortState] AND [searchQuery] SAY NOW.
+     * GitHub #4 follow-up (2026-10-29): with "Reversed" on, a tap in Library -> Tracks queued the rows
+     * ABOVE it, because the tap sliced Feed.Buttons.customTrackList in the EXTENSION'S order while the
+     * screen showed the sorted one. FeedAdapter.inDisplayOrder reads this to queue what is on screen.
+     * ⚠️ WHY A RECORD AND NOT A READ OF THE STATE: searchQuery is written on every keystroke
+     * (ButtonsAdapter's text listener) but the feed re-renders only on submit, so "a query is set" is
+     * true while the rows are still unfiltered - and, with no sort, still PAGED, which would queue a
+     * ~100-item window. Written by [getFeedSourceData] alongside the data it describes.
+     *   [DisplayOrder.Rebuilt]  - a sort field or a search: the shelves were flattened, and the rendered
+     *                             PagedData.Single IS the whole processed list (up to MAX_SORT_SEARCH_ITEMS).
+     *   [DisplayOrder.Reversed] - "Reversed" alone: shelves NOT flattened, so a carousel (Library -> All)
+     *                             keeps its own order and only the sections move.
+     *   [DisplayOrder.Source]   - the extension's order; everything else.
+     */
+    enum class DisplayOrder { Source, Reversed, Rebuilt }
+
+    @Volatile
+    var displayOrder = DisplayOrder.Source
+        private set
+
     // The (extensionId, tabId) the CURRENT feedSortState was loaded for. Captured at the disk read below,
     // in the same block and from the same source, so persistSortState can never pair a fresh tab with a
     // stale state — the defect this whole change exists to remove. feedId is a constructor property and
@@ -361,6 +382,11 @@ data class FeedData(
                 // flow is shared — survives process death and re-arms itself on the next feed load, with
                 // nothing on screen at rest to say why the sections vanished except the sort chip in the
                 // header.
+                // [CORRECTED 2026-10-29] "written back below when sortState.save is set" is stale: that
+                // write was removed by the 2026-09-06 fix (see the NO PERSISTENCE HERE note below). Saved
+                // state is now written only by FeedData.persistSortState, from user actions — the sheet's
+                // Apply and Reset (FeedSortBottomSheet) and the header chips (ButtonsAdapter.configure).
+                // The restore half of this paragraph still holds.
                 //
                 // 2026-09-06 field case: Library -> All rendered as one flat mixed list of playlists,
                 // albums, tracks and artists with no section titles, on Deezer, surviving force-stop.
@@ -374,6 +400,11 @@ data class FeedData(
                 // Nothing in this file ever deletes a saved sort. The header chip path
                 // (ButtonsAdapter.configure -> state.copy(feedSort = null)) does persist a cleared state,
                 // because it keeps save = true and therefore rewrites the entry.
+                // [CORRECTED 2026-10-29] Stale since the 2026-09-06 fix; both claims above are now false.
+                // Reset DOES clear the saved entry: FeedSortBottomSheet's Reset sets FeedSort.State()
+                // (save = false) and calls FeedData.persistSortState, which DELETES the entry when save is
+                // false — as does Apply with Save unticked. The `if (sortState.save)` write it describes no
+                // longer exists. The header-chip half is still right: the chips keep save = true and rewrite.
                 shelves = if (sortState?.feedSort != null || query != null)
                     shelves.flatMap { shelf ->
                         when (shelf) {
@@ -391,8 +422,15 @@ data class FeedData(
                 if (truncated) shelves = shelves.take(MAX_SORT_SEARCH_ITEMS)
                 loadedShelves.value = shelves
                 if (sortState != null) {
-                    shelves = sortState.feedSort?.sorter?.invoke(app.context, shelves) ?: shelves
-                    if (sortState.reversed) shelves = shelves.reversed()
+                    // With a sort field, "Reversed" is applied INSIDE the sorter (see
+                    // FeedSort.sortedMissingLast) so rows with no value stay last in both directions.
+                    // With no sort field there is nothing missing, and the whole list is reversed here.
+                    val feedSort = sortState.feedSort
+                    shelves = when {
+                        feedSort != null -> feedSort.sorter.invoke(app.context, shelves, sortState.reversed)
+                        sortState.reversed -> shelves.reversed()
+                        else -> shelves
+                    }
                     // ⚠️ NO PERSISTENCE HERE. Until 2026-09-06 this block ended with
                     //     if (sortState.save) app.context.saveToCache("$extensionId-$feedId-$tabId", …)
                     // which fired on every render pass and paired a fresh tabId with a stale sortState.
@@ -403,9 +441,16 @@ data class FeedData(
                     // be paired with belongs to whichever tab was selected when it was read.
                 }
                 if (query != null) {
-                    shelves = shelves.searchBy(query) {
-                        listOf(it.title)
+                    // ⚠️ WITH A SORT OR "Reversed" ACTIVE, SEARCH ONLY FILTERS (2026-10-29). searchBy ends
+                    // by re-sorting its hits by match score, which threw away the order the user had just
+                    // chosen. The original index is carried through and restored, so the hits keep the
+                    // sorted order. With no sort active, results stay in relevance order, as before.
+                    // searchBy itself is untouched: the Offline extension's own search relies on its ranking.
+                    val keepOrder = sortState?.feedSort != null || sortState?.reversed == true
+                    val hits = shelves.withIndex().toList().searchBy(query) {
+                        listOf(it.value.title)
                     }.map { it.second }
+                    shelves = (if (keepOrder) hits.sortedBy { it.index } else hits).map { it.value }
                 }
                 // Truncated (would-OOM aggregate / huge playlist): tell the user up front that sort/search
                 // only covered the first N. LEADING so it's seen on load, not after scrolling 15k items.
@@ -417,6 +462,11 @@ data class FeedData(
                         feed = null,
                     )
                 ) + shelves
+                displayOrder = when {
+                    sortState?.feedSort != null || query != null -> DisplayOrder.Rebuilt
+                    sortState?.reversed == true -> DisplayOrder.Reversed
+                    else -> DisplayOrder.Source
+                }
                 PagedData.Single {
                     shelves.toFeedType(
                         feedId,
@@ -430,6 +480,7 @@ data class FeedData(
             }
         } else result.mapCatching { state ->
             state ?: return@mapCatching PagedData.empty()
+            displayOrder = DisplayOrder.Source
             val extId = state.extensionId
             val data = state.feed.pagedData
             data.loadPage(null)

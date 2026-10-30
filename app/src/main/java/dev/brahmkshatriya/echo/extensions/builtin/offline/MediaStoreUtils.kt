@@ -565,13 +565,30 @@ object MediaStoreUtils {
         context: Context,
         playlistsFinal: MutableList<MPlaylist>,
     ) = run {
-        val liked = playlistsFinal.find { it.title == "Liked" }
-        val id = liked?.id ?: context.createPlaylist("Liked")
+        // ⚠️ OUR OWN "Liked" ONLY, FOUND BY ID (2026-10-29). This used to adopt the first playlist TITLED
+        // "Liked" from playlistsFinal, whoever owned it - on API 29+ another app's, or a previous install's
+        // (its ownership is dropped on uninstall), whose members we may read but not change, so every like
+        // failed in guardPlaylistWrite (Crashlytics, build 1146, Poco F1 / Android 16). The id now always
+        // comes from createPlaylist, whose direct query matches only rows THIS install owns - and that
+        // direct query, not playlistsFinal, is what finds our row on Android 16 when the deprecated list
+        // query misses it (see createPlaylist's note (2)). A foreign "Liked" stays in playlistsFinal as an
+        // ordinary playlist; we cannot delete it.
+        // When createPlaylist has to INSERT ours, the foreign list's songs are copied in once
+        // (copyForeignPlaylist). On every later load the owner query finds our row, so no insert and no
+        // copy. playlistsFinal was read before the copy, so this first load shows the foreign list's songs.
+        var copiedFrom: Long? = null
+        val id = context.createPlaylist("Liked") { newId ->
+            copiedFrom = context.copyForeignPlaylist("Liked", newId)
+        }
+        val liked = id?.let { own -> playlistsFinal.find { it.id == own } }
         liked?.let { playlistsFinal.remove(it) }
+        val songs = liked?.songList
+            ?: copiedFrom?.let { from -> playlistsFinal.find { it.id == from } }?.songList?.toMutableSet()
+            ?: mutableSetOf()
         MPlaylist(
             id ?: return@run null,
             context.getString(R.string.playlist_liked),
-            liked?.songList ?: mutableSetOf(),
+            songs,
             context.getString(R.string.playlist_liked_desc),
             liked?.modifiedDate ?: (System.currentTimeMillis() / 1000L)
         )
@@ -593,7 +610,7 @@ object MediaStoreUtils {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     @Suppress("DEPRECATION")
-    fun Context.createPlaylist(title: String): Long? {
+    fun Context.createPlaylist(title: String, onCreated: ((Long) -> Unit)? = null): Long? {
         val playlistsUri = MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI
 
         // (2) Reuse an existing MediaStore playlist row with this name, queried DIRECTLY here rather
@@ -601,12 +618,22 @@ object MediaStoreUtils {
         // 16 and misses the row). This recovers an orphan the list query didn't surface and stops the
         // re-create loop that accumulates duplicate/orphaned "Liked (N)" entries and eventually
         // saturates MediaProvider's buildUniqueFile dedupe → the "Failed to build unique file" throw.
+        // ⚠️ API 29+: ONLY A ROW THIS INSTALL OWNS (2026-10-29). Scoped storage lets us change only our
+        // own playlists, and matching on NAME alone adopted other apps' (see getLikedPlaylist). Our own
+        // row always carries our packageName, so this still finds it on every later load - which is
+        // what keeps the re-create loop above closed. A foreign row with the same name now leads to an
+        // insert; MediaProvider gives the file a unique name ("Liked (1).m3u"), NAME stays `title`.
+        // This also applies to OfflineExtension.createPlaylist, which no longer adopts another app's
+        // playlist of the same name. Below API 29 there is no ownership, and the match is unchanged.
+        val ownedOnly = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         runCatching {
             contentResolver.query(
                 playlistsUri,
                 arrayOf(MediaStore.Audio.Playlists._ID),
-                "${MediaStore.Audio.Playlists.NAME} = ?",
-                arrayOf(title),
+                if (ownedOnly) "${MediaStore.Audio.Playlists.NAME} = ? AND " +
+                        "${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ?"
+                else "${MediaStore.Audio.Playlists.NAME} = ?",
+                if (ownedOnly) arrayOf(title, packageName) else arrayOf(title),
                 null
             )?.use { cursor ->
                 if (cursor.moveToFirst())
@@ -628,9 +655,43 @@ object MediaStoreUtils {
         // file" on orphaned/collided state, plus other MediaProvider failures). Catch broadly and
         // return null so getLikedPlaylist's `id ?: return@run null` degrades gracefully instead of the
         // throw propagating up through getAllSongs → getLibrary and aborting the whole library load.
+        // onCreated runs only after a successful INSERT, never on reuse; its failure is swallowed so the
+        // new playlist is still returned (getLikedPlaylist's copy keeps the empty list, no retry).
         return runCatching {
             contentResolver.insert(playlistsUri, values)?.lastPathSegment?.toLong()
         }.onFailure { Log.e(TAG, "createPlaylist: insert for \"$title\" failed", it) }.getOrNull()
+            ?.also { id -> onCreated?.let { runCatching { it(id) } } }
+    }
+
+    // One-time copy into a playlist we have just created: the songs of the first OTHER playlist named
+    // `title` (same query order createPlaylist's reuse lookup used to adopt from), in play order. Reading
+    // another app's playlist members is allowed; only writing is not. Returns the source id, or null when
+    // there is none. Called only from createPlaylist's onCreated, so it cannot run on a later load.
+    @Suppress("DEPRECATION")
+    private fun Context.copyForeignPlaylist(title: String, into: Long): Long? {
+        val from = contentResolver.query(
+            MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Audio.Playlists._ID),
+            "${MediaStore.Audio.Playlists.NAME} = ? AND ${MediaStore.Audio.Playlists._ID} != ?",
+            arrayOf(title, into.toString()),
+            null
+        )?.use { if (it.moveToFirst()) it.getLong(0) else null } ?: return null
+        val songs = contentResolver.query(
+            MediaStore.Audio.Playlists.Members.getContentUri("external", from),
+            arrayOf(MediaStore.Audio.Playlists.Members.AUDIO_ID),
+            null, null,
+            MediaStore.Audio.Playlists.Members.PLAY_ORDER + " ASC"
+        )?.use { buildList { while (it.moveToNext()) add(it.getLong(0)) } }.orEmpty()
+        if (songs.isNotEmpty()) contentResolver.bulkInsert(
+            MediaStore.Audio.Playlists.Members.getContentUri("external", into),
+            songs.mapIndexed { i, song ->
+                ContentValues().apply {
+                    put(MediaStore.Audio.Playlists.Members.PLAY_ORDER, i + 1)
+                    put(MediaStore.Audio.Playlists.Members.AUDIO_ID, song)
+                }
+            }.toTypedArray()
+        )
+        return from
     }
 
     // Scoped storage (API 29+) lets us modify only MediaStore playlists our app OWNS. When getLikedPlaylist
@@ -641,6 +702,11 @@ object MediaStoreUtils {
     // handled ClientException.NotSupported. That surfaces a clear message to the user and, being a handled
     // client exception, is NOT reported to the crash reporter — turning a noisy non-fatal into a graceful no-op.
     // createPlaylist is already covered by its own runCatching, so it is not routed through here.
+    // [CORRECTED 2026-10-29] "NOT reported to the crash reporter" is false. App's throwFlow collector
+    // (di/App.kt, the FirebaseCrashlytics block) records every error except login-required and auth
+    // rejections, and this one arrived in Crashlytics (build 1146, likeItem → addSongToPlaylist). Kept
+    // reporting deliberately: since getLikedPlaylist adopts only our own Liked, a report from the like
+    // path means that fix failed. The conversion still gives the user a clear message.
     private inline fun <T> guardPlaylistWrite(block: () -> T): T =
         try {
             block()

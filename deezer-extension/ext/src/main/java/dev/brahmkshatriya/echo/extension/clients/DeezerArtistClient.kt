@@ -6,6 +6,7 @@ import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.DeezerApi
@@ -25,7 +26,7 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         val jsonObject = api.artist(artist.id)
         val resultsObject = jsonObject["results"].objOrNull() ?: return@Single emptyList()
 
-        orderedKeys.flatMap { key ->
+        listOfNotNull(likedSongsShelf(artist)) + orderedKeys.flatMap { key ->
             val payload = resultsObject[key] ?: return@flatMap emptyList()
             when (key) {
                 "ALBUMS" -> listOfNotNull(buildAlbumsShelf(artist, payload.jsonObject))
@@ -35,6 +36,35 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
             }
         }
     }.toFeed()
+
+    /**
+     * ⚠️ "LIKED SONGS" - ONE ENTRY, FIRST ON THE PAGE (2026-10-30), like Spotify's: the user's liked songs by
+     * this artist (DeezerExtension.likedByArtist - by artist id, or credited as a guest after "feat."). null
+     * for a guest session or no match, so no entry shows.
+     * ONE ENTRY, NOT ROWS: a song tapped ON the artist page has the artist as its context, which
+     * FeedClickListener.isOrderedCollection does not treat as a collection, so it would start a radio; and
+     * declaring the liked list for the whole artist feed would also catch a liked song in Top. The opened page
+     * is its own feed with showPlayAndShuffle + customTrackList, so a tap queues the list from that song and
+     * Play/Shuffle queue all of it, in the order shown - the 1147 declared-list path, as Library -> Tracks.
+     * REQUESTS: none for the artist page (the liked list is the session's one fetch, usually already made by
+     * the first heart check). Opening the page makes NO song fetch - LikedEntry.toTrack rebuilds the grafted
+     * Tracks with FALLBACK_ID intact - and one markUnplayable batch, as every list open does (1148).
+     */
+    private suspend fun likedSongsShelf(artist: Artist): Shelf? {
+        val liked = deezerExtension.likedByArtist(artist)
+        if (liked.isEmpty()) return null
+        return Shelf.Category(
+            id = "liked",
+            title = "Liked songs",
+            subtitle = if (liked.size == 1) "1 song" else "${liked.size} songs",
+            feed = Feed(listOf()) {
+                val tracks = api.markUnplayable(liked.map { it.toTrack() })
+                tracks.map<Track, Shelf> { it.toShelf() }.toFeedData(
+                    Feed.Buttons(showPlayAndShuffle = true, customTrackList = tracks)
+                )
+            },
+        )
+    }
 
     private fun buildTopTracksShelf(artist: Artist, jObject: JsonObject): List<Shelf> {
         val shelf = parser.run {

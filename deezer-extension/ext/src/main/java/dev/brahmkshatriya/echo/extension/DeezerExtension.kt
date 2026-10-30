@@ -60,6 +60,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -77,6 +79,34 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     private val api by lazy { DeezerApi(session) }
     private val parser by lazy { DeezerParser(session) }
     private var likedTrackIds: HashSet<String>? = null
+    // The Loved Tracks playlist id for Library's "Favorite tracks" tile. null = not fetched yet this
+    // session; "" = fetched and there is none, or the fetch failed (remembered, like likedTrackIds' failure
+    // path, so a failing account costs one request per session, not one per Library load).
+    private var lovedTracksId: String? = null
+
+    /**
+     * The Loved Tracks playlist id, fetched at most once per session, or null.
+     * ⚠⚠ LAZY, FROM TWO ORDINARY LOADS ONLY - DeezerLibraryClient's playlist loads (the tile) and
+     * DeezerPlaylistClient.loadPlaylist for a playlist the user owns (isEditable) - NEVER FROM setLoginUser,
+     * onExtensionSelected, onLogin or any other injection/login path. A throw out of start-up aborted setLoginUser and locked
+     * every Deezer user out (1108, see onExtensionSelected); a network call there is exactly that risk.
+     * ⚠️ BEST-EFFORT: any failure means no tile and is remembered for the session; cancellation rethrows.
+     * ⚠️ NO REQUEST WITHOUT A REAL USER (hasUserId: blank or guest "0"), checked BEFORE the cache read for
+     * the same reason isTrackLoved does - a guest answer must not be remembered into a later login.
+     */
+    suspend fun lovedTracksIdOrNull(): String? {
+        if (!api.hasUserId) return null
+        lovedTracksId?.let { return it.ifEmpty { null } }
+        val id = try {
+            api.lovedTracksId()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        lovedTracksId = id.orEmpty()
+        return id
+    }
 
     override suspend fun getSettingItems(): List<Setting> {
         return listOf(
@@ -388,10 +418,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         when (item) {
             is Track -> {
                 if (shouldLike) {
-                    likedTrackIds?.add(item.id)
+                    noteLiked(item, true)
                     api.addFavoriteTrack(item.id)
                 } else {
-                    likedTrackIds?.remove(item.id)
+                    noteLiked(item, false)
                     api.removeFavoriteTrack(item.id)
                 }
             }
@@ -415,7 +445,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * and when the session had no real user id, the refusal failed the prepare outright (1146).
      * ⚠⚠ THE SAME SHAPE THE MAY 2026 FIX ALREADY CLOSED FOR THE HEART, AND
      * THIS IS THE TWIN IT MISSED. e93d17b2 (2026-05-29, "battery drain") added likedTrackIds +
-     * fetchLikedTrackIds so isItemLiked stopped fetching per call; isItemSaved's Track branch was
+     * fetchLikedTrackIds (now fetchLiked) so isItemLiked stopped fetching per call; isItemSaved's Track branch was
      * already routed through api::getTracks at that point (present since the module landed,
      * 8f4c2f29, 2026-04-22) and was left alone. Nothing was re-introduced - one of two call sites
      * of one endpoint was fixed. If a third ever appears, it belongs here too.
@@ -430,17 +460,76 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      */
     private suspend fun isTrackLoved(track: Track): Boolean {
         if (!api.hasUserId) return false
-        val ids = likedTrackIds ?: fetchLikedTrackIds().also { likedTrackIds = it }
-        return track.id in ids
+        ensureLiked()
+        return track.id in likedTrackIds.orEmpty()
     }
 
-    private suspend fun fetchLikedTrackIds(): HashSet<String> {
-        val dataArray = runCatching {
+    // ⚠️ THE LIKED LIST IS FETCHED AT MOST ONCE PER SESSION, BY WHICHEVER ASKS FIRST (2026-10-30): a heart /
+    // saved check (isTrackLoved) or an artist page (likedByArtist). The Mutex makes "once" true - before it,
+    // two concurrent probes could both fetch nb=10000. A Library -> Tracks load refreshes both for free
+    // (refreshLiked). Callers check hasUserId first.
+    private val likedMutex = Mutex()
+
+    private suspend fun ensureLiked() {
+        if (likedTrackIds != null && likedIndex != null) return
+        likedMutex.withLock { if (likedTrackIds == null || likedIndex == null) fetchLiked() }
+    }
+
+    // ONE favorite_song.getList - the request isTrackLoved always made - now fills BOTH likedTrackIds and
+    // the artist page's light index (likedIndex) from the same records, which it used to discard after reading
+    // SNG_ID. The index is built from the GRAFTED record (graftFavTrack) - see LikedEntry.
+    // A failure still caches an empty set (and an empty index) for the session, as before - see isTrackLoved.
+    // ⚠️ A CANCELLATION NO LONGER DOES (2026-10-30): it is rethrown and nothing is cached, so a cancelled
+    // first probe does not leave every heart reading "not liked" for the whole session.
+    private suspend fun fetchLiked() {
+        val dataArray = try {
             api.getTracks()["results"]?.jsonObject?.get("data")?.jsonArray
-        }.getOrNull() ?: return hashSetOf()
-        return dataArray.mapNotNull {
-            runCatching { it.jsonObject["SNG_ID"]?.jsonPrimitive?.content }.getOrNull()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        val records = dataArray.orEmpty().filterIsInstance<JsonObject>()
+        likedTrackIds = records.mapNotNull {
+            runCatching { it["SNG_ID"]?.jsonPrimitive?.content }.getOrNull()
         }.toHashSet()
+        likedIndex = records.mapNotNull {
+            runCatching { LikedEntry.of(deezerLibraryClient.graftFavTrack(it)) }.getOrNull()
+        }
+    }
+
+    // Light index of the liked songs for the artist page - see LikedEntry. null = not fetched this session.
+    private var likedIndex: List<LikedEntry>? = null
+
+    /**
+     * The user's liked songs by [artist], in liked order (newest first, as favorite_song.getList returns
+     * them), for DeezerArtistClient's "Liked songs" entry. Empty for a guest (no request) or no match.
+     * 0 requests when the list was already fetched this session; otherwise the session's one fetch.
+     */
+    suspend fun likedByArtist(artist: Artist): List<LikedEntry> {
+        if (!api.hasUserId) return emptyList()
+        ensureLiked()
+        return likedIndex.orEmpty().filter { it.isBy(artist) }
+    }
+
+    /** A Library -> Tracks load already fetched and grafted the liked list: refresh both, no request. */
+    fun refreshLiked(grafted: List<Track>) {
+        likedTrackIds = grafted.mapTo(HashSet()) { it.id }
+        likedIndex = grafted.map { LikedEntry.of(it) }
+    }
+
+    // likeItem / saveToLibrary's optimistic write, applied to the index as well as the id set. `?.` as for
+    // the set: an unfetched index stays unfetched and the next real fetch gets the truth.
+    private fun noteLiked(track: Track, liked: Boolean) {
+        if (liked) {
+            likedTrackIds?.add(track.id)
+            likedIndex = likedIndex?.let { index ->
+                if (index.any { it.id == track.id }) index else listOf(LikedEntry.of(track)) + index
+            }
+        } else {
+            likedTrackIds?.remove(track.id)
+            likedIndex = likedIndex?.filterNot { it.id == track.id }
+        }
     }
 
     override suspend fun listEditablePlaylists(track: Track?): List<Pair<Playlist, Boolean>> {
@@ -561,10 +650,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                 // the next real fetch gets the truth from the server; inventing one here would mean
                 // answering "not loved" for every other track in the account.
                 if (shouldSave) {
-                    likedTrackIds?.add(item.id)
+                    noteLiked(item, true)
                     api.addFavoriteTrack(item.id)
                 } else {
-                    likedTrackIds?.remove(item.id)
+                    noteLiked(item, false)
                     api.removeFavoriteTrack(item.id)
                 }
             }
@@ -947,6 +1036,13 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     override fun setLoginUser(user: User?) {
         likedTrackIds = null
+        // Plain assignment, no fetch (the 1108 rule): the next isTrackLoved / likedByArtist refetches.
+        likedIndex = null
+        // A plain assignment that cannot throw, and NOTHING ELSE for the loved id here: the fetch is lazy,
+        // from a Library load or an owned playlist's open (lovedTracksIdOrNull). A network call in this
+        // function is the 1108 lockout.
+        // Cleared so a login, logout or user switch never shows the previous account's list.
+        lovedTracksId = null
         // THE ONLY PLACE THE REFUSAL LATCH IS CLEARED, and it covers both directions: a successful
         // login (new credentials, so the old refusal is stale) and a logout (nothing left to refuse).
         // Chosen over onLogin because this is the chokepoint the host drives - it runs on login, on

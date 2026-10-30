@@ -9,4 +9,79 @@
     <color name="amoled_bg_semi">#54FFFFFF</color>
     <color name="amoled_fg">@color/black</color>
     <color name="amoled_fg_semi">#14000000</color>
+
+    <!-- ⚠️ GLADIX PINK BELOW ANDROID 12 (2026-10-30). The Material 3 colour roles for Platform.Theme.Echo
+         (values/themes.xml), used ONLY below API 31: values-v31 defines that style empty, so Android 12+
+         resolves exactly the theme it did before and never reads these. Generated with Google's
+         material-color-utilities 0.3.0 (npm), SchemeContent from #E8185A (@color/app_color), contrast 0 -
+         the same scheme DynamicColors builds from the default seed on 12+ (DynamicColors.applyToActivityIfAvailable
+         -> new SchemeContent(...)). Regenerate rather than hand-edit if app_color changes. Light here, dark in
+         values-night. echo_m3_opposite_* are the OTHER mode's values, for the *Inverse text colours. -->
+    <color name="echo_m3_primary">#B80043</color>
+    <color name="echo_m3_on_primary">#FFFFFF</color>
+    <color name="echo_m3_primary_container">#E41257</color>
+    <color name="echo_m3_on_primary_container">#FFFBFF</color>
+    <color name="echo_m3_inverse_primary">#FFB2BB</color>
+    <color name="echo_m3_primary_fixed">#FFD9DD</color>
+    <color name="echo_m3_primary_fixed_dim">#FFB2BB</color>
+    <color name="echo_m3_on_primary_fixed">#400012</color>
+    <color name="echo_m3_on_primary_fixed_variant">#910033</color>
+    <color name="echo_m3_secondary">#A9324C</color>
+    <color name="echo_m3_on_secondary">#FFFFFF</color>
+    <color name="echo_m3_secondary_container">#FF738C</color>
+    <color name="echo_m3_on_secondary_container">#730327</color>
+    <color name="echo_m3_secondary_fixed">#FFD9DD</color>
+    <color name="echo_m3_secondary_fixed_dim">#FFB2BB</color>
+    <color name="echo_m3_on_secondary_fixed">#400012</color>
+    <color name="echo_m3_on_secondary_fixed_variant">#891836</color>
+    <color name="echo_m3_tertiary">#9F3C00</color>
+    <color name="echo_m3_on_tertiary">#FFFFFF</color>
+    <color name="echo_m3_tertiary_container">#C84D00</color>
+    <color name="echo_m3_on_tertiary_container">#FFFBFF</color>
+    <color name="echo_m3_tertiary_fixed">#FFDBCD</color>
+    <color name="echo_m3_tertiary_fixed_dim">#FFB596</color>
+    <color name="echo_m3_on_tertiary_fixed">#360F00</color>
+    <color name="echo_m3_on_tertiary_fixed_variant">#7D2D00</color>
+    <color name="echo_m3_error">#BA1A1A</color>
+    <color name="echo_m3_on_error">#FFFFFF</color>
+    <color name="echo_m3_error_container">#FFDAD6</color>
+    <color name="echo_m3_on_error_container">#93000A</color>
+    <color name="echo_m3_background">#FFF8F7</color>
+    <color name="echo_m3_on_background">#281719</color>
+    <color name="echo_m3_surface">#FFF8F7</color>
+    <color name="echo_m3_on_surface">#281719</color>
+    <color name="echo_m3_surface_variant">#FFD9DD</color>
+    <color name="echo_m3_on_surface_variant">#5C3F43</color>
+    <color name="echo_m3_inverse_surface">#3F2B2D</color>
+    <color name="echo_m3_inverse_on_surface">#FFECED</color>
+    <color name="echo_m3_surface_bright">#FFF8F7</color>
+    <color name="echo_m3_surface_dim">#F2D3D5</color>
+    <color name="echo_m3_surface_container_lowest">#FFFFFF</color>
+    <color name="echo_m3_surface_container_low">#FFF0F1</color>
+    <color name="echo_m3_surface_container">#FFE9EA</color>
+    <color name="echo_m3_surface_container_high">#FFE1E3</color>
+    <color name="echo_m3_surface_container_highest">#FBDBDD</color>
+    <color name="echo_m3_outline">#906F72</color>
+    <color name="echo_m3_outline_variant">#E5BDC0</color>
+    <color name="echo_m3_opposite_on_surface">#FBDBDD</color>
+    <color name="echo_m3_opposite_on_surface_variant">#E5BDC0</color>
+    <color name="echo_m3_opposite_on_background">#FBDBDD</color>
+    <color name="echo_m3_opposite_primary">#FFB2BB</color>
+    <!-- Hint text alphas: Material's baseline uses these per mode (m3_hint_foreground / m3_dark_hint_foreground). -->
+    <item name="echo_m3_hint_alpha" format="float" type="dimen">0.38</item>
+    <item name="echo_m3_hint_pressed_alpha" format="float" type="dimen">0.6</item>
+    <item name="echo_m3_opposite_hint_alpha" format="float" type="dimen">0.6</item>
+    <item name="echo_m3_opposite_hint_pressed_alpha" format="float" type="dimen">0.87</item>
+
+    <!-- ⚠️ WIDGET COLOURS BELOW ANDROID 12 (2026-10-30). The widget layouts used @color/material_dynamic_* directly,
+         which below API 31 is Material's purple baseline palette (a RemoteViews widget never sees the app's theme).
+         These are the same tones of the SchemeContent primary / tertiary palettes from #E8185A (see above);
+         values-v31/colors.xml aliases every one back to the @color/material_dynamic_* it replaced, so Android 12+
+         is unchanged. Not night-qualified: the material_dynamic_* tones they stand in for are not either. -->
+    <color name="echo_widget_primary40">#BD0045</color>
+    <color name="echo_widget_primary50">#E7175A</color>
+    <color name="echo_widget_primary60">#FF4F76</color>
+    <color name="echo_widget_primary90">#FFD9DD</color>
+    <color name="echo_widget_tertiary50">#CC4F00</color>
+    <color name="echo_widget_tertiary90">#FFDBCD</color>
 </resources>

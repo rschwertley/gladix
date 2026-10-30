@@ -1,7 +1,9 @@
 package dev.brahmkshatriya.echo.extension.clients
 
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
+import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
@@ -101,6 +103,12 @@ class DeezerLibraryClient(
         val results = configs.values.map { cfg ->
             async(cpuDispatcher) {
                 val json = cfg.request(api)
+                // Before the null return below, so the tile shows for an account with no playlists.
+                if (cfg.id == TabId.PLAYLISTS) {
+                    val list = withFavoriteTracks(playlistItems(cfg.extractor(json)))
+                    return@async list.takeIf { it.isNotEmpty() }
+                        ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) } to null
+                }
                 val items = cfg.extractor(json) ?: return@async null to null
                 if (cfg.id == TabId.TRACKS) {
                     // One batched availability pass over the same rows - see DeezerApi.markUnplayable.
@@ -109,6 +117,8 @@ class DeezerLibraryClient(
                     val grafted = api.markUnplayable(
                         items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
                     )
+                    // The artist page's liked index, refreshed from this list at no cost.
+                    deezerExtension.refreshLiked(grafted)
                     val shelf = grafted.takeIf { it.isNotEmpty() }
                         ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) }
                     shelf to grafted
@@ -123,6 +133,9 @@ class DeezerLibraryClient(
         val cfg = configs[id] ?: return emptyList<Shelf>() to null
         deezerExtension.handleArlExpiration()
         val json = cfg.request(api)
+        // Before the empty return below, so the tile shows for an account with no playlists.
+        if (id == TabId.PLAYLISTS.id)
+            return withFavoriteTracks(playlistItems(cfg.extractor(json))).map { it.toShelf() } to null
         val arr = cfg.extractor(json) ?: return emptyList<Shelf>() to null
         return if (id == TabId.TRACKS.id) {
             // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed,
@@ -130,10 +143,40 @@ class DeezerLibraryClient(
             val liked = api.markUnplayable(
                 arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
             )
+            // The artist page's liked index, refreshed from this list at no cost.
+            deezerExtension.refreshLiked(liked)
             liked.map { it.toShelf() } to liked
         } else parser.run {
             arr.mapNotNull { it.jsonObject.toEchoMediaItem()?.toShelf() }
         } to null
+    }
+
+    // Same parse as the other non-Tracks tabs (toEchoMediaItem per object), lenient on a null array.
+    private fun playlistItems(arr: JsonArray?): List<EchoMediaItem> = parser.run {
+        arr.orEmpty().filterIsInstance<JsonObject>().mapNotNull { it.toEchoMediaItem() }
+    }
+
+    /**
+     * ⚠️ THE "FAVORITE TRACKS" TILE (2026-10-30): the account's Loved Tracks playlist, FIRST in the
+     * Playlists tab and in the All tab's Playlists row, like Deezer's own app. pageProfile's playlists tab
+     * does not return it (user-confirmed: no such tile before this).
+     * The id comes from DeezerExtension.lovedTracksIdOrNull (deezer.getUserData's USER.LOVEDTRACKS_ID,
+     * once per session, best-effort, never for a guest) - no request per Library load after the first.
+     * Coverless and count-less by design: opening it loads the real playlist (pagePlaylist + getSongs,
+     * with the FALLBACK graft and markUnplayable) through DeezerPlaylistClient like any playlist, which
+     * also forces isEditable = false for this id. Skipped if pageProfile ever returns the id itself.
+     * Credit: idea from Evoe (github.com/Doggo785/evoe) eb765a67 / 4323cdaf / f1bb17f3; Evoe resolves the
+     * id from Home "Recently played", which getUserData makes unnecessary.
+     */
+    private suspend fun withFavoriteTracks(items: List<EchoMediaItem>): List<EchoMediaItem> {
+        val id = deezerExtension.lovedTracksIdOrNull() ?: return items
+        if (items.any { it is Playlist && it.id == id }) return items
+        return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false)) + items
+    }
+
+    private companion object {
+        // US English, matching Deezer's US app.
+        const val FAVORITE_TRACKS = "Favorite tracks"
     }
 
     // Lenient at every hop (DeezerJson): an empty library tab is a genuine state, and every
@@ -152,7 +195,10 @@ class DeezerLibraryClient(
     // as the id for STREAMING. No FALLBACK → top-level as-is. (Confirmed on-device: karaoke → correct artist;
     // P.J. Proby → live/openable album; fb=no favorites unchanged.) Play-time art is preserved by
     // DeezerTrackClient.loadTrack's merge, so grafted favorites carry through to the player/fullscreen.
-    private fun graftFavTrack(entry: JsonObject): Track = parser.run {
+    // ⚠️ SHARED WITH DeezerExtension.fetchLiked ONLY (internal since 2026-10-30, for the artist page's liked
+    // index). Keep it on the FAVORITES path: never fold this into DeezerParser.toTrack / toEchoMediaItem,
+    // which search and album use and where the FALLBACK direction is the opposite (Aug 6).
+    internal fun graftFavTrack(entry: JsonObject): Track = parser.run {
         val d = entry.unwrap()
         val top = d.toTrack()
         val fb = d["FALLBACK"] as? JsonObject

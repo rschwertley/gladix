@@ -190,6 +190,11 @@
     <string name="app_update_up_to_date">%1$s is up to date</string>
     <string name="app_update_available_x">Update to %1$s</string>
     <string name="app_update_available_summary">Download and install the new version</string>
+    <string name="app_update_available_title">Update available</string>
+    <string name="app_update_version_x">%1$s %2$s</string>
+    <string name="later">Later</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="no_release_notes">No release notes</string>
     <string name="app_update_downloading">Downloading…</string>
     <string name="app_update_no_connection">No connection. Check your network and try again.</string>
     <string name="app_update_rate_limited_x">GitHub is limiting requests. Try again after %1$s.</string>
@@ -247,6 +252,7 @@
 
     <string name="custom_theme_color">Custom Theme Color</string>
     <string name="custom_theme_color_summary">Use a custom theme color, instead of system theme.</string>
+    <string name="needs_android_12">Needs Android 12 or newer</string>
     <string name="add_color">Add color</string>
     <string name="custom_colors">Custom Colors</string>
 
@@ -410,6 +416,7 @@
     <string name="playing_x">Playing %1$s</string>
     <string name="adding_x_to_queue">Adding %1$s to queue</string>
     <string name="adding_x_to_next">Adding %1$s to next</string>
+    <string name="undo">Undo</string>
     <string name="background_gradient">Background Gradient</string>
     <string name="background_gradient_summary">A gradient color tint in  background depending on the context</string>
     <string name="all">All</string>

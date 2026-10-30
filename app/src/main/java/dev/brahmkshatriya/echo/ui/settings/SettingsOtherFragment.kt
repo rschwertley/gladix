@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
+import dev.brahmkshatriya.echo.ui.extensions.AppUpdateDialogFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionsViewModel
 import dev.brahmkshatriya.echo.utils.AppUpdater
 import dev.brahmkshatriya.echo.utils.AppUpdater.InstallChannel
@@ -105,6 +106,28 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                             isIconSpaceReserved = false
                             isVisible = false
                             setOnPreferenceClickListener { extVM.installAppNow(requireActivity()); true }
+                            addPreference(this)
+                        }
+                        // The same notes as the "Update available" dialog, in the same dialog (Update /
+                        // Close). Visible with the Update row - see renderAppUpdates.
+                        Preference(context).apply {
+                            key = KEY_APP_WHATS_NEW
+                            title = getString(R.string.whats_new)
+                            layoutResource = R.layout.preference
+                            isIconSpaceReserved = false
+                            isVisible = false
+                            setOnPreferenceClickListener {
+                                val found = when (val ui = extVM.appUpdateUi.value) {
+                                    is ExtensionsViewModel.AppUpdateUi.Available -> ui.found
+                                    is ExtensionsViewModel.AppUpdateUi.Downloading -> ui.found
+                                    else -> null
+                                }
+                                if (found != null && parentFragmentManager
+                                        .findFragmentByTag(AppUpdateDialogFragment.TAG) == null
+                                ) AppUpdateDialogFragment.newInstance(found, prompt = false)
+                                    .show(parentFragmentManager, AppUpdateDialogFragment.TAG)
+                                true
+                            }
                             addPreference(this)
                         }
                     }
@@ -307,6 +330,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
                         else R.string.app_update_available_summary
                     )
                 }
+                findPreference<Preference>(KEY_APP_WHATS_NEW)?.isVisible = found != null
             }
         }
 
@@ -333,6 +357,7 @@ class SettingsOtherFragment : BaseSettingsFragment() {
             const val KEY_APP_VERSION = "app_version"
             const val KEY_APP_CHECK_NOW = "app_check_now"
             const val KEY_APP_UPDATE = "app_update_install"
+            const val KEY_APP_WHATS_NEW = "app_update_whats_new"
         }
     }
 }

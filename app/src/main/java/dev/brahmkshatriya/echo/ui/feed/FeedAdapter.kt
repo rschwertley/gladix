@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.speech.RecognizerIntent
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -118,14 +119,46 @@ class FeedAdapter(
     fun getAllTracks(feed: FeedType): Pair<List<Track>, Int> {
         if (!isPlayButtonShown) return listOfNotNull(feed.toTrack()) to 0
         val list = snapshot().mapNotNull { it }
-        val index = list.indexOfFirst { it.id == feed.id }
+        // ⚠⚠ THE TAPPED ROW BY IDENTITY FIRST, ITS ID ONLY AS A FALLBACK (2026-10-29). FeedType.Media's
+        // id is the ITEM's id, so a song listed twice - a playlist duplicate, or a two-artist song under
+        // the Artists sort, which lists it once per artist - always resolved to its FIRST copy, and a tap
+        // on the second started the queue at the first. The bound row is the snapshot's own instance in
+        // the normal case; if it is not (a re-render between bind and tap), the id lookup is exactly the
+        // old behaviour.
+        val index = list.indexOfFirst { it === feed }.takeIf { it >= 0 }
+            ?: list.indexOfFirst { it.id == feed.id }
         if (index == -1) return listOf<Track>() to -1
         val from = list.take(index).indexOfLast { it.type != feed.type }
         val to = list.drop(index + 1).indexOfFirst { it.type != feed.type }
         val feeds = list.subList(from + 1, if (to == -1) list.size else index + to + 1)
         val tracks = feeds.mapNotNull { it.toTrack() }
-        val newIndex = tracks.indexOfFirst { it.id == feed.id }
+        // The row's place in the run, counted in tracks - not an id lookup, for the same reason.
+        val inRun = index - (from + 1)
+        val newIndex = if (feeds[inRun].toTrack() == null) -1
+        else feeds.subList(0, inRun).count { it.toTrack() != null }
         return tracks to newIndex
+    }
+
+    /**
+     * ⚠⚠ THE DECLARED LIST IN THE ORDER THE SCREEN SHOWS IT, WHICH IS WHAT A TAP AND PLAY/SHUFFLE
+     * QUEUE. GitHub #4 follow-up (2026-10-29): Feed.Buttons.customTrackList is in the EXTENSION'S
+     * order, so with "Reversed" on a tap in Library -> Tracks queued the rows above it. See
+     * FeedData.displayOrder for what each case means and why it is a record of the render.
+     * ⚠️ Rebuilt RETURNS THE SCREEN AND NOTHING ELSE: a search or a date sort hides tracks, and
+     * queuing them would play songs that are not in the list. NOT de-duplicated - the Artists sort
+     * lists a two-artist song twice, and FeedClickListener.onTracksClicked maps the tapped COPY by
+     * occurrence, so the queue starts at the row that was tapped.
+     * ⚠️ Reversed APPENDS what the screen does not hold: on Library -> All the tracks are a
+     * carousel holding only the start of the list, so the rest follows in the extension's order. On
+     * Library -> Tracks every song is its own row and nothing is appended.
+     */
+    private fun inDisplayOrder(declared: List<Track>): List<Track> = when (viewModel.displayOrder) {
+        FeedData.DisplayOrder.Source -> declared
+        FeedData.DisplayOrder.Rebuilt -> getAllTracks()
+        FeedData.DisplayOrder.Reversed -> getAllTracks().let { shown ->
+            val ids = shown.mapTo(HashSet()) { it.id }
+            shown + declared.filter { it.id !in ids }
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FeedViewHolder<*> {
@@ -210,7 +243,7 @@ class FeedAdapter(
         // Last declared track list for this feed, read by the tap path AT TAP TIME rather than
         // captured when it arrives - see FeedClickListener.declaredTracks.
         var declaredTracks: List<Track>? = null
-        listener.declaredTracks = { declaredTracks }
+        listener.declaredTracks = { declaredTracks?.let(::inDisplayOrder) }
         /**
          * ⚠⚠ THE LAST NON-NULL Buttons, KEPT ACROSS A NULL EMISSION, BECAUSE A
          * NULL ONE USED TO QUEUE A SINGLE SONG. FeedData.buttonsFlow ends in
@@ -391,24 +424,64 @@ class FeedAdapter(
             return adapter
         }
 
+        // ⚠⚠ THE SWIPE NEVER "COMPLETES" AS FAR AS ItemTouchHelper IS CONCERNED, AND THAT IS THE FIX
+        // FOR ROWS LEFT BLANK (2026-10-30). Swipe toward END ("Add to next", Spotify's direction; RIGHT in
+        // LTR, LEFT in RTL via getAbsoluteMovementFlags); there is no START action.
+        // THE DEFECT, DEVICE-CONFIRMED ON 1154: on an album page a swipe added the song but the row stayed
+        // BLANK until it was scrolled away and back. Read from recyclerview 1.4.0: a COMPLETED swipe animates
+        // the row off-screen, then parks it in mPendingCleanup with its RecoverAnimation flagged
+        // mIsPendingCleanup (ItemTouchHelper.select). Callback.onDrawOver only drops ended animations that
+        // are NOT pending cleanup, and Callback.onDraw re-applies translationX = anim.mX (the full width)
+        // every frame, so the row stays off-screen until the view DETACHES (onChildViewDetachedFromWindow
+        // -> clearView). The old onSwiped's notifyItemChanged detaches it only where a change animation
+        // swaps holders; MediaDetailsFragment and DownloadFragment set itemAnimator = null, so the holder
+        // was rebound in place and never detached. Nothing in that path depends on direction.
+        // THE SHAPE NOW: threshold and escape velocity are Float.MAX_VALUE, so every release takes the
+        // CANCELLED-swipe path, which animates the row back to 0 and calls clearView at once - with any
+        // item animator. onChildDraw notes whether the finger is past 25% of the width (the old
+        // threshold), and onSelectedChanged(null, IDLE) - called by select() when the finger lifts - fires
+        // the action. onSwiped is never called. A fling below 25% no longer counts; an ACTION_CANCEL past
+        // it also fires (select(null) again), which is rare because the helper blocks parent intercepts
+        // while a row is selected.
         fun getTouchHelper(listener: FeedClickListener) = ItemTouchHelper(
-            object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.START) {
+            object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.END) {
+                private var armed: MediaViewHolder? = null
+
                 override fun getMovementFlags(
                     recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder,
                 ): Int {
                     if (viewHolder !is MediaViewHolder) return 0
                     if (viewHolder.feed?.item !is Track) return 0
-                    return makeMovementFlags(0, ItemTouchHelper.START)
+                    return makeMovementFlags(0, ItemTouchHelper.END)
                 }
 
-                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                    val feed = (viewHolder as MediaViewHolder).feed ?: return
+                override fun onChildDraw(
+                    c: Canvas, recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder,
+                    dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean,
+                ) {
+                    if (isCurrentlyActive && actionState == ItemTouchHelper.ACTION_STATE_SWIPE)
+                        armed = (viewHolder as? MediaViewHolder)
+                            ?.takeIf { kotlin.math.abs(dX) > recyclerView.width * 0.25f }
+                    super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+                }
+
+                override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                    super.onSelectedChanged(viewHolder, actionState)
+                    if (actionState != ItemTouchHelper.ACTION_STATE_IDLE) {
+                        armed = null
+                        return
+                    }
+                    val holder = armed ?: return
+                    armed = null
+                    val feed = holder.feed ?: return
                     val track = feed.item as? Track ?: return
-                    listener.onTrackSwiped(viewHolder.itemView, feed.extensionId, track)
-                    viewHolder.bindingAdapter?.notifyItemChanged(viewHolder.bindingAdapterPosition)
+                    listener.onTrackSwiped(holder.itemView, feed.extensionId, track)
                 }
 
-                override fun getSwipeThreshold(viewHolder: RecyclerView.ViewHolder) = 0.25f
+                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+
+                override fun getSwipeThreshold(viewHolder: RecyclerView.ViewHolder) = Float.MAX_VALUE
+                override fun getSwipeEscapeVelocity(defaultValue: Float) = Float.MAX_VALUE
                 override fun onMove(
                     recyclerView: RecyclerView,
                     viewHolder: RecyclerView.ViewHolder,

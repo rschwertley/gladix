@@ -60,6 +60,8 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.addedNext
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.addedNextId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.utils.CrashKeys
@@ -87,6 +89,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 
 
 @OptIn(UnstableApi::class)
@@ -123,8 +126,14 @@ class PlayerCallback(
      * favour of available-command editing plus getControllerForCurrentRequest, not removed.
      * ⚠️ THE RETURN IS `super`, NOT A LITERAL RESULT_SUCCESS, so the default cannot
      * drift away from us; AndroidAutoCallback does not override it, so this reaches the interface
-     * default. Package name only - see ColdStartPlayProbe for the whole data rule, and delete this
+     * default. Package name only - see the cold-start probe for the whole data rule, and delete this
      * override with it.
+     * [CORRECTED 2026-10-29] Both the headline and "delete this override with it" are stale. The
+     * override was added as the cold-start probe's records-only hook; it has since become the
+     * controller-STOP conversion and the onTransportIntent hook below, which change behaviour. The
+     * probe was deleted on 2026-10-29 (see ShufflePlayer.play) and only its record line went with
+     * it; this override STAYS. The dispatch facts above (MediaSessionStub / MediaSessionLegacyStub
+     * -> onPlayerCommandRequestOnHandler, still dispatched despite @Deprecated) still hold.
      */
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onPlayerCommandRequest(
@@ -204,7 +213,6 @@ class PlayerCallback(
             return SessionResult.RESULT_ERROR_NOT_SUPPORTED
         }
         if (playerCommand == Player.COMMAND_PLAY_PAUSE) {
-            ColdStartPlayProbe.recordController(controller.packageName)
             // ⚠⚠ EVERY EXTERNAL AND IN-APP TRANSPORT PRESS PASSES HERE, AND NO
             // INTERNAL PAUSE DOES. The notification, lock screen, headset/BT, Android Auto,
             // Assistant and our own button (PlayerViewModel.setPlaying writes through the
@@ -430,18 +438,6 @@ class PlayerCallback(
         customCommand: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> = with(PlayerCommands) {
-        // ⚠⚠ [TEMPORARY 2026-10-19] ColdStartPlayProbe - ONE RECORD FOR EVERY
-        // CUSTOM COMMAND, WHICH REPLACED THREE PER-PATH CALLS THAT KEPT MISSING NEW PATHS.
-        // Custom commands do NOT pass through onPlayerCommandRequest - that hook sees
-        // Player.Commands only - so every handler below that ends in play() was invisible to the
-        // probe unless someone remembered to add a line. Three false alarms came of exactly
-        // that: playItem and radio (1140, 1142) both reached ShufflePlayer.play with
-        // lastSource=none. Recording here instead means a NEW command is covered the day it is
-        // added, with nothing to remember.
-        // ⚠️ customAction IS OUR OWN LABEL, not anything about the user or the
-        // media - the strings are the literals in PlayerCommands ("play", "radio", "backfill").
-        // Same data rule as the `path=` field; see ColdStartPlayProbe.
-        ColdStartPlayProbe.recordCommand(customCommand.customAction)
         val player = session.player
         when (customCommand) {
             likeCommand -> onSetRating(session, controller, ThumbRating(true))
@@ -453,7 +449,7 @@ class PlayerCallback(
             shuffleOffCommand -> setShuffle(player, false)
             playCommand -> playItem(player, args)
             addToQueueCommand -> addToQueue(player, args)
-            addToNextCommand -> addToNext(player, args)
+            addToNextCommand -> addToNext(session, player, args)
             radioCommand -> radio(player, args)
             trackRadioCommand -> trackRadio(player, args)
             sleepTimer -> onSleepTimer(player, args.getLong("ms"))
@@ -837,10 +833,6 @@ class PlayerCallback(
                 if (shuffled == null) bugAsync("track_radio", "player is not a ShufflePlayer")
                 else shuffled.syncShuffleFlag(false)
                 if (playbackState == Player.STATE_IDLE) prepare()
-                // [TEMPORARY 2026-10-20] ColdStartPlayProbe - same as backfillQueue: the source
-                // is re-asserted at the forced play, not only at the tap, so async work between
-                // the two cannot age the record past the probe's 2 s window.
-                ColdStartPlayProbe.recordCommand("trackRadio")
                 playWhenReady = true
             }
             // 2) Generate the radio and append it after the seed (mirrors PlayerRadio.loadPlaylist: start +
@@ -1117,7 +1109,8 @@ class PlayerCallback(
                 // "If user's playItem(albumTrack) had already called setMediaItems(albumTracks) and launched
                 // loadJob_album, that job is cancelled by resume() overwriting the queue."
                 // THE TREE: there is no loadJob_album and never was - PlayerCallback holds exactly two Job
-                // fields, timerJob and nextJob, neither queue-related; resume() cancels nothing; and
+                // fields, timerJob and nextJob, neither queue-related [CORRECTED 2026-10-30: nextJob was
+                // removed with addToNext's running offset; timerJob is the only one now]; resume() cancels nothing; and
                 // `git log -S loadJob_album --all` returns ZERO commits across full history (which reaches
                 // 2023-12-31, so May is well inside it). The identifier never existed. The only loadJob in
                 // the app is StreamableMediaSource's, per-source streamable loading, unrelated to queue
@@ -1306,11 +1299,6 @@ class PlayerCallback(
             player.setMediaItems(upcoming, 0, 0)
             if (!respectShuffle) shuffled?.syncShuffleFlag(false)
             player.prepare()
-            // [TEMPORARY 2026-10-20] ColdStartPlayProbe - re-assert the source HERE, not only at
-            // the tap: freshContextUpcoming above is a network fetch, so by this line the tap's own
-            // record can be many seconds old and outside the probe's 2 s window. This is the line
-            // that would have stopped 1140's false report.
-            ColdStartPlayProbe.recordCommand("backfill")
             player.playWhenReady = true
         }
         SessionResult(RESULT_SUCCESS)
@@ -1399,9 +1387,10 @@ class PlayerCallback(
         SessionResult(RESULT_SUCCESS)
     }
 
-    private var next = 0
-    private var nextJob: Job? = null
-    private fun addToNext(player: Player, args: Bundle) = scope.future {
+    // Source of MediaItemUtils.withAddedNext's addId. Process-lifetime only, like the mark it rides on.
+    private val nextAddId = AtomicLong()
+
+    private fun addToNext(session: MediaSession, player: Player, args: Bundle) = scope.future {
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
         val extId = args.getString("extId") ?: return@future bug("add_to_next", "missing extId")
         val itemArg = args.getSerialized<EchoMediaItem>("item")
@@ -1411,10 +1400,9 @@ class PlayerCallback(
         val loaded = args.getBoolean("loaded", false)
         val extension = extensions.music.getExtension(extId)
             ?: return@future notFound(R.string.extension)
-        nextJob?.cancel()
         // ⚠️ WORSE THAN A PLAIN APPEND IF STALE: the insert position below is computed from the
-        // LIVE queue (currentMediaItemIndex + 1 + next), with `next` a running offset across recent adds, so
-        // a stale insert lands at an index that means nothing in the queue it arrives in.
+        // LIVE queue (after the current song and the marked run behind it), so a stale insert lands at an
+        // index that means nothing in the queue it arrives in.
         val epoch = player.queueEpochOrZero
         val tracks = listTracks(extension, item, loaded).getOrElse {
             if (it is CancellationException) throw it
@@ -1460,15 +1448,20 @@ class PlayerCallback(
         }
         // P5: same source-label treatment as addToQueue — collection context, else track-radio placeholder.
         val addedContext = item.takeUnless { it is Track }
+        val addId = nextAddId.incrementAndGet()
         val mediaItems = addable.map { track ->
-            MediaItemUtils.build(
-                app,
-                downloadFlow.value,
-                MediaState.Unloaded(extId, track),
-                addedContext ?: MediaItemUtils.trackRadioPlaceholder(track)
+            MediaItemUtils.withAddedNext(
+                MediaItemUtils.build(
+                    app,
+                    downloadFlow.value,
+                    MediaState.Unloaded(extId, track),
+                    addedContext ?: MediaItemUtils.trackRadioPlaceholder(track)
+                ),
+                addId
             )
         }
         var inserted = false
+        var wasEmpty = false
         player.with {
             if (queueEpochOrZero != epoch) {
                 Log.d(
@@ -1477,29 +1470,66 @@ class PlayerCallback(
                 )
                 return@with
             }
-            // [TEMPORARY 2026-10-20] ColdStartPlayProbe - recorded INSIDE the branch, so the
-            // source is asserted only when this really does force play (an empty queue).
-            if (mediaItemCount == 0) {
-                ColdStartPlayProbe.recordCommand("addToNext")
-                playWhenReady = true
-            }
-            // Current index so "play next" inserts right after the CURRENT track.
-            val fullIndex = currentMediaItemIndex
-            addMediaItems(fullIndex + 1 + next, mediaItems)
+            wasEmpty = mediaItemCount == 0
+            if (mediaItemCount == 0) playWhenReady = true
+            // ⚠️ "ADD TO NEXT" GOES AFTER EARLIER "ADD TO NEXT" SONGS THAT HAVE NOT PLAYED YET (2026-10-30), so
+            // they play in the order added. The position is read from the LIVE queue: right after the current
+            // song, then past the unbroken run of items marked by MediaItemUtils.withAddedNext. It replaced a
+            // running offset (`next`) that nextJob reset to 0 five seconds after the last add, so a later add
+            // jumped in front of earlier ones; and because that offset counted from currentMediaItemIndex, it
+            // could not simply be kept, as it went stale once playback moved into the added songs.
+            // Reading the queue makes the edge cases fall out: a marked song that has played sits before the
+            // current one and is not scanned; one dragged away or removed simply leaves the run; an unmarked
+            // song dragged into the run ends it there; a shuffle toggle keeps the run in place, in order, right
+            // after the current song (ShufflePlayer.setShuffleModeEnabled), and while shuffled the insert also
+            // lands in `original` behind the run (ShufflePlayer.addMediaItems), so shuffle OFF keeps it too.
+            // Marks are lost on restart (see withAddedNext), and the next add then goes right after the
+            // current song - accepted.
+            var insertAt = currentMediaItemIndex + 1
+            while (insertAt < mediaItemCount && getMediaItemAt(insertAt).addedNext) insertAt++
+            addMediaItems(insertAt, mediaItems)
             prepare()
             inserted = true
         }
-        // Only advance the running offset if the insert actually happened - otherwise `next` drifts past a
-        // drop and the FOLLOWING add lands too far out. (It self-heals after nextJob's 5s reset, but a
-        // silently wrong position in that window is the kind of thing that gets reported as "play next put
-        // it in the wrong place".)
         if (!inserted) return@future error
-        next += mediaItems.size
-        nextJob = scope.launch {
-            delay(5000)
-            next = 0
-        }
+        // ⚠️ THE SWIPE'S MESSAGE IS SENT FROM HERE, AFTER THE INSERT, WITH AN UNDO (2026-10-30). `undo` is
+        // set only by FeedClickListener.onTrackSwiped, whose PlayerViewModel.addToNext then skips its own
+        // pre-insert message. Every failure above returned before this point, so a stale drop, an empty
+        // list or an extension error never offers Undo, and a lone dead track keeps its playableString
+        // message. An add onto an EMPTY queue starts playing it, so there is nothing to undo and no message,
+        // matching the client's rule for that case. Sent here rather than via SessionResult: see the
+        // withBrowser note in PlayerViewModel. SnackBarHandler's dedupe (text + action name) still applies.
+        if (args.getBoolean("undo", false) && !wasEmpty) app.messageFlow.emit(
+            Message(
+                app.context.getString(R.string.adding_x_to_next, item.title),
+                Message.Action(app.context.getString(R.string.undo)) {
+                    scope.launch { session.with { undoAddNext(addId) } }
+                }
+            )
+        )
         SessionResult(RESULT_SUCCESS)
+    }
+
+    // Undo for one swipe's "Add to next": removes the items carrying `addId` that are still AFTER the
+    // current song, i.e. queued and not yet started. One that has played is the current song or has left
+    // the timeline for the back-stack, so it is not touched; if nothing matches, this does nothing and
+    // says nothing. Removal goes through ShufflePlayer's removeMediaItems override, so `original` stays in
+    // sync, in descending contiguous ranges - one call for an ordinary add. CROSSFADE: this is an ordinary
+    // queue edit, so CrossfadeController.onQueueEdit handles it by phase like a queue-screen remove. In
+    // ACTIVE the incoming song is already current, so Undo cannot reach it; ARMED and PREROLL re-decide
+    // with armRefusal.
+    // Repeat All can bring a played item back after the current song with its id; Undo would then remove
+    // it - accepted, same edge case as the addedNext run.
+    private fun Player.undoAddNext(addId: Long) {
+        var i = mediaItemCount - 1
+        val first = currentMediaItemIndex + 1
+        while (i >= first) {
+            if (getMediaItemAt(i).addedNextId != addId) { i--; continue }
+            val end = i + 1
+            while (i - 1 >= first && getMediaItemAt(i - 1).addedNextId == addId) i--
+            removeMediaItems(i, end)
+            i--
+        }
     }
 
     // THE SINGLE LIKE WRITE PATH. Body of BOTH onSetRating overloads below. It takes the target item and
@@ -1604,16 +1634,6 @@ class PlayerCallback(
         // apply the same queue, and a second setMediaItems would tear down and re-prepare. Only the
         // isForPlayback path applies; the metadata-only stub below never sets it.
         if (isForPlayback) state.resumptionApplying = true
-        // ⚠⚠ [TEMPORARY 2026-10-19] ColdStartPlayProbe - BOTH ENDS OF THE
-        // RESTORE, AND THE SECOND ONE IS THE POINT. media3 plays AFTER this future resolves, and
-        // on 1142 the restore of 1,685 items took ~4 s - well past SOURCE_WINDOW_MS - so an
-        // entry-only record expires before the play and the probe filed
-        // "play from MediaSessionImpl$2.onSuccess, lastSource=none". The entry stamp still earns
-        // its place: it attributes a play that arrives while the restore is still running, which
-        // the completion stamp cannot.
-        // ⚠️ isForPlayback ONLY. The metadata-only stub never plays, so recording
-        // it would attribute a later unrelated play to a resumption that never asked for one.
-        if (isForPlayback) ColdStartPlayProbe.recordCommand("resumption")
         return scope.futureCatching {
             if (!isForPlayback) {
                 // System UI metadata-only request (e.g. lock-screen notification after reboot).
@@ -1702,9 +1722,6 @@ class PlayerCallback(
                             }
                 }
                 Log.d("GladixPlayback", "onPlaybackResumption: items=${data.items.size}")
-                // [TEMPORARY 2026-10-19] ColdStartPlayProbe - re-stamped at COMPLETION, which is
-                // the stamp that survives to the play media3 makes next. See the entry call.
-                ColdStartPlayProbe.recordCommand("resumption")
                 MediaItemsWithStartPosition(data.items.map { withUnloaded(it) }, data.index, data.pos)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { state.resumptionApplying = false }

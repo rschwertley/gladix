@@ -288,6 +288,20 @@ object MediaItemUtils {
         return buildWithBundle(item, bundle)
     }
 
+    // Marks an item as queued by "Add to next". Read only by PlayerCallback.addToNext, to find where the
+    // next add goes. Every rebuild above copies the extras, so the mark survives loading, retries and
+    // shuffle; a restored queue is rebuilt by build() from a fresh bundle, so it does NOT survive a restart.
+    // `addId` identifies the ONE add that inserted the item, for the swipe's Undo
+    // (PlayerCallback.undoAddNext); it lives and dies with the mark.
+    fun withAddedNext(item: MediaItem, addId: Long): MediaItem {
+        val bundle = Bundle().apply {
+            item.mediaMetadata.extras?.let { putAll(it) }
+            putBoolean("addedNext", true)
+            putLong("addedNextId", addId)
+        }
+        return buildWithBundle(item, bundle)
+    }
+
     private fun buildWithBundle(mediaItem: MediaItem, bundle: Bundle) = run {
         val item = mediaItem.buildUpon()
         val metadata =
@@ -513,6 +527,8 @@ object MediaItemUtils {
     val Bundle?.state get() = requireNotNull(stateNullable)
     val Bundle?.track get() = state.item
     val Bundle?.isLoaded get() = this?.getBoolean("loaded") ?: false
+    val Bundle?.addedNext get() = this?.getBoolean("addedNext") ?: false
+    val Bundle?.addedNextId get() = this?.getLong("addedNextId", -1L) ?: -1L
     val Bundle?.extensionId get() = state.extensionId
     val Bundle?.context get() = this?.getSerialized<EchoMediaItem?>("context")?.getOrNull()
     val Bundle?.serverIndex get() = this?.getInt("serverIndex", -1) ?: -1
@@ -535,6 +551,8 @@ object MediaItemUtils {
     val MediaItem.extensionId get() = mediaMetadata.extras.extensionId
     val MediaItem.context get() = mediaMetadata.extras.context
     val MediaItem.isLoaded get() = mediaMetadata.extras.isLoaded
+    val MediaItem.addedNext get() = mediaMetadata.extras.addedNext
+    val MediaItem.addedNextId get() = mediaMetadata.extras.addedNextId
     val MediaItem.serverIndex get() = mediaMetadata.extras.serverIndex
     val MediaItem.sourceIndex get() = mediaMetadata.extras.sourceIndex
     val MediaItem.backgroundIndex get() = mediaMetadata.extras.backgroundIndex

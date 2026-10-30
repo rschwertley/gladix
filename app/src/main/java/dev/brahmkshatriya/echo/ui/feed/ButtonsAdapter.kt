@@ -92,16 +92,23 @@ class ButtonsAdapter(
             binding.sortToggleButton.setOnClickListener {
                 listener.onSortClicked(it, feed?.feedId)
             }
+            // ⚠️ THE SAME LIST A TAP QUEUES, IN SCREEN ORDER (GitHub #4 follow-up, 2026-10-29).
+            // listener.declaredTracks is customTrackList passed through FeedAdapter.inDisplayOrder, so a
+            // sort, "Reversed" or a search is honoured here as well; it is the RETAINED list, which only
+            // differs from feed?.buttons during a reload (see FeedAdapter's retainedButtons note).
+            // An album or playlist page (feed.item != null) used to ALWAYS hand the item to vm.play,
+            // which reloads in the source's order - so with a sort applied it now queues the rows as
+            // shown, still with the item as the queue's context. Unsorted pages keep the item path.
             binding.playButton.setOnClickListener {
-                val list = if (feed?.item == null) {
-                    feed?.buttons?.customTrackList ?: getAllLoaded()
+                val list = if (feed?.item == null || viewModel.displayOrder != FeedData.DisplayOrder.Source) {
+                    listener.declaredTracks() ?: getAllLoaded()
                 } else null
                 listener.onPlayClicked(it, feed?.extensionId, feed?.item, list, false)
             }
             binding.shuffleButton.setOnClickListener {
                 val feed = feed
-                val list = if (feed?.item == null) {
-                    feed?.buttons?.customTrackList ?: getAllLoaded()
+                val list = if (feed?.item == null || viewModel.displayOrder != FeedData.DisplayOrder.Source) {
+                    listener.declaredTracks() ?: getAllLoaded()
                 } else null
                 listener.onPlayClicked(it, feed?.extensionId, feed?.item, list, true)
             }

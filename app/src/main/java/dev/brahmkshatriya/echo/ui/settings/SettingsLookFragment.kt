@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.preference.Preference
@@ -73,10 +74,21 @@ class SettingsLookFragment : BaseSettingsFragment() {
                     addPreference(this)
                 }
 
+                // ⚠️ BELOW ANDROID 12 THE CUSTOM COLOUR CANNOT APPLY (2026-10-30), so both rows are disabled
+                // there with a reason. MainActivity.applyUiChanges feeds the colour to
+                // DynamicColors.applyToActivityIfAvailable, which returns at once below API 31; API 24-30 get
+                // the fixed Gladix-pink scheme (Platform.Theme.Echo) instead. The stored values are untouched.
+                // (Material also skips 12/12L devices missing from its maker allow-list; those keep the rows
+                // and the system colours, as before.)
+                val customColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 SwitchPreferenceCompat(context).apply {
                     key = CUSTOM_THEME_KEY
                     title = getString(R.string.custom_theme_color)
-                    summary = getString(R.string.custom_theme_color_summary)
+                    summary = getString(
+                        if (customColorSupported) R.string.custom_theme_color_summary
+                        else R.string.needs_android_12
+                    )
+                    isEnabled = customColorSupported
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
                     setDefaultValue(true)
@@ -90,7 +102,7 @@ class SettingsLookFragment : BaseSettingsFragment() {
                 ColorListPreference(this@LookPreference).apply {
                     key = COLOR_KEY
                     setDefaultValue(context.defaultColor())
-                    isEnabled = preferences.getBoolean(CUSTOM_THEME_KEY, true)
+                    isEnabled = customColorSupported && preferences.getBoolean(CUSTOM_THEME_KEY, true)
                     addPreference(this)
                 }
 

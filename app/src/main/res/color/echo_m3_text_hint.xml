@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gladix-pink text colour below Android 12 (2026-10-30): mirrors Material's m3_hint_foreground with the echo_m3_* roles. See values/colors.xml. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="true" android:state_pressed="true" android:alpha="@dimen/echo_m3_hint_pressed_alpha" android:color="@color/echo_m3_on_background" />
+    <item android:alpha="@dimen/echo_m3_hint_alpha" android:color="@color/echo_m3_on_background" />
+</selector>

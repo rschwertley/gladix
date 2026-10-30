@@ -34,7 +34,6 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
-import dev.brahmkshatriya.echo.playback.ColdStartPlayProbe
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
@@ -299,6 +298,10 @@ class PlayerViewModel(
     // player directly — bypassing the controller seekTo() whose range check crashed on
     // taps outside the serialized window. Do NOT reconstruct a windowed index here (that desync-prone
     // math was the crash source); the service owns the window.
+    // [CORRECTED 2026-10-30] THERE IS NO SERIALIZED WINDOW ANY MORE. b2e30cab (2026-07-06, "remove
+    // ineffective queue windowing") removed it; the controller sees the FULL queue. seekToFullCommand is
+    // still the right route (ShufflePlayer.jumpForwardTo does the forward-jump trim and the stale-index
+    // no-op), but do not reason about a window from this note.
     fun play(position: Int) {
         withBrowser {
             it.sendCustomCommand(seekToFullCommand, Bundle().apply {
@@ -321,6 +324,23 @@ class PlayerViewModel(
         withBrowser { it.removeMediaItem(position) }
     }
 
+    // ⚠️ THE QUEUE SWIPE REMOVES BY mediaId IN THE LIVE TIMELINE, NOT BY ADAPTER POSITION (2026-10-30).
+    // The queue list trails the player by the 50ms debounce in PlayerEventListener.emitFullQueue, which feeds
+    // fullQueueFlow (deliberate: it fixed the June 11 torn-queue rendering - see the note in PlayerFragment),
+    // so right after an auto-advance trim every adapter position is one off and a positional
+    // remove took the WRONG song (or nothing, via ShufflePlayer.removeMediaItem's range guard) while the
+    // swiped row stayed blank. This reads the controller's timeline at dispatch; a duplicated id takes the
+    // occurrence nearest `position`. `onMissing` runs (on main) only when the id is not in the queue at
+    // all, so the caller can release the row. The queue's close button uses this too (with a no-op onMissing).
+    fun removeQueueItem(position: Int, mediaId: String, onMissing: () -> Unit) {
+        withBrowser { controller ->
+            val index = (0 until controller.mediaItemCount)
+                .filter { controller.getMediaItemAt(it).mediaId == mediaId }
+                .minByOrNull { kotlin.math.abs(it - position) }
+            if (index == null) onMissing() else controller.removeMediaItem(index)
+        }
+    }
+
     fun moveQueueItems(fromPos: Int, toPos: Int) {
         withBrowser { it.moveMediaItem(fromPos, toPos) }
     }
@@ -334,8 +354,6 @@ class PlayerViewModel(
     }
 
     fun setPlaying(isPlaying: Boolean) {
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - one of four UI play sources. Records only.
-        if (isPlaying) ColdStartPlayProbe.recordUi()
         withBrowser {
             Log.d("GladixAudio", "setPlaying: isPlaying=$isPlaying playbackState=${it.playbackState} playWhenReady=${it.playWhenReady}")
             it.playWhenReady = isPlaying
@@ -634,9 +652,6 @@ class PlayerViewModel(
          */
         shuffleList: Boolean = false,
     ) {
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - a track tap plays through prepare(), which
-        // is not a controller play COMMAND, so it has to be recorded here or it reads as unsourced.
-        ColdStartPlayProbe.recordUi()
         withBrowser { controller ->
             if (list.isEmpty()) return@withBrowser
             // P2 — current+upcoming: start at the tapped track (index 0) and drop the tracks before it,
@@ -698,11 +713,6 @@ class PlayerViewModel(
         extensionId: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String,
         respectShuffle: Boolean = false,
     ) = viewModelScope.launch {
-        // [TEMPORARY 2026-10-20] ColdStartPlayProbe - the History tap, which had no record site
-        // and filed a false ColdStartAutoplayUnexplained on 1140. Not sufficient on its own: the
-        // play is forced service-side after a network fetch, so PlayerCallback.backfillQueue
-        // re-asserts the source at the point it actually plays.
-        ColdStartPlayProbe.recordUi()
         withBrowser {
             it.sendCustomCommand(backfillCommand, Bundle().apply {
                 putString("extId", extensionId)
@@ -796,8 +806,6 @@ class PlayerViewModel(
     // generated radio — service-side (PlayerCallback.trackRadio) so it works on TV without relying on
     // auto-radio. No loading snackbar (the seed plays immediately), matching the old setQueue path.
     fun playTrackRadio(id: String, track: Track) = viewModelScope.launch {
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - custom command, same reason as setQueue.
-        ColdStartPlayProbe.recordUi()
         withBrowser {
             it.sendCustomCommand(trackRadioCommand, Bundle().apply {
                 putString("extId", id)
@@ -811,8 +819,6 @@ class PlayerViewModel(
     }
 
     fun play(id: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String? = null) = viewModelScope.launch {
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - custom command, same reason as setQueue.
-        ColdStartPlayProbe.recordUi()
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.playing_x, item.title))
         )
@@ -855,11 +861,12 @@ class PlayerViewModel(
         }
     }
 
-    fun addToNext(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
-        // [TEMPORARY 2026-10-20] ColdStartPlayProbe - "play next" onto an EMPTY queue starts
-        // playback service-side, so this tap needs a record like the others.
-        ColdStartPlayProbe.recordUi()
-        if (!(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
+    // `undo` (the track-row swipe only): the service sends the message itself, AFTER the insert and with
+    // an Undo action - see PlayerCallback.addToNext. The long-press menu keeps this immediate message.
+    fun addToNext(
+        id: String, item: EchoMediaItem, loaded: Boolean, undo: Boolean = false,
+    ) = viewModelScope.launch {
+        if (!undo && !(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_next, item.title))
         )
         withBrowser {
@@ -867,6 +874,7 @@ class PlayerViewModel(
                 putString("extId", id)
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
+                putBoolean("undo", undo)
             })
         }
     }

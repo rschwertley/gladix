@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.ContextUtils.appVersion
 import dev.brahmkshatriya.echo.utils.ContextUtils.getTempFile
 import dev.brahmkshatriya.echo.utils.Serializer.toData
+import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -216,6 +217,12 @@ object AppUpdater {
      * A cancellation is never a [Failed] - it is rethrown, see getGithubUpdateUrl.
      */
     sealed interface AppUpdateCheck {
+        /**
+         * [updateApp]'s answer when a release exists (2026-10-30). The automatic pass no longer installs:
+         * it offers the release in AppUpdateDialogFragment and waits for Update. Only [installAppUpdate]
+         * returns [Ready] now.
+         */
+        data class Found(val available: AppLookup.Available) : AppUpdateCheck
         data class Ready(val apk: File) : AppUpdateCheck
         /** No update, a store install, a local build, or the install permission declined. */
         data object None : AppUpdateCheck
@@ -227,24 +234,98 @@ object AppUpdater {
         /** A store or Unknown install, or a local build: this copy has no self-update channel. */
         data object NotApplicable : AppLookup
         data object UpToDate : AppLookup
-        /** [version] is the release tag (or "nightly run <id>"), shown on Settings' Update row. */
-        data class Available(val version: String, val url: String) : AppLookup
+        /**
+         * [version] is the release tag (or "nightly run <id>"), shown on Settings' Update row. [notes] is
+         * the release's raw Markdown "body" (null for nightly, or a release without one); shown through
+         * [releaseNotesText]. Serializable because it is persisted as [KEY_APP_UPDATE_KNOWN].
+         */
+        @Serializable
+        data class Available(val version: String, val url: String, val notes: String? = null) : AppLookup
     }
 
     /**
      * getGithubUpdateUrl's answer: the release TAG as well as the asset url, so Settings can name the
      * version it offers. Extension and add-extension callers read [url] only (getUpdateFileUrl).
      */
-    data class GithubUpdate(val version: String, val url: String)
+    data class GithubUpdate(val version: String, val url: String, val notes: String? = null)
 
     /** Epoch ms of the last app check GitHub ANSWERED, automatic or manual. See [lookUpAppUpdate]. */
     const val KEY_LAST_APP_UPDATE_CHECK = "last_app_update_check"
 
+    // ⚠️ THE OFFERED RELEASE IS HELD STATE, NOT A MESSAGE (2026-10-30). messageFlow drops what is emitted
+    // while MainActivity is stopped (see the residual-risk note in installAppUpdate), so the "Update
+    // available" dialog is shown from these two keys when the Activity resumes, which is also what lets it
+    // reappear on the next app open when the 24h throttle skips the check.
+    //   KEY_APP_UPDATE_KNOWN     the newest release lookUpAppUpdate found, as Available JSON. Written on
+    //                            Available, removed on UpToDate, dropped once the running build IS that tag.
+    //   KEY_APP_UPDATE_ANSWERED  the tag the user answered: Later at once, Update only once the download
+    //                            starts (installAppUpdate's onInstallStart). The AUTOMATIC pass does not
+    //                            offer an answered tag again; a forced check does. A different tag is a new
+    //                            question - string inequality, the same convention as getGithubUpdateUrl.
+    // SharedPreferences, like KEY_LAST_APP_UPDATE_CHECK, not saveToCache (the folder trap).
+    const val KEY_APP_UPDATE_KNOWN = "app_update_known"
+    const val KEY_APP_UPDATE_ANSWERED = "app_update_answered"
+
+    /** The release waiting for an answer, or null. Store/Unknown installs never have one. */
+    fun knownAppUpdate(app: App): AppLookup.Available? {
+        if (app.isStoreInstall()) return null
+        val known = app.settings.getString(KEY_APP_UPDATE_KNOWN, null)
+            ?.toData<AppLookup.Available>()?.getOrNull() ?: return null
+        if (known.version == appVersion().substringBefore('_')) {
+            app.settings.edit { remove(KEY_APP_UPDATE_KNOWN) }
+            return null
+        }
+        return known
+    }
+
+    fun answeredAppUpdate(app: App): String? = app.settings.getString(KEY_APP_UPDATE_ANSWERED, null)
+
+    fun answerAppUpdate(app: App, version: String) {
+        app.settings.edit { putString(KEY_APP_UPDATE_ANSWERED, version) }
+    }
+
+    // True once installAppUpdate has started in this process. The two answer stages below are written only
+    // while it is false, so they never overwrite an install's furthest stage (see CrashKeys.onAppUpdateStage).
+    @Volatile
+    private var installAttempted = false
+
+    /** app_update_stage "awaiting_answer": a release was found and is being offered. */
+    fun markAppUpdateAwaitingAnswer() {
+        if (!installAttempted) CrashKeys.onAppUpdateStage("awaiting_answer")
+    }
+
+    /** app_update_stage "skipped": the user picked Later. */
+    fun markAppUpdateSkipped() {
+        if (!installAttempted) CrashKeys.onAppUpdateStage("skipped")
+    }
+
+    /**
+     * The release notes as plain text. There is no Markdown renderer in the app (2026-10-30), so this
+     * strips our release-note Markdown - headings, bullets, emphasis, inline code, links, images, HTML
+     * comments, rules - to readable text. Blank when there are no notes; the dialog shows
+     * no_release_notes then.
+     */
+    fun releaseNotesText(markdown: String?): String {
+        if (markdown.isNullOrBlank()) return ""
+        val text = markdown.replace("\r\n", "\n")
+            .replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+            .lines().joinToString("\n") { raw ->
+                var l = raw.trimEnd()
+                if (l.matches(Regex("^\\s*([-*_])\\s*(\\1\\s*){2,}$"))) return@joinToString ""
+                l = l.replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
+                l = l.replace(Regex("^(\\s*)[-*+]\\s+"), "\$1• ")
+                l = l.replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), "")
+                l = l.replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "\$1")
+                l = l.replace(Regex("(\\*\\*|__)(.+?)\\1"), "\$2")
+                l = l.replace(Regex("(?<![\\w*])\\*(?!\\s)([^*\\n]+?)(?<!\\s)\\*(?![\\w*])"), "\$1")
+                l = l.replace(Regex("(?<![\\w_])_(?!\\s)([^_\\n]+?)(?<!\\s)_(?![\\w_])"), "\$1")
+                l.replace("`", "")
+            }
+        return text.replace(Regex("\n{3,}"), "\n\n").trim()
+    }
+
     @Suppress("KotlinConstantConditions")
-    suspend fun updateApp(
-        app: App,
-        ensureInstallPermission: suspend () -> Boolean = { true }
-    ): AppUpdateCheck {
+    suspend fun updateApp(app: App): AppUpdateCheck {
         // Install-source gate. This is the ONLY thing standing between a Play user and a sideloaded
         // APK, and it must run before any network work. It sits ALONGSIDE the build-type check
         // below, it does not replace it: they answer different questions. Build type answers "is
@@ -279,7 +360,10 @@ object AppUpdater {
             return AppUpdateCheck.Failed(it)
         }
         val available = found as? AppLookup.Available ?: return AppUpdateCheck.None
-        return installAppUpdate(app, available, ensureInstallPermission)
+        // ⚠️ LOOK, DO NOT INSTALL (2026-10-30). This used to call installAppUpdate straight away, so the
+        // daily pass downloaded and launched the installer unasked. The caller now offers the release
+        // (ExtensionsViewModel.offerAppUpdate) and installAppUpdate runs only from Update.
+        return AppUpdateCheck.Found(available)
     }
 
     /**
@@ -334,8 +418,8 @@ object AppUpdater {
             "release" -> {
                 val currentVersion = version.substringBefore('_')
                 val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
-                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
-                    ?.let { AppLookup.Available(it.version, it.url) } ?: AppLookup.UpToDate
+                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context, needBody = true)
+                    ?.let { AppLookup.Available(it.version, it.url, it.notes) } ?: AppLookup.UpToDate
             }
 
             // UPSTREAM'S CHANNEL, NOT BUILT HERE — kept so a stable build would still work if one were
@@ -343,8 +427,8 @@ object AppUpdater {
             "stable" -> {
                 val currentVersion = version.substringBefore('_')
                 val updateUrl = "https://api.github.com/repos/$githubRepo/releases"
-                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context)
-                    ?.let { AppLookup.Available(it.version, it.url) } ?: AppLookup.UpToDate
+                getGithubUpdateUrl(currentVersion, updateUrl, client, app.context, needBody = true)
+                    ?.let { AppLookup.Available(it.version, it.url, it.notes) } ?: AppLookup.UpToDate
             }
 
             "nightly" -> {
@@ -363,7 +447,13 @@ object AppUpdater {
         // GitHub ANSWERED - this is what Settings shows as "Last checked". Deliberately not the shared
         // last_update_check, which records ATTEMPTS and is reset on failure or cancellation, and
         // SharedPreferences rather than saveToCache, which picks its folder from the value's class.
-        app.settings.edit { putLong(KEY_LAST_APP_UPDATE_CHECK, System.currentTimeMillis()) }
+        app.settings.edit {
+            putLong(KEY_LAST_APP_UPDATE_CHECK, System.currentTimeMillis())
+            // Held state for the dialog and Settings' row - see KEY_APP_UPDATE_KNOWN.
+            if (found is AppLookup.Available)
+                putString(KEY_APP_UPDATE_KNOWN, found.toJson<AppLookup.Available>())
+            else remove(KEY_APP_UPDATE_KNOWN)
+        }
         return found
     }
 
@@ -371,12 +461,19 @@ object AppUpdater {
      * From "offered" onwards, moved verbatim out of [updateApp] (2026-10-28) so Settings' "Update to
      * vX" runs the same permission prompt, download, stage keys and failure reporting as the
      * automatic path.
+     * [CORRECTED 2026-10-30] The automatic path no longer calls this: updateApp returns Found and the
+     * install runs only from Update (ExtensionsViewModel.installAppNow - the dialog or Settings). So the
+     * "next check is 24h away" cost of a declined permission below no longer applies: the tag stays
+     * unanswered (onInstallStart never ran) and the dialog returns on the next app open.
      */
     @Suppress("KotlinConstantConditions")
     suspend fun installAppUpdate(
         app: App,
         available: AppLookup.Available,
         ensureInstallPermission: suspend () -> Boolean,
+        // Called once the permission is in hand, right before the download starts. The dialog's Update
+        // saves its answer here, so a declined permission leaves the tag unanswered (2026-10-30).
+        onInstallStart: () -> Unit = {},
     ): AppUpdateCheck {
         val messageFlow = app.messageFlow
         val appType = BuildConfig.BUILD_TYPE
@@ -384,6 +481,7 @@ object AppUpdater {
         // An update EXISTS and its asset url resolved. Everything above this line is "we looked";
         // everything below is "we are updating". See CrashKeys.onAppUpdateStage for how to read the
         // furthest-stage-reached semantics.
+        installAttempted = true
         CrashKeys.onAppUpdateStage("offered")
 
         // Ask for the install permission HERE — after we know an update exists, before we pull the
@@ -512,6 +610,7 @@ object AppUpdater {
             return AppUpdateCheck.None
         }
 
+        onInstallStart()
         messageFlow.emit(
             Message(
                 app.context.run {
@@ -730,6 +829,11 @@ object AppUpdater {
         // Enables ETag caching. Optional so AddViewModel's one-off add flow needs no change; every
         // looping caller SHOULD pass it, since the loop is what spends the quota.
         context: Context? = null,
+        // OPT-IN, for the app lookup only (it shows the release notes): a cached release with no "body" -
+        // cached before 2026-10-30, when the field was added - is not revalidated with If-None-Match, so
+        // GitHub answers 200 with the body instead of a bodyless 304. One full request per repo, once.
+        // Extension and add-extension callers leave it false and are unchanged.
+        needBody: Boolean = false,
     ) = run {
         // Every message below names the repo. This function has TWO callers — updateApp (the APP
         // update, repo = app_github_repo) and getUpdateFileUrl (the EXTENSION update, repo = that
@@ -749,6 +853,7 @@ object AppUpdater {
         // the repos having lost their releases.
         val cacheKey = "$user/$repo"
         val cached = context?.getFromCache<CachedRelease>(cacheKey, GITHUB_RELEASE_CACHE, true)
+            ?.takeUnless { needBody && it.response.body == null }
         val request = Request.Builder().url(url)
             .apply { cached?.let { header("If-None-Match", it.etag) } }
             .build()
@@ -827,7 +932,8 @@ object AppUpdater {
                     it.name.contains(Build.SUPPORTED_ABIS.first())
                 }.firstOrNull {
                     it.name.endsWith("apk")
-                }?.browserDownloadUrl ?: throw Exception("No EApk assets found for $user/$repo")
+                }?.browserDownloadUrl ?: throw Exception("No EApk assets found for $user/$repo"),
+                res.body
             )
         } else {
             null
@@ -856,7 +962,10 @@ object AppUpdater {
         val tagName: String,
         @SerialName("created_at")
         val createdAt: String,
-        val assets: List<Asset>
+        val assets: List<Asset>,
+        // The release notes (Markdown). Defaulted so CachedRelease entries written before it existed still
+        // decode; see getGithubUpdateUrl's needBody.
+        val body: String? = null,
     ) {
         @Serializable
         data class Asset(

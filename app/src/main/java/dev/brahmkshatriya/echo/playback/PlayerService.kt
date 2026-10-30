@@ -23,6 +23,7 @@ import android.util.Log
 import androidx.annotation.OptIn
 import androidx.car.app.connection.CarConnection
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import androidx.lifecycle.Observer
@@ -128,8 +129,43 @@ class PlayerService : MediaLibraryService() {
     // dispatches the media button intent to MediaSessionImpl.handleMediaButtonEvent() via Handler,
     // which is load-bearing for BT AVRCP PLAY triggering onPlaybackResumption().
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startedByCommand = true
+        // ⚠️ A START AFTER THE IDLE PLACEHOLDER WAS REMOVED PUTS IT BACK (2026-10-30). removeIdlePlaceholder
+        // may already have demoted a bind-started service by the time a media button's
+        // startForegroundService arrives, and that start still owes Android a startForeground within 5
+        // seconds. Re-posting here meets it whichever of the two came first; no ordering is assumed.
+        if (placeholderRemoved) {
+            placeholderRemoved = false
+            startForegroundCompat()
+        }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
+    }
+
+    // Main thread only: written by onStartCommand and removeIdlePlaceholder.
+    private var startedByCommand = false
+    private var placeholderRemoved = false
+
+    /**
+     * Drops startForegroundCompat's placeholder when the cold start found NOTHING to show (2026-10-30).
+     *
+     * ⚠⚠ THE "Gladix"-ONLY NOTIFICATION THAT COULD NOT BE SWIPED AWAY. Device report (Android 11, fresh
+     * GitHub install, never played): the placeholder stayed until the first song. Read from media3-session
+     * 1.11.1 MediaNotificationManager: only updateNotification -> removeNotification ever stops the
+     * foreground, and an update is triggered by onConnected ONLY when shouldShowNotification is true (false
+     * for an empty timeline) or by onEvents for a state / playWhenReady / metadata / timeline change - none
+     * of which an empty, never-played player produces. A saved queue escapes it: the restore's
+     * setMediaItems is a timeline change and the real notification replaces the placeholder.
+     * ⚠️ ONLY FOR A BIND-STARTED SERVICE. A startForegroundService start (a media button with the app
+     * closed) is about to play, and demoting it could make Media3's later promotion a background start
+     * (ForegroundServiceStartNotAllowedException, API 31+). If such a start arrives AFTER this ran,
+     * onStartCommand re-posts the placeholder - see there.
+     * Same call Media3's own removeNotification makes. Called after applyRestoreIfCold returns.
+     */
+    private fun removeIdlePlaceholder(player: Player) {
+        if (startedByCommand || player.mediaItemCount != 0) return
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        placeholderRemoved = true
     }
 
     private lateinit var audioFocusListener: AudioFocusListener
@@ -458,13 +494,6 @@ class PlayerService : MediaLibraryService() {
                 eventListener.clearNetworkHold(releaseFocus = false)
             },
         )
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe needs the two pieces of state it cannot see
-        // from the playback package: whether a head unit is connected and whether the queue is
-        // being restored. The same two lambdas the crossfade controller is given below.
-        ColdStartPlayProbe.attach(
-            androidAuto = { isAndroidAutoConnected },
-            restoring = { state.resumptionApplying },
-        )
 
         val session = MediaLibrarySession.Builder(this, player, callback)
             .setBitmapLoader(PlayerBitmapLoader(this, scope))
@@ -663,6 +692,10 @@ class PlayerService : MediaLibraryService() {
         // and call removeNotification() instead of our provider when the player is idle.
         // startForegroundCompat()'s initial placeholder remains visible until the first real
         // track notification replaces it — this is acceptable and avoids the "Loading…" flash.
+        // [CORRECTED 2026-10-30] It is NOT always replaced: an empty queue (fresh install, Keep queue off,
+        // a cleared queue) produces no first track and no player event, so the "Gladix"-only placeholder
+        // stayed, un-swipeable, until something played. removeIdlePlaceholder now drops it after the cold
+        // restore finds nothing; NEVER mode itself is unchanged.
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
 
         mediaSession = session
@@ -706,7 +739,11 @@ class PlayerService : MediaLibraryService() {
         // App-open apply: the sole restorer for a controller-driven cold start. Main-atomic, gated on an
         // empty player + the resumption marker; KEEP_QUEUE is honored inside applyRestoreIfCold. It does
         // NOT prepare() — same lazy-STATE_READY reason as before; prepare() waits for play().
-        scope.launch { callback.applyRestoreIfCold(player) }
+        scope.launch {
+            callback.applyRestoreIfCold(player)
+            // Nothing restored and nothing playing: see removeIdlePlaceholder.
+            withContext(Dispatchers.Main) { removeIdlePlaceholder(player) }
+        }
         scheduleRestoreSnapshotRelease(player)
     }
 

@@ -100,6 +100,7 @@ class PlaylistTrackAdapter(
             viewModel: EditPlaylistViewModel,
             adapterProvider: () -> PlaylistTrackAdapter
         ): Pair<Listener, ItemTouchHelper> {
+            lateinit var itemTouchHelper: ItemTouchHelper
             val callback = object : ItemTouchHelper.SimpleCallback(
                 ItemTouchHelper.UP or ItemTouchHelper.DOWN, ItemTouchHelper.START
             ) {
@@ -184,13 +185,22 @@ class PlaylistTrackAdapter(
                     return true
                 }
 
+                // ⚠️ A SWIPE THAT REMOVES NOTHING MUST RELEASE ITS ROW (2026-10-30). A completed
+                // swipe leaves the row translated off-screen until it detaches (see the note at
+                // FeedAdapter.getTouchHelper), which a successful Remove does via the list update. On
+                // NO_POSITION, or when EditPlaylistViewModel.edit refuses the remove (it writes back an
+                // unchanged copy, which emits nothing), there is no update, so the row would stay blank.
+                // onChildViewDetachedFromWindow is ItemTouchHelper's own cleanup for that row: it ends
+                // the recover animation and calls clearView, which resets it. It snaps rather than
+                // animates; the normal delete keeps its slide-off.
                 override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                     val pos = viewHolder.bindingAdapterPosition
-                    if (pos == RecyclerView.NO_POSITION) return
-                    viewModel.edit(EditPlaylistViewModel.Action.Remove(listOf(pos)))
+                    val removed = pos != RecyclerView.NO_POSITION &&
+                        viewModel.edit(EditPlaylistViewModel.Action.Remove(listOf(pos)))
+                    if (!removed) itemTouchHelper.onChildViewDetachedFromWindow(viewHolder.itemView)
                 }
             }
-            val itemTouchHelper = ItemTouchHelper(callback)
+            itemTouchHelper = ItemTouchHelper(callback)
             val listener = object : Listener {
                 override fun onTrackClicked(viewHolder: ViewHolder) {
                     itemTouchHelper.startDrag(viewHolder)

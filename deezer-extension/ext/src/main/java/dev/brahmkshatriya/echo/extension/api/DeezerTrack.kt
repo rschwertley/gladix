@@ -96,7 +96,7 @@ class DeezerTrack(private val deezerApi: DeezerApi) {
      * THAN ASSUMING. DeezerExtension.likeItem adds to likedTrackIds BEFORE this call, so on the
      * swallowed path the set already says liked - which is exactly right. (The inverse is a
      * pre-existing gap and is not touched here: on a GENUINE failure the set keeps the
-     * optimistic value. isItemLiked would then lie until the next fetchLikedTrackIds.)
+     * optimistic value. isItemLiked would then lie until the next fetchLikedTrackIds - renamed fetchLiked 2026-10-30.)
      * ⚠️ HERE RATHER THAN IN likeItem, so saveToLibrary's Track branch - the
      * other caller of this method, with the same meaning - gets it too. Only the SONG add is
      * wrapped; album/playlist/show favourites are left exactly as they are, because none of them

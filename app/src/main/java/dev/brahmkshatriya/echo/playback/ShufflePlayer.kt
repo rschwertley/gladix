@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
 import dev.brahmkshatriya.echo.cast.CastState
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.addedNext
 
 @Suppress("unused")
 @OptIn(UnstableApi::class)
@@ -212,11 +213,33 @@ class ShufflePlayer(
         player.shuffleModeEnabled = enabled
     }
 
+    // ⚠️ THE "ADD TO NEXT" RUN IS PINNED ACROSS A TOGGLE (2026-10-30). The unbroken run of items marked by
+    // MediaItemUtils.withAddedNext right after the current song is read from the live timeline BEFORE the
+    // reorder and kept, in order, straight after the current song in both directions; only the rest is
+    // shuffled (ON) or restored to `original` order (OFF). Fresh queues carry no marks, so `pinned` is empty
+    // there and this is the old behaviour exactly. syncShuffleFlag does not come through here.
     override fun setShuffleModeEnabled(enabled: Boolean) {
+        val pinned = (player.currentMediaItemIndex + 1 until mediaItemCount)
+            .map { player.getMediaItemAt(it) }.takeWhile { it.addedNext }
         if (enabled) original = getQueue()
         isShuffled = enabled
-        changeQueue(if (enabled) original.shuffled() else original)
+        changeQueue(if (enabled) original.shuffled() else original, pinned)
         player.shuffleModeEnabled = enabled
+    }
+
+    // Removes one copy of each pinned item, matched by mediaId with multiplicity (the convention
+    // removeMediaItems uses for `original`; identity is unsafe because timeline and `original` copies can
+    // diverge - see getItemAt). A marked copy is preferred, so a song that is both in the run and in the
+    // ordinary queue loses the right one. A pinned item not found is skipped, so it is never doubled.
+    private fun List<MediaItem>.withoutPinned(pinned: List<MediaItem>): List<MediaItem> {
+        if (pinned.isEmpty()) return this
+        val result = toMutableList()
+        pinned.forEach { p ->
+            val i = result.indexOfFirst { it.mediaId == p.mediaId && it.addedNext }
+                .takeIf { it != -1 } ?: result.indexOfFirst { it.mediaId == p.mediaId }
+            if (i != -1) result.removeAt(i)
+        }
+        return result
     }
 
     // CrossfadePlayer must override setAudioAttributes() to broadcast to both internal players.
@@ -225,7 +248,7 @@ class ShufflePlayer(
         return if (nextIndex < player.mediaItemCount) player.getMediaItemAt(nextIndex) else null
     }
 
-    private fun changeQueue(list: List<MediaItem>) {
+    private fun changeQueue(list: List<MediaItem>, pinned: List<MediaItem> = emptyList()) {
         if (list.size <= 1) return
         isFreshShuffle = false
         // Degrade to a no-op reorder rather than crash if current isn't in `list` (transient divergence);
@@ -236,7 +259,9 @@ class ShufflePlayer(
         // current, stranding them — G3.) The removeMediaItems(0, currentIndex) below also heals any
         // pre-existing stranded-above state by pulling current back to index 0. Uses the inner
         // player.* calls (not the overrides), so `original` and `backStack` are left untouched.
-        val after = list - currentItem
+        // `pinned` (setShuffleModeEnabled's "Add to next" run) goes first, in order; the Jun 15 rule
+        // `list - currentItem` is unchanged for the rest.
+        val after = pinned + (list - currentItem).withoutPinned(pinned)
         isRearranging = true
         try {
             if (player.currentMediaItemIndex > 0)
@@ -270,8 +295,17 @@ class ShufflePlayer(
         player.addMediaItem(index, mediaItem)
     }
 
+    // ⚠️ A MIDDLE INSERT GOES INTO `original` RIGHT AFTER THE ITEM THAT PRECEDES IT IN THE TIMELINE
+    // (2026-10-30). Its only caller is PlayerCallback.addToNext, whose anchor is the current song or the
+    // last song of the "Add to next" run - so while shuffled, `original` (and the persisted
+    // originalOrderIds) holds those songs after the current one in the order added, and shuffle OFF no
+    // longer moves them to the end. An insert at or past the end, or one whose anchor is not in
+    // `original`, still appends as before: reconstituteFromBackStack passes mediaItemCount.
     override fun addMediaItems(index: Int, mediaItems: MutableList<MediaItem>) {
-        original = original + mediaItems
+        val anchor = if (index in 1 until mediaItemCount) getItemAt(index - 1) else null
+        val at = anchor?.let { original.indexOf(it) }?.takeIf { it != -1 }
+        original = if (at == null) original + mediaItems
+        else original.toMutableList().apply { addAll(at + 1, mediaItems) }
         player.addMediaItems(index, mediaItems)
     }
 
@@ -653,12 +687,37 @@ class ShufflePlayer(
      * controller parks the local player at session start, and how a pause reaches the local leg
      * after the session ends. Only `true` is refused.
      */
+    // ⚠⚠ EVERY ROUTE INTO play() / setPlayWhenReady(true), ENUMERATED 2026-10-21 - KEPT HERE when
+    // the cold-start autoplay probe that produced it was deleted (2026-10-29). These two overrides are
+    // the only universal gate an app-initiated play passes. The probe ran from build 1140 to 1154,
+    // recording who asked for play and reporting a young process's first play with no recent asker. It
+    // never caught a real phantom play: every report it filed (1140, 1142, 1152) was a legitimate
+    // request that had aged past its 2 s window during async work, and it was removed under the
+    // 2026-10-21 exit rule (another false alarm, or weeks quiet). The five buckets, so they are not
+    // re-derived if the item returns:
+    //   1. CONTROLLER COMMANDS - notification, lock screen, headset/BT, Assistant, AA transport, our
+    //      own UI (PlayerViewModel.setPlaying writes through the MediaController) and BaseWidget's
+    //      ACTION_RESUME. All pass PlayerCallback.onPlayerCommandRequest as COMMAND_PLAY_PAUSE.
+    //   2. CUSTOM COMMANDS - play, radio, track_radio, backfill, add_to_next, add_to_queue, resume,
+    //      seek_to_full and anything added later; all arrive at PlayerCallback.onCustomCommand. Several
+    //      force play only AFTER async work (playItem's collection load, backfillQueue's
+    //      freshContextUpcoming, the trackRadio seed, addToNext onto an empty queue), so a timestamp
+    //      taken on arrival can be seconds old at the play. seekToFullIndex -> jumpForwardTo(play =
+    //      true) is reachable ONLY from seek_to_full.
+    //   3. RESUMPTION - PlayerCallback.onPlaybackResumption(isForPlayback = true); media3 plays AFTER
+    //      its future resolves, which on 1142 took ~4 s for 1,685 items.
+    //   4. INTERNAL RECOVERY - AudioFocusListener's focus-gain resume, PlayerEventListener's
+    //      buffering-watchdog retries and every onPlayerError retry/skip arm, PlayerRadio's
+    //      end-of-station advance. If a phantom play returns, these are the first suspects: no
+    //      user request stands behind them.
+    //   5. THE ANDROID AUTO QUEUE-ITEM TAP - seekToDefaultPosition(mediaItemIndex) below. It arrives
+    //      as COMMAND_SEEK_TO_MEDIA_ITEM, not COMMAND_PLAY_PAUSE, yet this class forces
+    //      playWhenReady = true for it. Reachable only with a head unit connected.
+    // Watch for a future Player.Command that forces play: it would join bucket 5 without AA's cover.
+    // NOT paths: CastSwitchPlayer.play goes to the cast receiver, and PlayerFragment's play() is the
+    // background-video ExoPlayer.
     override fun play() {
         if (CastState.isCasting) return
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe - first play of a young process only; see that
-        // file. Records or files a report, never changes what happens next. AFTER the casting
-        // refusal: a request refused there never starts audio, so it is not the event being hunted.
-        ColdStartPlayProbe.onPlay("play")
         if (player.playbackState == STATE_IDLE) player.prepare()
         if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.play()
@@ -666,8 +725,6 @@ class ShufflePlayer(
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
         if (CastState.isCasting && playWhenReady) return
-        // [TEMPORARY 2026-10-19] ColdStartPlayProbe, as in play() above.
-        if (playWhenReady) ColdStartPlayProbe.onPlay("setPlayWhenReady")
         if (playWhenReady && player.playbackState == STATE_IDLE) player.prepare()
         if (playWhenReady && player.playbackState == STATE_ENDED) player.seekTo(0, 0)
         super.setPlayWhenReady(playWhenReady)

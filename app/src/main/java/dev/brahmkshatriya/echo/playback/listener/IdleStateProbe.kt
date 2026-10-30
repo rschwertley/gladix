@@ -23,7 +23,7 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  * classes - only Throwable subclasses keep their names, by the -keepnames rule added 2026-10-18 -
  * and Crashlytics DEOBFUSCATES STACK TRACES ONLY. A class name carried in a custom key arrives as
  * `a.b.c` and stays that way, because nothing maps keys back. So the captured frames are attached
- * with setStackTrace, exactly as ColdStartPlayProbe does, and the `by` key is kept only as a
+ * with setStackTrace, exactly as the cold-start probe did (deleted 2026-10-29), and the `by` key is kept only as a
  * convenience label for the issue list - it will read as minified, and that is expected.
  * [CORRECTED 2026-10-28] THE `by` KEY IS GONE, AND IT WAS NOT A HARMLESS LABEL. It named the
  * first frame [ourFrames] kept, and that was a MEDIA3 frame: on 1148, idle_by = hq1.s =
@@ -56,8 +56,8 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  *   NO REPORT EVER  the state does not occur in the field and both the guard and this probe should
  *       be deleted. That is a real possible outcome and the removal condition.
  *
- * ⚠️ recordException DIRECTLY - a third site, same reasoning StaleFocusProbe and
- * ColdStartPlayProbe give: the alternative, app.throwFlow, shows the user a snackbar, and a
+ * ⚠️ recordException DIRECTLY - a third site, same reasoning StaleFocusProbe gives (and the
+ * cold-start probe gave, before its deletion on 2026-10-29): the alternative, app.throwFlow, shows the user a snackbar, and a
  * diagnostic must not become a behaviour change.
  */
 object IdleStateProbe {

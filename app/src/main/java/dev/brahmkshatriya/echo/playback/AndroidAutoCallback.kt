@@ -194,6 +194,21 @@ abstract class AndroidAutoCallback(
     val context get() = app.context
 
     open val throwableFlow: MutableSharedFlow<Throwable>? get() = null
+
+    /**
+     * ⚠️ WHERE ANDROID AUTO BROWSE AND SEARCH FAILURES GO: App.silentThrowFlow (Crashlytics, never the phone's
+     * screen), NOT [throwableFlow] (2026-10-30). The car browses on its own - at connect it builds the root from
+     * EVERY enabled extension and fetches their tabs whether or not the user opens them - so a logged-out or
+     * broken extension the user never opened in the car would otherwise pop a snackbar on the phone while
+     * they drive. Seen on device: Subsonic and Spotify, installed, enabled, never logged in, on the first drive
+     * with them. The car still shows the failure on its own tile (getList's SessionError text is unchanged).
+     * ⚠️ A LOGGED-OUT EXTENSION LEAVES NO TRACE AT ALL ON THIS PATH: App's merged Crashlytics collector skips
+     * LoginRequired for silentThrowFlow exactly as for throwFlow. Other failures are still recorded.
+     * Nothing on this path tells the car's own fetching apart from the user navigating (onGetChildren gets
+     * browser, parentId, page, pageSize, params), so it covers both.
+     * PLAYBACK failures stay on [throwableFlow] and on the phone: onSetMediaItems, reportNotShufflePlayer.
+     */
+    protected val browseThrowFlow: MutableSharedFlow<Throwable> get() = app.silentThrowFlow
     open val historyRepository: HistoryRepository? = null
 
     // ⚠️ ONE OF FIVE QUEUE-REPLACEMENT MARKERS - the full inventory, what each answers, and why
@@ -444,7 +459,7 @@ abstract class AndroidAutoCallback(
                     }
                 }.onFailure {
                     if (it is CancellationException) throw it
-                    throwableFlow?.emit(it)
+                    browseThrowFlow.emit(it)
                     it.printStackTrace()
                 }
             }
@@ -464,7 +479,7 @@ abstract class AndroidAutoCallback(
                 .onFailure {
                     searchJobs.remove(query)
                     if (it is CancellationException) throw it
-                    throwableFlow?.emit(it)
+                    browseThrowFlow.emit(it)
                     it.printStackTrace()
                 }
         }
@@ -549,7 +564,7 @@ abstract class AndroidAutoCallback(
         // the race). NOT PURSUING UNLESS IT RECURS.
         // ⚠️ IF IT RECURS, THE TILE TEXT IS THE DISCRIMINATOR AND IT COSTS NOTHING TO READ:
         //   "Failed to load content"                       auto_error_loading -> an extension
-        //       threw; getList also prints a stack trace and emits to throwFlow, so System.err will
+        //       threw; getList also prints a stack trace and emits to silentThrowFlow, so System.err will
         //       name it (ClientException$LoginRequired for the hydration story).
         //   "Content took too long to load, please try again"  auto_timed_out -> the
         //       withTimeoutOrNull(15_000) below expired. Throws nothing, prints nothing, reports
@@ -679,7 +694,7 @@ abstract class AndroidAutoCallback(
             )
         val type = parentId.substringAfter("$extId/").substringBefore("/")
         cacheMutex.withLock { withTimeoutOrNull(15_000L) { when (type) {
-            ALBUM -> extension.getList<AlbumClient>(context, throwableFlow) {
+            ALBUM -> extension.getList<AlbumClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$ALBUM/").substringBefore("/")
                 // Soft-fail the node (empty) on a cache miss (eviction) or a wrong-typed item mis-filed under
                 // this mediaId, rather than NPE/CCE the browse future. Deliberately NOT a thin re-fetch: that
@@ -692,7 +707,7 @@ abstract class AndroidAutoCallback(
                 if (page == 0) listOf(shuffleItem(id, extId, context)) + tracks else tracks
             }
 
-            PLAYLIST -> extension.getList<PlaylistClient>(context, throwableFlow) {
+            PLAYLIST -> extension.getList<PlaylistClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$PLAYLIST/").substringBefore("/")
                 val unloaded = itemMap[id] as? Playlist ?: return@getList emptyList()
                 val tracks = getTracks(context, id, extId, page) {
@@ -702,7 +717,7 @@ abstract class AndroidAutoCallback(
                 if (page == 0) listOf(shuffleItem(id, extId, context)) + tracks else tracks
             }
 
-            RADIO -> extension.getList<RadioClient>(context, throwableFlow) {
+            RADIO -> extension.getList<RadioClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$RADIO/").substringBefore("/")
                 val radio = itemMap[id] as? Radio ?: return@getList emptyList()
                 getTracks(context, id, extId, page) {
@@ -710,32 +725,32 @@ abstract class AndroidAutoCallback(
                 }
             }
 
-            USER -> extension.getList<ArtistClient>(context, throwableFlow) {
+            USER -> extension.getList<ArtistClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$USER/").substringBefore("/")
                 val unloaded = itemMap[id] as? Artist ?: return@getList emptyList()
                 val artist = loadArtist(unloaded)
                 loadFeed(artist).toMediaItems(id, context, extId, page)
             }
 
-            LIST -> extension.getList<ExtensionClient>(context, throwableFlow) {
+            LIST -> extension.getList<ExtensionClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$LIST/").substringBefore("/")
                 getListsItems(context, id, extId)
             }
 
-            SHELF -> extension.getList<ExtensionClient>(context, throwableFlow) {
+            SHELF -> extension.getList<ExtensionClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$SHELF/").substringBefore("/")
                 getShelfItems(context, id, extId, page)
             }
 
             HOME -> extension.getFeed<HomeFeedClient>(
-                context, parentId, page, throwableFlow
+                context, parentId, page, browseThrowFlow
             ) { loadHomeFeed() }
 
             LIBRARY -> extension.getFeed<LibraryFeedClient>(
-                context, parentId, page, throwableFlow
+                context, parentId, page, browseThrowFlow
             ) { loadLibraryFeed() }
 
-            FEED -> extension.getList<ExtensionClient>(context, throwableFlow) {
+            FEED -> extension.getList<ExtensionClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$ROOT/$extId/$FEED/")
                 val feed = feedMap[id] ?: return@getList emptyList()
                 feed.toMediaItems(id, context, extId, page)
@@ -752,11 +767,11 @@ abstract class AndroidAutoCallback(
                 // gesture-vs-not, NOT typed-vs-not.
                 val query = parentId.substringAfter("$ROOT/$extId/$SEARCH/", "")
                 extension.getFeed<SearchFeedClient>(
-                    context, parentId, page, throwableFlow
+                    context, parentId, page, browseThrowFlow
                 ) { loadSearchFeed(query, isUserInitiated = false) }
             }
 
-            PLAYLISTS -> extension.getList<LibraryFeedClient>(context, throwableFlow) {
+            PLAYLISTS -> extension.getList<LibraryFeedClient>(context, browseThrowFlow) {
                 val libFeed = loadLibraryFeed()
                 val playlistTab = libFeed.notSortTabs.firstOrNull {
                     it.id.contains("playlist", ignoreCase = true) ||
@@ -938,7 +953,7 @@ abstract class AndroidAutoCallback(
                     // Emitting the wrapped form does not change what this function returns, nor the AA tile
                     // text. Safe re CancellationException: toAppException rethrows it (AppException.kt:65),
                     // but both cancellation cases are already handled above.
-                    throwableFlow?.emit(it.toAppException(ext))
+                    browseThrowFlow.emit(it.toAppException(ext))
                     Log.d("GladixAuto", "performSearch: error for query='$query' ext=${ext.id}: ${it::class.simpleName}: ${it.message}")
                     emptyList()
                 }

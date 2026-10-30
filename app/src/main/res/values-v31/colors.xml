@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: the widget colours are exactly the @color/material_dynamic_* the layouts used before
+         2026-10-30. See values/colors.xml. -->
+    <color name="echo_widget_primary40">@color/material_dynamic_primary40</color>
+    <color name="echo_widget_primary50">@color/material_dynamic_primary50</color>
+    <color name="echo_widget_primary60">@color/material_dynamic_primary60</color>
+    <color name="echo_widget_primary90">@color/material_dynamic_primary90</color>
+    <color name="echo_widget_tertiary50">@color/material_dynamic_tertiary50</color>
+    <color name="echo_widget_tertiary90">@color/material_dynamic_tertiary90</color>
+</resources>

@@ -131,8 +131,11 @@ class QueueFragment : Fragment() {
                 viewModel.play(position)
             }
 
+            // By id in the live queue, like onSwiped - see PlayerViewModel.removeQueueItem(position, mediaId,
+            // onMissing). A song no longer in the queue is left alone: there is no swiped row to release.
             override fun onItemClosedClicked(position: Int) {
-                viewModel.removeQueueItem(position)
+                val mediaId = queueAdapter.currentList.getOrNull(position)?.second?.mediaId ?: return
+                viewModel.removeQueueItem(position, mediaId) {}
             }
         })
     }
@@ -270,9 +273,24 @@ class QueueFragment : Fragment() {
                 // immediately. Bounded and visible-as-a-snap rather than silent.
             }
 
+            // ⚠️ REMOVES THE SWIPED SONG BY ID, AND RELEASES THE ROW IF IT IS NOT IN THE QUEUE (2026-10-30).
+            // See PlayerViewModel.removeQueueItem(position, mediaId, onMissing) for why a position is not
+            // enough. A completed swipe leaves the row translated off-screen until it detaches (see the note at
+            // FeedAdapter.getTouchHelper); a real remove detaches it through the list update, so the normal
+            // delete keeps its slide-off. When nothing is removed there is no update, so the row is released with
+            // ItemTouchHelper's own cleanup, onChildViewDetachedFromWindow (ends the recover animation, calls
+            // clearView, which here only disarms the drag flags). Guarded on the row still being a child of
+            // this RecyclerView, because the release can arrive after the view is gone.
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val itemView = viewHolder.itemView
+                val release = {
+                    if (itemView.parent != null && itemView.parent === binding?.root)
+                        touchHelper.onChildViewDetachedFromWindow(itemView)
+                }
                 val pos = viewHolder.bindingAdapterPosition
-                viewModel.removeQueueItem(pos)
+                val mediaId = queueAdapter.currentList.getOrNull(pos)?.second?.mediaId
+                if (mediaId == null) release()
+                else viewModel.removeQueueItem(pos, mediaId, release)
             }
 
             override fun getMovementFlags(

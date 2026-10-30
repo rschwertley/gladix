@@ -2,7 +2,10 @@ package dev.brahmkshatriya.echo.ui.extensions
 
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.Extension
@@ -147,14 +150,14 @@ class ExtensionsViewModel(
         // messages further down ("downloading update for X") are deliberately NOT gated — those fire
         // only when work is genuinely under way, which is worth telling the user about either way.
         if (force) message(app.context.getString(R.string.checking_for_extension_updates))
-        // The install-permission prompt is threaded in as a lambda rather than checked here, so it
-        // only ever fires once an update actually exists (updateApp calls it after resolving the
-        // URL, before downloading). Declining returns null, which falls through to the extension
-        // branch below exactly as "no app update" already does.
+        // ⚠️ THE APP HALF ONLY LOOKS (2026-10-30). It used to install straight away (permission prompt,
+        // download, installer, awaitInstallation - and skipped the extensions for that pass). Now a found
+        // release is OFFERED (offerAppUpdate -> AppUpdateDialogFragment) and the extensions update in the
+        // same pass as always. The install runs from Update via installAppNow, the same code as Settings.
         // Under appUpdateMutex so Settings' Check now / Update cannot overlap this app check; the
         // manual side uses tryLock and shows "already running" rather than waiting.
-        val appCheck = appUpdateMutex.withLock { updateApp(app) { activity.ensureCanInstallPackages() } }
-        val appApk = (appCheck as? AppUpdater.AppUpdateCheck.Ready)?.apk
+        val appCheck = appUpdateMutex.withLock { updateApp(app) }
+        if (appCheck is AppUpdater.AppUpdateCheck.Found) offerAppUpdate(appCheck.available, force)
         // A failed APP check resets the throttle like `anyFailed` below (see AppUpdater.AppUpdateCheck),
         // with the same two exceptions the extension pass has: a rate limit (retrying sooner is the loop
         // the note below closes) and "no releases" (a draft or missing release on our own repo, which a
@@ -163,100 +166,92 @@ class ExtensionsViewModel(
         val appFailed = appCheck is AppUpdater.AppUpdateCheck.Failed &&
             !appCheck.error.isGithubRateLimit() && !appCheck.error.isGithubNoReleases()
         runCatching {
-            if (appApk != null) {
-                // 0L, not 0: saveToCache picks its folder from T::class.java.simpleName, so an Int
-                // literal wrote to the "int" folder while shouldCheckForExtensionUpdates reads
-                // getFromCache<Long> out of "long". This reset has therefore never taken effect.
-                app.context.saveToCache("last_update_check", 0L)
-                awaitInstallation(appApk).getOrThrow()
-            } else {
-                var anyUpdateFound = false
-                var anyFailed = false
-                var rateLimited: Throwable? = null
-                // ⚠⚠ `for` WITH A `break`, NOT forEach - THE LOOP MUST BE ABLE TO STOP. Once
-                // GitHub has rate-limited the IP every remaining request is guaranteed to fail, and
-                // continuing spends quota that other apps on the same IP also need, turns one cause
-                // into N identical reports, and delays the reset for nothing.
-                for (ext in extensionLoader.all.value) {
-                    // announce = force: an automatic pass records check failures without interrupting.
-                    when (val result = updateExt(ext, announce = force)) {
-                        ExtUpdate.Updated -> anyUpdateFound = true
-                        ExtUpdate.Failed -> anyFailed = true
-                        ExtUpdate.UpToDate -> Unit
-                        // Deliberately NOT anyFailed, and deliberately not a break. See
-                        // ExtUpdate.PermanentlyFailed. The user has already been told (manual) or the
-                        // report already filed silently (automatic); all this arm decides is that the
-                        // throttle survives, so the next pass is tomorrow rather than next launch.
-                        ExtUpdate.PermanentlyFailed -> Unit
-                        is ExtUpdate.RateLimited -> {
-                            rateLimited = result.error
-                            break
-                        }
+            var anyUpdateFound = false
+            var anyFailed = false
+            var rateLimited: Throwable? = null
+            // ⚠⚠ `for` WITH A `break`, NOT forEach - THE LOOP MUST BE ABLE TO STOP. Once
+            // GitHub has rate-limited the IP every remaining request is guaranteed to fail, and
+            // continuing spends quota that other apps on the same IP also need, turns one cause
+            // into N identical reports, and delays the reset for nothing.
+            for (ext in extensionLoader.all.value) {
+                // announce = force: an automatic pass records check failures without interrupting.
+                when (val result = updateExt(ext, announce = force)) {
+                    ExtUpdate.Updated -> anyUpdateFound = true
+                    ExtUpdate.Failed -> anyFailed = true
+                    ExtUpdate.UpToDate -> Unit
+                    // Deliberately NOT anyFailed, and deliberately not a break. See
+                    // ExtUpdate.PermanentlyFailed. The user has already been told (manual) or the
+                    // report already filed silently (automatic); all this arm decides is that the
+                    // throttle survives, so the next pass is tomorrow rather than next launch.
+                    ExtUpdate.PermanentlyFailed -> Unit
+                    is ExtUpdate.RateLimited -> {
+                        rateLimited = result.error
+                        break
                     }
                 }
-                // ONE message for the pass. Always shown, even on an automatic check: unlike "all
-                // extensions up to date", this is the answer to "why has nothing updated in months",
-                // and the user cannot ask a question they do not know they have.
-                // Raw text, not an R.string: the message is BUILT in AppUpdater.githubHttpError
-                // from GitHub's X-RateLimit-Reset header, so the concrete time is the whole point
-                // and a static resource could not carry it. (R.string.error does not exist; do not
-                // reach for it.)
-                if (rateLimited != null) {
-                    message(
-                        rateLimited.message ?: "GitHub rate limit reached, try again later"
-                    )
-                    // ⚠⚠ EXACTLY ONE NON-FATAL PER PASS, AND THE COUNT IS THE POINT. Zero would
-                    // be wrong: this issue sat MUTED SINCE MAY and rose to 8 events on build 1106
-                    // alone, and a silent fix would remove the only evidence that it is still
-                    // happening. Eight per pass is what caused the mute. One per pass keeps the trend
-                    // readable at a rate nobody needs to mute.
-                    // silentThrowFlow, not throwFlow: the user has already been told by the message()
-                    // above, and a second snackbar for the same event is the noise being removed.
-                    app.silentThrowFlow.emit(rateLimited)
-                }
-                // Only claim "up to date" when we actually found out AND the user asked. Two
-                // separate gates:
-                //  - anyFailed: a failed check or download used to land here too, so a transient
-                //    GitHub error reassured the user that everything was current. On failure we stay
-                //    silent rather than adding a second message — the failure already produced its
-                //    own snackbar via throwFlow.
-                //  - force: an unprompted background check that finds nothing says NOTHING. A manual
-                //    check still confirms the result, because the user asked and deserves an answer.
-                // ⚠⚠ THE ZEROING STAYS FOR ORDINARY FAILURES AND MUST NOT FIRE ON A RATE
-                // LIMIT. Its intent is right - a transient failure should not cost 24 hours of not
-                // checking - but it cannot tell a transient failure from a SELF-INFLICTED one, and
-                // for a rate limit "retry sooner" is exactly backwards.
-                // ⚠⚠ THE LOOP IT CLOSED, WHICH IS WHY THIS MATTERS: a rate-limited pass fails
-                // every extension -> anyFailed -> throttle zeroed -> the NEXT LAUNCH runs a full pass
-                // -> rate-limited again. The failure removed the only thing preventing the failure.
-                // ⚠️ NEITHER HALF WAS A MISTAKE ON ITS OWN, AND THE RECORD SHOULD NOT READ AS
-                // ONE. Both landed in the same August 2026 session ("last_update_check zeroed on
-                // failure and fixed (0L), throttle restored to 24h, automatic pass silenced"). The
-                // zeroing was INTENDED; it had simply never taken effect, because saveToCache picks
-                // its folder from T::class.java.simpleName and the old `0` Int literal wrote to int/
-                // while this reads getFromCache<Long> out of long/ - silent in both directions, which
-                // is exactly why the zeroing looked harmless when it was written. Fixing the folder
-                // made a deliberate change live, and the two together made a loop. Neither change
-                // considered the rate-limit case.
-                // ⚠️ AND "CHECKS ON EVERY COLD START" HAS NOW BEEN REACHED TWICE BY TWO ROUTES.
-                // The same session had it from a throttle wrongly set to 2h on the strength of a bad
-                // summary note. Same user-visible outcome, unrelated mechanism - so a report of
-                // over-frequent checking does NOT identify its own cause.
-                if (rateLimited != null) {
-                    // Back off until the limit actually resets rather than for a full day: update()
-                    // already stamped `now`, so subtracting the window and adding the wait lands the
-                    // next eligible check just after the reset. No reset time -> leave the 24h stamp.
-                    val waitMs = rateLimited.githubRateLimitReset()
-                        ?.let { it * 1000 - System.currentTimeMillis() }
-                        ?.coerceIn(0L, updateTime.toLong())
-                    if (waitMs != null) app.context.saveToCache(
-                        "last_update_check",
-                        System.currentTimeMillis() - updateTime + waitMs + 60_000L
-                    )
-                } else if (anyFailed || appFailed) app.context.saveToCache("last_update_check", 0L)
-                else if (!anyUpdateFound && force)
-                    message(app.context.getString(R.string.all_extensions_up_to_date))
             }
+            // ONE message for the pass. Always shown, even on an automatic check: unlike "all
+            // extensions up to date", this is the answer to "why has nothing updated in months",
+            // and the user cannot ask a question they do not know they have.
+            // Raw text, not an R.string: the message is BUILT in AppUpdater.githubHttpError
+            // from GitHub's X-RateLimit-Reset header, so the concrete time is the whole point
+            // and a static resource could not carry it. (R.string.error does not exist; do not
+            // reach for it.)
+            if (rateLimited != null) {
+                message(
+                    rateLimited.message ?: "GitHub rate limit reached, try again later"
+                )
+                // ⚠⚠ EXACTLY ONE NON-FATAL PER PASS, AND THE COUNT IS THE POINT. Zero would
+                // be wrong: this issue sat MUTED SINCE MAY and rose to 8 events on build 1106
+                // alone, and a silent fix would remove the only evidence that it is still
+                // happening. Eight per pass is what caused the mute. One per pass keeps the trend
+                // readable at a rate nobody needs to mute.
+                // silentThrowFlow, not throwFlow: the user has already been told by the message()
+                // above, and a second snackbar for the same event is the noise being removed.
+                app.silentThrowFlow.emit(rateLimited)
+            }
+            // Only claim "up to date" when we actually found out AND the user asked. Two
+            // separate gates:
+            //  - anyFailed: a failed check or download used to land here too, so a transient
+            //    GitHub error reassured the user that everything was current. On failure we stay
+            //    silent rather than adding a second message — the failure already produced its
+            //    own snackbar via throwFlow.
+            //  - force: an unprompted background check that finds nothing says NOTHING. A manual
+            //    check still confirms the result, because the user asked and deserves an answer.
+            // ⚠⚠ THE ZEROING STAYS FOR ORDINARY FAILURES AND MUST NOT FIRE ON A RATE
+            // LIMIT. Its intent is right - a transient failure should not cost 24 hours of not
+            // checking - but it cannot tell a transient failure from a SELF-INFLICTED one, and
+            // for a rate limit "retry sooner" is exactly backwards.
+            // ⚠⚠ THE LOOP IT CLOSED, WHICH IS WHY THIS MATTERS: a rate-limited pass fails
+            // every extension -> anyFailed -> throttle zeroed -> the NEXT LAUNCH runs a full pass
+            // -> rate-limited again. The failure removed the only thing preventing the failure.
+            // ⚠️ NEITHER HALF WAS A MISTAKE ON ITS OWN, AND THE RECORD SHOULD NOT READ AS
+            // ONE. Both landed in the same August 2026 session ("last_update_check zeroed on
+            // failure and fixed (0L), throttle restored to 24h, automatic pass silenced"). The
+            // zeroing was INTENDED; it had simply never taken effect, because saveToCache picks
+            // its folder from T::class.java.simpleName and the old `0` Int literal wrote to int/
+            // while this reads getFromCache<Long> out of long/ - silent in both directions, which
+            // is exactly why the zeroing looked harmless when it was written. Fixing the folder
+            // made a deliberate change live, and the two together made a loop. Neither change
+            // considered the rate-limit case.
+            // ⚠️ AND "CHECKS ON EVERY COLD START" HAS NOW BEEN REACHED TWICE BY TWO ROUTES.
+            // The same session had it from a throttle wrongly set to 2h on the strength of a bad
+            // summary note. Same user-visible outcome, unrelated mechanism - so a report of
+            // over-frequent checking does NOT identify its own cause.
+            if (rateLimited != null) {
+                // Back off until the limit actually resets rather than for a full day: update()
+                // already stamped `now`, so subtracting the window and adding the wait lands the
+                // next eligible check just after the reset. No reset time -> leave the 24h stamp.
+                val waitMs = rateLimited.githubRateLimitReset()
+                    ?.let { it * 1000 - System.currentTimeMillis() }
+                    ?.coerceIn(0L, updateTime.toLong())
+                if (waitMs != null) app.context.saveToCache(
+                    "last_update_check",
+                    System.currentTimeMillis() - updateTime + waitMs + 60_000L
+                )
+            } else if (anyFailed || appFailed) app.context.saveToCache("last_update_check", 0L)
+            else if (!anyUpdateFound && force)
+                message(app.context.getString(R.string.all_extensions_up_to_date))
         }.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
     }
 
@@ -279,10 +274,43 @@ class ExtensionsViewModel(
 
     val appUpdateUi = MutableStateFlow<AppUpdateUi>(AppUpdateUi.Idle)
 
+    /**
+     * The release the "Update available" dialog should show next, or null. Collected by
+     * configureExtensionsUpdater while the Activity is RESUMED - held state, not a messageFlow emit, so
+     * nothing is lost while the Activity is stopped. Cleared there once the dialog is shown.
+     */
+    val appUpdatePrompt = MutableStateFlow<AppUpdater.AppLookup.Available?>(null)
+
+    // ⚠️ WHEN THE DIALOG IS OFFERED (2026-10-30). Settings' row always reflects the release. The dialog:
+    //   AUTOMATIC (the startup pass, and the saved release on a new Activity - see init): not for a tag in
+    //     KEY_APP_UPDATE_ANSWERED, and at most once per process (appUpdatePromptShown).
+    //   FORCED (Settings' Check now, a manual "check for updates" pass): always, answered or not - the user
+    //     asked.
+    private fun offerAppUpdate(found: AppUpdater.AppLookup.Available, force: Boolean) {
+        if (appUpdateUi.value !is AppUpdateUi.Downloading) appUpdateUi.value = AppUpdateUi.Available(found)
+        if (!force && (appUpdatePromptShown || AppUpdater.answeredAppUpdate(app) == found.version)) return
+        AppUpdater.markAppUpdateAwaitingAnswer()
+        appUpdatePrompt.value = found
+    }
+
+    /** The dialog's Later: answered at once, and app_update_stage "skipped". */
+    fun skipAppUpdate(found: AppUpdater.AppLookup.Available) {
+        AppUpdater.answerAppUpdate(app, found.version)
+        AppUpdater.markAppUpdateSkipped()
+    }
+
+    // A release found earlier and not yet answered is offered again on the next app open, even when the
+    // 24h throttle skips this launch's check - from the saved KEY_APP_UPDATE_KNOWN, no network.
+    init {
+        AppUpdater.knownAppUpdate(app)?.let { offerAppUpdate(it, force = false) }
+    }
+
     // One app check or app install at a time: the automatic pass's updateApp, Check now, Update.
     // ⚠️ ACCEPTED EDGE: the automatic pass releases it before awaitInstallation, so pressing Update while
     // the automatic pass's system install dialog is open can start a second download. Rare, and the
     // installer handles a repeated same-version install.
+    // [CORRECTED 2026-10-30] The automatic pass no longer installs, so that edge is gone: every install now
+    // runs inside installAppNow, which holds this mutex until awaitInstallation returns.
     private val appUpdateMutex = Mutex()
 
     /**
@@ -308,9 +336,10 @@ class ExtensionsViewModel(
                 return@launch
             }
             appUpdateUi.value = AppUpdateUi.Checking
-            appUpdateUi.value = when (val found = AppUpdater.lookUpAppUpdate(app)) {
-                is AppUpdater.AppLookup.Available -> AppUpdateUi.Available(found)
-                else -> AppUpdateUi.UpToDate
+            when (val found = AppUpdater.lookUpAppUpdate(app)) {
+                // A forced check: the dialog shows even for an answered tag (offerAppUpdate).
+                is AppUpdater.AppLookup.Available -> offerAppUpdate(found, force = true)
+                else -> appUpdateUi.value = AppUpdateUi.UpToDate
             }
         } catch (e: CancellationException) {
             appUpdateUi.value = AppUpdateUi.Idle
@@ -326,16 +355,28 @@ class ExtensionsViewModel(
      * Settings -> App updates -> Update to vX. The automatic path's own install code
      * (AppUpdater.installAppUpdate + awaitInstallation), so permission prompt, download, stage keys
      * and failure reporting are identical. Never touches last_update_check either.
+     * [from] is the dialog's release (AppUpdateDialogFragment); Settings' row passes none and uses the
+     * row's. Since 2026-10-30 this is the ONLY place the app installs. The tag is answered once the
+     * download starts (onInstallStart), so a declined permission leaves it unanswered and the dialog
+     * returns on the next app open.
      */
-    fun installAppNow(activity: FragmentActivity) = viewModelScope.launch {
-        val offered = (appUpdateUi.value as? AppUpdateUi.Available)?.found ?: return@launch
+    fun installAppNow(
+        activity: FragmentActivity, from: AppUpdater.AppLookup.Available? = null,
+    ) = viewModelScope.launch {
+        // A tap while downloading is ignored (the row stays enabled for TV focus - see SettingsOtherFragment).
+        if (appUpdateUi.value is AppUpdateUi.Downloading) return@launch
+        val offered = from ?: (appUpdateUi.value as? AppUpdateUi.Available)?.found ?: return@launch
         if (!appUpdateMutex.tryLock()) {
             appUpdateUi.value = AppUpdateUi.Busy
+            // The dialog has no row to show Busy on.
+            if (from != null) message(app.context.getString(R.string.app_update_busy))
             return@launch
         }
         try {
             appUpdateUi.value = AppUpdateUi.Downloading(offered)
-            val result = AppUpdater.installAppUpdate(app, offered) { activity.ensureCanInstallPackages() }
+            val result = AppUpdater.installAppUpdate(
+                app, offered, { activity.ensureCanInstallPackages() }
+            ) { AppUpdater.answerAppUpdate(app, offered.version) }
             // Failed and None (permission declined) were already reported or messaged by installAppUpdate.
             if (result is AppUpdater.AppUpdateCheck.Ready) awaitInstallation(result.apk).onFailure {
                 if (it is CancellationException) throw it
@@ -545,6 +586,10 @@ class ExtensionsViewModel(
     }
 
     companion object {
+        // "Never twice in one app session": process-lifetime, so a new Activity (and its new ViewModel)
+        // does not offer the same release again. Set when the dialog is actually shown. Main thread only.
+        private var appUpdatePromptShown = false
+
         fun FragmentActivity.configureExtensionsUpdater() {
             val viewModel by viewModel<ExtensionsViewModel>()
             collect(viewModel.installPromptFlow) {
@@ -552,6 +597,21 @@ class ExtensionsViewModel(
             }
             collect(viewModel.linksDialogFlow) {
                 createLinksDialog(it.first, it.second)
+            }
+            // The "Update available" dialog, from held state while RESUMED (never after
+            // onSaveInstanceState, so show() cannot throw). MainActivity only - Android Auto runs in the
+            // service and never reaches this. A restored dialog (rotation) is not shown twice.
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    viewModel.appUpdatePrompt.collect { found ->
+                        found ?: return@collect
+                        if (supportFragmentManager.findFragmentByTag(AppUpdateDialogFragment.TAG) == null)
+                            AppUpdateDialogFragment.newInstance(found, prompt = true)
+                                .show(supportFragmentManager, AppUpdateDialogFragment.TAG)
+                        appUpdatePromptShown = true
+                        viewModel.appUpdatePrompt.value = null
+                    }
+                }
             }
 
             viewModel.update(this, false)

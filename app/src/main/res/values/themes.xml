@@ -1,6 +1,81 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <style name="Base.Theme.Echo" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
+    <!-- ⚠️ GLADIX PINK BELOW ANDROID 12 (2026-10-30). Device-confirmed on an Android 11 GitHub install: the app
+         showed Material 3's baseline purple. Below API 31 DynamicColors.applyToActivityIfAvailable returns at
+         once (isDynamicColorAvailable), so MainActivity's content-based seed is never applied, and the parent's
+         res/values definition is plain Theme.Material3Expressive.Light/Dark - the purple baseline (read from
+         the material-1.14.0 AAR). The runtime scheme cannot reach API 24-30 at all: its ColorResourcesOverride
+         needs ResourcesLoader (API 30+) and is gated at 31 anyway.
+         So this sets EVERY colour the baseline theme chain sets (Base.V14.Theme.Material3.Light, read from the
+         AAR) to a fixed Gladix-pink scheme: the roles, and the android:textColor* selectors, which the baseline
+         points at m3_sys_color_* directly rather than at theme attributes. Values: values/colors.xml (light) and
+         values-night/colors.xml (dark). Colours the chain derives from attributes (colorAccent, colorPrimaryDark,
+         colorPrimaryVariant, colorSecondaryVariant, elevationOverlayColor, focus rings, textColorLink) follow
+         automatically. android:colorBackground is set by Base.Theme.Echo to ?echoBackground, as before.
+         ⚠⚠ ANDROID 12+ NEVER SEES THIS: values-v31/themes.xml defines this style EMPTY with the SAME parent, so
+         Base.Theme.Echo resolves to exactly the theme it inherited before. Keep the two parents identical. -->
+    <style name="Platform.Theme.Echo" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/echo_m3_primary</item>
+        <item name="colorOnPrimary">@color/echo_m3_on_primary</item>
+        <item name="colorPrimaryContainer">@color/echo_m3_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/echo_m3_on_primary_container</item>
+        <item name="colorPrimaryInverse">@color/echo_m3_inverse_primary</item>
+        <item name="colorPrimaryFixed">@color/echo_m3_primary_fixed</item>
+        <item name="colorPrimaryFixedDim">@color/echo_m3_primary_fixed_dim</item>
+        <item name="colorOnPrimaryFixed">@color/echo_m3_on_primary_fixed</item>
+        <item name="colorOnPrimaryFixedVariant">@color/echo_m3_on_primary_fixed_variant</item>
+        <item name="colorSecondary">@color/echo_m3_secondary</item>
+        <item name="colorOnSecondary">@color/echo_m3_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/echo_m3_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/echo_m3_on_secondary_container</item>
+        <item name="colorSecondaryFixed">@color/echo_m3_secondary_fixed</item>
+        <item name="colorSecondaryFixedDim">@color/echo_m3_secondary_fixed_dim</item>
+        <item name="colorOnSecondaryFixed">@color/echo_m3_on_secondary_fixed</item>
+        <item name="colorOnSecondaryFixedVariant">@color/echo_m3_on_secondary_fixed_variant</item>
+        <item name="colorTertiary">@color/echo_m3_tertiary</item>
+        <item name="colorOnTertiary">@color/echo_m3_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/echo_m3_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/echo_m3_on_tertiary_container</item>
+        <item name="colorTertiaryFixed">@color/echo_m3_tertiary_fixed</item>
+        <item name="colorTertiaryFixedDim">@color/echo_m3_tertiary_fixed_dim</item>
+        <item name="colorOnTertiaryFixed">@color/echo_m3_on_tertiary_fixed</item>
+        <item name="colorOnTertiaryFixedVariant">@color/echo_m3_on_tertiary_fixed_variant</item>
+        <item name="colorError">@color/echo_m3_error</item>
+        <item name="colorOnError">@color/echo_m3_on_error</item>
+        <item name="colorErrorContainer">@color/echo_m3_error_container</item>
+        <item name="colorOnErrorContainer">@color/echo_m3_on_error_container</item>
+        <item name="colorOnBackground">@color/echo_m3_on_background</item>
+        <item name="colorSurface">@color/echo_m3_surface</item>
+        <item name="colorOnSurface">@color/echo_m3_on_surface</item>
+        <item name="colorSurfaceVariant">@color/echo_m3_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/echo_m3_on_surface_variant</item>
+        <item name="colorSurfaceInverse">@color/echo_m3_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/echo_m3_inverse_on_surface</item>
+        <item name="colorSurfaceBright">@color/echo_m3_surface_bright</item>
+        <item name="colorSurfaceDim">@color/echo_m3_surface_dim</item>
+        <item name="colorSurfaceContainerLowest">@color/echo_m3_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/echo_m3_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/echo_m3_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/echo_m3_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/echo_m3_surface_container_highest</item>
+        <item name="colorOutline">@color/echo_m3_outline</item>
+        <item name="colorOutlineVariant">@color/echo_m3_outline_variant</item>
+        <item name="android:textColorPrimary">@color/echo_m3_text_primary</item>
+        <item name="android:textColorPrimaryInverse">@color/echo_m3_text_primary_inverse</item>
+        <item name="android:textColorSecondary">@color/echo_m3_text_secondary</item>
+        <item name="android:textColorSecondaryInverse">@color/echo_m3_text_secondary_inverse</item>
+        <item name="android:textColorTertiary">@color/echo_m3_text_secondary</item>
+        <item name="android:textColorTertiaryInverse">@color/echo_m3_text_secondary_inverse</item>
+        <item name="android:textColorPrimaryDisableOnly">@color/echo_m3_text_primary_disable_only</item>
+        <item name="android:textColorPrimaryInverseDisableOnly">@color/echo_m3_text_primary_inverse_disable_only</item>
+        <item name="android:textColorHint">@color/echo_m3_text_hint</item>
+        <item name="android:textColorHintInverse">@color/echo_m3_text_hint_inverse</item>
+        <item name="android:textColorHighlight">@color/echo_m3_text_highlight</item>
+        <item name="android:textColorHighlightInverse">@color/echo_m3_text_highlight_inverse</item>
+        <item name="android:textColorAlertDialogListItem">@color/echo_m3_text_primary</item>
+    </style>
+
+    <style name="Base.Theme.Echo" parent="Platform.Theme.Echo">
         <item name="android:windowSplashScreenBackground" tools:targetApi="s">
             @color/amoled_bg
         </item>

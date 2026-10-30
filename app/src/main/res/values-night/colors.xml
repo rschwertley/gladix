@@ -4,4 +4,60 @@
     <color name="amoled_bg_semi">#54000000</color>
     <color name="amoled_fg">@color/white</color>
     <color name="amoled_fg_semi">#1AFFFFFF</color>
+
+    <!-- Dark half of the Gladix-pink scheme for below Android 12 - see values/colors.xml. -->
+    <color name="echo_m3_primary">#FFB2BB</color>
+    <color name="echo_m3_on_primary">#670022</color>
+    <color name="echo_m3_primary_container">#FF4F76</color>
+    <color name="echo_m3_on_primary_container">#170003</color>
+    <color name="echo_m3_inverse_primary">#BD0045</color>
+    <color name="echo_m3_primary_fixed">#FFD9DD</color>
+    <color name="echo_m3_primary_fixed_dim">#FFB2BB</color>
+    <color name="echo_m3_on_primary_fixed">#400012</color>
+    <color name="echo_m3_on_primary_fixed_variant">#910033</color>
+    <color name="echo_m3_secondary">#FFB2BB</color>
+    <color name="echo_m3_on_secondary">#670022</color>
+    <color name="echo_m3_secondary_container">#891836</color>
+    <color name="echo_m3_on_secondary_container">#FF97A6</color>
+    <color name="echo_m3_secondary_fixed">#FFD9DD</color>
+    <color name="echo_m3_secondary_fixed_dim">#FFB2BB</color>
+    <color name="echo_m3_on_secondary_fixed">#400012</color>
+    <color name="echo_m3_on_secondary_fixed_variant">#891836</color>
+    <color name="echo_m3_tertiary">#FFB596</color>
+    <color name="echo_m3_on_tertiary">#581E00</color>
+    <color name="echo_m3_tertiary_container">#EE6721</color>
+    <color name="echo_m3_on_tertiary_container">#100200</color>
+    <color name="echo_m3_tertiary_fixed">#FFDBCD</color>
+    <color name="echo_m3_tertiary_fixed_dim">#FFB596</color>
+    <color name="echo_m3_on_tertiary_fixed">#360F00</color>
+    <color name="echo_m3_on_tertiary_fixed_variant">#7D2D00</color>
+    <color name="echo_m3_error">#FFB4AB</color>
+    <color name="echo_m3_on_error">#690005</color>
+    <color name="echo_m3_error_container">#93000A</color>
+    <color name="echo_m3_on_error_container">#FFDAD6</color>
+    <color name="echo_m3_background">#1F0F11</color>
+    <color name="echo_m3_on_background">#FBDBDD</color>
+    <color name="echo_m3_surface">#1F0F11</color>
+    <color name="echo_m3_on_surface">#FBDBDD</color>
+    <color name="echo_m3_surface_variant">#5C3F43</color>
+    <color name="echo_m3_on_surface_variant">#E5BDC0</color>
+    <color name="echo_m3_inverse_surface">#FBDBDD</color>
+    <color name="echo_m3_inverse_on_surface">#3F2B2D</color>
+    <color name="echo_m3_surface_bright">#483436</color>
+    <color name="echo_m3_surface_dim">#1F0F11</color>
+    <color name="echo_m3_surface_container_lowest">#190A0C</color>
+    <color name="echo_m3_surface_container_low">#281719</color>
+    <color name="echo_m3_surface_container">#2C1B1D</color>
+    <color name="echo_m3_surface_container_high">#382527</color>
+    <color name="echo_m3_surface_container_highest">#433032</color>
+    <color name="echo_m3_outline">#AC888B</color>
+    <color name="echo_m3_outline_variant">#5C3F43</color>
+    <color name="echo_m3_opposite_on_surface">#281719</color>
+    <color name="echo_m3_opposite_on_surface_variant">#5C3F43</color>
+    <color name="echo_m3_opposite_on_background">#281719</color>
+    <color name="echo_m3_opposite_primary">#B80043</color>
+    <item name="echo_m3_hint_alpha" format="float" type="dimen">0.6</item>
+    <item name="echo_m3_hint_pressed_alpha" format="float" type="dimen">0.87</item>
+    <item name="echo_m3_opposite_hint_alpha" format="float" type="dimen">0.38</item>
+    <item name="echo_m3_opposite_hint_pressed_alpha" format="float" type="dimen">0.6</item>
 </resources>

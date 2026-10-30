@@ -91,7 +91,10 @@ class EditPlaylistViewModel(
     }.stateIn(viewModelScope, Eagerly, null)
 
     val currentTracks = MutableStateFlow<List<Track>?>(null)
-    fun edit(action: Action<Track>) {
+    // Returns whether the action was applied. Only PlaylistTrackAdapter's swipe reads it, to release a
+    // swiped row that nothing removed; every other caller ignores it.
+    fun edit(action: Action<Track>): Boolean {
+        var applied = false
         currentTracks.value = currentTracks.value?.toMutableList()?.apply {
             runCatching {
                 when (action) {
@@ -99,10 +102,12 @@ class EditPlaylistViewModel(
                     is Action.Move -> add(action.to, removeAt(action.from))
                     is Action.Remove -> action.indexes.forEach { removeAt(it) }
                 }
+                applied = true
             }.getOrElse {
                 viewModelScope.launch { app.throwFlow.emit(it) }
             }
         }
+        return applied
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

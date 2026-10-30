@@ -800,6 +800,28 @@ class DeezerApi(private val session: DeezerSession) {
         return userList
     }
 
+    /**
+     * The account's Loved Tracks playlist id (USER.LOVEDTRACKS_ID), for Library's "Favorite tracks" tile
+     * (2026-10-30). Read the way deezer-py's Deezer._post_login reads it (gitlab.com/RemixDev/deezer-py,
+     * deezer/__init__.py:139). Null when absent, blank or "0".
+     * ⚠⚠ CALLED ONLY FROM DeezerExtension.lovedTracksIdOrNull, LAZILY FROM A LIBRARY LOAD OR AN OWNED
+     * PLAYLIST'S OPEN (DeezerPlaylistClient.loadPlaylist). Never from
+     * setLoginUser, onExtensionSelected, onLogin or any injection path: a throw there is the 1108 lockout
+     * (see onExtensionSelected). makeUser's own getUserData is not used for this because a healthy launch
+     * never runs makeUser (handleArlExpiration calls it only when credentials are missing).
+     * ⚠️ FAMILY SUB-ACCOUNTS ARE LEFT OUT, DELIBERATELY. deezer-py takes a child's id from each child
+     * entry of a separate family-accounts call (__init__.py:127); this reads USER only, so a sub-account
+     * session gets whatever USER carries. Revisit only if a family user reports the wrong list.
+     * Side effects of the call itself: callApi refreshes `sid` from Set-Cookie for this method, and a
+     * gateway refusal arrives as a plain DeezerGatewayException (getUserData is excluded from the
+     * LoginRequired conversion) - the caller treats any failure as "no tile".
+     */
+    suspend fun lovedTracksId(): String? {
+        val user = callApi("deezer.getUserData")["results"].objOrNull()?.get("USER").objOrNull()
+        return (user?.get("LOVEDTRACKS_ID") as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() && it != "0" }
+    }
+
     suspend fun getArlByEmail(mail: String, password: String, remainingAttempts: Int = 3) {
         try {
             // Get SID
