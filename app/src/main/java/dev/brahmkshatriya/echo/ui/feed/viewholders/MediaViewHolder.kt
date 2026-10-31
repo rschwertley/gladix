@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.feed.viewholders
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import android.content.Context
 import android.graphics.drawable.Animatable
 import android.view.LayoutInflater
@@ -37,6 +38,8 @@ class MediaViewHolder(
 
     init {
         binding.coverContainer.cover.clipToOutline = true
+        // TV: Right moves from the row into Play / more - see UiUtils.setTvRowButtons.
+        binding.root.setTvRowButtons(listOf(binding.play, binding.more))
         binding.root.setOnClickListener {
             when (val item = feed?.item) {
                 is Track -> {

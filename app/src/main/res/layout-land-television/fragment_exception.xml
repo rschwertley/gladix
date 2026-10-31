@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV variant of layout/fragment_exception.xml (2026-10-31). The phone layout was unusable with a D-pad:
+     the trace sat in a HorizontalScrollView, so long lines ran off the right edge with no way to scroll them,
+     and Copy was a FAB floating over the text that focus could not reach.
+     Here: a summary at the top (ExceptionFragment fills exceptionSummary, which exists only in this layout),
+     the trace wrapped and scrolled vertically by the focusable NestedScrollView, then Copy in its own row
+     below it, next in the D-pad order.
+     ⚠️ KEEPS EVERY ID ExceptionFragment READS, WITH THE SAME VIEW TYPES, so the generated binding stays
+     non-null for them and the phone path is untouched. exceptionIconContainer is kept but GONE, to give the
+     summary the space. No CoordinatorLayout: without one AppBarLayout never dispatches offsets, so
+     configureAppBar's listener stays idle (its offset would be 0/0 with nothing to collapse). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <FrameLayout
+            android:id="@+id/exceptionIconContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/exceptionMessage"
+            style="@style/Toolbar"
+            tools:title="@tools:sample/lorem/random" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <View
+        android:id="@+id/toolbarOutline"
+        style="@style/AppBarOutline" />
+
+    <TextView
+        android:id="@+id/exceptionSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="12dp"
+        android:textAppearance="?attr/textAppearanceTitleMedium"
+        tools:text="@tools:sample/lorem/random" />
+
+    <!-- Focusable so the D-pad lands here first and Up/Down scroll the trace; at the bottom edge, Down moves
+         on to Copy. The TextView is NOT selectable on TV: a selectable TextView takes focus itself and spends
+         the arrow keys moving its cursor instead of scrolling. Copy replaces selection here. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/nestedScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:focusable="true"
+        android:nextFocusDown="@id/fabCopy">
+
+        <requestFocus />
+
+        <TextView
+            android:id="@+id/exceptionDetails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="12dp"
+            android:typeface="monospace"
+            tools:text="@tools:sample/lorem/random" />
+
+    </androidx.core.widget.NestedScrollView>
+
+    <FrameLayout
+        android:id="@+id/fabContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/fabCopy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginHorizontal="24dp"
+            android:layout_marginVertical="12dp"
+            android:nextFocusUp="@id/nestedScrollView"
+            android:text="@string/str_copy"
+            app:icon="@drawable/ic_copy" />
+
+    </FrameLayout>
+
+</LinearLayout>

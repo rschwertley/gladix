@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.playlist.edit.search
 
+import androidx.core.view.updatePaddingRelative
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -54,6 +55,9 @@ class EditPlaylistSearchFragment : Fragment() {
             behavior.peekHeight = 72.dpToPx(requireContext()) + it.bottom
             binding.playlistSearchContainer.updatePadding(bottom = it.bottom)
             binding.recyclerView.updatePadding(top = it.top)
+            // Rail parity (2026-10-31): the sheet is full width, so on TV (and phone landscape) its "N songs"
+            // label and Add button sat under the left rail. it.start/end are 0 on phone portrait.
+            binding.bottomSheet.updatePaddingRelative(start = it.start, end = it.end)
         }
 
         val backCallback = object : OnBackPressedCallback(false) {

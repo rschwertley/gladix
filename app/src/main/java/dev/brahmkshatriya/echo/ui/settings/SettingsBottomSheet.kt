@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.ui.settings
 
+import android.view.ViewGroup
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import android.graphics.drawable.Animatable
 import android.os.Build.BRAND
 import android.os.Build.DEVICE
@@ -194,6 +197,13 @@ class SettingsBottomSheet : BottomSheetDialogFragment(R.layout.dialog_settings) 
         }
 
         configureBottomBar(binding.extensionBar)
+        // TV (2026-10-31): the account bar floats over the bottom 72dp of the list (configureBottomBar puts its top
+        // at the sheet's height - 72dp), and NestedScrollView scrolls a FOCUSED row only into its own bounds, so a
+        // D-pad-focused last row could sit behind the bar. End the list's viewport at the bar instead. Phone keeps
+        // the overlap, where the list's own 72dp bottom padding clears the bar once scrolled to the end.
+        if (requireContext().isTv()) binding.nestedScrollView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+            bottomMargin = 72.dpToPx(requireContext())
+        }
         binding.extensionsCont.setOnClickListener {
             dismiss()
             ExtensionsListBottomSheet.newInstance(ExtensionType.MUSIC)

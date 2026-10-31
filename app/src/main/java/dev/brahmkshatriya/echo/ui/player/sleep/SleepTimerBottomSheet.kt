@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.edit
+import androidx.core.view.doOnLayout
 import androidx.media3.common.C
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -19,6 +20,7 @@ import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import dev.brahmkshatriya.echo.utils.ui.RulerAdapter
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import java.util.Calendar
 
@@ -48,6 +50,10 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         binding.sleepTimerRecycler.adapter = adapter
         val last = viewModel.settings.getInt("sleep_timer", 5)
         adapter.submitList(timeRangeWithIntervals, last)
+        // TV: open on the duration ruler (D-pad Left/Right steps it, see RulerAdapter), not on the toolbar's X,
+        // which was the first focusable view and CANCELS the timer. Laid out, not posted, so it lands before the
+        // window picks its default focus. Phone: no focus is requested.
+        if (requireContext().isTv()) binding.sleepTimerRecycler.doOnLayout { it.requestFocus() }
 
         binding.okay.setOnClickListener { saveAndDismiss(rulerTime) }
         binding.endOfTrack.setOnClickListener { setTimerAndDismiss(Long.MAX_VALUE) }
@@ -84,7 +90,11 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private var timer = 0L
+    // ⚠️ null = NOTHING WAS CHOSEN (2026-10-31). onDismiss used to apply this unconditionally with a 0 default,
+    // so closing the sheet without choosing - Back, or a swipe down on the phone - CANCELLED a running timer
+    // and said so. Only the toolbar's X (setTimerAndDismiss(0)) cancels now. The always-apply came with the
+    // original sleep timer upstream (6c5b68b0, 2024-12-29); no reason for it is recorded.
+    private var timer: Long? = null
     private fun setTimerAndDismiss(ms: Long) {
         timer = ms
         dismiss()
@@ -98,8 +108,9 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
-        viewModel.setSleepTimer(timer)
-        val message = when (timer) {
+        val chosen = timer ?: return
+        viewModel.setSleepTimer(chosen)
+        val message = when (chosen) {
             0L -> getString(R.string.sleep_timer_cancelled)
             Long.MAX_VALUE -> {
                 val until = viewModel.browser.value?.run {
@@ -108,7 +119,7 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
                 getString(R.string.sleep_timer_set_for, requireContext().createString(until))
             }
 
-            else -> getString(R.string.sleep_timer_set_for, requireContext().createString(timer))
+            else -> getString(R.string.sleep_timer_set_for, requireContext().createString(chosen))
         }
         createSnack(message)
     }

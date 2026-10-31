@@ -103,13 +103,12 @@ class MainFragment : Fragment() {
             // GladixScroll comparison needs a clean screen alongside the collapsing ones.
             // REMOVE THE TAG WITH THE TRACE.
             val scroller = FastScrollerHelper.applyTo(recyclerView, traceTag = "main")
-            val uiViewModel by activityViewModel<UiViewModel>()
-            applyInsets(uiViewModel.tvMiniPlayerVisible) {
-                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(recyclerView.context) else 0
+            applyInsets {
+                // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
                 // TV overscan safe-area (phone: isTv() == false → 20/20, unchanged). `it.start` already carries
                 // the nav-rail width inset, so 48 is added on top of it (left = rail + 48, right = 48).
                 val tv = recyclerView.context.isTv()
-                recyclerView.applyInsets(it, if (tv) 27 else 20, if (tv) 48 else 20, bottom + 4 + miniExtra)
+                recyclerView.applyInsets(it, if (tv) 27 else 20, if (tv) 48 else 20, bottom + 4)
                 outline.updatePadding(top = it.top)
                 // Was an inline Rect here; extracted to FastScrollerHelper so the seven direct-call sites
                 // get the same treatment instead of keeping applyTo's flat 8dp forever.

@@ -116,6 +116,17 @@ class UiViewModel(
     val isMainFragment = MutableStateFlow(true)
     var isRail = false
 
+    // Set ONLY by MainActivity.setupTvMiniPlayer, which returns early unless the TV-only tvMiniPlayer view
+    // exists (layout-land-television/activity_main.xml), so it is false for the life of a phone process -
+    // portrait AND landscape. Declared ABOVE [combined] because combined's initializer reads it.
+    val tvMiniPlayerVisible = MutableStateFlow(false)
+
+    // The TV mini player's height: 1dp separator + 72dp row + 12dp progress (Jun 6). Static, like every
+    // per-screen copy of it was.
+    private val tvMiniReservePx = 85.dpToPx(context)
+    private fun tvMiniInsets(visible: Boolean) =
+        if (visible) Insets(bottom = tvMiniReservePx) else Insets()
+
     /**
      * Every inset a content view must reserve: system bars + the nav bar + the collapsed player.
      *
@@ -163,16 +174,27 @@ class UiViewModel(
      * point rather than a tidy-up: isRail is a `var` assigned once in setupNavBarAndInsets before any
      * layout, so there is nothing left here that can go stale the way isMainFragment did. If you ever
      * add a term to this lambda, it must be a COMBINED FLOW, not a .value read.
+     *
+     * ⚠⚠ THE TV MINI-PLAYER RESERVE LIVES HERE NOW (2026-10-31), not per screen. Jun 6 added the 85dp only to
+     * MainFragment, FeedFragment and MediaDetailsFragment, so every other screen that pads by this inset -
+     * all Settings pages (BaseSettingsFragment.configure), extension settings, Audio effects, Manage
+     * extensions, Downloads, playlist editing, login, the error screen - scrolled its last rows under the bar
+     * (1156: Settings -> Player). It is a COMBINED FLOW per the rule above, and those three screens no longer
+     * add their own copy. It is zero on the phone (see tvMiniPlayerVisible) and zero while the TV player is
+     * expanded, because the mini bar shows only while the sheet is HIDDEN.
      */
     val combined = systemInsets.combine(navViewInsets) { system, nav ->
         system.add(nav)
     }.combine(playerInsets) { system, player ->
         system.add(player)
+    }.combine(tvMiniPlayerVisible) { insets, mini ->
+        insets.add(tvMiniInsets(mini))
     }.stateIn(viewModelScope, Lazily, Insets())
 
     /** Imperative twin of [combined]. Same terms, same reasoning - see that doc before changing either. */
     fun getCombined() =
         systemInsets.value.add(navViewInsets.value).add(playerInsets.value)
+            .add(tvMiniInsets(tvMiniPlayerVisible.value))
 
     /**
      * What a snackbar must clear. No systemInsets term, deliberately - a Snackbar's own parent already
@@ -185,7 +207,11 @@ class UiViewModel(
      */
     fun getSnackbarInsets(): Insets {
         if (playerSheetState.value == STATE_EXPANDED) return Insets()
+        // The TV mini-player term as in [combined] (2026-10-31), so a message never sits behind the bar. Zero on the
+        // phone (tvMiniPlayerVisible is never set there). SnackBarHandler re-applies this on every combined
+        // emission, and combined now emits when the bar shows or hides.
         return navViewInsets.value.add(playerInsets.value)
+            .add(tvMiniInsets(tvMiniPlayerVisible.value))
     }
 
     fun setPlayerNavViewInsets(context: Context, isNavVisible: Boolean, isRail: Boolean): Insets {
@@ -316,7 +342,6 @@ class UiViewModel(
     // function's own isTV PARAMETER, not this field.) The force-collapse the old note describes is
     // Material defending against the illegal (HIDDEN, !hideable) pair, which can no longer occur.
     var isTv = false
-    val tvMiniPlayerVisible = MutableStateFlow(false)
     val playerSheetOffset = MutableStateFlow(0f)
     val moreSheetState = MutableStateFlow(STATE_COLLAPSED)
     val moreSheetOffset = MutableStateFlow(0f)

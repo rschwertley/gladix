@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- View tag (true) on a RecyclerView that IS the control when focused - the ruler (RulerAdapter) - so
+         FragmentUtils.focusFirstRowOnTv counts focus on it as landed. Any other RecyclerView holding focus itself
+         just means none of its rows could take it yet. -->
+    <item name="tv_focus_target" type="id" />
+</resources>

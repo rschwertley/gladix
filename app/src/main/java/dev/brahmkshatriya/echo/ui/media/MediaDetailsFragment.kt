@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.media
 
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.View
 import androidx.core.view.ViewCompat
@@ -23,7 +24,6 @@ import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
-import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
@@ -135,10 +135,9 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         // from the parent rather than from binding.
         val appBar = requireParentFragment().view?.findViewById<AppBarLayout>(R.id.appBarLayout)
         val scroller = FastScrollerHelper.applyTo(binding.recyclerView, appBar, traceTag = "media")
-        val uiViewModel by activityViewModel<UiViewModel>()
-        applyInsets(viewModel.uiResultFlow, uiViewModel.tvMiniPlayerVisible) {
-            val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(binding.recyclerView.context) else 0
-            binding.recyclerView.applyContentInsets(it, 20, 0, 16 + miniExtra)
+        applyInsets(viewModel.uiResultFlow) {
+            // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
+            binding.recyclerView.applyContentInsets(it, 20, 0, 16)
             // top = 0, disagreeing with the full-bleed screens ON PURPOSE — see applyInsets' `top` param.
             // ⚠️ THE SAME VALUE HAS NOW CARRIED THREE DIFFERENT JUSTIFICATIONS. Do not quote an older one
             // back; they are not interchangeable, and two of them are false under the current layout:
@@ -192,6 +191,9 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         )
         (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)
+        // The cast above never succeeds - fragment_media_details has no TV variant - so this page had no TV focus
+        // handling at all; this is it. // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.recyclerView)
         val loadingFlow = viewModel.isRefreshingFlow
             .combine(trackFeedData.isRefreshingFlow) { a, b -> a || b }
                 .combine(feedData.isRefreshingFlow) { a, b -> a || b }

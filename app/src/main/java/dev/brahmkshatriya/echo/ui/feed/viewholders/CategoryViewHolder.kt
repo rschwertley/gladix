@@ -54,7 +54,7 @@ class CategoryViewHolder(
         binding.bind(category)
         // ⚠️ TWO LINES NEED MORE THAN THE PHONE LAYOUT'S FIXED 48dp (2026-10-30): with the 6dp padding set
         // in bind, a 16sp title plus a subtitle overflows it and the subtitle is cut off - first seen on the
-        // artist page's "Liked songs" ("1 song"). A row with a subtitle takes collapsed_cover_size, the
+        // artist page's "Favorite tracks" ("1 song"). A row with a subtitle takes collapsed_cover_size, the
         // height of the track rows beside it. Phone only: the TV layout already wraps (minHeight 64dp),
         // so its WRAP_CONTENT is left alone. Recycled rows are reset to the layout's own height.
         if (fixedHeight > 0) binding.root.updateLayoutParams {

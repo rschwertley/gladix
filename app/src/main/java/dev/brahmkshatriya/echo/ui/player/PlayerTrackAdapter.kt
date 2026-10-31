@@ -302,52 +302,6 @@ class PlayerTrackAdapter(
         // the real track would see a mismatch and re-issue. Compared by value inside onDelivered.
         private var pendingMediaId: String? = null
 
-        // TRACE (2026-08-29, temporary, GladixArt). What the LAST cover decision on this holder was, so a
-        // screen-off wake can be read after the fact instead of guessed. Three outcomes:
-        //   declined:<guard>  - no request issued at all, and which early return stopped it. THIS IS THE
-        //                       EXPECTED failure: a stale load has already satisfied coverDrawable and
-        //                       lastBoundMediaId, so both entry points decline and a warm cache is never
-        //                       consulted. Without this line a negative result is unreadable.
-        //   issued:<site>     - a request went out, source appended when it lands (MEMORY_CACHE = the warm
-        //                       worked; NETWORK = the warm missed or the key did not match).
-        // REMOVE WITH THE TRACE.
-        var lastCoverDecision: String = "none"
-            private set
-        // The mediaId the decision above was ABOUT. Sealed with it, so the wake line can be compared
-        // against the current track instead of inferring identity from a page number. If they differ, the
-        // pager is showing the wrong page and every image-layer hypothesis is aimed at the wrong layer;
-        // if they match and the load still went to network, it is a cache problem. REMOVE WITH THE TRACE.
-        var lastCoverItemId: String? = null
-            private set
-        private var coverDecisionSealed = false
-
-        // FIRST WRITE WINS within a generation. bind (onBindViewHolder) and retryLoad
-        // (onViewAttachedToWindow) can BOTH run on the same holder in one wake traversal, in either order,
-        // and last-write-wins made a wake where bind issued and retryLoad then declined log the DECLINE -
-        // precisely the confusion this trace exists to remove. The generation is opened by
-        // beginCoverTrace() from PlayerFragment.onResume, which runs before the wake traversal, so what
-        // gets reported is the first decision taken during that traversal.
-        fun resetCoverDecision() {
-            lastCoverDecision = "none"
-            lastCoverItemId = null
-            coverDecisionSealed = false
-        }
-
-        private fun recordCoverDecision(decision: String, itemId: String?) {
-            if (coverDecisionSealed) return
-            lastCoverDecision = decision
-            lastCoverItemId = itemId
-            coverDecisionSealed = true
-        }
-
-        // The one write allowed THROUGH the seal, because a source is not a competing decision - it is the
-        // completion of the one already recorded. Guarded on an exact match so a load from the site that
-        // LOST the race cannot relabel the winner: if the sealed decision is a decline, or an issue from
-        // the other site, this no-ops.
-        private fun upgradeCoverDecision(site: String, src: String) {
-            if (lastCoverDecision == "issued:$site") lastCoverDecision = "issued:$site/$src"
-        }
-
         fun applyDrawable() {
             val index = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return
             val item = getItem(index) ?: return
@@ -358,17 +312,12 @@ class PlayerTrackAdapter(
         }
 
         fun retryLoad(item: MediaItem?) {
-            if (coverDrawable != null) {
-                recordCoverDecision("declined:coverDrawable@retryLoad", item?.mediaId)
-                return
-            }
+            if (coverDrawable != null) return
             val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
             val boundId = item?.mediaId
             pendingMediaId = boundId
-            recordCoverDecision("issued:retryLoad", boundId)
             item?.track?.cover.loadWithThumb(
                 binding.playerTrackCover, old,
-                onSource = { src -> upgradeCoverDecision("retryLoad", src) },
                 onDelivered = { drawable ->
                     if (pendingMediaId == boundId) {
                         coverDrawable = drawable
@@ -413,8 +362,6 @@ class PlayerTrackAdapter(
                 collapsedTrackTitle.text = item?.track?.title
                 collapsedTrackArtist.text = item?.track?.artists?.joinToString(", ") { it.name }
             }
-            if (item?.mediaId == lastBoundMediaId)
-                recordCoverDecision("declined:lastBoundMediaId@bind", item?.mediaId)
             if (item?.mediaId != lastBoundMediaId) {
                 // lastBoundMediaId is deliberately NOT assigned here — see its declaration. Until a
                 // terminal outcome arrives this holder stays rebindable, so a rebind of the same track
@@ -422,12 +369,10 @@ class PlayerTrackAdapter(
                 // the disk cache with no delivery required.
                 val boundId = item?.mediaId
                 pendingMediaId = boundId
-                recordCoverDecision("issued:bind", boundId)
                 coverDrawable = null
                 val old = item?.unloadedCover?.getCachedDrawable(binding.root.context)
                 item?.track?.cover.loadWithThumb(
                     binding.playerTrackCover, old,
-                    onSource = { src -> upgradeCoverDecision("bind", src) },
                     onDelivered = { drawable ->
                         if (pendingMediaId == boundId) {
                             coverDrawable = drawable
@@ -511,19 +456,6 @@ class PlayerTrackAdapter(
     fun insetsUpdated() = onEachViewHolder { updateInsets() }
     fun playerControlsHeightUpdated() = onEachViewHolder { updateInsets() }
     fun onColorsUpdated() = onEachViewHolder { updateColors() }
-    // TRACE (2026-08-29, temporary). Reads the visible page's last cover decision. No request, no paint,
-    // no state written - purely a read, so it cannot repeat the resume-time re-commit mistakes.
-    // REMOVE WITH THE TRACE.
-    // Opens a trace generation on every ATTACHED holder, not just the visible one: which holder ends up
-    // visible is decided by the traversal that has not run yet. REMOVE WITH THE TRACE.
-    fun beginCoverTrace() = onEachViewHolder { resetCoverDecision() }
-
-    // Decision and the mediaId it was about, in one lookup so the two cannot come from different holders.
-    // REMOVE WITH THE TRACE.
-    fun coverTrace(position: Int): Pair<String, String?>? =
-        (recyclerView?.findViewHolderForAdapterPosition(position) as? ViewHolder)
-            ?.let { it.lastCoverDecision to it.lastCoverItemId }
-
     fun onCurrentUpdated() {
         onEachViewHolder { applyDrawable() }
         if (current.value == null) currentDrawableListener?.invoke(null)

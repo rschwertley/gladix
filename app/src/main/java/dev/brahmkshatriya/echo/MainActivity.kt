@@ -59,6 +59,7 @@ import dev.brahmkshatriya.echo.utils.PermsUtils.checkBatteryOptimization
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.CheckBoxListener
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.marquee
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
@@ -403,6 +404,9 @@ open class MainActivity : AppCompatActivity() {
             if (current == null) return@observe
             val track = current.track
             miniTitle.text = track.title
+            // The layout asks for a marquee, but a TextView only scrolls while selected; same helper as the
+            // full TV player's title (PlayerTvFragment). Without it long titles were cut off and never moved.
+            miniTitle.marquee()
             miniArtist.text = track.artists.joinToString(", ") { it.name }
             if (current.mediaItem.mediaId != lastMiniArtId) {
                 lastMiniArtId = current.mediaItem.mediaId

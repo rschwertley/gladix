@@ -35,8 +35,10 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.inject
 import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.extension.DeezerExtension
+import dev.brahmkshatriya.echo.extension.DeezerSession
 import dev.brahmkshatriya.echo.extensions.db.ExtensionDatabase
 import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
+import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.extensions.exceptions.RequiredExtensionsMissingException
 import dev.brahmkshatriya.echo.extensions.repo.CombinedRepository
@@ -295,6 +297,21 @@ class ExtensionLoader(
         }
         scope.launch {
             music.collectLatest { setCurrentExtension() }
+        }
+        // ⚠️ A RENEWED DEEZER LOGIN IS SAVED OVER THE STORED USER (2026-10-31). See
+        // DeezerSession.onUserRenewed for why: without it the stored ARL went stale after a silent re-login,
+        // and TV pairing sent that dead ARL. Launch only, never block or throw: the callback runs inside
+        // callApi, which can be inside onExtensionSelected's injection (the 1108 lockout path).
+        // ONLY OVER THE SAME ACCOUNT that is current, so a late renewal can never re-add a logged-out user or
+        // overwrite a different one. It writes UserEntity only: currentUsersFlow observes CurrentUser, so this
+        // does not re-run setLoginUser or reload any feed.
+        DeezerSession.getInstance().onUserRenewed = { user ->
+            scope.launch {
+                val dao = db.userDao()
+                val current = dao.getCurrentUser(ExtensionType.MUSIC, "deezer") ?: return@launch
+                if (current.userId != user.id) return@launch
+                dao.insertUsers(listOf(user.toEntity(ExtensionType.MUSIC, "deezer")))
+            }
         }
         scope.launch {
             app.networkFlow.combine(all) { a, b -> a to b }.collect { (conn, all) ->

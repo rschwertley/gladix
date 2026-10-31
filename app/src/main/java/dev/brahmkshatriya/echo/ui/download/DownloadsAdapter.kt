@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.download
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -62,6 +63,8 @@ class DownloadsAdapter(
     ) : ViewHolder(binding.root) {
         init {
             binding.imageView.clipToOutline = true
+            // TV: Right moves from the row into Retry / Remove - see UiUtils.setTvRowButtons.
+            binding.root.setTvRowButtons(listOf(binding.retry, binding.remove))
         }
 
         var trackJob: Job? = null

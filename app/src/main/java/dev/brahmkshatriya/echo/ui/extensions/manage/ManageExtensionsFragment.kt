@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.extensions.manage
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvEndFocusTo
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -50,6 +52,10 @@ class ManageExtensionsFragment : Fragment() {
             scroller.applyInsets(binding.recyclerView.context, it)
         }
         applyBackPressCallback()
+        // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.recyclerView)
+        // TV: Right from any row reaches the floating Add button - see UiUtils.setTvEndFocusTo.
+        binding.recyclerView.setTvEndFocusTo(binding.fabAddExtensions)
         binding.appBarLayout.configureAppBar { offset ->
             binding.appBarOutline.alpha = offset
             binding.appBarOutline.isVisible = offset > 0

@@ -1,6 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
-import android.app.Activity
+import androidx.fragment.app.FragmentActivity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -82,9 +82,14 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
         fun getBundle(extension: Extension<*>) =
             getBundle(extension.name, extension.id, extension.type, extension.metadata.icon)
 
-        fun Activity.openLink(url: String) {
+        // ⚠️ SAYS SO WHEN NOTHING CAN OPEN THE LINK (2026-10-31). It used to swallow the failure, so on a TV with no
+        // browser - the usual case - Guide, GitHub, the credits, an extension's repo and its author link did
+        // nothing at all when pressed. Every caller passes requireActivity(), hence FragmentActivity for
+        // createSnack. Unchanged wherever a browser exists.
+        fun FragmentActivity.openLink(url: String) {
             val intent = Intent(Intent.ACTION_VIEW).apply { data = url.toUri() }
             runCatching { startActivity(intent) }
+                .onFailure { createSnack(getString(R.string.not_available_on_device)) }
         }
     }
 

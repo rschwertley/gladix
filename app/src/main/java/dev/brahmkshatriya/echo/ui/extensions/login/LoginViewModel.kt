@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions.login
 
+import dev.brahmkshatriya.echo.ui.extensions.WebViewUtils.hasWebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.R
@@ -83,6 +84,24 @@ class LoginViewModel(
         val extension = extension.first { it != null }!!
         val users = extension.getAs<LoginClient.CustomInput, List<User>> {
             onLogin("manual", mapOf("arl" to arl))
+        }
+        // ⚠️ A LINKED LOGIN THAT CAME BACK AS A GUEST IS NOT SAVED (2026-10-31). Deezer serves a dead ARL as user
+        // "0" (DeezerApi.makeUser accepts it; see DeezerApi.hasUserId), and saving it gave the TV generic Home,
+        // a refused Library and a "login required" Search. The phone now validates before posting
+        // (TvPairingFragment.submitPairing), so this is the TV's own backstop.
+        // onLogin has already put the guest credentials into the live session, so the stored current user (or
+        // nobody) is applied again before giving up; nothing else in the app would reset it.
+        val userId = users.getOrNull()?.firstOrNull()?.extras?.get("user_id")
+        if (users.getOrNull()?.isNotEmpty() == true && (userId.isNullOrBlank() || userId == "0")) {
+            val stored = extensionId?.let { id ->
+                userDao.getCurrentUser(extensionType, id)
+                    ?.let { userDao.getUser(extensionType, id, it.userId) }?.user?.getOrNull()
+            }
+            extension.getAs<LoginClient, Unit> { setLoginUser(stored) }
+            messageFlow.emit(Message(app.context.getString(R.string.tv_pairing_link_failed)))
+            loading.value = false
+            loadingOver.emit(Unit)
+            return@launch
         }
         afterLogin(users)
     }
@@ -183,7 +202,14 @@ class LoginViewModel(
             when (totalClients) {
                 0 -> loginNotSupported(extension.name)
                 1 -> when (client) {
-                    is LoginClient.WebView -> addFragmentFlow.emit(FragmentType.WebView)
+                    // Only a WebView login, on a device with no WebView (2026-10-31): the screen could not
+                    // inflate, so say so instead. With a WebView this opens exactly as before.
+                    is LoginClient.WebView ->
+                        if (app.context.hasWebView()) addFragmentFlow.emit(FragmentType.WebView)
+                        else {
+                            messageFlow.emit(Message(app.context.getString(R.string.not_available_on_device)))
+                            loadingOver.emit(Unit)
+                        }
                     is LoginClient.CustomInput -> addFragmentFlow.emit(FragmentType.CustomInput(null))
                     null -> loginNotSupported(extension.name)
                 }

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- TV focus-border gap (Jul 20 TV device-compatibility session, landed in bc33c50c 2026-07-18): tv_focused_list_item draws a 4dp stroke as android:foreground, so the ~8dp gap between the border and the content must come from THIS layout's padding. Do not inset the drawable instead (that pushes the stroke onto the content).
+     Here: padding 12dp on ALL sides (the cover include sits 4dp up, so ~8dp above it). [CORRECTED 2026-10-31] 318be586 ("Even spacing between sections", 2026-09-04) cut this to paddingHorizontal only, mirroring the phone layout, and the border touched the cover and the text on every TV carousel (1156). Restored. HorizontalListViewHolder.measuredCoverChromePx reads this padding, so the row height follows it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     style="@style/Selectable"
@@ -7,7 +9,7 @@
     android:clipToPadding="false"
     android:foreground="@drawable/tv_focused_list_item"
     android:orientation="vertical"
-    android:paddingHorizontal="12dp">
+    android:padding="12dp">
 
     <include
         android:id="@+id/coverContainer"

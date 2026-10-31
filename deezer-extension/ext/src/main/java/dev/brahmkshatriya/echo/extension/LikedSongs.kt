@@ -6,7 +6,7 @@ import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Track
 
 /**
- * One liked song, light, for the artist page's "Liked songs" entry (2026-10-30). Held for the session by
+ * One liked song, light, for the artist page's "Favorite tracks" entry (2026-10-30). Held for the session by
  * DeezerExtension's liked index; never persisted.
  *
  * ⚠⚠ BUILT FROM THE ALREADY-GRAFTED LIKED RECORD, AND REBUILT WITHOUT A FETCH - THAT IS THE POINT.

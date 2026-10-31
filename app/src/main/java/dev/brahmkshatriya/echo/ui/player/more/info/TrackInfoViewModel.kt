@@ -21,6 +21,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 
@@ -46,12 +48,38 @@ class TrackInfoViewModel(
     }
 
     init {
+        // ⚠️ KEYED ON (extension id, track id, isLoaded), NOT ON EVERY PlayerState.Current (2026-10-30).
+        // Current also carries isPlaying, which PlayerEventListener.updateCurrentFlow rewrites on every
+        // play/pause and buffering->ready change, and each of those restarted this whole load from null:
+        // header back to its invisible placeholder, every section blanked and refetched.
+        // HISTORY (Jun 7): the tab's jumpiness was recorded then as happening ONLY when Info is opened in
+        // the first few seconds after a track starts, which is when isPlaying flips; a skeleton fix was
+        // declined then. Nothing relied on the reload: the like heart is not shown on this tab (Jun 6),
+        // and the stale-heart fix (Oct 23, Cached.setTrackLiked) writes the cached state directly.
+        // The trigger itself is upstream (0a3bce3f), with no reason recorded.
+        val trackKey = playerState.current.map { current ->
+            current?.mediaItem?.let { Triple(it.extensionId, it.track.id, it.isLoaded) }
+        }.distinctUntilChanged()
         viewModelScope.launch(Dispatchers.IO) {
-            listOf(playerState.current, extensionFlow, refreshFlow).merge().collectLatest {
-                itemResultFlow.value = null
-                val extension = extensionFlow.value ?: return@collectLatest
+            listOf(trackKey, extensionFlow, refreshFlow).merge().collectLatest {
+                val extension = extensionFlow.value
                 val track = currentFlow.value?.mediaItem?.takeIf { it.isLoaded }?.track
-                    ?: return@collectLatest
+                // The full header from the first frame, built from the track the player already holds,
+                // so MediaHeaderAdapter binds its Success holder at once instead of the invisible Loading
+                // line, and the loaded state below rebinds that same holder in place. The capability
+                // fields are unknown here, so they are null; the details the load adds (Deezer's
+                // withInfoDetails fill included) make the header grow once, downward.
+                // Set BEFORE itemResultFlow is cleared, so uiResultFlow never passes through null.
+                cacheResultFlow.value = if (extension != null && track != null) Result.success(
+                    MediaState.Loaded(
+                        extensionId = extension.id, item = track, isFollowed = null, followers = null,
+                        isSaved = null, isLiked = null, isHidden = null,
+                        showRadio = false, showShare = false,
+                    )
+                ) else null
+                itemResultFlow.value = null
+                extension ?: return@collectLatest
+                track ?: return@collectLatest
                 itemResultFlow.value = loadMedia(
                     app, extension, MediaState.Unloaded(extension.id, track)
                 ).map { withInfoDetails(extension, it) }

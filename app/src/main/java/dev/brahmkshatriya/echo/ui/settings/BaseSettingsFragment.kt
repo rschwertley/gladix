@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.settings
 
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -58,6 +59,9 @@ abstract class BaseSettingsFragment : Fragment() {
 
         childFragmentManager.beginTransaction().replace(R.id.genericFragmentContainer, creator())
             .commit()
+        // Covers every BaseSettingsFragment page (Look, Player, Other, extension settings) in one place.
+        // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.genericFragmentContainer)
     }
 
     companion object {

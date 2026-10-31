@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.utils.ui
 
+import androidx.recyclerview.widget.RecyclerView
+import android.view.ViewGroup
+import android.view.KeyEvent
 import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
@@ -145,6 +148,76 @@ object UiUtils {
         (getSystemService(Context.UI_MODE_SERVICE) as UiModeManager).currentModeType ==
             UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+
+    /**
+     * ⚠️ TV: A FOCUSABLE ROW THAT HOLDS VISIBLE BUTTONS - MOVE INTO THEM WITH RIGHT (2026-10-31). Android's focus
+     * search never moves into a view that sits inside the focused one, so on TV these buttons could not be
+     * reached at all: Downloads' Retry and Remove, quick search's insert, Play and the more button on media
+     * rows, the video more button.
+     * The row keeps focus and its own OK action (open the item, open the error). The END key (Right; Left in
+     * RTL) moves to the first visible, enabled button, then on through the others; the START key moves back,
+     * from the first button to the row. When no button is showing, or from the last one, the key is not
+     * consumed and focus moves on as before - so a two-column feed still reaches the next column.
+     * Not the slider fix's "row unfocusable", because these rows have an action of their own.
+     * [rowKeys] runs first for a row that already needs its own key handling (a view has one key listener).
+     * Phone: returns without registering anything.
+     */
+    fun View.setTvRowButtons(
+        buttons: List<View>,
+        rowKeys: ((keyCode: Int, event: KeyEvent) -> Boolean)? = null,
+    ) {
+        if (!context.isTv()) return
+        val row = this
+        fun View.isEndKey(keyCode: Int) = keyCode ==
+            if (layoutDirection == View.LAYOUT_DIRECTION_RTL) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        fun View.isStartKey(keyCode: Int) = keyCode ==
+            if (layoutDirection == View.LAYOUT_DIRECTION_RTL) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+        fun shown() = buttons.filter { it.isShown && it.isEnabled }
+        row.setOnKeyListener { v, keyCode, event ->
+            if (rowKeys?.invoke(keyCode, event) == true) return@setOnKeyListener true
+            if (!v.isEndKey(keyCode)) return@setOnKeyListener false
+            val first = shown().firstOrNull() ?: return@setOnKeyListener false
+            if (event.action == KeyEvent.ACTION_DOWN) first.requestFocus()
+            true
+        }
+        buttons.forEach { button ->
+            button.isFocusable = true
+            button.setOnKeyListener { v, keyCode, event ->
+                val visible = shown()
+                val index = visible.indexOf(v)
+                if (index < 0) return@setOnKeyListener false
+                val target = when {
+                    v.isStartKey(keyCode) -> visible.getOrNull(index - 1) ?: row
+                    v.isEndKey(keyCode) -> visible.getOrNull(index + 1) ?: return@setOnKeyListener false
+                    else -> return@setOnKeyListener false
+                }
+                if (event.action == KeyEvent.ACTION_DOWN) target.requestFocus()
+                true
+            }
+        }
+    }
+
+    /**
+     * ⚠️ TV: THE END KEY FROM ANY ROW REACHES THE PAGE'S FLOATING BUTTON (2026-10-31). Manage extensions' Add and
+     * Downloads' Cancel all float over the list's bottom-end corner, so focus search reached them only from a
+     * row that happened to sit next to them. Every row - and every focusable view inside it - gets the button as
+     * its user-set next focus toward the end (Right; Left in RTL) as it attaches. A row that consumes that key
+     * first (UiUtils.setTvRowButtons) still does; its last button then continues here. When the button is hidden,
+     * the user-set target is skipped and focus search runs as before.
+     * Phone: returns without registering anything.
+     */
+    fun RecyclerView.setTvEndFocusTo(fab: View) {
+        if (!context.isTv()) return
+        fun View.point() {
+            if (layoutDirection == View.LAYOUT_DIRECTION_RTL) nextFocusLeftId = fab.id
+            else nextFocusRightId = fab.id
+            if (this is ViewGroup) for (i in 0 until childCount) getChildAt(i).point()
+        }
+        addOnChildAttachStateChangeListener(object : RecyclerView.OnChildAttachStateChangeListener {
+            override fun onChildViewAttachedToWindow(view: View) = view.point()
+            override fun onChildViewDetachedFromWindow(view: View) {}
+        })
+    }
 
     fun Int.dpToPx(context: Context) = (this * context.resources.displayMetrics.density).toInt()
 

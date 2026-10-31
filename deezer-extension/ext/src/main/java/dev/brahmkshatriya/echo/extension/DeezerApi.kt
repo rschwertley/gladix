@@ -583,6 +583,9 @@ class DeezerApi(private val session: DeezerSession) {
                             throw ClientException.LoginRequired()
                         }
                         DeezerExtension().setLoginUser(userList.first())
+                        // The renewed ARL/sid/token, saved over the stored user - see
+                        // DeezerSession.onUserRenewed for why, and why this cannot throw.
+                        session.notifyUserRenewed(userList.first())
                         return@withContext callApi(method, paramsBuilder, gatewayInput)
                     }
                 }

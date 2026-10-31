@@ -170,7 +170,11 @@ class PlayerTvFragment : Fragment() {
             binding.tvTrackHeart.isChecked = item.isLiked
             likeListener.enabled = true
             lifecycleScope.launch {
-                binding.tvTrackHeart.isVisible = viewModel.isLikeClient(item.extensionId)
+                val showHeart = viewModel.isLikeClient(item.extensionId)
+                // Hiding the FOCUSED heart (next track from an extension without likes) dropped focus out of the
+                // player entirely (2026-10-31). Hand it to the heart's own Down neighbour first.
+                if (!showHeart && binding.tvTrackHeart.hasFocus()) binding.tvSeekBar.requestFocus()
+                binding.tvTrackHeart.isVisible = showHeart
             }
         }
 
@@ -246,7 +250,13 @@ class PlayerTvFragment : Fragment() {
             viewModel.next()
             (binding.tvTrackNext.icon as Animatable).start()
         }
-        observe(viewModel.nextEnabled) { binding.tvTrackNext.isEnabled = it }
+        observe(viewModel.nextEnabled) {
+            // Disabling the FOCUSED Next (the last track, repeat off) must not strand focus (2026-10-31): hand it
+            // to Next's Left neighbour, play/pause. Previous needs nothing - it is enabled whenever an item is
+            // current (PlayerUiListener's previousEnabled).
+            if (!it && binding.tvTrackNext.hasFocus()) binding.tvTrackPlayPause.requestFocus()
+            binding.tvTrackNext.isEnabled = it
+        }
 
         binding.tvTrackPrevious.setOnClickListener {
             viewModel.previous()

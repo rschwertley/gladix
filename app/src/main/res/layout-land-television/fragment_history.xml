@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV variant of layout/fragment_history.xml (2026-10-31): identical except the list is a TvAwareRecyclerView,
+     as in the other main tabs' TV layouts (fragment_recycler_with_refresh). History had no TV focus handling at
+     all: nothing placed focus when its list first loaded, and nothing restored the row after returning from a
+     page opened from it. TvAwareRecyclerView does both under the main-tab rule - it never pulls focus off the
+     rail on a tab switch - which is why this, and not FragmentUtils.focusFirstRowOnTv, is used here. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:descendantFocusability="afterDescendants"
+            android:focusable="true"
+            android:paddingHorizontal="20dp"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+            tools:listitem="@layout/item_history" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <FrameLayout
+        android:id="@+id/appBarOutline"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?navBackground"
+        android:paddingTop="12dp">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?colorOutlineVariant" />
+
+    </FrameLayout>
+
+</FrameLayout>

@@ -27,7 +27,6 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
-import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment.Companion.bind
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
@@ -196,7 +195,6 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             val binding = FragmentRecyclerWithRefreshBinding.bind(view)
             val recyclerView = binding.recyclerView as RecyclerView
-            val uiViewModel by activityViewModel<UiViewModel>()
             // ⚠⚠ [CORRECTED 2026-09-13] THE "matching HomeFragment/LibraryFragment/SearchFragment"
             // CLAIM WAS FALSE - AND IT WAS FALSE FOR ALL THREE, NOT JUST ONE. Verified by reading them:
             //     HomeFragment     applyInsets(recyclerView, ...) :68  ->  getTouchHelper ... :84
@@ -228,9 +226,9 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             // FeedFragment's layout (fragment_generic_collapsable.xml); this is FeedFragment.Actual.
             val appBar = requireParentFragment().view?.findViewById<AppBarLayout>(R.id.appBarLayout)
             val scroller = FastScrollerHelper.applyTo(recyclerView, appBar, traceTag = "seeall")
-            applyInsets(uiViewModel.tvMiniPlayerVisible) {
-                val miniExtra = if (isRail && tvMiniPlayerVisible.value) 85.dpToPx(recyclerView.context) else 0
-                recyclerView.applyContentInsets(it, 20, 8, 16 + miniExtra)
+            applyInsets {
+                // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
+                recyclerView.applyContentInsets(it, 20, 8, 16)
                 // top = 0 — same reason as MediaDetailsFragment: fragment_generic_collapsable puts this
                 // RecyclerView below an AppBarLayout in a CoordinatorLayout, so the status bar is the
                 // header's, not this view's. applyContentInsets above likewise adds no insets.top.

@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.ui.common
 
+import androidx.core.view.updatePaddingRelative
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyAppBarRailInset
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -47,7 +50,15 @@ class ExceptionFragment : Fragment() {
         applyInsets {
             binding.nestedScrollView.applyContentInsets(it)
             binding.fabContainer.applyFabInsets(it, systemInsets.value)
+            // TV-layout summary (null on the phone layout): clear the rail like the trace below it. 24dp is the
+            // layout's own horizontal padding.
+            val pad = 24.dpToPx(requireContext())
+            binding.exceptionSummary?.updatePaddingRelative(start = pad + it.start, end = pad + it.end)
         }
+        // The header (toolbar: back + title) cleared nothing on the left, so on TV it sat under the rail. Same
+        // helper as the other configureAppBar-only headers; isRail-gated, so phone portrait is untouched and
+        // phone landscape gets the same parity its other headers have.
+        applyAppBarRailInset(binding.appBarLayout)
         applyBackPressCallback()
         binding.appBarLayout.configureAppBar { offset ->
             binding.toolbarOutline.alpha = offset
@@ -60,6 +71,16 @@ class ExceptionFragment : Fragment() {
 
         binding.exceptionMessage.title = data.title
         binding.exceptionDetails.text = data.trace
+        // TV ONLY: exceptionSummary exists only in layout-land-television/fragment_exception.xml, so it is
+        // null on the phone. Shows the top exception's line and every "Caused by:" line (for a Deezer
+        // refusal, DeezerGatewayException's toString with method, lang and error=...) ahead of the frames.
+        // Keyed on the section markers ExceptionUtils.getStackTrace writes; if those change, this goes blank
+        // rather than wrong.
+        binding.exceptionSummary?.text = data.trace.lineSequence()
+            .dropWhile { it != "---Stack Trace---" }.drop(1)
+            .takeWhile { it != "---Details---" }
+            .filterIndexed { index, line -> index == 0 || line.startsWith("Caused by: ") }
+            .joinToString("\n")
         binding.fabCopy.setOnClickListener {
             copyException()
         }

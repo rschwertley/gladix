@@ -8,6 +8,7 @@ import androidx.preference.PreferenceViewHolder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlin.math.max
 import kotlin.math.min
 
@@ -34,6 +35,26 @@ class MaterialSliderPreference(
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
         val slider = holder.itemView.findViewById<Slider>(R.id.preferences_slider)
+        // ⚠️ TV: THE ROW GIVES UP FOCUS SO THE D-PAD LANDS ON THE SLIDER (2026-10-31). Preference.onBindViewHolder
+        // makes the row focusable (isSelectable), and the Slider inside it was then unreachable: focus stopped
+        // on the row, where Left/Right do nothing, so Crossfade could not be turned on with a remote.
+        // Everything else is Material's own: BaseSlider (Material 1.14.0) is focusable and clickable from its
+        // constructor, steps by stepSize on DPAD_LEFT/RIGHT in onKeyDown (about 20 steps across the range once
+        // the key reports a long press), draws its halo while focused, and dispatches those changes with
+        // fromUser = true to the SAME change listener below - so a D-pad step persists exactly as a drag does.
+        // Up/Down are not consumed, so they move between rows; Left/Right are consumed even at either end.
+        // Center/OK reaches View's default press/performClick with no click listener, so it does nothing.
+        // The row stays the same view across the summary updates below: PreferenceGroupAdapter rebinds with a
+        // payload (androidx.preference 1.2.1), so focus is not lost per step.
+        // Re-applied on every bind because super re-sets it. Phone: isTv() is false, nothing changes.
+        if (context.isTv()) holder.itemView.isFocusable = false
+        // ⚠️ ONE LISTENER PER BIND, CLEARED BEFORE THE VALUE WRITES BELOW (2026-10-31). Each bind used to ADD a
+        // listener and never remove one, and every summary update rebinds this row, so they piled up by one per
+        // value change. Cleared FIRST because BaseSlider.setValuesInternal (Material 1.14.0) dispatches to every
+        // attached listener when slider.value is set: a stale listener left by a DIFFERENT slider preference on
+        // a recycled row (Crossfade and Cache size share this layout) would have persisted this row's value
+        // under its own key. Nothing else attaches listeners to this Slider.
+        slider.clearOnChangeListeners()
         val current = getPersistedInt(defaultValue ?: from)
         val min = if (allowOverride) min(from, current) else from
         slider.valueFrom = min.toFloat()

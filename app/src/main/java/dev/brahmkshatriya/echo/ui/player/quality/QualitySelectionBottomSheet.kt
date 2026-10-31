@@ -495,6 +495,10 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
         textView.isVisible = visible
         chipGroup.apply {
             isVisible = visible
+            // Every choice re-emits and rebuilds the group, and removing the FOCUSED chip sent D-pad focus to the
+            // sheet's close button (2026-10-31). Note the focused position and give it back after the rebuild.
+            // Nothing in this group has focus in touch mode, so this is a no-op on the phone.
+            val focusedIndex = (0 until childCount).firstOrNull { getChildAt(it).hasFocus() }
             removeAllViews()
             list.forEachIndexed { index, t ->
                 val chip = Chip(context)
@@ -507,6 +511,8 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
                     if (isChecked) onClick(chip, t)
                 }
             }
+            if (focusedIndex != null && visible && childCount > 0)
+                getChildAt(focusedIndex.coerceAtMost(childCount - 1)).requestFocus()
         }
     }
 }

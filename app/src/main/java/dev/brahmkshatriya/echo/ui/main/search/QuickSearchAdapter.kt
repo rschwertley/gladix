@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.main.search
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -63,7 +64,9 @@ class QuickSearchAdapter(
         // Non-first rows keep normal list movement (return false). Re-applied every bind, so it survives list
         // rebuilds. Consumes both DOWN and UP of the key at row 0 so the press is fully handled; acts once on
         // DOWN. Installed only when onFirstRowUp != null (TV) — phone rows get no key listener.
-        if (onFirstRowUp != null) holder.itemView.setOnKeyListener { _, keyCode, event ->
+        // The row also holds the insert button, so the same listener carries the TV row-buttons rule (Right
+        // into insert) - see UiUtils.setTvRowButtons; the first-row UP runs first via rowKeys.
+        if (onFirstRowUp != null) holder.itemView.setTvRowButtons(listOf(holder.insertView)) { keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP && holder.bindingAdapterPosition == 0) {
                 if (event.action == KeyEvent.ACTION_DOWN) onFirstRowUp.invoke()
                 true

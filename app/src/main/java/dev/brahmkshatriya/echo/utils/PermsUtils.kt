@@ -243,12 +243,18 @@ object PermsUtils {
         val settings = getSettings()
         if (settings.getBoolean(BATTERY_OPTIMIZATION_ASKED, false)) return
         settings.edit { putBoolean(BATTERY_OPTIMIZATION_ASKED, true) }
-        startActivity(
-            Intent(
-                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                Uri.parse("package:$packageName")
+        // ⚠️ GUARDED (2026-10-31): this runs from MainActivity.onCreate, and a device whose settings app has no
+        // handler for this action (some TVs) threw ActivityNotFoundException at first launch. Skipping the
+        // prompt is the right outcome there - there is nothing to ask the user. The flag above is written
+        // first either way, so it is asked at most once.
+        runCatching {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
             )
-        )
+        }
     }
 
     fun <I, O> ComponentActivity.registerActivityResultLauncher(

@@ -38,7 +38,7 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
     }.toFeed()
 
     /**
-     * ⚠️ "LIKED SONGS" - ONE ENTRY, FIRST ON THE PAGE (2026-10-30), like Spotify's: the user's liked songs by
+     * ⚠️ "FAVORITE TRACKS" (titled "Liked songs" until 2026-10-31) - ONE ENTRY, FIRST ON THE PAGE (2026-10-30), like Spotify's: the user's liked songs by
      * this artist (DeezerExtension.likedByArtist - by artist id, or credited as a guest after "feat."). null
      * for a guest session or no match, so no entry shows.
      * ONE ENTRY, NOT ROWS: a song tapped ON the artist page has the artist as its context, which
@@ -55,7 +55,8 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         if (liked.isEmpty()) return null
         return Shelf.Category(
             id = "liked",
-            title = "Liked songs",
+            // Same wording as DeezerLibraryClient.FAVORITE_TRACKS (Library's tile) and Deezer's own app.
+            title = "Favorite tracks",
             subtitle = if (liked.size == 1) "1 song" else "${liked.size} songs",
             feed = Feed(listOf()) {
                 val tracks = api.markUnplayable(liked.map { it.toTrack() })

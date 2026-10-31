@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions.add
 
+import android.content.ActivityNotFoundException
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -48,7 +49,17 @@ class ExtensionsAddBottomSheet : BottomSheetDialogFragment() {
         binding.installButton.setOnClickListener {
             val isLink = binding.installationTypeGroup.checkedButtonId == R.id.linkAdd
             if (!isLink) lifecycleScope.launch {
-                val file = runCatching { requireActivity().openFileSelector() }.getOrNull()
+                val activity = requireActivity()
+                // A device with no file picker (common on TV) used to close the sheet and do nothing: the
+                // ActivityNotFoundException that ActivityResultRegistry.launch rethrows (androidx.activity
+                // 1.13.0) was dropped here with every other failure. Say so instead; on the activity, because
+                // this sheet is dismissed just below. A back-out (NoFileSelected) stays silent.
+                val file = runCatching { activity.openFileSelector() }
+                    .onFailure {
+                        if (it is ActivityNotFoundException)
+                            activity.createSnack(getString(R.string.not_available_on_device))
+                    }
+                    .getOrNull()
                 extensionViewModel.installWithPrompt(listOfNotNull(file))
                 dismissAllowingStateLoss()
             } else {

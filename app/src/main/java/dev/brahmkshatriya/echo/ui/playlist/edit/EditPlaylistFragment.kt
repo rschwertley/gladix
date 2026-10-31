@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.playlist.edit
 
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -78,6 +79,8 @@ class EditPlaylistFragment : Fragment() {
         }
 
         applyBackPressCallback()
+        // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.recyclerView)
         binding.appBarLayout.configureAppBar { offset ->
             binding.toolbarOutline.alpha = offset
             binding.toolbarIconContainer.alpha = 1 - offset

@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.ui.common
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
+import com.google.android.material.R as MaterialR
+import dev.brahmkshatriya.echo.R
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.updateLayoutParams
@@ -171,6 +174,7 @@ class SnackBarHandler(
         ): SnackBarHandler {
             val handler by inject<SnackBarHandler>()
             val padding = 8.dpToPx(this@setupSnackBar)
+            val isTv = isTv()
             @Suppress("IDENTITY_SENSITIVE_OPERATIONS_WITH_VALUE_TYPE")
             val snackBars = WeakHashMap<Int, Snackbar>()
             fun updateInsets(snackBar: Snackbar) {
@@ -189,6 +193,23 @@ class SnackBarHandler(
                 updateInsets(snackBar)
                 message.action?.run { snackBar.setAction(name) { handler() } }
                 snackBars[message.hashCode()] = snackBar
+                // ⚠️ TV: THE ACTION (Undo, Sign in, Retry) IS A D-PAD STOP WHILE THE SNACKBAR SHOWS (2026-10-31). Nothing
+                // could reach it: the mini bar's Down points at itself (the May focus-containment fix) and a feed's
+                // last row goes to the mini bar or nowhere. While an ACTIONABLE snackbar is up, the mini bar's Down
+                // goes to its action (TvAwareRecyclerView's bottom-of-feed route covers the no-mini-bar case);
+                // on dismissal the self-loop is restored, and focus left on the vanished action goes back to the
+                // bar. Durations are unchanged. Phone: isTv is false and none of this runs.
+                if (isTv && message.action != null) snackBar.addCallback(object : Snackbar.Callback() {
+                    override fun onShown(sb: Snackbar?) {
+                        findViewById<View>(R.id.tvMiniPlayer)?.nextFocusDownId = MaterialR.id.snackbar_action
+                    }
+
+                    override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
+                        val bar = findViewById<View>(R.id.tvMiniPlayer) ?: return
+                        bar.nextFocusDownId = R.id.tvMiniPlayer
+                        if (snackBar.view.findFocus() != null && bar.isShown) bar.requestFocus()
+                    }
+                })
                 snackBar.addCallback(object : Snackbar.Callback() {
                     override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
                         snackBars.remove(message.hashCode())

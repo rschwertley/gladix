@@ -4,6 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import androidx.recyclerview.widget.RecyclerView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
+import java.lang.ref.WeakReference
 import androidx.core.net.toFile
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -504,5 +511,88 @@ object FragmentUtils {
         }
         openMediaItemFragment(extensionId, type, id, name)
     }
+    /**
+     * ⚠️ TV: PUT D-PAD FOCUS ON THE PAGE'S FIRST ROW WHEN IT OPENS, AND BACK ON THE ROW YOU LEFT WHEN YOU RETURN
+     * (2026-10-31). Settings sub-pages and the lists opened from Settings do not use TvAwareRecyclerView, so
+     * nothing anchored focus on them: it stayed wherever it was, typically the TV mini-player bar, and the
+     * page could not be entered without hunting for it.
+     * Same idea as the Jul TV overhaul's landing fix (act once LAID OUT, not on a post), driven by global
+     * layout so it covers both cases without a hook in each fragment: the first layout where the page is
+     * shown (it has rows only once its list or child fragment has laid out, so it retries on each layout
+     * until a row takes focus), and the layout after the page is shown again - openFragment HIDES the page
+     * under a deeper one rather than pausing it. On return the last row focused inside [content] is
+     * restored if it is still attached, else the first row.
+     * NEVER STEALS: if focus is already anywhere inside this page (its toolbar included), it does nothing.
+     * AND STOPS WAITING ONCE YOU MOVE (2026-10-31): [landedOn] is where focus was when this showing began; if
+     * focus then goes anywhere else outside the page, the user navigated away, so the wait ends and rows
+     * arriving later (a slow list) can never pull focus back. If nothing had focus at that moment, the first
+     * focus that appears is taken as the landing spot rather than as a move.
+     * ⚠️ A RecyclerView FOCUSED ITSELF IS NOT A LANDING (2026-10-31). recyclerview 1.4.0 makes every
+     * RecyclerView focusable (setFocusableInTouchMode in its constructor) with FOCUS_AFTER_DESCENDANTS, so while
+     * no row can take focus yet (loading, empty) the list takes it itself - invisibly, and Down cannot leave it
+     * into rows that arrive later. That used to end the wait. Now it keeps waiting and asks again on the next
+     * layout, when a row can win. The ruler is the exception: tagged R.id.tv_focus_target by RulerAdapter,
+     * because the list IS the control there.
+     * Phone: returns before registering anything.
+     */
+    fun Fragment.focusFirstRowOnTv(content: ViewGroup) {
+        if (!requireContext().isTv()) return
+        val root = view ?: return
+        fun View?.isInside(parent: View): Boolean {
+            var v: View? = this
+            while (v != null) {
+                if (v === parent) return true
+                v = v.parent as? View
+            }
+            return false
+        }
+        fun View?.isLanding() =
+            this != null && (this !is RecyclerView || getTag(R.id.tv_focus_target) == true)
+        var pending = true
+        var wasShown = false
+        var lastFocused: WeakReference<View>? = null
+        // Set at the first shown layout of each showing while pending; null = not landed yet.
+        var landedOn: WeakReference<View>? = null
+        val focusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
+            if (newFocus.isInside(content) && newFocus.isLanding()) lastFocused = WeakReference(newFocus)
+            if (!pending || !wasShown) return@OnGlobalFocusChangeListener
+            when {
+                newFocus.isInside(root) -> if (newFocus.isLanding()) pending = false
+                landedOn == null -> landedOn = WeakReference(newFocus)
+                newFocus !== landedOn?.get() -> pending = false
+            }
+        }
+        val layoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (!root.isShown) {
+                if (wasShown) pending = true
+                wasShown = false
+                landedOn = null
+                return@OnGlobalLayoutListener
+            }
+            if (!wasShown && pending) landedOn = root.rootView.findFocus()?.let { WeakReference(it) }
+            wasShown = true
+            if (!pending) return@OnGlobalLayoutListener
+            val current = root.rootView.findFocus()
+            if (current.isInside(root) && current.isLanding()) {
+                pending = false
+                return@OnGlobalLayoutListener
+            }
+            val restored = lastFocused?.get()
+                ?.takeIf { it.isAttachedToWindow && it.isShown && it.isInside(content) }
+                ?.requestFocus() == true
+            if ((restored || content.requestFocus(View.FOCUS_DOWN)) && root.rootView.findFocus().isLanding())
+                pending = false
+        }
+        root.viewTreeObserver.addOnGlobalFocusChangeListener(focusListener)
+        root.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+        viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                root.viewTreeObserver.run {
+                    if (!isAlive) return
+                    removeOnGlobalFocusChangeListener(focusListener)
+                    removeOnGlobalLayoutListener(layoutListener)
+                }
+            }
+        })
+    }
 }
-

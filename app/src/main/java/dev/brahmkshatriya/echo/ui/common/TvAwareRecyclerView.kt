@@ -76,8 +76,13 @@ class TvAwareRecyclerView @JvmOverloads constructor(
                     // focus can leave the feed to reach it — our non-null return preempts nextFocusDown, so we
                     // resolve the target here. Bar GONE (nothing playing) -> stay put. NEVER return null (keeps
                     // the View? non-null invariant that guards the leanback null-path NPE).
+                    // [2026-10-31] Nothing playing but an actionable snackbar showing: go to its action (Undo, Sign
+                    // in, Retry), which SnackBarHandler.setupSnackBar otherwise exposes from the mini bar's Down.
                     rootView?.findViewById<View>(R.id.tvMiniPlayer)
-                        ?.takeIf { it.visibility == View.VISIBLE } ?: focused
+                        ?.takeIf { it.visibility == View.VISIBLE }
+                        ?: rootView?.findViewById<View>(com.google.android.material.R.id.snackbar_action)
+                            ?.takeIf { it.isShown }
+                        ?: focused
                 }
             }
             FOCUS_UP -> {
@@ -265,6 +270,20 @@ class TvAwareRecyclerView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (isTv) runCatching { adapter?.registerAdapterDataObserver(initialAnchorObserver) }
+    }
+
+    // ⚠️ ALSO REGISTERED WHEN THE ADAPTER IS SET WHILE ATTACHED (2026-10-31). onAttachedToWindow alone missed
+    // every fragment added while the activity is already showing: fragment 1.9.1's
+    // FragmentStateManager.createView adds the view to its container BEFORE performViewCreated, so the list
+    // attaches with no adapter and configureGridLayout sets it afterwards - the observer was never registered
+    // and the first-load anchor never ran (See all, Library and Search on first visit, playlist search).
+    // Old adapter unregistered first; runCatching because registering an observer twice throws.
+    override fun setAdapter(adapter: Adapter<*>?) {
+        if (isTv && isAttachedToWindow)
+            runCatching { this.adapter?.unregisterAdapterDataObserver(initialAnchorObserver) }
+        super.setAdapter(adapter)
+        if (isTv && isAttachedToWindow)
+            runCatching { adapter?.registerAdapterDataObserver(initialAnchorObserver) }
     }
 
     override fun onDetachedFromWindow() {

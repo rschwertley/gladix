@@ -10,7 +10,13 @@ import androidx.lifecycle.lifecycleScope
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.databinding.FragmentTvPairingBinding
+import dev.brahmkshatriya.echo.common.models.User
+import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
+import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import kotlinx.coroutines.Dispatchers
@@ -56,16 +62,34 @@ class TvPairingFragment : Fragment() {
         }
     }
 
-    private fun submitPairing(code: String) {
+    // The code waiting on the Deezer sign-in screen opened by submitPairing; see onHiddenChanged.
+    private var signInCode: String? = null
+
+    /**
+     * ⚠⚠ ONLY A VALIDATED ARL IS EVER POSTED (2026-10-31). This used to post the STORED user's ARL as is,
+     * which goes stale after a silent re-login (see DeezerSession.onUserRenewed), and a dead ARL gives the TV
+     * a guest session. DeezerExtension.userForPairing checks it with deezer.getUserData and renews it
+     * silently when it can; when it cannot, the Deezer sign-in screen opens, and on returning this retries
+     * ONCE with the same code ([afterSignIn]) and then stops, so backing out of sign-in cannot loop.
+     */
+    private fun submitPairing(code: String, afterSignIn: Boolean = false) {
         binding.confirmButton.isEnabled = false
         binding.codeInputLayout.isEnabled = false
         showStatus("Linking…")
         lifecycleScope.launch {
-            val arl = getArl()
-            if (arl.isNullOrEmpty()) {
-                showStatus("Not logged in to Deezer. Please log in first.")
-                binding.confirmButton.isEnabled = true
-                binding.codeInputLayout.isEnabled = true
+            val arl = validatedArl()
+            if (arl == null) {
+                if (afterSignIn) {
+                    showStatus("Not signed in to Deezer. Sign in, then enter the code again.")
+                    binding.confirmButton.isEnabled = true
+                    binding.codeInputLayout.isEnabled = true
+                } else {
+                    signInCode = code
+                    showStatus("Sign in to Deezer to link your TV.")
+                    openFragment<LoginFragment>(
+                        null, LoginFragment.getBundle("deezer", "Deezer", ExtensionType.MUSIC)
+                    )
+                }
                 return@launch
             }
             val ok = postPairing(code, arl)
@@ -80,11 +104,20 @@ class TvPairingFragment : Fragment() {
         }
     }
 
-    private suspend fun getArl(): String? = withContext(Dispatchers.IO) {
-        val dao = extensionLoader.db.userDao()
-        val current = dao.getCurrentUser(ExtensionType.MUSIC, "deezer") ?: return@withContext null
-        dao.getUser(ExtensionType.MUSIC, "deezer", current.userId)
-            ?.user?.getOrNull()?.extras?.get("arl")
+    // openFragment HIDES this fragment rather than pausing it, so the return from sign-in arrives here, not
+    // in onResume.
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (hidden) return
+        val code = signInCode ?: return
+        signInCode = null
+        submitPairing(code, afterSignIn = true)
+    }
+
+    private suspend fun validatedArl(): String? = withContext(Dispatchers.IO) {
+        val deezer = extensionLoader.music.getExtension("deezer") ?: return@withContext null
+        deezer.getAs<DeezerExtension, User?> { userForPairing() }.getOrNull()
+            ?.extras?.get("arl")?.takeIf { it.isNotEmpty() }
     }
 
     private suspend fun postPairing(code: String, arl: String): Boolean = withContext(Dispatchers.IO) {

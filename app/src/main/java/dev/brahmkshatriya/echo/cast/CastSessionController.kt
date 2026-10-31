@@ -108,6 +108,8 @@ class CastSessionController(
      * access to app classes. Streamable carries no per-request flag either. The precedent for
      * app-side Deezer knowledge is TvPairingFragment.getArl, which reads that extension's user
      * row by the same literal id.
+     * [CORRECTED 2026-10-31] getArl no longer exists: pairing now validates through
+     * TvPairingFragment.validatedArl (DeezerExtension.userForPairing), still keyed by the literal "deezer".
      * ⚠️ CLEARED AT CONSTRUCTION AS WELL AS AT SESSION END, so a process
      * death mid-session cannot latch it: the only cost of a stale true is plain FLAC on the
      * phone, but it would persist until the next cast session ended, which is worse than one

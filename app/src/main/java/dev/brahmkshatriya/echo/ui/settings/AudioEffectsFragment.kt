@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.settings
 
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -35,11 +36,16 @@ class AudioEffectsFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        binding.bind(this)
+        // applyInsets = false (2026-10-31): AudioFxFragment pads its own root from the same combined insets (with
+        // the fast-scroller handle), so padding this container too applied the rail, nav and mini-player insets
+        // TWICE. Same split as BaseSettingsFragment, whose container is unpadded and whose list pads itself.
+        binding.bind(this, applyInsets = false)
         binding.extensionIcon.isVisible = false
         binding.toolBar.title = getString(R.string.audio_fx)
         childFragmentManager.beginTransaction().replace(R.id.genericFragmentContainer, fragment)
             .commit()
+        // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.genericFragmentContainer)
 
         binding.toolBar.inflateMenu(R.menu.refresh_menu)
         binding.toolBar.setOnMenuItemClickListener {

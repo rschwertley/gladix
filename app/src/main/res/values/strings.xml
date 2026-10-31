@@ -208,6 +208,7 @@
     <string name="app_update_unknown_source">%1$s can\'t tell where this copy was installed from, so it won\'t update itself</string>
     <string name="open_github_releases">Open releases on GitHub</string>
     <string name="could_not_open_github">Couldn\'t open GitHub</string>
+    <string name="not_available_on_device">Not available on this device</string>
 
     <string name="install">Install</string>
     <string name="update">Update</string>
@@ -310,6 +311,7 @@
     <string name="tv_pairing_option_2">2. Open Gladix on your phone → Settings → Deezer → Link TV Device → enter the code</string>
     <string name="tv_pairing_waiting">Waiting for phone confirmation…</string>
     <string name="tv_pairing_expired">Code expired</string>
+    <string name="tv_pairing_link_failed">Link failed. Open Gladix on your phone and try again.</string>
     <string name="tv_pairing_expires_in">Expires in: %1$ds</string>
     <string name="tv_pairing_new_code">Generate new code</string>
     <string name="tv_pairing_instructions">Enter the 6-character code shown on your TV, or scan its QR code with your camera app.</string>

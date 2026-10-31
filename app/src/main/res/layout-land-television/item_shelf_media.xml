@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- TV focus-border gap (Jul 20 TV device-compatibility session, landed in bc33c50c 2026-07-18): tv_focused_list_item draws a 4dp stroke as android:foreground, so the ~8dp gap between the border and the content must come from THIS layout's padding. Do not inset the drawable instead (that pushes the stroke onto the content).
+     Here: paddingVertical 12dp (was 8dp), and NO negative margins on the cover include (its -4dp top/bottom were removed). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"

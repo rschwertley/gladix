@@ -17,7 +17,6 @@ import android.os.Bundle
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.method.LinkMovementMethod
-import android.util.Log
 import android.view.Display
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -56,7 +55,6 @@ import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 import androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
@@ -92,7 +90,6 @@ import dev.brahmkshatriya.echo.ui.player.quality.QualitySelectionBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.emit
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
-import dev.brahmkshatriya.echo.utils.image.ImageUtils
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.getCachedDrawable
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadBlurred
@@ -239,64 +236,6 @@ class PlayerFragment : Fragment() {
         super.onResume()
         waveResumed = true
         updateWaveMotion()
-        // TRACE (2026-08-29, temporary, GladixArt). One line per wake for the VISIBLE page only, recording
-        // which of the three outcomes the cover took: no request and which guard declined, or a request
-        // and where its bytes came from. Posted so it runs AFTER the wake traversal, i.e. after bind and
-        // retryLoad have already decided - this REPORTS, it does not act. It issues nothing and writes no
-        // page position, so it is not a re-run of the resume-time re-commits (aecc6700, reverted 3 Aug).
-        // Needed because "the holder declined to issue" is the EXPECTED failure mode for the memory-cache
-        // warm, not an edge case, so a negative result is otherwise unreadable. REMOVE WITH THE TRACE.
-        binding?.let { b ->
-            // Synchronous, and BEFORE the post: onResume runs ahead of the wake traversal, so this opens
-            // the generation that bind/retryLoad then decide within, and the posted read below reports it.
-            adapter.beginCoverTrace()
-            b.viewPager.post {
-                val pos = b.viewPager.currentItem
-                // `pos` is ViewPager2's LOGICAL page (mCurrentItem, written at ViewPager2.java:649 the
-                // instant setCurrentItem is called, frames or no frames). `rendered` is what is actually
-                // laid out. They are different questions and the whole point of this pair is that a
-                // stalled smooth scroll separates them: mCurrentItem advances, the pixels do not.
-                // ViewPager2's own reconciler (updateCurrentItem) CANNOT mask this — it is gated on
-                // SCROLL_STATE_IDLE at ViewPager2.java:555, so while SETTLING it never snaps pos to
-                // rendered. Read off the inner RecyclerView because ViewPager2 exposes no such accessor.
-                val rendered = (b.viewPager.getChildAt(0) as? RecyclerView)
-                    ?.let { it.layoutManager as? LinearLayoutManager }
-                    ?.findFirstCompletelyVisibleItemPosition() ?: RecyclerView.NO_POSITION
-                // The stall itself, directly. notifyProgrammaticScroll dispatches SCROLL_STATE_SETTLING
-                // and only resetState() clears it, which is reached solely from onScrolled /
-                // onScrollStateChanged — so SETTLING at a wake means the smooth scroll never progressed.
-                // 0=IDLE 1=DRAGGING 2=SETTLING.
-                val scrollState = b.viewPager.scrollState
-                val trace = adapter.coverTrace(pos)
-                val boundId = trace?.second
-                val curId = viewModel.playerState.current.value?.mediaItem?.mediaId
-                // bound vs cur is the question this line exists to settle, so BOTH are printed and the
-                // comparison is made here rather than left to be inferred from the page number. A mismatch
-                // means the pager is a page behind and the stale cover is a symptom of that, not of any
-                // image load; a match with a NETWORK decision means the cache was not consulted or the key
-                // did not agree. warm=issued/done separates never-ran / parked / completed - see the
-                // counters in ImageUtils.
-                //
-                // ⚠️ READ page/rendered/scrollState BEFORE bound/cur. bound and cur are ADAPTER-SPACE and
-                // can both be correct about a page that is not the one on screen. If page != rendered, or
-                // scrollState is SETTLING(2), this is a PAGE-POSITION fault and every image-layer reading
-                // on this line is aimed at the wrong layer.
-                //
-                // ⚠️ decision=none AND bound=null ARE THE RESET VALUES, not findings. beginCoverTrace()
-                // writes exactly that pair onto every attached holder moments earlier, so together they
-                // mean only "no cover decision was recorded during this wake" - NOT that the holder is
-                // unbound, and NOT that no request was ever issued. A holder bound before the trace opened
-                // reads identically. `decision=no-holder` is the only value that means no holder was
-                // found; the durable binding field (ViewHolder.lastBoundMediaId) is never printed here.
-                Log.d(
-                    "GladixArt",
-                    "wake: page=$pos rendered=$rendered scrollState=$scrollState " +
-                        "bound=$boundId cur=$curId match=${boundId == curId} " +
-                        "decision=${trace?.first ?: "no-holder"} " +
-                        "warm=${ImageUtils.warmIssued.get()}/${ImageUtils.warmDone.get()}"
-                )
-            }
-        }
         if (uiViewModel.playerSheetState.value == STATE_EXPANDED)
             binding?.bgImage?.resume()
     }

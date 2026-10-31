@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
+import android.content.Context
+import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
@@ -278,12 +280,27 @@ object WebViewUtils {
         val extensionLoader by inject<ExtensionLoader>()
         val webViewClient = extensionLoader.webViewClientFactory
         val wrapper = webViewClient.requests[id] ?: return
+        // ⚠️ NO WEBVIEW ON THIS DEVICE (2026-10-31): inflating fragment_webview would fail, and the extension is
+        // suspended in WebViewClientFactory.await until a response arrives. Answer it with a failure - so it
+        // gets an error instead of waiting forever - and say so. Devices with a WebView are unchanged.
+        if (!hasWebView()) {
+            createSnack(getString(R.string.not_available_on_device))
+            lifecycleScope.launch {
+                webViewClient.responseFlow.emit(
+                    wrapper to Result.failure(Exception(getString(R.string.not_available_on_device)))
+                )
+            }
+            return
+        }
         createSnack(Message(getString(R.string.opening_webview_x, wrapper.reason)))
         if (wrapper.showWebView) openFragment<WithAppbar>(null, getBundle(id))
         else supportFragmentManager.commit {
             add<Hidden>(R.id.hiddenWebViewContainer, null, getBundle(id))
         }
     }
+
+    // The documented capability check for android.webkit (PackageManager.FEATURE_WEBVIEW).
+    fun Context.hasWebView() = packageManager.hasSystemFeature(PackageManager.FEATURE_WEBVIEW)
 
     private fun getBundle(id: Int) = Bundle().apply {
         putInt("webViewRequest", id)

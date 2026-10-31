@@ -507,7 +507,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     /**
      * The user's liked songs by [artist], in liked order (newest first, as favorite_song.getList returns
-     * them), for DeezerArtistClient's "Liked songs" entry. Empty for a guest (no request) or no match.
+     * them), for DeezerArtistClient's "Favorite tracks" entry. Empty for a guest (no request) or no match.
      * 0 requests when the list was already fetched this session; otherwise the session's one fetch.
      */
     suspend fun likedByArtist(artist: Artist): List<LikedEntry> {
@@ -916,6 +916,43 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     override suspend fun getCurrentUser(): User {
         val userList = api.makeUser()
         return userList.firstOrNull() ?: throw Exception("Login failed: could not retrieve user after authentication")
+    }
+
+    /**
+     * ⚠️ THE USER WHOSE ARL MAY BE SENT TO A TV (2026-10-31), or null when there is none to send. Called by
+     * TvPairingFragment before it posts; the returned user's `arl` extra is what goes to the pairing worker,
+     * so a null here means NOTHING is posted.
+     * Validated with deezer.getUserData on the LIVE session (which may hold an ARL renewed since the user was
+     * stored): USER_ID must be present and not "0" - a dead ARL is served as a guest, see DeezerApi.hasUserId.
+     * If that fails and email/pass are stored, logs in again silently with them, as callApi's CSRF branch
+     * does, unless Deezer already refused them this session (DeezerSession.credentialsRejected). Either
+     * success is saved over the stored user through DeezerSession.onUserRenewed.
+     * Never throws except on cancellation: every failure is a null, and the caller opens the sign-in screen.
+     */
+    suspend fun userForPairing(): User? {
+        fun User?.isReal() = this != null && !extras["arl"].isNullOrEmpty() &&
+            extras["user_id"].let { !it.isNullOrBlank() && it != "0" }
+        val live = try {
+            api.makeUser().firstOrNull()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        if (live.isReal()) return live!!.also { session.notifyUserRenewed(it) }
+        val creds = session.credentials
+        if (creds.email.isEmpty() || creds.pass.isEmpty() || session.credentialsRejected) return null
+        val renewed = try {
+            onLogin("userPass", mapOf("email" to creds.email, "pass" to creds.pass)).firstOrNull()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        if (!renewed.isReal()) return null
+        setLoginUser(renewed)
+        session.notifyUserRenewed(renewed!!)
+        return renewed
     }
 
     override val webViewRequest = object : WebViewRequest.Headers<List<User>> {

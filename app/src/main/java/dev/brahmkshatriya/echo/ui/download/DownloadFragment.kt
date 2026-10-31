@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.download
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvEndFocusTo
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.View
 import androidx.core.view.isVisible
@@ -87,6 +89,10 @@ class DownloadFragment : Fragment(R.layout.fragment_download) {
             vm.cancelAll()
         }
         binding.recyclerView.itemAnimator = null
+        // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.recyclerView)
+        // TV: Right from any row reaches the floating Cancel all button - see UiUtils.setTvEndFocusTo.
+        binding.recyclerView.setTvEndFocusTo(binding.fabCancel)
         getTouchHelper(feedListener).attachToRecyclerView(binding.recyclerView)
         configureGridLayout(
             binding.recyclerView,

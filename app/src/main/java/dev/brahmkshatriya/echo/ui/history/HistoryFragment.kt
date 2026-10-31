@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.history
 
+import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
+import androidx.recyclerview.widget.RecyclerView
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -93,7 +95,12 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
         setupTransition(view, false, MaterialSharedAxis.Y)
 
         applyBackPressCallback()
-        applyInsets(binding.recyclerView, binding.appBarOutline) {
+        // The TV layout's list is a TvAwareRecyclerView, so the binding types it as View (the same cast Home,
+        // Library and Search make).
+        val recyclerView = binding.recyclerView as RecyclerView
+        (recyclerView as? TvAwareRecyclerView)?.navRailView =
+            requireActivity().findViewById(R.id.navRailContainer)
+        applyInsets(recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)
         }
 
@@ -104,7 +111,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
             onMicClick = { launchVoiceSearch() },
         )
 
-        binding.recyclerView.adapter =
+        recyclerView.adapter =
             ConcatAdapter(HeaderAdapter(this), titleAdapter, adapter)
         observe(viewModel.history) { adapter.submitList(it) }
         binding.swipeRefresh.run {

@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension
 
+import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.Settings
 import java.util.concurrent.atomic.AtomicReference
 
@@ -101,6 +102,26 @@ class DeezerSession(
 
     fun setLastSentCountry(country: String?) {
         lastSentCountry = country
+    }
+
+    /**
+     * ⚠⚠ HOW A RENEWED LOGIN REACHES THE STORED USER (2026-10-31). The extension has no access to the app's
+     * user database, so a silent re-login (DeezerApi.callApi's "Invalid CSRF token" branch) used to renew the
+     * ARL, sid and token IN MEMORY ONLY: the stored user kept the old ARL, every cold start re-hydrated it,
+     * and TvPairingFragment sent THAT ARL to a TV. A dead ARL is served as a guest (user "0", see
+     * DeezerApi.hasUserId), so a freshly linked TV got generic Home, a refused favorite_song.getList and a
+     * NEED_USER_AUTH_REQUIRED from deezer.userMenu.
+     * Set by the app (ExtensionLoader's init), which saves the user over the stored row. Deezer is built in,
+     * so this needs no :common change.
+     * ⚠️ MUST NOT THROW: it is reached from inside callApi, which onExtensionSelected's injection runs at
+     * every cold start before setLoginUser - the 1108 lockout path. Hence the runCatching, and the app
+     * side only launches a coroutine.
+     */
+    @Volatile
+    var onUserRenewed: ((User) -> Unit)? = null
+
+    fun notifyUserRenewed(user: User) {
+        runCatching { onUserRenewed?.invoke(user) }
     }
 
     companion object {

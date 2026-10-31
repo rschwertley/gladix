@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.feed.viewholders
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import android.graphics.drawable.Animatable
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -30,6 +31,8 @@ class VideoViewHolder(
     init {
         binding.artistCover.clipToOutline = true
         binding.cover.clipToOutline = true
+        // TV: Right moves from the row into the more button - see UiUtils.setTvRowButtons.
+        binding.root.setTvRowButtons(listOf(binding.more))
         binding.root.setOnClickListener {
             val track = feed?.item
             if (track?.isPlayable != Track.Playable.Yes) {
