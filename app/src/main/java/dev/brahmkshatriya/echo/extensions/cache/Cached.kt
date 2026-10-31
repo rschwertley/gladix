@@ -613,6 +613,13 @@ object Cached {
                     "loadItem returned wrong item: expected ${idForMessage(state.item.id)}, " +
                         "got ${idForMessage(new.id)}"
                 )
+                // ⚠️ DECIDED 2026-10-31: THE PLAYBACK PATH KEEPS AWAITING THESE CHECKS ON A CACHE MISS. Evoe 658fc80d
+                // (github.com/Doggo785/evoe, "start playback without waiting for likes") was reviewed and NOT taken:
+                // skipping them and verifying after STATE_READY with replaceMediaItem touches the crossfade's
+                // transition path, the same ground as Evoe 3b385d2a, declined on 2026-10-24; and a "bounded, unknown on
+                // timeout" variant would show an empty heart on liked songs, which is the 2026-10-23 stale-heart bug.
+                // Known cost: the first uncached play of a session can wait for Deezer's one liked-list fetch
+                // (DeezerExtension.fetchLiked). A restored queue is unaffected - preferCache serves it from cache.
                 val isSaved = async {
                     if (new.isSaveable) extension.getIf<SaveClient, Boolean> {
                         isItemSaved(new)

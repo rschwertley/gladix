@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import com.google.android.material.appbar.AppBarLayout
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -548,13 +550,41 @@ object FragmentUtils {
         }
         fun View?.isLanding() =
             this != null && (this !is RecyclerView || getTag(R.id.tv_focus_target) == true)
+        // ⚠️ A FOCUSED ROW BELOW THE VISIBLE AREA COLLAPSES THE PAGE'S APP BAR (2026-10-31). These pages scroll under a
+        // collapsing AppBarLayout, and Material's HeaderScrollingViewBehavior (1.14.0, onMeasureChild) makes the
+        // scrolling child as tall as the screen PLUS the header's scroll range. While the header is expanded the
+        // list's bottom - and the bottom padding that clears the mini bar (UiViewModel.combined) - sits below the
+        // screen. A D-pad move only scrolls the row into the LIST's bounds, which it already counts as visible,
+        // and nothing collapses the header: no drag, and a short list never scrolls (1158: the last row of
+        // Settings -> Player stayed under the bar with focus on it). Collapsing aligns the list's bottom with the
+        // screen's, so its padding is on screen and the row sits above the bar - what a touch drag does.
+        val uiViewModel by activityViewModels<UiViewModel>()
+        fun View.collapseAppBarIfCovered() {
+            val location = IntArray(2)
+            getLocationInWindow(location)
+            val visibleBottom = root.rootView.height - uiViewModel.getCombined().bottom
+            if (location[1] + height <= visibleBottom) return
+            var p = content.parent
+            while (p is View) {
+                val coordinator = p as? CoordinatorLayout
+                if (coordinator != null) {
+                    (0 until coordinator.childCount).map { coordinator.getChildAt(it) }
+                        .filterIsInstance<AppBarLayout>()
+                        .firstOrNull()?.let { it.setExpanded(false, true); return }
+                }
+                p = p.parent
+            }
+        }
         var pending = true
         var wasShown = false
         var lastFocused: WeakReference<View>? = null
         // Set at the first shown layout of each showing while pending; null = not landed yet.
         var landedOn: WeakReference<View>? = null
         val focusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
-            if (newFocus.isInside(content) && newFocus.isLanding()) lastFocused = WeakReference(newFocus)
+            if (newFocus.isInside(content) && newFocus.isLanding()) {
+                lastFocused = WeakReference(newFocus)
+                newFocus.collapseAppBarIfCovered()
+            }
             if (!pending || !wasShown) return@OnGlobalFocusChangeListener
             when {
                 newFocus.isInside(root) -> if (newFocus.isLanding()) pending = false

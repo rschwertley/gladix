@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.extensions.login
 
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.app.UiModeManager
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -130,6 +131,9 @@ class LoginFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding.bind(this)
+        // TV: focus the first row on open, restore the row left on return, and collapse the header when a focused row
+        // would sit under the mini bar - see FragmentUtils.focusFirstRowOnTv.
+        focusFirstRowOnTv(binding.genericFragmentContainer)
         binding.toolBar.setNavigationOnClickListener {
             parentFragmentManager.popBackStack()
         }

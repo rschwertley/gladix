@@ -28,11 +28,19 @@ class TabsAdapter<T>(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(parent)
     override fun getItemCount() = 1
 
+    // ⚠️ REBOUND IN PLACE, WITH A PAYLOAD (2026-10-31). A plain notifyItemChanged lets the item animator swap in a
+    // different holder for the change animation, so a FOCUSED tab button was replaced by another view and focus
+    // fell elsewhere - on TV, back to All (the Library bounce, see FeedData.chosenTabId). With a payload the same
+    // holder is rebound and apply() keeps its buttons. On TV, if a tab had focus and the rebuild still lost it,
+    // focus goes back to the checked tab. Phone: the tab row just no longer cross-fades on a data change.
     var data: List<T> = emptyList()
         set(value) {
             field = value
-            notifyItemChanged(0)
+            refocusSelected = parent?.hasFocus() == true
+            notifyItemChanged(0, REBIND)
         }
+
+    private var refocusSelected = false
 
     var selected = -1
         set(value) {
@@ -46,6 +54,12 @@ class TabsAdapter<T>(
         val parent = holder.binding.buttonGroup
         this.parent = parent
         apply(parent)
+        if (refocusSelected) {
+            refocusSelected = false
+            if (parent.context.isTv()) parent.post {
+                if (!parent.hasFocus() && selected >= 0) parent.getChildAt(selected)?.requestFocus()
+            }
+        }
         parent.doOnLayout {
             if (selected < 0) return@doOnLayout
             val scrollX = parent.children.filter { it.isVisible }
@@ -113,5 +127,10 @@ class TabsAdapter<T>(
         init {
             binding.buttonGroup.removeAllViews()
         }
+    }
+
+    private companion object {
+        // Any non-empty payload makes DefaultItemAnimator reuse the holder (canReuseUpdatedViewHolder).
+        val REBIND = Any()
     }
 }

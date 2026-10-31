@@ -485,6 +485,13 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // A failure still caches an empty set (and an empty index) for the session, as before - see isTrackLoved.
     // ⚠️ A CANCELLATION NO LONGER DOES (2026-10-30): it is rethrown and nothing is cached, so a cancelled
     // first probe does not leave every heart reading "not liked" for the whole session.
+    // ⚠️ DECIDED 2026-10-31: NOT REPLACED BY A SHARED TTL SNAPSHOT. Evoe c5b15279 (github.com/Doggo785/evoe, "serve
+    // all likes screens from one snapshot fetch") was reviewed and NOT taken: here this one per-session fetch
+    // already serves the heart and the artist page, Library loads refresh it for free (refreshLiked), and the
+    // Favorite tracks tile opens the real Loved Tracks playlist, not this list. Its 10,000-likes truncation guard
+    // (absent from a full page = unknown) was not taken either: not needed, and an "already liked" answer to a
+    // like is already treated as success (DeezerTrack.addFavoriteTrack). Evoe 658fc80d (likes resolved after
+    // playback starts) was declined at Cached.loadMedia's checks - see the note there.
     private suspend fun fetchLiked() {
         val dataArray = try {
             api.getTracks()["results"]?.jsonObject?.get("data")?.jsonArray
@@ -927,11 +934,17 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * If that fails and email/pass are stored, logs in again silently with them, as callApi's CSRF branch
      * does, unless Deezer already refused them this session (DeezerSession.credentialsRejected). Either
      * success is saved over the stored user through DeezerSession.onUserRenewed.
+     * [CORRECTED 2026-10-31] The live-session check above was NOT enough, and 1158 proved it: that request carries
+     * the phone's logged-in sid, so it passed with an ARL that was dead on its own, and the TV came up as a guest.
+     * Every user returned now ALSO passes DeezerApi.userIdForArl - the TV's own ARL-only test - for THE SAME
+     * account: first the live session's ARL, then the ARL from a silent email/password re-login. Nothing else
+     * is ever sent.
      * Never throws except on cancellation: every failure is a null, and the caller opens the sign-in screen.
      */
     suspend fun userForPairing(): User? {
         fun User?.isReal() = this != null && !extras["arl"].isNullOrEmpty() &&
             extras["user_id"].let { !it.isNullOrBlank() && it != "0" }
+        suspend fun User.worksOnTv() = api.userIdForArl(extras["arl"].orEmpty()) == extras["user_id"]
         val live = try {
             api.makeUser().firstOrNull()
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -939,7 +952,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         } catch (_: Exception) {
             null
         }
-        if (live.isReal()) return live!!.also { session.notifyUserRenewed(it) }
+        if (live.isReal() && live!!.worksOnTv()) return live.also { session.notifyUserRenewed(it) }
         val creds = session.credentials
         if (creds.email.isEmpty() || creds.pass.isEmpty() || session.credentialsRejected) return null
         val renewed = try {
@@ -949,33 +962,44 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         } catch (_: Exception) {
             null
         }
-        if (!renewed.isReal()) return null
+        if (!renewed.isReal() || !renewed!!.worksOnTv()) return null
         setLoginUser(renewed)
         session.notifyUserRenewed(renewed!!)
         return renewed
     }
 
     override val webViewRequest = object : WebViewRequest.Headers<List<User>> {
+        /**
+         * ⚠⚠ THE ARL IS TAKEN AFTER LOGIN, NOT FROM THE LOGIN CALL (2026-10-31). It used to come from the cookie
+         * header of the intercepted deezer_userAuth request - and Android-Request-Inspector-WebView 1.0.12 fills
+         * that header from CookieManager when the request is INTERCEPTED, i.e. before it is sent
+         * (WebViewRequest.create, WebViewRequest.kt:55-59). The jar is wiped when the WebView starts
+         * (WebViewUtils.configure), so what was saved was the anonymous ARL the login page had set; the logged-in
+         * ARL only arrives on that call's response. The phone kept working on the captured sid, which the login
+         * call logs in, so nothing showed it - until a TV, which has only the ARL, came up as a guest (1158,
+         * reproduced with a fresh sign-in).
+         * Now [interceptUrlRegex] also takes the navigation to [stopUrlRegex] (the account page), whose cookie
+         * header is the jar after login, and the ARL and sid come from the LAST captured request carrying both.
+         * Email and password come from the deezer_userAuth body when there is one, and are blank otherwise - a
+         * Google/Apple/Facebook sign-in has no password, and its body made the old `!!` throw.
+         */
         override suspend fun onStop(requests: List<NetworkRequest>): List<User> {
-            val request = requests.firstOrNull() ?: throw Exception("Login failed: no auth request intercepted — try logging in again")
-            val data = request.headers
-            val arl = extractCookieValue(data, "arl")
-            val sid = extractCookieValue(data, "sid")
-            if (arl != null && sid != null) {
-                session.updateCredentials(arl = arl, sid = sid)
-                val credJObj = api.decodeJson(request.body?.decodeToString()!!)
-                val mail = credJObj["MAIL"]?.jsonPrimitive?.content!!
-                val pass = credJObj["PASSWORD"]?.jsonPrimitive?.content!!
-                session.updateCredentials(
-                    email = mail,
-                    pass = pass
-                )
-                return api.makeUser(mail, pass)
-            } else if (data.isEmpty()) {
-                throw Exception("Ignore this")
-            } else {
+            if (requests.isEmpty()) throw Exception("Login failed: no auth request intercepted — try logging in again")
+            val withCookies = requests.lastOrNull {
+                extractCookieValue(it.headers, "arl") != null && extractCookieValue(it.headers, "sid") != null
+            } ?: run {
+                if (requests.all { it.headers.isEmpty() }) throw Exception("Ignore this")
                 throw Exception("Failed to retrieve ARL and SID from cookies")
             }
+            val arl = extractCookieValue(withCookies.headers, "arl")!!
+            val sid = extractCookieValue(withCookies.headers, "sid")!!
+            session.updateCredentials(arl = arl, sid = sid)
+            val credJObj = requests.firstOrNull { it.url.contains("deezer_userAuth") }?.body
+                ?.let { body -> runCatching { api.decodeJson(body.decodeToString()) }.getOrNull() }
+            val mail = credJObj?.get("MAIL")?.jsonPrimitive?.contentOrNull.orEmpty()
+            val pass = credJObj?.get("PASSWORD")?.jsonPrimitive?.contentOrNull.orEmpty()
+            session.updateCredentials(email = mail, pass = pass)
+            return api.makeUser(mail, pass)
         }
 
         override val initialUrl = "https://www.deezer.com/login?redirect_type=page&redirect_link=%2Faccount%2F".toGetRequest(
@@ -987,12 +1011,22 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             )
         )
 
-        override val interceptUrlRegex = "https://www\\.deezer\\.com/ajax/gw-light\\.php\\?method=deezer_userAuth.*".toRegex()
+        // The login call (for the typed email and password) AND the account page navigation that ends the flow (for
+        // the cookie jar after login) - see onStop.
+        override val interceptUrlRegex =
+            "https://www\\.deezer\\.com/(ajax/gw-light\\.php\\?method=deezer_userAuth.*|account/.*)".toRegex()
 
         override val stopUrlRegex = "https://www\\.deezer\\.com/account/.*".toRegex()
 
+        // Case-insensitive header lookup: the inspector library writes "cookie", but WebViewUtils'
+        // shouldOverrideUrlLoading path (main-frame navigations, like the account page) writes "Cookie". Matched on
+        // whole cookie names, so "arl=" cannot match inside another cookie's name.
         private fun extractCookieValue(data: Map<String,String>, key: String): String? {
-            return data["cookie"]?.substringAfter("$key=")?.substringBefore(";").takeIf { it?.isNotEmpty() == true }
+            val header = data.entries.firstOrNull { it.key.equals("cookie", ignoreCase = true) }?.value ?: return null
+            return header.split(";").map { it.trim() }
+                .firstOrNull { it.startsWith("$key=") }
+                ?.substringAfter("$key=")
+                ?.takeIf { it.isNotEmpty() }
         }
     }
 

@@ -23,6 +23,11 @@
         android:background="?attr/colorOutlineVariant" />
 
     <!-- art | title + artist | play/pause -->
+    <!-- Text sizes (2026-10-31): the July TV sizing pass brought feed rows to 22sp titles / 18sp subtitles
+         (TV item_shelf_media, item_history) but skipped this bar, which stayed at Material's 14sp TitleSmall /
+         BodyMedium - unreadable from the couch. Now the same 22sp / 18sp. Title uses TitleLarge (22sp, 28sp line
+         height); the artist keeps BodyLarge's 24sp line height at 18sp. 28 + 2 + 24 = 54dp of text in the 72dp
+         row at the default font scale, so the row height and UiViewModel's 85dp tvMiniReservePx are unchanged. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="72dp"
@@ -55,7 +60,7 @@
                 android:ellipsize="marquee"
                 android:marqueeRepeatLimit="marquee_forever"
                 android:singleLine="true"
-                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
                 android:textStyle="bold" />
 
             <TextView
@@ -66,7 +71,8 @@
                 android:alpha="0.7"
                 android:ellipsize="end"
                 android:singleLine="true"
-                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textSize="18sp" />
 
         </LinearLayout>
 

@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -251,7 +252,11 @@ data class FeedData(
         data != null
     }.stateIn(scope, Lazily, false)
 
-    val tabsFlow = stateFlow.map { (cached, loaded) ->
+    // The (null, null) pair is a reload in progress - the load collector in init clears both states before
+    // re-pulling - not a feed without tabs. Skipped (2026-10-31) so the tab row is not emptied, hidden and
+    // rebuilt on every reload: on TV that dropped focus from the chosen tab (the Library bounce, see chosenTabId).
+    // A feed that really has no tabs still arrives as a non-null state with an empty list.
+    val tabsFlow = stateFlow.filter { (cached, loaded) -> cached != null || loaded != null }.map { (cached, loaded) ->
         val state = (loaded?.getOrNull() ?: cached?.getOrNull()) ?: return@map listOf()
         state.feed.tabs.map {
             FeedTab(feedId, state.extensionId, it)
@@ -541,10 +546,29 @@ data class FeedData(
     }.stateIn(scope, Lazily, true)
 
     private var saveTabJob: Job? = null
+
+    /**
+     * ⚠⚠ THE TAB THE USER CHOSE, HELD IN MEMORY AND AUTHORITATIVE OVER THE SAVED ONE (2026-10-31). Every feed reload
+     * (stateFlow re-emitting) runs the selection collector in init, which used to re-read cache["selected_tab"]
+     * - written ASYNCHRONOUSLY by [saveTabJob] - and so could put the selection back to the previous or first tab
+     * while the user's choice was still on its way to disk. On TV that was the Library bounce: OK on Playlists
+     * pulsed the tab, then selection and focus jumped back to All (1156 and 1158; first diagnosed in August,
+     * when this fix was recommended and never landed). Set synchronously here; the cache is now only the
+     * cold-start answer, read when nothing has been chosen in this FeedData's life.
+     * ⚠️ THE RELOAD ITSELF IS NOT FIXED HERE, and its trigger on a tab select is still not found statically. One
+     * route that would do it: ExtensionLoader.current re-emits whenever ExtensionLoader.music re-emits, because
+     * mapped() wraps each client in a new Injectable, so the MusicExtension data class never compares equal;
+     * this FeedData reloads on every `current` emission. This field makes any such reload harmless to the
+     * selection.
+     */
+    @Volatile
+    private var chosenTabId: String? = null
+
     fun selectTab(extensionId: String?, pos: Int) {
         val state = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }
         val tab = state?.feed?.tabs?.getOrNull(pos)
             ?.takeIf { state.extensionId == extensionId }
+        if (tab != null) chosenTabId = tab.id
         selectedTabFlow.value = tab
         // Off Main + single-flight: cancel any pending save and persist the CURRENT selection (read at
         // write time), so a fast second tap can't let the first tap's write land last and store a stale tab.
@@ -570,9 +594,13 @@ data class FeedData(
         }
         scope.launch {
             stateFlow.collect { result ->
+                // A reload in progress (both states cleared) keeps the current selection rather than nulling it -
+                // the same transient tabsFlow skips (2026-10-31).
+                if (result.first == null && result.second == null) return@collect
                 val feed = result.run { second?.getOrNull() ?: first?.getOrNull() }?.feed?.tabs
                 selectedTabFlow.value = if (feed == null) null else {
-                    val last = withContext(Dispatchers.IO) {
+                    // The user's choice first (see chosenTabId); the saved tab only when nothing was chosen yet.
+                    val last = chosenTabId ?: withContext(Dispatchers.IO) {
                         app.context.getFromCache<String>(feedId, "selected_tab")
                     }
                     feed.find { it.id == last } ?: feed.firstOrNull()

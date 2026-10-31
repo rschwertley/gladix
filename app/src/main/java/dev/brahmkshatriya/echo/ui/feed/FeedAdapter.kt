@@ -417,6 +417,26 @@ class FeedAdapter(
             listener: FeedClickListener,
             takeFullScreen: Boolean = false,
         ): FeedAdapter {
+            val adapter = getUnboundFeedAdapter(viewModel, listener, takeFullScreen)
+            observe(viewModel.pagingFlow) {
+                adapter.saveState()
+                adapter.submitData(it)
+            }
+            return adapter
+        }
+
+        /**
+         * The same adapter as [getFeedAdapter] - rows, clicks, span sizes, now-playing state - WITHOUT the
+         * subscription to [viewModel]'s paging flow, for a caller that submits its own rows (2026-10-31, the
+         * player Info tab's fixed album/artists section, see MediaDetailsViewModel.fixedTrackRows). [viewModel]
+         * still backs the scroll-state maps the adapter keeps. getFeedAdapter is this plus the subscription,
+         * so it is unchanged.
+         */
+        fun Fragment.getUnboundFeedAdapter(
+            viewModel: FeedData,
+            listener: FeedClickListener,
+            takeFullScreen: Boolean = false,
+        ): FeedAdapter {
             val playerViewModel by activityViewModel<PlayerViewModel>()
             val context = requireContext()
             val isTV = (context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager)
@@ -426,10 +446,6 @@ class FeedAdapter(
             val adapter = FeedAdapter(
                 viewModel, listener, takeFullScreen, isTV, phoneSingleColumn
             )
-            observe(viewModel.pagingFlow) {
-                adapter.saveState()
-                adapter.submitData(it)
-            }
             observe(playerViewModel.playerState.current) { adapter.onCurrentChanged(it) }
             return adapter
         }

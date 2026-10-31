@@ -445,6 +445,9 @@
         android:outlineProvider="none"
         app:icon="@drawable/ic_expand_more"
         app:iconSize="44dp"
-        app:iconTint="@color/button_player" />
+        app:iconTint="@android:color/white" />
+    <!-- iconTint white, not @color/button_player (2026-10-31): the icon always sits on tv_minimize_scrim, which is
+         always 40% black, while button_player follows night mode (amoled_fg) and was black-on-dark in light mode.
+         The TV player's ⋮ (PlayerTvFragment.configureBack) is tinted white for the same reason. -->
 
 </FrameLayout>

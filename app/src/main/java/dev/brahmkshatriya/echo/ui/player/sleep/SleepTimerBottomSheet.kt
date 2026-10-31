@@ -1,5 +1,9 @@
 package dev.brahmkshatriya.echo.ui.player.sleep
 
+import android.os.SystemClock
+import androidx.core.view.isVisible
+import dev.brahmkshatriya.echo.utils.ContextUtils.observe
+import kotlinx.coroutines.delay
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.DialogInterface
@@ -51,8 +55,9 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         val last = viewModel.settings.getInt("sleep_timer", 5)
         adapter.submitList(timeRangeWithIntervals, last)
         // TV: open on the duration ruler (D-pad Left/Right steps it, see RulerAdapter), not on the toolbar's X,
-        // which was the first focusable view and CANCELS the timer. Laid out, not posted, so it lands before the
-        // window picks its default focus. Phone: no focus is requested.
+        // the first focusable view. [CORRECTED 2026-10-31] The X no longer cancels (it only closes, below); the
+        // ruler is still the sensible landing, with "Turn off timer" one Up above it while a timer runs. Laid
+        // out, not posted, so it lands before the window picks its default focus. Phone: no focus is requested.
         if (requireContext().isTv()) binding.sleepTimerRecycler.doOnLayout { it.requestFocus() }
 
         binding.okay.setOnClickListener { saveAndDismiss(rulerTime) }
@@ -63,7 +68,20 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         binding.hr1.setOnClickListener { saveAndDismiss(60) }
         binding.hr2.setOnClickListener { saveAndDismiss(120) }
 
-        binding.topAppBar.setNavigationOnClickListener { setTimerAndDismiss(0) }
+        // ⚠️ THE X ONLY CLOSES (2026-10-31). It used to call setTimerAndDismiss(0), so closing the sheet the natural
+        // way cancelled a running timer. Cancelling is now only "Turn off timer", shown while one runs.
+        binding.topAppBar.setNavigationOnClickListener { dismiss() }
+        binding.sleepTimerOff.setOnClickListener { setTimerAndDismiss(0) }
+        // While a timer runs: show it, counting down. Driven by PlayerState.sleepTimerEndsAt, which the service
+        // sets and clears; observe's collectLatest cancels the ticking loop whenever it changes.
+        viewLifecycleOwner.observe(viewModel.playerState.sleepTimerEndsAt) { endsAt ->
+            binding.sleepTimerRunning.isVisible = endsAt != null
+            while (endsAt != null) {
+                val left = requireContext().timeLeft(endsAt) ?: break
+                binding.sleepTimerRemaining.text = getString(R.string.sleep_timer_x_left, left)
+                delay(1000)
+            }
+        }
         binding.topAppBar.setOnMenuItemClickListener {
             when (it.itemId) {
                 R.id.menu_schedule -> {
@@ -135,6 +153,17 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         val timeRangeWithIntervals = 0.rangeTo((MAX - MIN) / STEPS).map {
             val value = MIN + it * STEPS
             value to (value == MIN || value % INTERVAL == 0)
+        }
+
+        /**
+         * The time left before [endsAt] (SystemClock.elapsedRealtime ms) in the sheet's own format, rounded UP to
+         * the minute so it never reads "0 min" while the timer still runs; null once it has passed. Also used for
+         * the player ⋮ entry's label (MediaMoreBottomSheet.getPlayerButtons).
+         */
+        fun Context.timeLeft(endsAt: Long): String? {
+            val left = endsAt - SystemClock.elapsedRealtime()
+            if (left <= 0) return null
+            return createString((left + 59_999) / 60_000 * 60_000)
         }
 
         private fun Context.createString(ms: Long): String {

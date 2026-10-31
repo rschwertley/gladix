@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.media.more
 
+import android.view.ViewTreeObserver
+import dev.brahmkshatriya.echo.ui.player.sleep.SleepTimerBottomSheet.Companion.timeLeft
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
@@ -178,8 +180,11 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         observe(playerViewModel.playerState.current) {
             headerAdapter.onCurrentChanged(it)
         }
-        val actionFlow =
-            combine(vm.downloadsFlow, vm.uiResultFlow, vm.extensionFlow) { _, _, _ -> }
+        // sleepTimerEndsAt too, so the player ⋮ entry's "· N min left" appears and clears with the timer.
+        val actionFlow = combine(
+            vm.downloadsFlow, vm.uiResultFlow, vm.extensionFlow,
+            playerViewModel.playerState.sleepTimerEndsAt,
+        ) { _, _, _, _ -> }
         observe(actionFlow) {
             val client = vm.extensionFlow.value?.instance?.value()?.getOrNull()
             val result = vm.uiResultFlow.value?.getOrNull()
@@ -207,6 +212,26 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
                 loadingAdapter
             )
         )
+        // ⚠️ TV, FROM THE PLAYER'S ⋮: OPEN ON THE FIRST MENU ROW (2026-10-31), not on the dialog's default first
+        // focusable, the header card - OK there opens the track's page and closes the player. Position 1 is the
+        // first action (the header adapter has exactly one item). Waits across layouts because the rows arrive
+        // from actionFlow and start as disabled placeholders, which cannot take focus; stops once that row has
+        // focus, or as soon as focus is on any other row (the user has moved).
+        if (fromPlayer && requireContext().isTv()) {
+            val list = binding.root
+            list.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    val focusedRow = list.findFocus()?.let { list.findContainingItemView(it) }
+                        ?.let { list.getChildAdapterPosition(it) }
+                    if (focusedRow != null && focusedRow > 0) {
+                        list.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                        return
+                    }
+                    val first = list.layoutManager?.findViewByPosition(1) ?: return
+                    if (first.requestFocus()) list.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                }
+            })
+        }
     }
 
     private fun placeholderButton(id: String, title: Int, icon: Int) =
@@ -279,13 +304,21 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         button("audio_fx", R.string.audio_fx, R.drawable.ic_equalizer) {
             AudioEffectsBottomSheet().show(parentFragmentManager, null)
         },
-        button("sleep_timer", R.string.sleep_timer, R.drawable.ic_snooze) {
+        // "Sleep Timer · 14 min left" while one runs (2026-10-31); nothing showed a running timer before.
+        button("sleep_timer", sleepTimerTitle(), R.drawable.ic_snooze) {
             SleepTimerBottomSheet().show(parentFragmentManager, null)
         },
         button("quality_selection", R.string.quality_selection, R.drawable.ic_high_quality) {
             QualitySelectionBottomSheet().show(parentFragmentManager, null)
         }
     ) else listOf()
+
+    private fun sleepTimerTitle(): String {
+        val title = getString(R.string.sleep_timer)
+        val endsAt = playerViewModel.playerState.sleepTimerEndsAt.value ?: return title
+        val left = requireContext().timeLeft(endsAt) ?: return title
+        return getString(R.string.sleep_timer_with_left, title, left)
+    }
 
     private fun getPlayButtons(
         client: ExtensionClient?, item: EchoMediaItem, loaded: Boolean

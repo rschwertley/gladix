@@ -1,5 +1,12 @@
 package dev.brahmkshatriya.echo.ui.player.more.info
 
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
+import dev.brahmkshatriya.echo.extensions.cache.Cached.loadItem
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.clients.TrackClient
@@ -26,6 +33,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TrackInfoViewModel(
     val app: App,
     extensionLoader: ExtensionLoader,
@@ -38,9 +46,41 @@ class TrackInfoViewModel(
             music.find { it.id == id }
         }
     },
-    extensionLoader
+    extensionLoader,
+    loadTrackSection = false,
 ) {
     val currentFlow = playerState.current
+
+    /**
+     * ⚠️ THE ALBUM/ARTISTS SECTION AT ITS FINAL LENGTH FROM THE FIRST FRAME (2026-10-31, step (c)). It used to be a
+     * paged feed that appeared only once its loadItem calls returned, which on 1158 was AFTER the artist feed's
+     * Top and Favorite tracks sections had drawn - so it inserted above them and pushed the page down.
+     * The rows are the track's OWN album and artist objects (real titles and covers), emitted at once; each
+     * loadItem result then replaces its row (same position, same id, so FeedAdapter.DiffCallback rebinds it in
+     * place), and a failed load keeps the unloaded row - what MediaDetailsViewModel.trackFeed did with `?: it`.
+     * Keyed on the track id, so the loaded state replacing the player's copy of the same track neither
+     * restarts the loads nor changes the row count. Same Cached.loadItem calls as trackFeed, in the same
+     * order, so no new requests.
+     */
+    override val fixedTrackRows: StateFlow<List<EchoMediaItem>?> = uiResultFlow
+        .map { it?.getOrNull()?.item as? Track }
+        .distinctUntilChanged { old, new -> old?.id == new?.id }
+        .transformLatest { track ->
+            if (track == null) {
+                emit(null)
+                return@transformLatest
+            }
+            val rows = (listOfNotNull(track.album) + track.artists).toMutableList<EchoMediaItem>()
+            emit(rows.toList())
+            val extension = extensionFlow.value ?: return@transformLatest
+            rows.indices.forEach { index ->
+                val loaded = loadItem(extension, rows[index]).getOrNull() ?: return@forEach
+                rows[index] = loaded
+                emit(rows.toList())
+            }
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     override fun getItem(): Triple<String, EchoMediaItem, Boolean>? {
         return currentFlow.value?.let { (_, item) ->
             Triple(item.extensionId, item.track, item.isLoaded)

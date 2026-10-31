@@ -612,19 +612,32 @@ class PlayerCallback(
     private fun onSleepTimer(player: Player, ms: Long): ListenableFuture<SessionResult> {
         timerJob?.cancel()
         val time = when (ms) {
-            0L -> return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            0L -> {
+                state.sleepTimerEndsAt.value = null
+                return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+            }
             Long.MAX_VALUE -> player.run { duration - currentPosition }
             else -> ms
         }
 
+        // The end time the UI shows (PlayerState.sleepTimerEndsAt). Cleared in `finally` whichever way this job
+        // ends - fired, replaced, cancelled, or the service scope dying - but only if it is still THIS timer's
+        // value: a replaced job's cancellation completes after the new value is set, and compareAndSet keeps it
+        // from wiping the new timer.
+        val endsAt = SystemClock.elapsedRealtime() + time
+        state.sleepTimerEndsAt.value = endsAt
         timerJob = scope.launch {
-            delay(time)
-            // ⚠️ THE SLEEP TIMER NEEDS ITS OWN CALL, because a custom session
-            // command does NOT pass through onPlayerCommandRequest - only Player.Commands do.
-            // Without this line a sleep-timer stop would leave a focus-resume authorisation
-            // armed, which is the 1141 shape with a timer instead of a finger.
-            onTransportIntent()
-            player.with { pause() }
+            try {
+                delay(time)
+                // ⚠️ THE SLEEP TIMER NEEDS ITS OWN CALL, because a custom session
+                // command does NOT pass through onPlayerCommandRequest - only Player.Commands do.
+                // Without this line a sleep-timer stop would leave a focus-resume authorisation
+                // armed, which is the 1141 shape with a timer instead of a finger.
+                onTransportIntent()
+                player.with { pause() }
+            } finally {
+                state.sleepTimerEndsAt.compareAndSet(endsAt, null)
+            }
         }
         return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
     }

@@ -1,5 +1,11 @@
 package dev.brahmkshatriya.echo.ui.media
 
+import androidx.paging.PagingData
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
+import dev.brahmkshatriya.echo.ui.feed.FeedAdapter
+import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getUnboundFeedAdapter
+import dev.brahmkshatriya.echo.ui.feed.FeedType
+import kotlinx.coroutines.flow.StateFlow
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.focusFirstRowOnTv
 import android.os.Bundle
 import android.view.View
@@ -159,7 +165,8 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             scroller.applyInsets(binding.recyclerView.context, it, top = 0)
         }
         val lineAdapter = LineAdapter()
-        observe(trackFeedData.shouldShowEmpty) {
+        val fixedRows = viewModel.fixedTrackRows
+        if (fixedRows == null) observe(trackFeedData.shouldShowEmpty) {
             lineAdapter.loadState = if (it) LoadState.Loading else LoadState.NotLoading(false)
         }
         observe(viewModel.uiResultFlow) { result ->
@@ -170,7 +177,8 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             binding.recyclerView,
             GridAdapter.Concat(
                 mediaHeaderAdapter,
-                trackAdapter.withLoading(this, initialButtons = parent.showInitialButtons, onEditPlaylistClick = {
+                if (fixedRows != null) fixedRowsAdapter(fixedRows, lineAdapter)
+                else trackAdapter.withLoading(this, initialButtons = parent.showInitialButtons, onEditPlaylistClick = {
                     lifecycleScope.launch {
                         val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@launch
                         val playlist = state.item as? Playlist ?: return@launch
@@ -192,9 +200,14 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)
         // The cast above never succeeds - fragment_media_details has no TV variant - so this page had no TV focus
-        // handling at all; this is it. // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
+        // handling at all. TV: focus the first row on open, restore the row left on return - see
+        // FragmentUtils.focusFirstRowOnTv.
         focusFirstRowOnTv(binding.recyclerView)
-        val loadingFlow = viewModel.isRefreshingFlow
+        // The fixed section has no paged loading state, and reading trackFeedData would create the FeedData it
+        // exists to avoid.
+        val loadingFlow = if (fixedRows != null)
+            viewModel.isRefreshingFlow.combine(feedData.isRefreshingFlow) { a, b -> a || b }
+        else viewModel.isRefreshingFlow
             .combine(trackFeedData.isRefreshingFlow) { a, b -> a || b }
                 .combine(feedData.isRefreshingFlow) { a, b -> a || b }
         binding.swipeRefresh.run {
@@ -210,5 +223,31 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             binding.swipeRefresh.isEnabled = false
             ViewCompat.setNestedScrollingEnabled(binding.recyclerView, true)
         }
+    }
+
+    /**
+     * ⚠️ THE INFO TAB'S ALBUM/ARTISTS SECTION, FIXED-LENGTH FROM THE FIRST FRAME (2026-10-31, step (c)). Rows come
+     * from MediaDetailsViewModel.fixedTrackRows; each emission is submitted whole, and because the count and order
+     * never change and FeedAdapter.DiffCallback matches on extension, type and id, a loaded album or artist
+     * rebinds its row IN PLACE (itemAnimator is null on this list). Same row type, feed id, extension and
+     * context as the paged trackFeed produced (FeedType.Media, number = null), so rows look and act as before.
+     * The divider follows the section: shown with its rows from the first frame, absent if the track has neither
+     * album nor artists. Backed by feedData only for the adapter's scroll-state maps; trackFeedData is never
+     * created on this path.
+     */
+    private fun fixedRowsAdapter(
+        rows: StateFlow<List<EchoMediaItem>?>, lineAdapter: LineAdapter,
+    ): FeedAdapter {
+        val adapter = getUnboundFeedAdapter(feedData, feedListener, true)
+        observe(rows) { items ->
+            lineAdapter.loadState =
+                if (items.isNullOrEmpty()) LoadState.NotLoading(false) else LoadState.Loading
+            val state = viewModel.uiResultFlow.value?.getOrNull()
+            val extensionId = state?.extensionId ?: viewModel.extensionFlow.value?.id.orEmpty()
+            adapter.submitData(PagingData.from(items.orEmpty().map {
+                FeedType.Media("${parent.feedId}_tracks", extensionId, state?.item, null, it, null)
+            }))
+        }
+        return adapter
     }
 }

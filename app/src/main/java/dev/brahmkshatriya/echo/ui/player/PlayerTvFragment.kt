@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.player
 
+import android.graphics.Color
+import androidx.fragment.app.FragmentManager
 import android.content.res.ColorStateList
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.AnimatedVectorDrawable
@@ -26,6 +28,8 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.slider.Slider
 import kotlinx.coroutines.flow.combine
 import androidx.core.content.ContextCompat
+import androidx.core.view.MenuItemCompat
+import android.view.MenuItem
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerTvBinding
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
@@ -75,6 +79,23 @@ class PlayerTvFragment : Fragment() {
         val minimize = { uiViewModel.changePlayerState(STATE_HIDDEN) }
         binding!!.tvToolbar.setNavigationOnClickListener { minimize() }
         binding!!.tvToolbar.navigationIcon = null
+        // ⚠⚠ THE ⋮ IS INFLATED HERE, BECAUSE THE SHARED STYLE NO LONGER DOES IT (2026-10-31). Until bc25f358
+        // (2026-08-28, "Rework the full-screen player's lower region") PlayerToolbarStyle carried
+        // `menu = @menu/more_menu`; that commit moved the PHONE's overflow down beside the heart and removed the
+        // item from the shared style, which silently took the TV player's ⋮ with it. Everything below - the
+        // focus routing, the click handler opening MediaMoreBottomSheet - kept pointing at a menu_more view that
+        // no longer existed, so on TV there was nothing to see or focus (1158). Tinted amoled_fg, like the rest
+        // of the TV player's chrome. [CORRECTED 2026-10-31] Now white - it sits on a dark scrim; see the tint below.
+        binding!!.tvToolbar.inflateMenu(R.menu.more_menu)
+        binding!!.tvToolbar.menu.findItem(R.id.menu_more)?.let {
+            // ALWAYS, not the menu's ifRoom: collapsed into an overflow button it would lose the menu_more id
+            // that the focus routing below targets.
+            it.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            // White, not amoled_fg (2026-10-31): the ⋮ always sits on the dark tv_minimize_scrim (wireMoreButtonFocus),
+            // and amoled_fg follows night mode - black in light mode, i.e. black-on-dark. Same for the minimize arrow
+            // (fragment_player_tv.xml).
+            MenuItemCompat.setIconTintList(it, ColorStateList.valueOf(Color.WHITE))
+        }
         // Let the toolbar's overflow action (menu_more) receive D-pad focus. The old FOCUS_BLOCK_DESCENDANTS
         // blocked EVERY descendant to hide the removed nav-icon slot — but navigationIcon=null above already
         // removes that view from the tree, and title/subtitle aren't focusable, so AFTER_DESCENDANTS exposes
@@ -86,11 +107,24 @@ class PlayerTvFragment : Fragment() {
         // layout, so RE-APPLY on every toolbar layout — a rebuilt view would otherwise lose these ids.
         fun wireMoreButtonFocus() {
             binding?.tvToolbar?.findViewById<View>(R.id.menu_more)?.apply {
+                // The same 4dp ring as the minimize button; the action view's own highlight is too faint at
+                // 10 feet. Set once per built view (ActionMenuView may rebuild it, hence the null check).
+                if (foreground == null) foreground = ContextCompat.getDrawable(context, R.drawable.tv_focus_indicator)
+                // Visible at all times, not only when focused (2026-10-31): the same 40%-black circular scrim as
+                // the minimize button, under the same amoled_fg icon [CORRECTED 2026-10-31: both icons are now white,
+                // since amoled_fg is black in light mode and the scrim is always dark]. amoled_fg follows night mode, not the
+                // player background (which is the album accent when Player Color is on), so on its own it is not
+                // guaranteed to read; the scrim gives it the minimize button's contrast everywhere.
+                // Once per built view: setting a background re-lays out the toolbar, which re-runs this function.
+                if (getTag(R.id.tv_more_scrim) != true) {
+                    background = ContextCompat.getDrawable(context, R.drawable.tv_minimize_scrim)
+                    setTag(R.id.tv_more_scrim, true)
+                }
                 nextFocusLeftId = R.id.tv_minimize_button
-                nextFocusDownId = R.id.tv_track_heart
                 nextFocusUpId = R.id.menu_more
                 nextFocusRightId = R.id.menu_more
             }
+            routeAroundHeart()
         }
         binding!!.tvToolbar.doOnLayout { wireMoreButtonFocus() }
         binding!!.tvToolbar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> wireMoreButtonFocus() }
@@ -175,6 +209,7 @@ class PlayerTvFragment : Fragment() {
                 // player entirely (2026-10-31). Hand it to the heart's own Down neighbour first.
                 if (!showHeart && binding.tvTrackHeart.hasFocus()) binding.tvSeekBar.requestFocus()
                 binding.tvTrackHeart.isVisible = showHeart
+                routeAroundHeart()
             }
         }
 
@@ -329,6 +364,7 @@ class PlayerTvFragment : Fragment() {
         binding.tvToolbar.setOnMenuItemClickListener {
             if (it.itemId == R.id.menu_more) {
                 viewModel.playerState.current.value?.let { current ->
+                    returnFocusToMoreWhenSheetCloses()
                     MediaMoreBottomSheet.show(
                         this, requireActivity().supportFragmentManager,
                         R.id.navHostFragment, current.mediaItem.extensionId, current.track,
@@ -338,6 +374,44 @@ class PlayerTvFragment : Fragment() {
                 true
             } else false
         }
+    }
+
+    /**
+     * ⚠️ THE HEART'S NEIGHBOURS, SET EXPLICITLY (2026-10-31). The heart sits between the seek bar and the top row
+     * (minimize, ⋮): seek bar Up -> heart, minimize and ⋮ Down -> heart. When the heart is hidden (an extension
+     * without likes) or disabled, those ids point at a view that cannot take focus and Android falls back to a
+     * geometric guess. Route straight across it instead, and back when it returns. Called whenever the heart's
+     * visibility is set and whenever the ⋮ view is (re)built.
+     */
+    private fun routeAroundHeart() {
+        val b = binding ?: return
+        val heartUsable = b.tvTrackHeart.isVisible && b.tvTrackHeart.isEnabled
+        b.tvSeekBar.nextFocusUpId = if (heartUsable) R.id.tv_track_heart else R.id.tv_minimize_button
+        val belowTop = if (heartUsable) R.id.tv_track_heart else R.id.tv_seek_bar
+        b.tvMinimizeButton.nextFocusDownId = belowTop
+        b.tvToolbar.findViewById<View>(R.id.menu_more)?.nextFocusDownId = belowTop
+    }
+
+    /**
+     * Back (or any close) of the player's ⋮ sheet puts focus back on the ⋮ (2026-10-31), rather than leaving it to
+     * the window's default. One-shot: unregisters on the first MediaMoreBottomSheet view destroyed. Skipped when
+     * the sheet's action left the player (a page opened, so the player is no longer expanded); when an action
+     * opened another sheet (Audio effects, Sleep timer, Quality) the ⋮ becomes the activity's focused view
+     * underneath it, so closing that sheet lands there too.
+     */
+    private fun returnFocusToMoreWhenSheetCloses() {
+        val manager = requireActivity().supportFragmentManager
+        manager.registerFragmentLifecycleCallbacks(object : FragmentManager.FragmentLifecycleCallbacks() {
+            override fun onFragmentViewDestroyed(fm: FragmentManager, f: Fragment) {
+                if (f !is MediaMoreBottomSheet) return
+                fm.unregisterFragmentLifecycleCallbacks(this)
+                val toolbar = binding?.tvToolbar ?: return
+                toolbar.post {
+                    if (uiViewModel.playerSheetState.value != STATE_EXPANDED) return@post
+                    toolbar.findViewById<View>(R.id.menu_more)?.requestFocus()
+                }
+            }
+        }, false)
     }
 
     private var lastDrawable: Drawable? = null

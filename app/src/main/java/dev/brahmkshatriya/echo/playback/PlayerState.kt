@@ -21,6 +21,15 @@ data class PlayerState(
     val session: MutableStateFlow<Int> = MutableStateFlow(0)
 ) {
 
+    /**
+     * When the running sleep timer fires, in SystemClock.elapsedRealtime() ms, or null when none runs (2026-10-31).
+     * Written ONLY by PlayerCallback.onSleepTimer and its job; read by the sleep-timer sheet (countdown, Turn off
+     * timer) and the player ⋮ entry ("Sleep Timer · 14 min left"). Before this the timer existed only as a Job in
+     * PlayerCallback, so nothing could show that one was running. Not persisted: the timer dies with the
+     * process, and so does this.
+     */
+    val sleepTimerEndsAt = MutableStateFlow<Long?>(null)
+
     val servers: MutableMap<String, Result<Streamable.Media.Server>> =
         Collections.synchronizedMap(LinkedHashMap())
     val serverChanged = MutableSharedFlow<Unit>(replay = 1)

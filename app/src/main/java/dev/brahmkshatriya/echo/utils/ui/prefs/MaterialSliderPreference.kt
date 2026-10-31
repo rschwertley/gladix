@@ -6,6 +6,7 @@ import android.widget.EditText
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.LabelFormatter
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
@@ -62,6 +63,10 @@ class MaterialSliderPreference(
         slider.valueTo = max.toFloat()
         slider.value = min(max(current, min), max).toFloat()
         slider.stepSize = steps?.toFloat() ?: 1f
+        // TV: no floating value label (2026-10-31). It drew over the row above while the D-pad changed the value
+        // (1158, Settings -> Player -> Crossfade), and the row's summary already shows the value - updateSummary
+        // writes "Value : N" after every change. Phone keeps Material's default floating label.
+        if (context.isTv()) slider.labelBehavior = LabelFormatter.LABEL_GONE
 
         slider.addOnChangeListener { _, value, byUser ->
             persistInt(value.toInt())

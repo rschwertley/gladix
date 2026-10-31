@@ -80,7 +80,13 @@ class TvPairingFragment : Fragment() {
             val arl = validatedArl()
             if (arl == null) {
                 if (afterSignIn) {
-                    showStatus("Not signed in to Deezer. Sign in, then enter the code again.")
+                    // Reached only when no ARL passed the TV's own test (DeezerExtension.userForPairing) even after
+                    // a sign-in, so say what WILL work rather than "sign in" again (2026-10-31). Email and password
+                    // can always be renewed silently; a Google/Apple/Facebook sign-in has no password to renew with.
+                    showStatus(
+                        "Couldn't get a Deezer login that works on a TV. On this phone, sign in to Deezer with " +
+                            "email and password (or paste an ARL from a browser), then enter the code again."
+                    )
                     binding.confirmButton.isEnabled = true
                     binding.codeInputLayout.isEnabled = true
                 } else {
@@ -94,7 +100,10 @@ class TvPairingFragment : Fragment() {
             }
             val ok = postPairing(code, arl)
             if (ok) {
-                showStatus("TV linked successfully!")
+                // ⚠️ NOT "linked successfully" (2026-10-31): the worker's {"ok": true} only means it STORED the ARL; the
+                // TV fetches it separately and the phone never learns whether the TV accepted it. Only an ARL that
+                // passed the TV's own test is ever sent (DeezerExtension.userForPairing).
+                showStatus("Sent to TV. Finish on the TV.")
                 binding.cancelButton.text = getString(R.string.done)
             } else {
                 showStatus("Failed to link. Check the code and try again.")

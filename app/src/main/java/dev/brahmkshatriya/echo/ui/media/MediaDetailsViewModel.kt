@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.media
 
+import kotlinx.coroutines.flow.StateFlow
 import android.content.Context
 import android.content.Intent
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -60,8 +61,20 @@ abstract class MediaDetailsViewModel(
     // Only ever used to turn an EXTENSION_ID stamp into a display name - see
     // sourceExtensionName. Both subclasses already receive it, so this costs one argument each.
     private val extensionLoader: ExtensionLoader,
+    // ⚠️ false = the subclass draws the album/artists section itself through [fixedTrackRows], so
+    // [trackCachedFlow] and [tracksLoadedFlow] do no work (2026-10-31, the player's Info tab only). A
+    // CONSTRUCTOR parameter, not an open val, because those flows are stateIn(Eagerly) and start inside this
+    // constructor, before a subclass's overriding property would be initialised. Media pages keep the default.
+    val loadTrackSection: Boolean = true,
 ) : ViewModel() {
     val extensionFlow = extension.stateIn(viewModelScope, Eagerly, null)
+
+    /**
+     * The album/artists section as a FIXED list, for a subclass that passes loadTrackSection = false; null for
+     * every other page, which keeps the paged track feed. Read only by MediaDetailsFragment, never during this
+     * class's construction, so overriding it is safe.
+     */
+    open val fixedTrackRows: StateFlow<List<EchoMediaItem>?>? get() = null
     val downloadsFlow = downloader.flow
 
     val refreshFlow = MutableSharedFlow<Unit>()
@@ -121,7 +134,7 @@ abstract class MediaDetailsViewModel(
 
     val trackCachedFlow = cacheExtensionItemFlow.transformLatest { (extension, item) ->
         emit(null)
-        if (!loadFeeds) return@transformLatest
+        if (!loadFeeds || !loadTrackSection) return@transformLatest
         extension ?: return@transformLatest
         val item = item ?: cacheResultFlow.value?.getOrNull()?.item ?: return@transformLatest
         val feed : Result<Feed<Shelf>?> = trackFeed(item, extension)
@@ -136,7 +149,7 @@ abstract class MediaDetailsViewModel(
         .combine(tracksSwappedIn) { pair, _ -> pair }
         .transformLatest { (extension, item) ->
             emit(null)
-            if (!loadFeeds) return@transformLatest
+            if (!loadFeeds || !loadTrackSection) return@transformLatest
             extension ?: return@transformLatest
             item ?: return@transformLatest
             val feed: Result<Feed<Shelf>?> = trackFeed(item, extension)

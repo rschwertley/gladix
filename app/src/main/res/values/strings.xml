@@ -346,6 +346,9 @@
     <string name="sleep_on_specific_time">Sleep on specific time</string>
     <string name="sleep_timer_cancelled">Sleep timer cancelled</string>
     <string name="sleep_timer_set_for">Sleep timer set for %1$s</string>
+    <string name="turn_off_timer">Turn off timer</string>
+    <string name="sleep_timer_x_left">%1$s left</string>
+    <string name="sleep_timer_with_left">%1$s · %2$s left</string>
     <string name="search_x">Search %1$s</string>
     <string name="n_hours">%1$d hours</string>
     <plurals name="number_hour">

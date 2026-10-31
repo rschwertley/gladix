@@ -916,6 +916,53 @@ class DeezerApi(private val session: DeezerSession) {
         }
     }
 
+    /**
+     * ⚠⚠ THE TV'S LOGIN TEST, RUN ON THIS PHONE WITH NOTHING BUT [arl] (2026-10-31). Returns the account's USER_ID,
+     * or null when Deezer treats the ARL as a guest (USER_ID "0" or blank) or the check fails.
+     * WHY A SEPARATE TEST: makeUser's getUserData goes through callApi with the phone's WHOLE live session (arl AND
+     * sid cookies, api_token), and Deezer answers for a logged-in sid even when the arl beside it is dead - so a
+     * 1158 link passed that check on the phone and arrived on the TV as a guest. A paired TV has only the ARL:
+     * onLogin's ARL branch sets it, getSid() fetches a fresh anonymous sid (a cookie-less user.getArl GET), then
+     * getUserData. This repeats exactly that, with its own fresh sid.
+     * Same shape as deezer-py's login_via_arl (RemixDev/deezer-py, deezer/__init__.py:87-110: only the arl cookie,
+     * deezer.getUserData, USER_ID == 0 means not logged in; gw.py:37 sends api_token 'null' for that method).
+     * ⚠️ TOUCHES NO SESSION STATE: raw requests, not callApi, which would write the response's sid into the
+     * phone's session for this method. Cancellation is rethrown; every other failure is a null.
+     */
+    suspend fun userIdForArl(arl: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val sidRequest = Request.Builder()
+                .url("https://www.deezer.com/ajax/gw-light.php?method=user.getArl&input=3&api_version=1.0&api_token=null")
+                .get()
+                .build()
+            val freshSid = clientLog.newCall(sidRequest).await().use { response ->
+                response.headers.firstOrNull { it.second.startsWith("sid=") }
+                    ?.second?.substringAfter("sid=")?.substringBefore(";")
+            } ?: return@withContext null
+            val url = HttpUrl.Builder()
+                .scheme("https").host("www.deezer.com")
+                .addPathSegments("ajax/gw-light.php")
+                .addQueryParameter("method", "deezer.getUserData")
+                .addQueryParameter("input", "3")
+                .addQueryParameter("api_version", "1.0")
+                .addQueryParameter("api_token", "null")
+                .build()
+            val headers = staticHeaders.newBuilder()
+                .add("Cookie", "arl=${arl.sanitizeHeader()}; sid=${freshSid.sanitizeHeader()}")
+                .add("Accept-Language", "$language,*")
+                .add("Content-Language", language)
+                .build()
+            val request = Request.Builder().url(url).post("{}".toRequestBody()).headers(headers).build()
+            val raw = client.newCall(request).await().use { it.body.string() }
+            (decodeJson(raw)["results"].objOrNull()?.get("USER").objOrNull()?.get("USER_ID") as? JsonPrimitive)
+                ?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun getSid() {
         val url = "https://www.deezer.com/ajax/gw-light.php?method=user.getArl&input=3&api_version=1.0&api_token=null"
         val request = Request.Builder()
