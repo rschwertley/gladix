@@ -140,6 +140,19 @@
 # anchor: dev.brahmkshatriya.echo.playback.exceptions.PlayerException, extensions.exceptions.ExtensionNotFoundException, download.exceptions.DownloadException, utils.AppUpdater$GithubNoReleasesException
 
 
+# 8. androidx.recyclerview.widget.EdgeZoneItemTouchHelper (2026-10-30), our class placed in the
+#    LIBRARY's package so it can override ItemTouchHelper's package-private scrollIfNecessary - see its
+#    class doc. A package-private override binds only within one runtime package, so this class and
+#    ItemTouchHelper must stay together under this name. R8 repackaging is the failure on record (the
+#    extension ABI break above); keeping both class names, and the overridden method's name on both
+#    sides, rules it out here rather than trusting R8 to move them as a pair.
+#    Narrow on purpose: two classes and one method, not androidx.recyclerview.**.
+-keep class androidx.recyclerview.widget.EdgeZoneItemTouchHelper { *; }
+-keepnames class androidx.recyclerview.widget.ItemTouchHelper
+-keepclassmembernames class androidx.recyclerview.widget.ItemTouchHelper { boolean scrollIfNecessary(); }
+# anchor: androidx.recyclerview.widget.EdgeZoneItemTouchHelper, androidx.recyclerview.widget.ItemTouchHelper
+
+
 # Preserve generics + all annotation variants + nested/lambda linkage so kotlinx.serialization type
 # resolution and suspend/lambda types crossing the extension classloader boundary still resolve after
 # shrinking (proguard-android-optimize keeps *Annotation* but NOT Signature/InnerClasses/EnclosingMethod).

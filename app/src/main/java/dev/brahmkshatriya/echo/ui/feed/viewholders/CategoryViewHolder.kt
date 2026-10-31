@@ -8,6 +8,7 @@ import androidx.cardview.widget.CardView
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 import com.google.android.material.color.MaterialColors
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Shelf
@@ -51,7 +52,20 @@ class CategoryViewHolder(
         // non-focusable leading row would strand initial focus. Focusable-but-inert = visible, no snack.
         binding.root.isClickable = category.feed != null
         binding.bind(category)
+        // ⚠️ TWO LINES NEED MORE THAN THE PHONE LAYOUT'S FIXED 48dp (2026-10-30): with the 6dp padding set
+        // in bind, a 16sp title plus a subtitle overflows it and the subtitle is cut off - first seen on the
+        // artist page's "Liked songs" ("1 song"). A row with a subtitle takes collapsed_cover_size, the
+        // height of the track rows beside it. Phone only: the TV layout already wraps (minHeight 64dp),
+        // so its WRAP_CONTENT is left alone. Recycled rows are reset to the layout's own height.
+        if (fixedHeight > 0) binding.root.updateLayoutParams {
+            height = if (binding.subtitle.isVisible)
+                binding.root.resources.getDimensionPixelSize(R.dimen.collapsed_cover_size)
+            else fixedHeight
+        }
     }
+
+    // The inflated layout's own height: 48dp on phones, WRAP_CONTENT (negative) on TV.
+    private val fixedHeight = binding.root.layoutParams?.height ?: 0
 
     companion object {
         fun ItemShelfCategoryBinding.bind(category: Shelf.Category) {

@@ -14,6 +14,8 @@ import dev.brahmkshatriya.echo.extension.DeezerParser
 import dev.brahmkshatriya.echo.extension.Utils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -731,6 +733,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         if (original.type == Track.Type.Podcast) {
             return original
         }
+        if (original.extras[INFO_DETAILS_EXTRA] == "1") return withInfoDetails(original)
 
         // Self-heal a missing/empty TRACK_TOKEN (e.g. a context-less bare track recovered from an
         // Android Auto cache-miss, or a stale persisted seed): re-fetch the track fresh by id so its
@@ -888,6 +891,71 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     private val placeholderPrefix = "dzp:"
 
     /**
+     * ⚠️ THE PLAYER INFO TAB'S DETAILS, AND NOTHING ELSE (2026-10-30). The app's TrackInfoViewModel asks
+     * through loadTrack with [INFO_DETAILS_EXTRA] set, and this returns the track it was handed with ONLY its
+     * missing contributors (CONTRIB_*), ISRC, release date and disc/track numbers filled - never a field the
+     * track already has, no token, no streamables. The app displays the result and keeps it out of every
+     * cache, the queue and playback; see TrackInfoViewModel.withInfoDetails.
+     * WHY IT IS NEEDED: those fields are missing on the liked paths. The artist page's LikedEntry and Android
+     * Auto's stored list (toSlimKeepingRoutingKeys) drop them, a disk-painted album or playlist page loses
+     * ISRC and release date (Cached.toTracksCacheSlim), and loadTrack's re-fetch merge takes only the cover
+     * and extras. Library -> Tracks shows none of them either, and nothing on our side drops them there
+     * (graftFavTrack keeps the top-level record's fields, the feed cache removes only TRACK_TOKEN). INFERRED,
+     * NOT VERIFIED: favorite_song.getList's records do not carry them. deemix and deezer-py do not call that
+     * method at all - their liked list is song.getFavoriteIds + song.getListData - so its shape is unknown
+     * from open source.
+     * THE REQUEST: deezer.pageTrack, the one loadTrack's re-fetch already uses. deemix reads all five from its
+     * DATA (bambanah/deemix packages/deezer-sdk/src/utils.ts map_track: `isrc: track.ISRC`,
+     * `track_position: track.TRACK_NUMBER`, `disk_number: track.DISK_NUMBER`,
+     * `release_date: track.PHYSICAL_RELEASE_DATE`, `song_contributors: track.SNG_CONTRIBUTORS`, applied to
+     * gw.get_track_with_fallback's deezer.pageTrack body.DATA).
+     * ⚠️ WHICH ID: FALLBACK_ID when the track has one, else its own id, and the answer is used only if its
+     * album matches the album shown. A FALLBACK-grafted favourite (graftFavTrack) shows the FALLBACK record's
+     * album, so its own id would fetch the substitute's ISRC and credits for a different recording. A track
+     * whose FALLBACK is not the record shown (an album-page row) fails the album check and gets no fill,
+     * which is the safe miss.
+     * ONE REQUEST PER SONG PER SESSION, failures included (remembered as null), keyed by the track's id.
+     * Nothing missing, no request. Best-effort: any failure returns the track as handed.
+     */
+    private suspend fun withInfoDetails(track: Track): Track {
+        val clean = track.copy(extras = track.extras - INFO_DETAILS_EXTRA)
+        if (!clean.lacksInfoDetails()) return clean
+        val full = infoDetailsMutex.withLock {
+            if (infoDetails.containsKey(clean.id)) infoDetails[clean.id]
+            else {
+                val fallbackId = clean.extras["FALLBACK_ID"].orEmpty()
+                val fetched = runCatching {
+                    api.track(fallbackId.ifEmpty { clean.id })["results"].objOrNull()
+                        ?.let { parser.run { it.toTrack() } }
+                }.getOrElse { if (it is CancellationException) throw it else null }
+                    ?.takeIf { clean.album?.id.isNullOrEmpty() || it.album?.id == clean.album?.id }
+                infoDetails[clean.id] = fetched
+                fetched
+            }
+        } ?: return clean
+        val missingContribs = full.extras.filter { (key, value) ->
+            key.startsWith("CONTRIB_") && value.isNotEmpty() && clean.extras[key].isNullOrEmpty()
+        }
+        return clean.copy(
+            isrc = clean.isrc?.takeIf { it.isNotBlank() } ?: full.isrc,
+            releaseDate = clean.releaseDate ?: full.releaseDate,
+            albumOrderNumber = clean.albumOrderNumber ?: full.albumOrderNumber,
+            albumDiscNumber = clean.albumDiscNumber ?: full.albumDiscNumber,
+            extras = clean.extras + missingContribs,
+        )
+    }
+
+    private fun Track.lacksInfoDetails() =
+        extras.keys.none { it.startsWith("CONTRIB_") } || isrc.isNullOrBlank() || releaseDate == null ||
+            albumOrderNumber == null || albumDiscNumber == null
+
+    // Session-only, bounded; a value of null records a failed or rejected fetch so it is not repeated.
+    private val infoDetailsMutex = Mutex()
+    private val infoDetails = object : LinkedHashMap<String, Track?>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Track?>) = size > 500
+    }
+
+    /**
      * ⚠⚠ THIS EXTENSION AGES ITS OWN CREDENTIAL; THE APP CANNOT. TRACK_TOKEN is ours, kept in
      * Track.extras, and it outlives the request that issued it in every store that keeps extras - so
      * loadTrack must not take a non-empty one as current.
@@ -966,6 +1034,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // of mislabelling this marker exists to remove. The test used to be "the re-fetched id
         // differs"; it is now structural, since only the FALLBACK_ID block stamps the key.
         private const val ALT_VERSION_EXTRA = "ALT_VERSION"
+
+        // Set ONLY by the app's TrackInfoViewModel (same literal there, no shared module): routes
+        // loadTrack to withInfoDetails instead of a playback load.
+        private const val INFO_DETAILS_EXTRA = "gladix_info_details"
 
         // ⚠️ HARDCODED ENGLISH, CONSISTENT WITH THIS MODULE. The extension has no resources
         // and no locale plumbing for display strings; its sibling labels ("FLAC", "320kbps",

@@ -181,6 +181,10 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
                             null, EditPlaylistFragment.getBundle(state.extensionId, playlist, state.loaded)
                         )
                     }
+                }, editPlaylistVisible = viewModel.uiResultFlow.combine(viewModel.extensionFlow) { result, extension ->
+                    // The tap's own two checks above, so the pencil shows exactly when it works.
+                    val playlist = result?.getOrNull()?.item as? Playlist
+                    playlist?.isEditable == true && extension?.isClient<PlaylistEditClient>() == true
                 }),
                 lineAdapter,
                 feedAdapter.withLoading(this)

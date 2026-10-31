@@ -36,9 +36,17 @@ class ButtonsAdapter(
             notifyItemChanged(0)
         }
 
+    // See FeedAdapter.withLoading's editPlaylistVisible.
+    var showEditPlaylist = true
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemChanged(0)
+        }
+
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         super.onBindViewHolder(holder, position)
-        holder.bind(buttons)
+        holder.bind(buttons, showEditPlaylist)
     }
 
     override fun onViewDetachedFromWindow(holder: ViewHolder) {
@@ -127,7 +135,7 @@ class ButtonsAdapter(
             }
         }
 
-        fun bind(feed: FeedData.Buttons?) {
+        fun bind(feed: FeedData.Buttons?, showEditPlaylist: Boolean) {
             val buttons = feed?.buttons ?: Feed.Buttons.EMPTY
             this.feed = feed
             val showButtons = buttons.run { showPlayAndShuffle || showSort || showSearch }
@@ -141,7 +149,7 @@ class ButtonsAdapter(
             binding.searchToggleButton.isVisible = buttons.showSearch
             binding.sortToggleButton.isVisible = buttons.showSort
             binding.createPlaylistButton.isVisible = onCreatePlaylistClick != null
-            binding.editPlaylistButton.isVisible = onEditPlaylistClick != null
+            binding.editPlaylistButton.isVisible = onEditPlaylistClick != null && showEditPlaylist
         }
 
         fun onViewDetached() {

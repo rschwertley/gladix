@@ -718,6 +718,7 @@ object Cached {
      * least as fresh as the caller's, and some extensions may report availability only there.
      * ⚠️ READ-TIME, so entries already on disk are covered without a migration; nothing is written back.
      * ⚠️ A THIRD HAND-REBUILD OF MediaState.Loaded (with setTrackLiked) - mirror new fields here too.
+     * [2026-10-30] And a fourth: TrackInfoViewModel.withInfoDetails.
      */
     @PublishedApi
     internal fun <T : EchoMediaItem> withCallerVerdict(

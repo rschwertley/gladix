@@ -97,7 +97,7 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
         override fun bind(index: Int, list: List<ShelfType.Media>) {
             val shelf = list[index]
             this.shelf = shelf
-            binding.bind(shelf.media)
+            binding.bind(shelf.media, showNotPlayable = false)
             dimIfUnplayable(shelf.media, binding.coverContainer.root, binding.title, binding.subtitle)
         }
 
@@ -179,7 +179,7 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                 val track = tracks.getOrNull(index)
                 view.root.isVisible = track != null
                 if (track == null) return@forEachIndexed
-                view.bind(track, number?.let { it * 3 + index })
+                view.bind(track, number?.let { it * 3 + index }, showNotPlayable = false)
                 dimIfUnplayable(track, view.coverContainer.root, view.title, view.subtitle)
             }
         }
@@ -196,11 +196,11 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
     }
 
     companion object {
-        fun ItemShelfListsMediaBinding.bind(item: EchoMediaItem) {
+        fun ItemShelfListsMediaBinding.bind(item: EchoMediaItem, showNotPlayable: Boolean = true) {
             val gravity = if (item is Artist) Gravity.CENTER else Gravity.NO_GRAVITY
             title.text = item.title
             title.gravity = gravity
-            val sub = item.subtitle(root.context)
+            val sub = item.subtitle(root.context, showNotPlayable)
             subtitle.text = sub
             subtitle.gravity = gravity
             subtitle.isVisible = !sub.isNullOrBlank()

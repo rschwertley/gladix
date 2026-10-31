@@ -51,6 +51,7 @@ import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.history.HistoryRepository
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.showFor
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel.Companion.KEEP_QUEUE
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.get
@@ -1505,7 +1506,7 @@ class PlayerCallback(
                 Message.Action(app.context.getString(R.string.undo)) {
                     scope.launch { session.with { undoAddNext(addId) } }
                 }
-            )
+            ).showFor(5_000) // LENGTH_LONG is too short to reach Undo; see SnackBarHandler.showFor
         )
         SessionResult(RESULT_SUCCESS)
     }

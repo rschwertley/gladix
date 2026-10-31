@@ -45,6 +45,7 @@ import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animatedWithAlpha
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimPagingAdapter
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import java.lang.ref.WeakReference
@@ -234,7 +235,7 @@ class FeedAdapter(
         }
     }.flatten()
 
-    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null): GridAdapter.Concat {
+    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null): GridAdapter.Concat {
         val tabs = TabsAdapter<FeedTab>({ tab.title }) { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
@@ -302,6 +303,15 @@ class FeedAdapter(
             runCatching { speechLauncher.launch(intent) }
         }
         buttonsAdapter = buttons
+        // ⚠️ THE PENCIL SHOWS ONLY WHEN TAPPING IT CAN OPEN THE EDITOR (2026-10-30). Since 14f8fd81 (Jun 1) it
+        // showed whenever onEditPlaylistClick was passed - on every media page, albums and other users'
+        // playlists included - and isEditable / PlaylistEditClient were checked only inside the tap, so it
+        // was a visible no-op there. Seen on the Deezer Favorite tracks page, which loadPlaylist marks
+        // non-editable. The caller supplies the same test the tap runs; without a flow it stays as before.
+        if (editPlaylistVisible != null) {
+            buttons.showEditPlaylist = false
+            fragment.observe(editPlaylistVisible) { buttons.showEditPlaylist = it }
+        }
         if (initialButtons) buttons.buttons = FeedData.Buttons("", "", Feed.Buttons(showPlayAndShuffle = true))
         fragment.observe(viewModel.buttonsFlow) {
             buttons.buttons = it

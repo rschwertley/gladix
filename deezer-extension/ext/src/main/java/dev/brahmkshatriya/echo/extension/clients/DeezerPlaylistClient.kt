@@ -60,8 +60,14 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // tile already fetched it; if not (the loved list opened from a Home "Recently played" card before
         // Library loaded), this is the session's one best-effort getUserData. Opening a playlist is an
         // ordinary load, not a login or start-up path, so the 1108 rule at lovedTracksIdOrNull holds.
+        // ⚠️ AND NEVER SAVEABLE (2026-10-30): with isEditable false the app offers "Remove from library",
+        // which calls saveToLibrary(playlist, false) -> api.removeFavoritePlaylist -> gateway
+        // playlist.deleteFavorite with PLAYLIST_ID = the Loved Tracks id. What Deezer does with that for the
+        // account's own loved list is not known; it is not a path anyone should be offered. isSaveable =
+        // false makes Cached.loadMedia skip the isItemSaved probe, so isSaved is null and the app shows
+        // neither Save nor Remove.
         return if (loaded.isEditable && loaded.id == deezerExtension.lovedTracksIdOrNull())
-            loaded.copy(isEditable = false)
+            loaded.copy(isEditable = false, isSaveable = false)
         else loaded
     }
 

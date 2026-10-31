@@ -56,7 +56,7 @@ class MediaGridViewHolder(
         val index = feed.number
         title.text = if (index == null) item.title
         else root.context.getString(R.string.n_dot_x, index + 1, item.title)
-        val subtitleText = item.subtitle(root.context)
+        val subtitleText = item.subtitle(root.context, showNotPlayable = false)
         subtitle.text = subtitleText
         subtitle.isVisible = !subtitleText.isNullOrBlank()
         coverContainer.run { applyCover(item, cover, listBg1, listBg2, icon) }

@@ -54,6 +54,8 @@ object UiUtils {
      * MediaViewHolder.subtitle is `is Track -> playableString(context) ?: subtitleWithE`, so the row
      * reads "Not playable: <reason>" in place of its artist line. This adds the dimming that was
      * missing, it does not add the explanation.
+     * [CORRECTED 2026-10-30] No longer true at the callers of this: they pass showNotPlayable = false, so
+     * a Playable.No row keeps its title and artist, dimmed, and the tap message gives the reason.
      * ⚠️ NON-TRACKS AND NULLS ARE NEVER DIMMED. Albums, artists and
      * playlists have no isPlayable, and a null item is "not bound yet", not "unavailable".
      */

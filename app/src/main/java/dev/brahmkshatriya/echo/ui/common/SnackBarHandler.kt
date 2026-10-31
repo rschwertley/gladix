@@ -16,6 +16,7 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
+import java.util.Collections
 import java.util.WeakHashMap
 
 class SnackBarHandler(
@@ -151,6 +152,20 @@ class SnackBarHandler(
     }
 
     companion object {
+        /**
+         * ⚠️ A LONGER DISPLAY TIME FOR ONE MESSAGE, KEPT HERE BECAUSE Message IS IN :common AND ABI-FROZEN
+         * (2026-10-30). Every message is Snackbar.LENGTH_LONG, which Material 1.14.0 makes 2750 ms from show()
+         * including the 250 ms slide in and out (SnackbarManager.LONG_DURATION_MS) - too short to reach an
+         * Undo. Keyed weakly by the Message object itself (its action lambda makes equality identity in
+         * practice), so an entry lives exactly as long as the message is queued or shown.
+         * ⚠️ THE ACCESSIBILITY TIMEOUT IS ALREADY MATERIAL'S: Snackbar.getDuration (1.14.0, decoded) passes the
+         * set duration through AccessibilityManager.getRecommendedTimeoutMillis on API 29+, with the controls
+         * flag when there is an action, and below 29 shows an actionable snackbar indefinitely under touch
+         * exploration. So a duration set here only raises the floor.
+         */
+        private val durations = Collections.synchronizedMap(WeakHashMap<Message, Int>())
+        fun Message.showFor(durationMs: Int): Message = also { durations[it] = durationMs }
+
         fun MainActivity.setupSnackBar(
             uiViewModel: UiViewModel, root: View
         ): SnackBarHandler {
@@ -169,6 +184,7 @@ class SnackBarHandler(
             }
             fun createSnackBar(message: Message) {
                 val snackBar = Snackbar.make(root, message.message, Snackbar.LENGTH_LONG)
+                durations[message]?.let { snackBar.duration = it }
                 snackBar.animationMode = Snackbar.ANIMATION_MODE_SLIDE
                 updateInsets(snackBar)
                 message.action?.run { snackBar.setAction(name) { handler() } }

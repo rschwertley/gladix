@@ -84,6 +84,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // path, so a failing account costs one request per session, not one per Library load).
     private var lovedTracksId: String? = null
 
+    // TEMPORARY - REMOVE WITH THE GladixFav PROBE in DeezerLibraryClient.withFavoriteTracks.
+    internal val lovedTracksMemoState: String
+        get() = when (lovedTracksId) { null -> "unset"; "" -> "empty"; else -> "id" }
+
     /**
      * The Loved Tracks playlist id, fetched at most once per session, or null.
      * ⚠⚠ LAZY, FROM TWO ORDINARY LOADS ONLY - DeezerLibraryClient's playlist loads (the tile) and

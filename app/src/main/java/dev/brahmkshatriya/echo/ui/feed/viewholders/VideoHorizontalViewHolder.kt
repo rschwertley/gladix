@@ -57,7 +57,7 @@ class VideoHorizontalViewHolder(
         this@VideoHorizontalViewHolder.feed = feed
         val track = feed.item
         title.text = track.title
-        val sub = track.subtitle(root.context)
+        val sub = track.subtitle(root.context, showNotPlayable = false)
         subtitle.text = sub
         subtitle.isVisible = !sub.isNullOrBlank()
         track.cover.loadInto(binding.cover, track.placeHolder)

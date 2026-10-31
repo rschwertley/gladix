@@ -275,7 +275,11 @@ class DeezerApi(private val session: DeezerSession) {
 
         // User-visible through R.string.not_playable_x. Factual, short, no id: the row already shows
         // which track it is.
-        private const val NOT_AVAILABLE_REASON = "Not available on Deezer"
+        // [CORRECTED 2026-10-30] Was "Not available on Deezer". Deezer's own app says "Not available in your
+        // country" for some of these, and tracksAvailability cannot tell removed from region-blocked, so it
+        // is a plain "Not available". The row tap (FeedClickListener.onUnplayableClicked) shows it alone; the
+        // track page header and playback errors still wrap it in not_playable_x.
+        private const val NOT_AVAILABLE_REASON = "Not available"
 
         // Deezer picture hashes are 32 lowercase hex. See the ALB_PICTURE note at searchTracksPipe for
         // why a non-matching id yields no cover instead of a broken one.

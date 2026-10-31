@@ -74,7 +74,7 @@ class MediaViewHolder(
 
     override fun bind(feed: FeedType.Media) {
         this.feed = feed
-        binding.bind(feed.item, feed.number?.toInt())
+        binding.bind(feed.item, feed.number?.toInt(), showNotPlayable = false)
         // NOT inside ItemShelfMediaBinding.bind, even though that would cover this holder and
         // ThreeTracks in one line: ui/playlist/save/MediaItemAdapter calls that same extension, and
         // the save-to-playlist picker is not a surface this change was scoped to.
@@ -91,10 +91,12 @@ class MediaViewHolder(
     }
 
     companion object {
-        fun ItemShelfMediaBinding.bind(item: EchoMediaItem, index: Int? = null) {
+        fun ItemShelfMediaBinding.bind(
+            item: EchoMediaItem, index: Int? = null, showNotPlayable: Boolean = true
+        ) {
             title.text = if (index == null) item.title
             else root.context.getString(R.string.n_dot_x, index + 1, item.title)
-            val subtitleText = item.subtitle(root.context)
+            val subtitleText = item.subtitle(root.context, showNotPlayable)
             subtitle.text = subtitleText
             subtitle.isVisible = !subtitleText.isNullOrBlank()
             coverContainer.run {
@@ -150,8 +152,13 @@ class MediaViewHolder(
             item.cover.loadInto(cover, item.placeHolder)
         }
 
-        fun EchoMediaItem.subtitle(context: Context) = when (this) {
-            is Track -> playableString(context) ?: subtitleWithE
+        // showNotPlayable = false keeps the artist line on a Playable.No track (2026-10-30): the rows that
+        // pass it are the UiUtils.dimIfUnplayable sites, where the dimming already marks the row and the tap
+        // message (FeedClickListener.onUnplayableClicked) says why. Undimmed callers keep the default.
+        // RegionLocked and Unreleased still replace it everywhere ("Releases on <date>" is information).
+        fun EchoMediaItem.subtitle(context: Context, showNotPlayable: Boolean = true) = when (this) {
+            is Track -> (if (!showNotPlayable && isPlayable is Track.Playable.No) null
+            else playableString(context)) ?: subtitleWithE
             else -> subtitleWithE
         }
     }

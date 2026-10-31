@@ -446,6 +446,11 @@ tasks.register("verifyExtensionAbi") {
         "dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException",
         "dev.brahmkshatriya.echo.download.exceptions.DownloadException",
         "dev.brahmkshatriya.echo.utils.AppUpdater\$GithubNoReleasesException",
+        // EdgeZoneItemTouchHelper and its superclass - rule 8. Non-ABI. If either leaves
+        // androidx.recyclerview.widget, the package-private scrollIfNecessary override no longer
+        // applies and queue/playlist-editor drags fall back to the stock auto-scroll, with no crash.
+        "androidx.recyclerview.widget.EdgeZoneItemTouchHelper",
+        "androidx.recyclerview.widget.ItemTouchHelper",
     )
     doLast {
         val mappingFiles: List<File> = (mappingRoot.listFiles()?.toList().orEmpty())
@@ -467,7 +472,9 @@ tasks.register("verifyExtensionAbi") {
                         "okhttp3.** + okio.** + com.google.protobuf.**), extensions will fail to load " +
                         "with NoClassDefFoundError; if it is a HealthMonitor report type (rule 5, NOT " +
                         "ABI), R8 has merged or renamed the ConsecutiveSkip* families and Crashlytics " +
-                        "will group every breaker trip into one issue again. See app/proguard-rules.pro."
+                        "will group every breaker trip into one issue again; if it is EdgeZoneItemTouchHelper " +
+                        "or ItemTouchHelper (rule 8), drag auto-scroll has silently reverted to stock. " +
+                        "See app/proguard-rules.pro."
                 )
             }
             println("verifyExtensionAbi: '$variant' kept classes intact (${critical.size} anchors self-mapped).")

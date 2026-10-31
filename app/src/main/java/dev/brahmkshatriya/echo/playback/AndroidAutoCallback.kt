@@ -740,6 +740,7 @@ abstract class AndroidAutoCallback(
             SHELF -> extension.getList<ExtensionClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$SHELF/").substringBefore("/")
                 getShelfItems(context, id, extId, page)
+                    .also { if (favProbeKeys[id] == true) probeFav("library", page, it) }
             }
 
             HOME -> extension.getFeed<HomeFeedClient>(
@@ -779,6 +780,7 @@ abstract class AndroidAutoCallback(
                 } ?: libFeed.notSortTabs.firstOrNull()
                 Feed(listOf()) { libFeed.getPagedData(playlistTab) }
                     .toMediaItems(parentId, context, extId, page)
+                    .also { probeFav("shortcut", page, it) }
             }
 
             HISTORY -> {
@@ -1659,6 +1661,18 @@ abstract class AndroidAutoCallback(
         }
 
 
+        // ⚠⚠ TEMPORARY PROBE (2026-10-30) - REMOVE probeFav, favProbeKeys and their three call sites (the
+        // PLAYLISTS and SHELF branches of onGetChildren, the tab loop in toMediaItems) together with
+        // DeezerLibraryClient.withFavoriteTracks' GladixFav line, AFTER ONE CAPTURE of the car's
+        // Library -> Playlists and Playlists shortcut. One line per page the car is served, on both
+        // routes, with the rows exactly as handed to Android Auto. println, not Log, so it lands on the
+        // same tag (System.out) as the extension's line.
+        private val favProbeKeys = boundedMap<String, Boolean>()
+        private fun probeFav(route: String, page: Int, rows: List<MediaItem>) = println(
+            "GladixFav AA route=$route page=$page rows=${rows.size} " +
+                "first=${rows.take(2).map { it.mediaMetadata.title }}"
+        )
+
         // THIS PROBABLY BREAKS GOING BACK TBH, NEED TO TEST
         private val shelvesMap = boundedMap<String, PagedData<Shelf>>()
         private val continuations = boundedMap<Pair<String, Int>, String?>()
@@ -1683,6 +1697,8 @@ abstract class AndroidAutoCallback(
             if (notSortTabs.isNotEmpty()) {
                 return notSortTabs.map { tab ->
                     val shelfKey = "${feedKey}_${tab.id.hashCode()}"
+                    // TEMPORARY - REMOVE WITH probeFav. Marks a Library tab whose id names playlists.
+                    if (tab.id.contains("playlist", ignoreCase = true)) favProbeKeys[shelfKey] = true
                     // The declared list is captured INSIDE the lazy loader, because that is the first
                     // point the tab's Feed.Data exists — this branch only builds browsable nodes.
                     // It therefore lands before getShelfItems reads declaredListKeys for the same key,

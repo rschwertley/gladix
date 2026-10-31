@@ -169,9 +169,19 @@ class DeezerLibraryClient(
      * id from Home "Recently played", which getUserData makes unnecessary.
      */
     private suspend fun withFavoriteTracks(items: List<EchoMediaItem>): List<EchoMediaItem> {
-        val id = deezerExtension.lovedTracksIdOrNull() ?: return items
-        if (items.any { it is Playlist && it.id == id }) return items
-        return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false)) + items
+        // ⚠⚠ TEMPORARY PROBE (2026-10-30) - REMOVE BOTH GladixFav LINES (this one and AndroidAutoCallback's
+        // probeFav) AFTER ONE CAPTURE of the car's Library -> Playlists and Playlists shortcut. Prints on
+        // every path. memo is the state BEFORE the lookup: unset = first lookup this session, empty = a
+        // remembered failure or "none", id = cached. added=no-id / present / yes is which return ran.
+        val memo = deezerExtension.lovedTracksMemoState
+        fun probe(added: String) = println(
+            "GladixFav DEEZER hasUserId=${api.hasUserId} memo=$memo added=$added items=${items.size}"
+        )
+        val id = deezerExtension.lovedTracksIdOrNull() ?: return items.also { probe("no-id") }
+        if (items.any { it is Playlist && it.id == id }) return items.also { probe("present") }
+        probe("yes")
+        // isSaveable = false as in loadPlaylist, so the long-press sheet's pre-load placeholder offers no Save.
+        return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false, isSaveable = false)) + items
     }
 
     private companion object {

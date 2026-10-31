@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.core.view.updatePaddingRelative
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.EdgeZoneItemTouchHelper
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
@@ -200,7 +201,8 @@ class PlaylistTrackAdapter(
                     if (!removed) itemTouchHelper.onChildViewDetachedFromWindow(viewHolder.itemView)
                 }
             }
-            itemTouchHelper = ItemTouchHelper(callback)
+            // Drag auto-scroll from the finger in an edge zone - see EdgeZoneItemTouchHelper.
+            itemTouchHelper = EdgeZoneItemTouchHelper(callback)
             val listener = object : Listener {
                 override fun onTrackClicked(viewHolder: ViewHolder) {
                     itemTouchHelper.startDrag(viewHolder)

@@ -237,6 +237,11 @@ open class FeedClickListener(
      * Deezer today and wrong for TestExtension's Unreleased track, which already exercises this path.
      * It is also the SAME string the row's own subtitle shows (MediaViewHolder.subtitle), so the
      * snackbar confirms the tap was received rather than telling the user something new.
+     * ⚠️ [CORRECTED 2026-10-30] NO LONGER THE SAME STRING, AND No(reason) NO LONGER GOES THROUGH
+     * playableString HERE. The dimmed rows now keep their artist line (MediaViewHolder.subtitle's
+     * showNotPlayable = false), so this message is the only explanation. A No(reason) tap shows the
+     * extension's reason alone, without not_playable_x's "Not playable:" prefix: Deezer's is "Not
+     * available" (DeezerApi.NOT_AVAILABLE_REASON). The other three cases still come from playableString.
      * ⚠️ LONG-PRESS IS UNCHANGED. onMediaLongClicked still opens the
      * overflow sheet, which is the remaining route to the track's page - so nothing is unreachable,
      * only un-TAPPABLE.
@@ -246,7 +251,8 @@ open class FeedClickListener(
         // No context means the fragment is detached; there is nowhere to show a snackbar and nothing
         // to recover - the tap is simply dropped, as it would have been before this existed.
         val context = fragment.context ?: return false
-        val message = track.playableString(context) ?: return false
+        val message = (track.isPlayable as? Track.Playable.No)?.reason
+            ?: track.playableString(context) ?: return false
         fragment.createSnack(message)
         return true
     }
