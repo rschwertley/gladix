@@ -21,11 +21,13 @@ import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 
 class TabsAdapter<T>(
     private val getTitle: T.() -> String,
-    private val onTabSelected: (View, Int, T) -> Unit,
     // true = NO ROW AT ALL while there are no tabs (2026-11-01, the player's Info tab only), so a tab-less feed
     // gets no empty row and no grid spacing; the row is inserted when tabs arrive. false (every other caller) =
     // always one row, hidden by apply() when empty - unchanged.
+    // ⚠️ KEEP IT BEFORE onTabSelected: callers pass that as a TRAILING LAMBDA, which binds to the LAST parameter.
+    // Added after it, it broke LyricsItemAdapter and EditPlaylistFragment (release compile, 2026-11-01).
     private val collapseWhenEmpty: Boolean = false,
+    private val onTabSelected: (View, Int, T) -> Unit,
 ) : ScrollAnimRecyclerAdapter<TabsAdapter.ViewHolder>(), GridAdapter {
     override val adapter = this
     override fun getSpanSize(position: Int, width: Int, count: Int) = count

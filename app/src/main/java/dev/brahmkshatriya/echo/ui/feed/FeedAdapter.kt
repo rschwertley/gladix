@@ -245,9 +245,9 @@ class FeedAdapter(
     // there are none (TabsAdapter.collapseWhenEmpty), so the 1160 spacing applies to tab-less feeds. The buttons row
     // stays out there (sort/filter does not belong on the Info tab, Jun 7).
     fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null, showButtons: Boolean = true): GridAdapter.Concat {
-        val tabs = TabsAdapter<FeedTab>({ tab.title }, { view, index, tab ->
+        val tabs = TabsAdapter<FeedTab>({ tab.title }, collapseWhenEmpty = !showButtons) { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
-        }, collapseWhenEmpty = !showButtons)
+        }
         fragment.observe(viewModel.tabsFlow) { tabs.data = it }
         var buttonsAdapter: ButtonsAdapter? = null
         // Last declared track list for this feed, read by the tap path AT TAP TIME rather than
