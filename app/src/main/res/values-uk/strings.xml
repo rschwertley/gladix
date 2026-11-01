@@ -52,7 +52,6 @@
     <string name="x_is_not_supported_in_x">%1$s не підтримується в %2$s</string>
     <string name="account_session_expired_in_x">Сеанс облікового запису закінчився в %1$s</string>
     <string name="random">Випадково</string>
-    <string name="audio_fx_desc">Змінити звукові ефекти для поточної доріжки.</string>
     <string name="reset">Скинути</string>
     <string name="playback_speed">Швидкість відтворення</string>
     <string name="bass_boost_desc">Більше значення може призвести до спотворення звуку.</string>

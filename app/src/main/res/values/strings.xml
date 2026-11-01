@@ -111,7 +111,6 @@
 
     <string name="audio_fx">Audio Effects</string>
     <string name="audio_fx_summary">Effects applied for all songs</string>
-    <string name="audio_fx_desc">Change the audio effects for the current track.</string>
     <string name="reset">Reset</string>
     <string name="playback_speed">Playback Speed</string>
     <string name="change_pitch_with_speed">Change pitch with speed</string>

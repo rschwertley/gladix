@@ -83,7 +83,6 @@
     <string name="playback">පිළිවැයුම</string>
     <string name="audio_fx">ශ්‍රව්‍ය ආචරණ</string>
     <string name="audio_fx_summary">සියලූම සිංදු සඳහා ආචරණ යොදා ඇත</string>
-    <string name="audio_fx_desc">තත් පථය සඳහා ශ්‍රව්‍ය ආචරණය මාරු කරන්න.</string>
     <string name="reset">නැවත පිහිටුවීම</string>
     <string name="playback_speed">පිළිවැයුම් වේගය</string>
     <string name="change_pitch_with_speed">වේගය සමග තාරතාව වෙනස් කරන්න</string>

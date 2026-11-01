@@ -83,7 +83,6 @@
     <string name="playback">Lejátszás</string>
     <string name="audio_fx">Hanghatások</string>
     <string name="audio_fx_summary">A hanghatások az összes dalra alkalmazva</string>
-    <string name="audio_fx_desc">Hanghatás módosítás a jelenlegi dalhoz.</string>
     <string name="reset">Alapértelmezett</string>
     <string name="playback_speed">Lejátszási sebesség</string>
     <string name="change_pitch_with_speed">Hangszín változtatása a sebességel</string>

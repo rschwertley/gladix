@@ -90,7 +90,6 @@
     <string name="open_links_instruction">이러한 링크를 열도록 허용하려면 다음과 같이 해야 합니다:\n- 아래로 스크롤하여 \"기본으로 열기\"를 클릭합니다\n- \"+ 링크 추가\"를 클릭합니다</string>
     <string name="extension_updated_successfully">%1$s가 업데이트되었습니다</string>
     <string name="look_and_feel">테마</string>
-    <string name="audio_fx_desc">현재 트랙의 오디오 효과를 변경합니다.</string>
     <string name="custom_theme_color">사용자 지정 테마 색상</string>
     <string name="extension_installed">%1$s (설치됨)</string>
     <string name="custom_colors">사용자 지정 색상</string>

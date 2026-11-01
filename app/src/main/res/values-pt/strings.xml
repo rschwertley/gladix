@@ -82,7 +82,6 @@
     <string name="playback">Reprodução</string>
     <string name="audio_fx">Efeitos de áudio</string>
     <string name="audio_fx_summary">Efeitos aplicados a todas as músicas</string>
-    <string name="audio_fx_desc">Altere os efeitos de áudio da faixa atual.</string>
     <string name="reset">Repor</string>
     <string name="playback_speed">Velocidade de reprodução</string>
     <string name="change_pitch_with_speed">Mude o tom com velocidade</string>

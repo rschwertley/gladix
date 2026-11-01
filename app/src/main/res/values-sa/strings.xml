@@ -182,7 +182,6 @@
     <string name="playback">पुनः चलाना</string>
     <string name="audio_fx">श्रव्य प्रभाव</string>
     <string name="audio_fx_summary">सर्वेषां गीतानां कृते प्रभावाः प्रयुक्ताः</string>
-    <string name="audio_fx_desc">वर्तमानस्य पटलस्य कृते श्रव्यप्रभावं परिवर्तयन्तु ।</string>
     <string name="reset">पुनः सेट् करें</string>
     <string name="playback_speed">पुनरावृत्ति गती</string>
     <string name="change_pitch_with_speed">वेगेन सह पिच परिवर्तयन्तु</string>

@@ -45,7 +45,6 @@
     <string name="value">Giá trị</string>
     <string name="playback">Phát</string>
     <string name="audio_fx_summary">Hiệu ứng áp dụng cho tất cả các bài hát</string>
-    <string name="audio_fx_desc">Thay đổi hiệu ứng âm thanh cho bản nhạc hiện tại.</string>
     <string name="reset">Đặt lại</string>
     <string name="playback_speed">Tốc độ phát</string>
     <string name="bass_boost">Tăng cường âm bass</string>

@@ -964,7 +964,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         }
         if (!renewed.isReal() || !renewed!!.worksOnTv()) return null
         setLoginUser(renewed)
-        session.notifyUserRenewed(renewed!!)
+        session.notifyUserRenewed(renewed)
         return renewed
     }
 

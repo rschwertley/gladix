@@ -87,7 +87,6 @@
     <string name="playback">تشغيل مرة أخرى</string>
     <string name="audio_fx">المؤثرات الصوتية</string>
     <string name="audio_fx_summary">تم تطبيق التأثيرات على جميع الأغاني</string>
-    <string name="audio_fx_desc">تغيير المؤثرات الصوتية للمسار الحالي.</string>
     <string name="reset">إعادة ضبط</string>
     <string name="playback_speed">سرعة التشغيل</string>
     <string name="change_pitch_with_speed">تغيير درجة الصوت مع السرعة</string>

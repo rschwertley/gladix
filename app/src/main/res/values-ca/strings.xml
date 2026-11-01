@@ -84,7 +84,6 @@
     <string name="playback">Reproducció</string>
     <string name="audio_fx">Effectes d\'àudio</string>
     <string name="audio_fx_summary">Efectes actius a totes les cançons</string>
-    <string name="audio_fx_desc">Canvia els efectes d\'àudio per a la pista actual.</string>
     <string name="reset">Restableix</string>
     <string name="playback_speed">Velocitat de reproducció</string>
     <string name="change_pitch_with_speed">Canvia el to amb la velocitat</string>

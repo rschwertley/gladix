@@ -85,7 +85,6 @@
     <string name="playback">প্লেব্যাক</string>
     <string name="audio_fx">অডিও ইফেক্ট</string>
     <string name="audio_fx_summary">সমস্ত গানের জন্য প্রয়োগ করা ইফেক্ট</string>
-    <string name="audio_fx_desc">বর্তমান ট্র্যাকের জন্য অডিও ইফেক্ট পরিবর্তন করুন।</string>
     <string name="reset">রিসেট</string>
     <string name="playback_speed">প্লেব্যাক গতি</string>
     <string name="change_pitch_with_speed">গতির সাথে পিচ পরিবর্তন করুন</string>

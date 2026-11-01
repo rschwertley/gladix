@@ -12,7 +12,6 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import dev.brahmkshatriya.echo.extensions.ExtensionUtils.copyTo
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import kotlinx.coroutines.CoroutineScope
@@ -56,14 +55,13 @@ class EffectsListener(
         context.broadcastAudioSession()
     }
 
+    // ⚠️ ONE APP-WIDE SET OF EFFECTS (2026-10-31): there are no per-song files any more (see dropPerSongFx), so
+    // this is the only store, and the listener stays on this one instance for the service's life. Which is why
+    // a reset must clear it IN PLACE (resetGlobalFx) - deleting the file would leave this instance stale.
     private val settings: SharedPreferences = context.globalFx()
-    private var oldSettings = settings
     private fun applyCustomEffects() {
-        oldSettings.unregisterOnSharedPreferenceChangeListener(listener)
-        val current = context.getFxPrefs(settings, exoPlayer.currentMediaItem?.mediaId?.hashCode())
-            ?: settings
-        oldSettings = current
-        current.registerOnSharedPreferenceChangeListener(listener)
+        settings.registerOnSharedPreferenceChangeListener(listener)
+        val current = settings
         applyPlayback(current)
         // ⚠⚠ BASS BOOST IS OURS NOW, NOT THE SESSION'S. See
         // AudioEffectsProcessor.setBassBoost for the arithmetic that retired the old pair and
@@ -102,8 +100,13 @@ class EffectsListener(
      * getFxPrefs falls through to the global file, which is the right answer for "no track yet".
      * The first transition re-resolves and re-points the listener at the track's own file if it
      * has one.
+     * [CORRECTED 2026-10-31] No per-song files, no getFxPrefs and no oldSettings any more: it always reads the
+     * global file, and the transition only re-applies it (re-registering the same listener is a no-op). The
+     * declaration-order reason above still holds for [settings] and [listener]. dropPerSongFx runs first,
+     * before the listener is registered.
      */
     init {
+        context.dropPerSongFx(scope)
         applyCustomEffects()
     }
 
@@ -170,22 +173,33 @@ class EffectsListener(
         const val CUSTOM_EFFECTS = "custom_effects"
 
         fun Context.globalFx() = getSharedPreferences(GLOBAL_FX, Context.MODE_PRIVATE)!!
-        fun Context.deleteGlobalFx() = deleteSharedPreferences(GLOBAL_FX)
-        fun Context.getFxPrefs(settings: SharedPreferences, id: Int? = null): SharedPreferences? {
-            if (id == null) return null
-            val string = id.toString()
-            val hasCustom = settings.getStringSet(CUSTOM_EFFECTS, emptySet())?.contains(string)
-                ?: false
-            return if (!hasCustom) null
-            else getSharedPreferences("fx_$string", Context.MODE_PRIVATE)!!.apply {
-                if (getBoolean("init", false)) return@apply
-                settings.copyTo(this)
-                edit { putBoolean("init", true) }
-            }
-        }
 
-        fun Context.deleteFxPrefs(id: Int) =
-            deleteSharedPreferences("fx_$id")
+        /**
+         * Resets every effect to its default by removing each key from the ONE cached instance (2026-10-31),
+         * for both resets (Settings -> Audio effects and the player sheet's refresh). It used to
+         * deleteSharedPreferences the file, which also evicts the framework's cached instance (inference, from
+         * the framework's ContextImpl, not read here): EffectsListener kept listening to the evicted one while
+         * the screens wrote to a new one. Per-key removes, not clear(), because clear() notifies listeners only
+         * from API 30; a remove notifies on every API level.
+         */
+        fun Context.resetGlobalFx() = globalFx().run { edit { all.keys.forEach { remove(it) } } }
+
+        /**
+         * ⚠️ ONE-TIME CLEANUP OF PER-SONG EFFECTS (2026-10-31). Opening the player's Audio effects on a song
+         * used to add it to [CUSTOM_EFFECTS] and give it a private copy (`fx_<mediaId hash>`) that playback
+         * preferred over the global values, silently. Effects are now app-wide, so the list is dropped and
+         * the copies deleted: those songs follow the global values again. Idempotent - once the key is gone
+         * this returns at once - and it also cleans up after importing an old backup that still carried
+         * them. The key is removed synchronously, before EffectsListener registers its listener; only the
+         * file deletes run off the main thread.
+         */
+        fun Context.dropPerSongFx(scope: CoroutineScope) {
+            val global = globalFx()
+            val ids = global.getStringSet(CUSTOM_EFFECTS, null) ?: return
+            val names = ids.map { "fx_$it" }
+            global.edit { remove(CUSTOM_EFFECTS) }
+            scope.launch { names.forEach { runCatching { deleteSharedPreferences(it) } } }
+        }
     }
 
     private fun Context.broadcastAudioSession() {

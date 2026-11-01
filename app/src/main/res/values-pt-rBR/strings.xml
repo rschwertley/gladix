@@ -213,7 +213,6 @@
     <string name="repeat_all">Repetir tudo</string>
     <string name="search">Pesquisar</string>
     <string name="could_not_find_the_file">Não foi possível encontrar o arquivo.</string>
-    <string name="audio_fx_desc">Alterar os efeitos de áudio para a faixa atual.</string>
     <string name="bass_boost_desc">Valores maiores podem distorcer o som.</string>
     <string name="change_pitch_with_speed_desc">Obtenha o som em câmera lenta</string>
     <string name="keep_queue_summary">Recuperar a fila do reprodutor quando você reabrir o app.</string>

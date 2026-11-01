@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.ui.media
 
+import androidx.core.view.updatePadding
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import androidx.paging.PagingData
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter
@@ -144,6 +146,12 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         applyInsets(viewModel.uiResultFlow) {
             // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
             binding.recyclerView.applyContentInsets(it, 20, 0, 16)
+            // ⚠️ PLAYER INFO TAB ONLY: 24dp ABOVE THE HEADER (2026-10-31). The top-0 below was tuned on Jun 13 (with
+            // item_media_header's paddingTop 8 -> 0) for album and playlist pages, where the cover and title sit
+            // above this list. The Info tab has neither, so its first line ("04:37 • 11/20/70") sat flush against the
+            // panel. 24dp = that line's own side inset (this list's 20dp + the description TextView's 4dp). Set after
+            // applyContentInsets, which rewrites the top padding on every inset change. Media pages are unchanged.
+            if (parent.fromPlayer) binding.recyclerView.updatePadding(top = 24.dpToPx(binding.recyclerView.context))
             // top = 0, disagreeing with the full-bleed screens ON PURPOSE — see applyInsets' `top` param.
             // ⚠️ THE SAME VALUE HAS NOW CARRIED THREE DIFFERENT JUSTIFICATIONS. Do not quote an older one
             // back; they are not interchangeable, and two of them are false under the current layout:
@@ -177,7 +185,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             binding.recyclerView,
             GridAdapter.Concat(
                 mediaHeaderAdapter,
-                if (fixedRows != null) fixedRowsAdapter(fixedRows, lineAdapter)
+                if (fixedRows != null) fixedRowsAdapter(fixedRows)
                 else trackAdapter.withLoading(this, initialButtons = parent.showInitialButtons, onEditPlaylistClick = {
                     lifecycleScope.launch {
                         val state = viewModel.uiResultFlow.value?.getOrNull() ?: return@launch
@@ -193,8 +201,12 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
                     val playlist = result?.getOrNull()?.item as? Playlist
                     playlist?.isEditable == true && extension?.isClient<PlaylistEditClient>() == true
                 }),
-                lineAdapter,
-                feedAdapter.withLoading(this)
+                // ⚠️ PLAYER INFO TAB (2026-10-31): no divider, and the artist feed's empty tab and buttons rows left out.
+                // Each empty row still took the grid's 8dp spacing, and with the divider (24 + 1 + 12dp, plus 8dp)
+                // the gap above "Top" was ~69dp. That feed never shows tabs or buttons here. Album and playlist pages
+                // keep the divider and both rows (their showInitialButtons placeholder is on trackAdapter, untouched).
+                *(if (parent.fromPlayer) emptyArray() else arrayOf<GridAdapter>(lineAdapter)),
+                feedAdapter.withLoading(this, showTabsAndButtons = !parent.fromPlayer)
             ),
         )
         (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =
@@ -231,17 +243,15 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
      * never change and FeedAdapter.DiffCallback matches on extension, type and id, a loaded album or artist
      * rebinds its row IN PLACE (itemAnimator is null on this list). Same row type, feed id, extension and
      * context as the paged trackFeed produced (FeedType.Media, number = null), so rows look and act as before.
-     * The divider follows the section: shown with its rows from the first frame, absent if the track has neither
-     * album nor artists. Backed by feedData only for the adapter's scroll-state maps; trackFeedData is never
+     * [CORRECTED 2026-10-31] No divider follows this section any more: the Info tab drops it (see the Concat in
+     * onViewCreated). Backed by feedData only for the adapter's scroll-state maps; trackFeedData is never
      * created on this path.
      */
     private fun fixedRowsAdapter(
-        rows: StateFlow<List<EchoMediaItem>?>, lineAdapter: LineAdapter,
+        rows: StateFlow<List<EchoMediaItem>?>,
     ): FeedAdapter {
         val adapter = getUnboundFeedAdapter(feedData, feedListener, true)
         observe(rows) { items ->
-            lineAdapter.loadState =
-                if (items.isNullOrEmpty()) LoadState.NotLoading(false) else LoadState.Loading
             val state = viewModel.uiResultFlow.value?.getOrNull()
             val extensionId = state?.extensionId ?: viewModel.extensionFlow.value?.id.orEmpty()
             adapter.submitData(PagingData.from(items.orEmpty().map {

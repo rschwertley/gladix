@@ -49,7 +49,6 @@
     <string name="playback">播放</string>
     <string name="audio_fx">音效</string>
     <string name="audio_fx_summary">將音效套用到所有歌曲</string>
-    <string name="audio_fx_desc">將音效套用到目前音軌。</string>
     <string name="reset">重設</string>
     <string name="playback_speed">播放速度</string>
     <string name="change_pitch_with_speed">音調隨速度變化</string>

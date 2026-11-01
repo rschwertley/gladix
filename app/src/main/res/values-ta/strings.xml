@@ -83,7 +83,6 @@
     <string name="playback">பின்னணி</string>
     <string name="audio_fx">ஒலி விளைவுகள்</string>
     <string name="audio_fx_summary">எல்லா பாடல்களுக்கும் விளைவுகள் பயன்படுத்தப்பட்டன</string>
-    <string name="audio_fx_desc">தற்போதைய பாதைக்கான ஒலி விளைவுகளை மாற்று.</string>
     <string name="reset">மீட்டமை</string>
     <string name="playback_speed">பின்னணி விரைவு</string>
     <string name="change_pitch_with_speed">வேகத்துடன் சுருதியை மாற்றவும்</string>

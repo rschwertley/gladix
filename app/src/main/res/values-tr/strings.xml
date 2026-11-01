@@ -163,7 +163,6 @@
     <string name="playback">Oynatma</string>
     <string name="audio_fx">Ses Efektleri</string>
     <string name="audio_fx_summary">Tüm şarkılara uygulanan efektler</string>
-    <string name="audio_fx_desc">Mevcut parça için ses efektlerini değiştir.</string>
     <string name="bass_boost">Bas Takviyesi</string>
     <string name="bass_boost_desc">Daha büyük bir değer sesi bozabilir.</string>
     <string name="change_pitch_with_speed_desc">O yavaş hareket sesini al</string>

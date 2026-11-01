@@ -85,7 +85,6 @@
     <string name="value_not_set">Non impostato</string>
     <string name="playback">Riproduzione</string>
     <string name="audio_fx_summary">Effetti applicati a tutti i brani</string>
-    <string name="audio_fx_desc">Modifica gli effetti audio per il brano corrente.</string>
     <string name="reset">Ripristina</string>
     <string name="playback_speed">Velocità di riproduzione</string>
     <string name="change_pitch_with_speed">Modifica il tono insieme alla velocità</string>

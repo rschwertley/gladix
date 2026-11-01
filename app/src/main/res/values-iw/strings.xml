@@ -83,7 +83,6 @@
     <string name="playback">השמעה</string>
     <string name="audio_fx">אפקטי קול</string>
     <string name="audio_fx_summary">האפקטים מוחלים על כל השירים</string>
-    <string name="audio_fx_desc">שנה את אפקטי השמע עבור השיר הנוכחי.</string>
     <string name="reset">אתחול</string>
     <string name="playback_speed">מהירות השמעה</string>
     <string name="change_pitch_with_speed">שינוי גובה הצליל עם המהירות</string>

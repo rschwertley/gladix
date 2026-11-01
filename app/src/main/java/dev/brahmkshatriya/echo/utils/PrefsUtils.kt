@@ -6,7 +6,6 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.edit
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.extensionPrefId
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.GLOBAL_FX
 import dev.brahmkshatriya.echo.utils.ContextUtils.SETTINGS_NAME
 import kotlinx.serialization.json.Json
@@ -46,12 +45,9 @@ fun Context.exportSettings(uri: Uri) {
 
     val settingsJson = settingsPrefs.all.toJsonElementMap()
     val globalFxJson = globalFxPrefs.all.toJsonElementMap()
-    val customFxJson = globalFxPrefs.getStringSet(CUSTOM_EFFECTS, emptySet())?.map { fxName ->
-        fxName to getSharedPreferences("fx_$fxName", Context.MODE_PRIVATE).all.toJsonElementMap()
-    }
-
+    // No per-song fx_<id> files any more (2026-10-31, EffectsListener.dropPerSongFx): effects are GLOBAL_FX only.
+    // An old backup that still carries them imports harmlessly; the next player start drops them again.
     val allPrefsJson = mutableMapOf(SETTINGS_NAME to settingsJson, GLOBAL_FX to globalFxJson)
-    customFxJson?.forEach { (name, map) -> allPrefsJson["fx_$name"] = map }
 
     contentResolver.openOutputStream(uri, "w")?.use { out ->
         out.write(Json.encodeToString(allPrefsJson).toByteArray())

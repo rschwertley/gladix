@@ -64,7 +64,6 @@
     <string name="value">Valeur</string>
     <string name="value_not_set">Non Défini</string>
     <string name="audio_fx">Effets Audio</string>
-    <string name="audio_fx_desc">Modifiez les effets audio de la piste actuelle.</string>
     <string name="reset">Réinitialiser</string>
     <string name="playback_speed">Vitesse de Lecture</string>
     <string name="change_pitch_with_speed">Changer la hauteur avec la vitesse</string>

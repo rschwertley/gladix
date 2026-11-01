@@ -39,7 +39,6 @@
     <string name="playback">Prehrávanie</string>
     <string name="audio_fx">Efekty zvuku</string>
     <string name="audio_fx_summary">Efekty použité na všetky skladby</string>
-    <string name="audio_fx_desc">Zmente efekty zvuku pre aktuálnu skladbu.</string>
     <string name="reset">Resetovať</string>
     <string name="playback_speed">Rýchlosť prehrávania</string>
     <string name="change_pitch_with_speed">Meniť výšky tónu s rýchlosťou</string>

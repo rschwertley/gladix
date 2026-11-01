@@ -56,7 +56,6 @@
     <string name="playback">Wiedergabe</string>
     <string name="audio_fx">Audio-Effekte</string>
     <string name="audio_fx_summary">Auf alle Songs angewendete Effekte</string>
-    <string name="audio_fx_desc">Ändere die Audioeffekte für den aktuellen Titel.</string>
     <string name="playback_speed">Wiedergabegeschwindigkeit</string>
     <string name="change_pitch_with_speed">Tonhöhe mit Geschwindigkeit ändern</string>
     <string name="bass_boost">Bassverstärkung</string>

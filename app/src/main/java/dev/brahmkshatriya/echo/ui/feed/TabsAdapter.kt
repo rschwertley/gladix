@@ -68,6 +68,9 @@ class TabsAdapter<T>(
         }
     }
 
+    // TabsProbe (TEMPORARY): true while apply() sets the checked states, so a checked change can be attributed.
+    private var applying = false
+
     fun apply(parent: MaterialButtonGroup) {
         val tabs = data
         parent.isVisible = tabs.isNotEmpty()
@@ -84,10 +87,24 @@ class TabsAdapter<T>(
                 tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             }
             parent.addView(tab)
+            // TabsProbe (TEMPORARY, TV only - enabled is false on the phone): every checked change with its source,
+            // and focus moves in the tab row.
+            if (TabsProbe.enabled) {
+                tab.addOnCheckedChangeListener { b, checked ->
+                    TabsProbe.log(
+                        "checked tab=${parent.indexOfChild(b)} -> $checked source=${if (applying) "apply" else "other"} " +
+                            "selected=$selected"
+                    )
+                }
+                tab.setOnFocusChangeListener { v, hasFocus ->
+                    TabsProbe.log("focus tab=${parent.indexOfChild(v)} has=$hasFocus")
+                }
+            }
         } else if (toKeep < 0) repeat(-toKeep) {
             parent.getChildAt(tabs.size + it).isVisible = false
         }
-        tabs.indices.forEach { i ->
+        applying = true
+        try { tabs.indices.forEach { i ->
             val tab = tabs[i]
             val button = parent.getChildAt(i) as MaterialButton
             button.apply {
@@ -97,6 +114,7 @@ class TabsAdapter<T>(
                 isChecked = i == selected
                 // Single selection action shared by touch (OnClickListener) and D-pad OK (OnKeyListener).
                 val select = View.OnClickListener { v ->
+                    TabsProbe.log("select tab=$i selected=$selected -> ${if (i == selected) "already selected" else "onTabSelected"}")
                     if (i == selected) isChecked = true
                     else onTabSelected(v, i, tab)
                 }
@@ -106,16 +124,44 @@ class TabsAdapter<T>(
                 // OK/ENTER on key-UP explicitly and run the SAME select action. Returning true consumes the UP
                 // so performClick can't also fire it (no double-invoke on TV). Inert on phone — touch never
                 // delivers a key event here. Re-applied on every apply(), so it survives tab rebuilds.
+                // ⚠️ [CORRECTED 2026-10-31] OK NOW TAKES THE SAME PATH AS A TAP. The listener above called
+                // select.onClick(v) on ACTION_UP only, which (1) skipped MaterialButton.performClick - so the
+                // toggleCheckedStateOnClick toggle a tap does never ran on TV - and (2) left ACTION_DOWN to
+                // View.onKeyDown, which presses the view and arms a long-press that the consumed UP never
+                // cleared (onKeyUp is what does). The Library tab bounce (1156-1159) is TV-only while the phone,
+                // through the same write path, works, so the difference has to be here or after it; this is the
+                // one TV-only difference in the path itself. Now DOWN is consumed (pressed state only, nothing
+                // armed) and UP clears it and calls performClick(): toggle, then the click listener, once, as on
+                // the phone. TabsProbe reports whether that was it.
+                // [CORRECTED 2026-10-31, same day] "the one TV-only difference in the path itself" overstated it
+                // as the cause. Git since this listener landed (aeb6edf5, 2026-07-23): item_tab.xml and
+                // toggleCheckedStateOnClick unchanged (attribute since 2025-07-25), Material 1.14.0 since
+                // 2026-06-15, onTabSelected unchanged, selectTab changed only by 1159's chosenTabId - so nothing
+                // could have turned a toggle-skipping key-up from working to broken. And the skipped toggle only
+                // affects the checked LOOK until the rebind: select -> onTabSelected -> FeedData.selectTab writes
+                // the selection either way, while the symptom (content never changes) is after the write. Kept
+                // because it matches the phone's tap path and cannot do harm; not expected to be the fix. Whether
+                // OK ever switched tabs on the device after 2026-07-23 is unrecorded (marked fixed with no device check).
                 setOnKeyListener { v, keyCode, event ->
-                    if (event.action == KeyEvent.ACTION_UP &&
-                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
-                    ) {
-                        select.onClick(v)
+                    TabsProbe.log("key tab=$i code=$keyCode action=${event.action} selected=$selected")
+                    val confirm = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
+                    if (confirm && event.action == KeyEvent.ACTION_DOWN) {
+                        v.isPressed = true
+                        true
+                    } else if (confirm && event.action == KeyEvent.ACTION_UP) {
+                        v.isPressed = false
+                        v.performClick()
+                        TabsProbe.markAfterOk(i) {
+                            val checked = (0 until parent.childCount)
+                                .filter { (parent.getChildAt(it) as? MaterialButton)?.isChecked == true }
+                            "selected=$selected checked=$checked focused=${(0 until parent.childCount)
+                                .firstOrNull { parent.getChildAt(it).hasFocus() }}"
+                        }
                         true
                     } else false
                 }
             }
-        }
+        } } finally { applying = false }
     }
 
     class ViewHolder(

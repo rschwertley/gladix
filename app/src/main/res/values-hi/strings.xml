@@ -48,7 +48,6 @@
     <string name="playback">प्लेबैक</string>
     <string name="audio_fx">साउंड इफेक्ट्स</string>
     <string name="audio_fx_summary">सभी गानों पर लागू इफेक्ट्स</string>
-    <string name="audio_fx_desc">वर्तमान ट्रैक के लिए साउंड इफेक्ट्स बदलें।</string>
     <string name="reset">रीसेट करें</string>
     <string name="playback_speed">प्लेबैक गति</string>
     <string name="change_pitch_with_speed">गति के साथ पिच बदलें</string>

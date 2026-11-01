@@ -95,7 +95,6 @@
     <string name="playback">Odtwarzanie</string>
     <string name="audio_fx">Efekty dźwiękowe</string>
     <string name="audio_fx_summary">Efekty stosowane we wszystkich utworach</string>
-    <string name="audio_fx_desc">Zmień efekty dźwiękowe dla aktualnie odtwarzanego utworu.</string>
     <string name="reset">Resetuj</string>
     <string name="playback_speed">Prędkość odtwarzania</string>
     <string name="change_pitch_with_speed">Zmień tonację wraz z prędkością</string>

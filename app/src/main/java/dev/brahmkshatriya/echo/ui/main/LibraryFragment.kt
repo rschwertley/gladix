@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener.Companion.getFeedListener
+import dev.brahmkshatriya.echo.ui.feed.TabsProbe
 import dev.brahmkshatriya.echo.ui.feed.FeedData
 import dev.brahmkshatriya.echo.ui.feed.FeedViewModel
 import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
@@ -68,6 +69,11 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        // TabsProbe (TEMPORARY): enabled on TV only, before the tab row is built; then the FeedViewModel and
+        // FeedData this screen displays, to compare with FeedClickListener.onTabSelected's "writesTo" line.
+        TabsProbe.enableIfTv(requireContext())
+        val vm by viewModel<FeedViewModel>()
+        TabsProbe.log("library observes fragment=${TabsProbe.id(this)} vm=${TabsProbe.id(vm)} feedData=${TabsProbe.id(feedData)}")
         val binding = FragmentLibraryBinding.bind(view)
         val recyclerView = binding.recyclerView as RecyclerView
         setupTransition(view, false, MaterialSharedAxis.Y)

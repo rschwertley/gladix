@@ -387,6 +387,9 @@ class PlayerTvFragment : Fragment() {
         val b = binding ?: return
         val heartUsable = b.tvTrackHeart.isVisible && b.tvTrackHeart.isEnabled
         b.tvSeekBar.nextFocusUpId = if (heartUsable) R.id.tv_track_heart else R.id.tv_minimize_button
+        // Up from the heart goes to the ⋮ directly above it on the right (2026-10-31), not across to the minimize
+        // arrow at top left as the XML's nextFocusUp did. A hidden heart is never focused, so this needs no branch.
+        b.tvTrackHeart.nextFocusUpId = R.id.menu_more
         val belowTop = if (heartUsable) R.id.tv_track_heart else R.id.tv_seek_bar
         b.tvMinimizeButton.nextFocusDownId = belowTop
         b.tvToolbar.findViewById<View>(R.id.menu_more)?.nextFocusDownId = belowTop

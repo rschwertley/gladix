@@ -26,18 +26,14 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.SKIP_FADE_ON_ALB
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.TRUE_CROSSFADE_SECONDS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.BASS_BOOST
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CHANGE_PITCH
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.CUSTOM_EFFECTS
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.PLAYBACK_SPEED
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.deleteFxPrefs
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.getFxPrefs
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.globalFx
+import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.resetGlobalFx
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.speedRange
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
-import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.registerActivityResultLauncher
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
-import dev.brahmkshatriya.echo.utils.ui.RulerAdapter
 import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 
@@ -55,33 +51,19 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        val viewModel by activityViewModel<PlayerViewModel>()
-        var mediaId: String? = null
-
-        fun bind() {
-            val settings = requireContext().globalFx()
-            settings.edit {
-                val customEffects = settings.getStringSet(CUSTOM_EFFECTS, null) ?: emptySet()
-                putStringSet(CUSTOM_EFFECTS, customEffects + mediaId?.hashCode()?.toString())
-            }
-            binding.audioFxDescription.isVisible = mediaId != null
-            val mediaSettings =
-                requireContext().getFxPrefs(settings, mediaId?.hashCode()) ?: settings
-            binding.audioFxFragment.bind(
-                mediaSettings, requireContext().getSettings()
-            ) { onEqualizerClicked() }
-        }
-        observe(viewModel.playerState.current) {
-            mediaId = it?.mediaItem?.mediaId
-            bind()
-        }
+        // ⚠️ ONE APP-WIDE SET OF EFFECTS (2026-10-31). This sheet used to add the playing song to
+        // CUSTOM_EFFECTS on every bind and edit that song's private copy, rebinding on every track change; it
+        // now edits the same global file as Settings -> Audio effects, binds once, and its refresh resets the
+        // global values as Settings' does. See EffectsListener.dropPerSongFx.
+        fun bind() = binding.audioFxFragment.bind(
+            requireContext().globalFx(), requireContext().getSettings()
+        ) { onEqualizerClicked() }
+        bind()
         binding.topAppBar.setNavigationOnClickListener { dismiss() }
         binding.topAppBar.setOnMenuItemClickListener {
             when (it.itemId) {
                 R.id.menu_refresh -> {
-                    val context = requireContext()
-                    val id = mediaId ?: return@setOnMenuItemClickListener false
-                    context.deleteFxPrefs(id.hashCode())
+                    requireContext().resetGlobalFx()
                     bind()
                     true
                 }
@@ -98,18 +80,36 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             appSettings: SharedPreferences,
             onEqualizerClicked: () -> Unit,
         ) {
+            // ⚠️ bind() RUNS AGAIN ON EVERY REBIND (2026-10-31) - the player sheet on each playerState.current
+            // emission, with a DIFFERENT per-track `settings`, and AudioEffectsFragment on reset. Each run used to
+            // ADD a change listener to every slider and never remove one. Worse than the pile-up: setting
+            // slider.value dispatches to every attached listener (BaseSlider.setValuesInternal, Material 1.14.0),
+            // so the previous track's listener wrote the NEW track's value into the OLD track's settings. So every
+            // listener is cleared BEFORE the value is set, and the one added after it writes to this bind's
+            // `settings`. Same fix as MaterialSliderPreference.onBindViewHolder. pitchSwitch has the same shape
+            // with a single listener: it is unset before isChecked is written.
+            // [CORRECTED 2026-10-31, same day] The player sheet no longer rebinds per track and there are no per-track
+            // settings (one global file, see EffectsListener.dropPerSongFx); bind() now re-runs only on a reset, in
+            // either screen. Clear-first is kept so a rebind can never stack listeners or replay a stale writer.
+            // Playback speed (2026-10-31): a stepped Slider over INDICES into speedRange - the same int the ruler
+            // stored under PLAYBACK_SPEED, so saved values and EffectsListener are unchanged. The steps are
+            // equal on the track while the speeds are not (0.1 to 64, closer together near 1x), as on the ruler.
+            // A saved index outside speedRange falls back to 1x, as the ruler (and EffectsListener.applyPlayback) did;
+            // it must not reach the Slider, which throws on a value outside its range.
+            // D-pad: Material's own Left/Right stepping, like the sliders below. Label shows the speed, not the index.
+            speedSlider.clearOnChangeListeners()
+            speedSlider.valueTo = speedRange.lastIndex.toFloat()
             val speed = settings.getInt(PLAYBACK_SPEED, speedRange.indexOf(1f))
-            val adapter = RulerAdapter(object : RulerAdapter.Listener<Int> {
-                override fun intervalText(value: Int) = "${speedRange.getOrNull(value) ?: 1f}x"
-                override fun onSelectItem(value: Int) {
-                    speedValue.text = "${speedRange.getOrNull(value) ?: 1f}x"
-                    settings.edit { putInt(PLAYBACK_SPEED, value) }
-                }
-            })
+                .takeIf { it in speedRange.indices } ?: speedRange.indexOf(1f)
+            speedSlider.value = speed.toFloat()
+            speedSlider.setLabelFormatter { "${speedRange.getOrNull(it.toInt()) ?: 1f}x" }
+            speedValue.text = "${speedRange[speed]}x"
+            speedSlider.addOnChangeListener { _, value, _ ->
+                settings.edit { putInt(PLAYBACK_SPEED, value.toInt()) }
+                speedValue.text = "${speedRange.getOrNull(value.toInt()) ?: 1f}x"
+            }
 
-            speedRecycler.adapter = adapter
-            adapter.submitList(List(speedRange.size) { index -> index to (index % 2 == 0) }, speed)
-
+            pitchSwitch.setOnCheckedChangeListener(null)
             pitchSwitch.isChecked = settings.getBoolean(CHANGE_PITCH, true)
             pitch.setOnClickListener {
                 pitchSwitch.isChecked = !pitchSwitch.isChecked
@@ -117,6 +117,7 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             pitchSwitch.setOnCheckedChangeListener { _, isChecked ->
                 settings.edit { putBoolean(CHANGE_PITCH, isChecked) }
             }
+            bassBoostSlider.clearOnChangeListeners()
             bassBoostSlider.value = settings.getInt(BASS_BOOST, 0).toFloat()
             bassBoostSlider.addOnChangeListener { _, value, _ ->
                 settings.edit { putInt(BASS_BOOST, value.toInt()) }
@@ -158,6 +159,7 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
                     CrossfadeController.FADE_SECONDS_MIN,
                     CrossfadeController.FADE_SECONDS_MAX
                 )
+            trueCrossfadeSlider.clearOnChangeListeners()
             trueCrossfadeSlider.value = trueCrossfadeSeconds.toFloat()
             trueCrossfadeValue.text = "${trueCrossfadeSeconds}s"
             trueCrossfadeSlider.addOnChangeListener { _, value, _ ->
@@ -200,10 +202,11 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
                     row.alpha = DISABLED_ALPHA
                     row.setOnClickListener(null)
                 }
-                listOf(bassBoostSlider, trueCrossfadeSlider).forEach { it.isEnabled = false }
+                listOf(speedSlider, bassBoostSlider, trueCrossfadeSlider).forEach { it.isEnabled = false }
                 pitchSwitch.isEnabled = false
                 skipFadeOnAlbumsSwitch.isEnabled = false
-                bassBoostSlider.alpha = DISABLED_ALPHA
+                // Speed joins them (2026-10-31): the ruler could not be disabled, the Slider can.
+                listOf(speedSlider, bassBoostSlider).forEach { it.alpha = DISABLED_ALPHA }
             }
         }
 

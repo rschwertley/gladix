@@ -91,7 +91,6 @@
     <string name="playback">প্লেবেক</string>
     <string name="audio_fx">অডিঅ’ ইফেক্ট</string>
     <string name="audio_fx_summary">সকলো গানৰ বাবে প্ৰয়োগ কৰা ইফেক্ট</string>
-    <string name="audio_fx_desc">বৰ্তমানৰ গানৰ বাবে অডিঅ’ ইফেক্ট সলনি কৰক।</string>
     <string name="reset">ৰিছেট</string>
     <string name="playback_speed">প্লেবেকৰ গতি</string>
     <string name="change_pitch_with_speed">গতিৰ সৈতে পিচ সলনি কৰক</string>

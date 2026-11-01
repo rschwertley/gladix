@@ -217,7 +217,6 @@
     <string name="unified_liked_playlist_summary">Lagu yang disukai dari berbagai ekstensi</string>
     <string name="repeat_off">Tidak ada perulangan</string>
     <string name="repeat_all">Ulangi semua</string>
-    <string name="audio_fx_desc">Ubah efek suara pada lagu ini.</string>
     <string name="installation_type">Tipe pemasangan</string>
     <string name="view">Lihat</string>
     <string name="cache_size_summary">Ukuran cache video dan audio dalam MB</string>

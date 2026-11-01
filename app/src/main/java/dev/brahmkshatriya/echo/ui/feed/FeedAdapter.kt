@@ -235,7 +235,10 @@ class FeedAdapter(
         }
     }.flatten()
 
-    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null): GridAdapter.Concat {
+    // showTabsAndButtons = false (2026-10-31, the player's Info tab only): the tab and buttons rows are left out of the
+    // returned Concat. Their observers still run - the buttons observer also sets isPlayButtonShown and declaredTracks,
+    // which taps rely on - only the two (empty there) rows and the grid spacing each one took are gone.
+    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null, showTabsAndButtons: Boolean = true): GridAdapter.Concat {
         val tabs = TabsAdapter<FeedTab>({ tab.title }) { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
@@ -275,6 +278,8 @@ class FeedAdapter(
         var retainedButtons: FeedData.Buttons? = null
         var retainedTabIndex: Int? = null
         fragment.observe(viewModel.selectedTabIndexFlow) { index ->
+            // TabsProbe (TEMPORARY, TV only): what the tab row is told to check.
+            TabsProbe.log("selectedIndex -> $index fd=${TabsProbe.id(viewModel)}")
             tabs.selected = index
             if (retainedTabIndex != index) {
                 retainedTabIndex = index
@@ -346,7 +351,8 @@ class FeedAdapter(
             else loadStates.refresh
             footer.loadState = loadStates.append
         }
-        return GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)
+        return if (showTabsAndButtons) GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)
+        else GridAdapter.Concat(*before, header, empty, this, footer)
     }
 
     override val adapter = this

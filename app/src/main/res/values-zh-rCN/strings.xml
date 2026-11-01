@@ -129,7 +129,6 @@
     <string name="playback">回放</string>
     <string name="audio_fx">音频效果</string>
     <string name="audio_fx_summary">所有歌曲均已应用效果</string>
-    <string name="audio_fx_desc">更改当前曲目的音频效果.</string>
     <string name="playback_speed">播放速度</string>
     <string name="change_pitch_with_speed">随着速度改变音调</string>
     <string name="bass_boost_desc">较大的值可能会使声音失真。</string>

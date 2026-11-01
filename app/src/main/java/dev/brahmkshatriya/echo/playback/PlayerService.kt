@@ -70,7 +70,6 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverRepeat
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.listener.AudioFocusListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.getFxPrefs
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.globalFx
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
@@ -274,11 +273,10 @@ class PlayerService : MediaLibraryService() {
      * creation and CrossfadeController's re-seed at every arm - and two copies of this resolution
      * would drift the moment the per-track rule changed.
      */
+    // [CORRECTED 2026-10-31] There is no per-track file any more (EffectsListener.dropPerSongFx): the value is the
+    // global one, which is still exactly how EffectsListener resolves it.
     private fun currentBassBoost(): Int = runCatching {
-        val global = app.context.globalFx()
-        val fx = app.context.getFxPrefs(global, exoPlayer.currentMediaItem?.mediaId?.hashCode())
-            ?: global
-        fx.getInt(EffectsListener.BASS_BOOST, 0)
+        app.context.globalFx().getInt(EffectsListener.BASS_BOOST, 0)
     }.getOrDefault(0)
 
     private lateinit var carConnection: CarConnection

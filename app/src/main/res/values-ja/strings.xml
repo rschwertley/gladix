@@ -114,7 +114,6 @@
     <string name="playback">再生</string>
     <string name="audio_fx">オーディオエフェクト</string>
     <string name="audio_fx_summary">すべての曲にエフェクトを適用</string>
-    <string name="audio_fx_desc">現在のトラックのオーディオ効果を変更します。</string>
     <string name="reset">リセット</string>
     <string name="change_pitch_with_speed">速度に応じてピッチを変える</string>
     <string name="bass_boost">バスブースト</string>
