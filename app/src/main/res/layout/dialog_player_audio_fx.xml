@@ -5,6 +5,8 @@
     android:fitsSystemWindows="false"
     android:layout_height="match_parent">
 
+    <!-- Container only (2026-11-01): close button and title. The description and the reset row moved into
+         fragment_audio_fx, shared with Settings -> Audio effects; the refresh icon is gone. -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
@@ -20,20 +22,9 @@
             android:background="@null"
             android:paddingStart="0dp"
             android:paddingEnd="4dp"
-            app:menu="@menu/refresh_menu"
             app:navigationIcon="@drawable/ic_close"
             app:title="@string/audio_fx"
             app:titleCentered="true" />
-
-        <TextView
-            android:id="@+id/audioFxDescription"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp"
-            android:alpha="0.66"
-            android:gravity="center"
-            android:text="@string/audio_fx_summary"
-            android:textColor="?attr/colorOnSurface" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

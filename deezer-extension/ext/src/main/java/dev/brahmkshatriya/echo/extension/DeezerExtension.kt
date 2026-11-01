@@ -1123,6 +1123,9 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         // Chosen over onLogin because this is the chokepoint the host drives - it runs on login, on
         // logout, and on a user switch, whereas onLogin misses the last two.
         session.setCredentialsRejected(false)
+        // The ARL latch too (2026-11-01): it was never cleared outside the email/password CSRF branch, so an ARL-only
+        // session that latched (the TV) stayed "login required" after a fresh Link to device until the process died.
+        session.isArlExpired(false)
         // RECOMMENDATION_COUNTRY is per account, so the "already pushed" memo cannot survive a user
         // switch or a logout - see DeezerSession.lastSentCountry.
         session.setLastSentCountry(null)
@@ -1220,6 +1223,9 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      *   this file, isArlExpired    creds ABSENT and the ARL is expired    -> sign in
      *   DeezerApi, gateway auth    NEED_USER_AUTH_REQUIRED, any method    -> sign in  [+2026-10-10]
      *                              EXCEPT deezer.getUserData - see the exclusion note at that throw
+     *   DeezerApi, CSRF, ARL-only  renewSessionFromArl got a GUEST answer -> sign in  [+2026-11-01]
+     *                              (the ARL itself is dead; the gateway-auth row above now also renews
+     *                              first for an ARL-only session, so neither fires on a merely stale sid)
      * FIVE sites as of 2026-10-10. The "FOUR" above is left as the date stamp on the 2026-09-22
      * grep rather than silently re-counted. The fifth passes the test this table exists to apply:
      * reaching a gateway method means handleArlExpiration either let the call through (credentials

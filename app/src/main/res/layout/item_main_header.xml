@@ -13,6 +13,7 @@
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/extensionsCont"
+        android:focusable="true"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="4dp"
@@ -45,6 +46,7 @@
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/accountsCont"
+        android:focusable="true"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="4dp"

@@ -284,6 +284,28 @@ object AppUpdater {
         app.settings.edit { putString(KEY_APP_UPDATE_ANSWERED, version) }
     }
 
+    // ⚠️ AN IGNORED DIALOG IS "NOT NOW" (2026-11-01). Back or an outside tap answers nothing, so the same tag
+    // may be offered again automatically - but at most once per APP_UPDATE_REOFFER_MS, at the next daily
+    // check, never on every foreground. Persisted, not per-process, so it holds across a process that lives
+    // for days AND across a cold start. Keyed on the tag: a newer release is never blocked by it.
+    // 23h, not 24h: the dialog is shown a moment AFTER the check that found it, so a full 24h would still
+    // be running at the next daily check and push the re-offer to the day after.
+    private const val KEY_APP_UPDATE_PROMPTED = "app_update_prompted"
+    private const val KEY_APP_UPDATE_PROMPTED_AT = "app_update_prompted_at"
+    private const val APP_UPDATE_REOFFER_MS = 23 * 60 * 60 * 1000L
+
+    fun promptedRecently(app: App, version: String): Boolean =
+        app.settings.getString(KEY_APP_UPDATE_PROMPTED, null) == version &&
+            System.currentTimeMillis() - app.settings.getLong(KEY_APP_UPDATE_PROMPTED_AT, 0L) <
+            APP_UPDATE_REOFFER_MS
+
+    fun markAppUpdatePrompted(app: App, version: String) {
+        app.settings.edit {
+            putString(KEY_APP_UPDATE_PROMPTED, version)
+            putLong(KEY_APP_UPDATE_PROMPTED_AT, System.currentTimeMillis())
+        }
+    }
+
     // True once installAppUpdate has started in this process. The two answer stages below are written only
     // while it is false, so they never overwrite an install's furthest stage (see CrashKeys.onAppUpdateStage).
     @Volatile
@@ -325,7 +347,10 @@ object AppUpdater {
     }
 
     @Suppress("KotlinConstantConditions")
-    suspend fun updateApp(app: App): AppUpdateCheck {
+    // [announce] (2026-11-01): false for the AUTOMATIC pass, whose failed lookup goes to silentThrowFlow -
+    // Crashlytics, no snackbar (the August "automatic pass is silent" decision, which the extension lookups already
+    // followed). A forced pass keeps the snackbar. Settings' Check now does not come through here.
+    suspend fun updateApp(app: App, announce: Boolean = true): AppUpdateCheck {
         // Install-source gate. This is the ONLY thing standing between a Play user and a sideloaded
         // APK, and it must run before any network work. It sits ALONGSIDE the build-type check
         // below, it does not replace it: they answer different questions. Build type answers "is
@@ -356,7 +381,7 @@ object AppUpdater {
             // not report one. Emitting to throwFlow also yields a snackbar, which matches what the
             // extension path already does on the same failure (ExtensionsViewModel.getExtensionUpdate),
             // and SnackBarHandler collapses the duplicate when both fail for one reason (e.g. offline).
-            app.throwFlow.emit(it)
+            if (announce) app.throwFlow.emit(it) else app.silentThrowFlow.emit(it)
             return AppUpdateCheck.Failed(it)
         }
         val available = found as? AppLookup.Available ?: return AppUpdateCheck.None

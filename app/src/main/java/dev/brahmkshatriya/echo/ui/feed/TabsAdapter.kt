@@ -21,12 +21,16 @@ import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 
 class TabsAdapter<T>(
     private val getTitle: T.() -> String,
-    private val onTabSelected: (View, Int, T) -> Unit
+    private val onTabSelected: (View, Int, T) -> Unit,
+    // true = NO ROW AT ALL while there are no tabs (2026-11-01, the player's Info tab only), so a tab-less feed
+    // gets no empty row and no grid spacing; the row is inserted when tabs arrive. false (every other caller) =
+    // always one row, hidden by apply() when empty - unchanged.
+    private val collapseWhenEmpty: Boolean = false,
 ) : ScrollAnimRecyclerAdapter<TabsAdapter.ViewHolder>(), GridAdapter {
     override val adapter = this
     override fun getSpanSize(position: Int, width: Int, count: Int) = count
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(parent)
-    override fun getItemCount() = 1
+    override fun getItemCount() = if (collapseWhenEmpty && data.isEmpty()) 0 else 1
 
     // ⚠️ REBOUND IN PLACE, WITH A PAYLOAD (2026-10-31). A plain notifyItemChanged lets the item animator swap in a
     // different holder for the change animation, so a FOCUSED tab button was replaced by another view and focus
@@ -35,9 +39,15 @@ class TabsAdapter<T>(
     // focus goes back to the checked tab. Phone: the tab row just no longer cross-fades on a data change.
     var data: List<T> = emptyList()
         set(value) {
+            val before = itemCount
             field = value
             refocusSelected = parent?.hasFocus() == true
-            notifyItemChanged(0, REBIND)
+            // Without collapseWhenEmpty both counts are 1, so this is the same notifyItemChanged as before.
+            when (itemCount) {
+                before -> if (before == 1) notifyItemChanged(0, REBIND)
+                1 -> notifyItemInserted(0)
+                else -> notifyItemRemoved(0)
+            }
         }
 
     private var refocusSelected = false

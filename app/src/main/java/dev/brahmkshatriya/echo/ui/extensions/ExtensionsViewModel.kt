@@ -104,6 +104,8 @@ class ExtensionsViewModel(
     // "restore" 2h on the strength of that note. If this value ever changes, it should be for a
     // reason recorded right here.
     private val updateTime = 1000 * 60 * 60 * 24 // Check every 24hrs
+    // Retry after a failed pass (2026-11-01) - see runUpdatePass's backoff note.
+    private val failureRetryTime = 1000L * 60 * 60
     private fun shouldCheckForExtensionUpdates(): Boolean {
         val check = app.settings.getBoolean("check_for_updates", true)
         if (!check) return false
@@ -156,7 +158,7 @@ class ExtensionsViewModel(
         // same pass as always. The install runs from Update via installAppNow, the same code as Settings.
         // Under appUpdateMutex so Settings' Check now / Update cannot overlap this app check; the
         // manual side uses tryLock and shows "already running" rather than waiting.
-        val appCheck = appUpdateMutex.withLock { updateApp(app) }
+        val appCheck = appUpdateMutex.withLock { updateApp(app, announce = force) }
         if (appCheck is AppUpdater.AppUpdateCheck.Found) offerAppUpdate(appCheck.available, force)
         // A failed APP check resets the throttle like `anyFailed` below (see AppUpdater.AppUpdateCheck),
         // with the same two exceptions the extension pass has: a rate limit (retrying sooner is the loop
@@ -249,7 +251,15 @@ class ExtensionsViewModel(
                     "last_update_check",
                     System.currentTimeMillis() - updateTime + waitMs + 60_000L
                 )
-            } else if (anyFailed || appFailed) app.context.saveToCache("last_update_check", 0L)
+            } else if (anyFailed || appFailed) {
+                // [CORRECTED 2026-11-01] No longer zeroed: an ordinary failure backs off failureRetryTime (~1h),
+                // the same "subtract the window, add the wait" arithmetic as the rate limit above. Zero let every
+                // return to the foreground (configureExtensionsUpdater's onStart pass) re-run a failing pass back
+                // to back. Rate limit and no-releases are unchanged.
+                app.context.saveToCache(
+                    "last_update_check", System.currentTimeMillis() - updateTime + failureRetryTime
+                )
+            }
             else if (!anyUpdateFound && force)
                 message(app.context.getString(R.string.all_extensions_up_to_date))
         }.getOrElse { if (it is CancellationException) throw it; app.throwFlow.emit(it) }
@@ -284,11 +294,18 @@ class ExtensionsViewModel(
     // ⚠️ WHEN THE DIALOG IS OFFERED (2026-10-30). Settings' row always reflects the release. The dialog:
     //   AUTOMATIC (the startup pass, and the saved release on a new Activity - see init): not for a tag in
     //     KEY_APP_UPDATE_ANSWERED, and at most once per process (appUpdatePromptShown).
+    //     [CORRECTED 2026-11-01] Once per process PER RELEASE (appUpdatePromptShownFor). The flag was a
+    //     plain Boolean, so after one dialog no NEWER release was offered until the process died - and a
+    //     music app's process can live for days, now that the check also runs on return to foreground.
+    //     [CORRECTED 2026-11-01, later] Not per process at all now: an IGNORED dialog (Back, outside tap)
+    //     re-offers the same tag at most once per ~24h, persisted - AppUpdater.promptedRecently. This also
+    //     limits init's offer: a cold start within that window no longer re-offers an ignored release.
     //   FORCED (Settings' Check now, a manual "check for updates" pass): always, answered or not - the user
     //     asked.
     private fun offerAppUpdate(found: AppUpdater.AppLookup.Available, force: Boolean) {
         if (appUpdateUi.value !is AppUpdateUi.Downloading) appUpdateUi.value = AppUpdateUi.Available(found)
-        if (!force && (appUpdatePromptShown || AppUpdater.answeredAppUpdate(app) == found.version)) return
+        if (!force && (AppUpdater.promptedRecently(app, found.version) ||
+                AppUpdater.answeredAppUpdate(app) == found.version)) return
         AppUpdater.markAppUpdateAwaitingAnswer()
         appUpdatePrompt.value = found
     }
@@ -301,6 +318,8 @@ class ExtensionsViewModel(
 
     // A release found earlier and not yet answered is offered again on the next app open, even when the
     // 24h throttle skips this launch's check - from the saved KEY_APP_UPDATE_KNOWN, no network.
+    // [CORRECTED 2026-11-01] Not on every app open: an ignored release is re-offered here only once
+    // AppUpdater.promptedRecently has lapsed (~24h after it was last shown).
     init {
         AppUpdater.knownAppUpdate(app)?.let { offerAppUpdate(it, force = false) }
     }
@@ -447,6 +466,8 @@ class ExtensionsViewModel(
     // T::class.java.simpleName). While it was `0` the reset silently went to the `int` folder and the 24h
     // lockout really did apply. It does not now - a strand leaves last_update_check at 0, so the NEXT
     // launch re-checks. The strand is still a hang; it is no longer also a 24-hour one.
+    // [CORRECTED 2026-11-01] The failure reset is now a ~1h backoff, not 0 (runUpdatePass), so "the NEXT launch
+    // re-checks" becomes "a launch or foreground return an hour later re-checks".
     //
     // The window is normally closed by luck rather than by design: configureExtensionsUpdater's collector
     // calls installApp, which suspends almost immediately at waitForResult (launching the installer), and
@@ -588,7 +609,10 @@ class ExtensionsViewModel(
     companion object {
         // "Never twice in one app session": process-lifetime, so a new Activity (and its new ViewModel)
         // does not offer the same release again. Set when the dialog is actually shown. Main thread only.
-        private var appUpdatePromptShown = false
+        // The TAG shown, not a Boolean (2026-11-01): a newer release is a new question - see offerAppUpdate.
+        // [CORRECTED 2026-11-01, later] This process-lifetime field is gone. "Never twice per session" never
+        // re-offered an ignored dialog in a long-lived process; it is replaced by the persisted
+        // AppUpdater.markAppUpdatePrompted / promptedRecently (same tag, at most once per ~24h).
 
         fun FragmentActivity.configureExtensionsUpdater() {
             val viewModel by viewModel<ExtensionsViewModel>()
@@ -608,13 +632,35 @@ class ExtensionsViewModel(
                         if (supportFragmentManager.findFragmentByTag(AppUpdateDialogFragment.TAG) == null)
                             AppUpdateDialogFragment.newInstance(found, prompt = true)
                                 .show(supportFragmentManager, AppUpdateDialogFragment.TAG)
-                        appUpdatePromptShown = true
+                        AppUpdater.markAppUpdatePrompted(viewModel.app, found.version)
                         viewModel.appUpdatePrompt.value = null
                     }
                 }
             }
 
             viewModel.update(this, false)
+            // ⚠️ ALSO ON RETURN TO FOREGROUND (2026-11-01). The call above runs once per
+            // Activity creation, so an Activity kept alive in the background (Home; the playback service
+            // keeps the process) was never checked again: a GitHub install sat several releases behind with no dialog. Every
+            // later onStart runs the same throttled pass; within 24h shouldCheckForExtensionUpdates returns
+            // at once, and the stamp written before any suspension keeps two calls from both running.
+            // The first onStart is skipped - it belongs to the call above.
+            // [CORRECTED 2026-11-01, later] Was registered for GitHub installs only. ALL installs now: the
+            // extension checks (kept for Play since August) run in this same pass and were missed the same
+            // way. Play's app half is still refused by updateApp's install-source gate before any network
+            // work, and knownAppUpdate returns null for a store install, so Play never sees the dialog.
+            // Offline: skipped, so a failed pass (which zeroes the throttle) cannot repeat on every return
+            // to foreground with a snackbar each time. The launch call above is unchanged.
+            // [CORRECTED 2026-11-01, later] A failed pass no longer zeroes the throttle (~1h backoff) and an
+            // automatic one shows no snackbar; the offline skip stays, it saves a doomed pass.
+            var firstStart = true
+            lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    if (firstStart) firstStart = false
+                    else if (viewModel.app.networkFlow.value != NetworkConnection.NotConnected)
+                        viewModel.update(this@configureExtensionsUpdater, false)
+                }
+            })
             // ⚠️ NEVER RESET AFTER A SUCCESSFUL INSTALL, SO THE OBSERVER BELOW FIRES ON EVERY
             // LATER ACTIVITY DESTROY - once per rotation for the rest of the session - emitting a spurious
             // `Result.failure(CancellationException())` for a file that installed fine. Harmless TODAY and

@@ -205,8 +205,12 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
                 // Each empty row still took the grid's 8dp spacing, and with the divider (24 + 1 + 12dp, plus 8dp)
                 // the gap above "Top" was ~69dp. That feed never shows tabs or buttons here. Album and playlist pages
                 // keep the divider and both rows (their showInitialButtons placeholder is on trackAdapter, untouched).
+                // [CORRECTED 2026-11-01] Leaving the buttons row out also left the feed unstarted ("So empty" on
+                // every song, 1160); FeedAdapter.withLoading now makes the emission its first bind made. "Never shows
+                // tabs" is from the 2026-10-31 session and was not checked per extension.
                 *(if (parent.fromPlayer) emptyArray() else arrayOf<GridAdapter>(lineAdapter)),
-                feedAdapter.withLoading(this, showTabsAndButtons = !parent.fromPlayer)
+                // [CORRECTED 2026-11-01] The tab row is back whenever the feed has tabs (see FeedAdapter.withLoading).
+                feedAdapter.withLoading(this, showButtons = !parent.fromPlayer)
             ),
         )
         (binding.recyclerView as? TvAwareRecyclerView)?.navRailView =

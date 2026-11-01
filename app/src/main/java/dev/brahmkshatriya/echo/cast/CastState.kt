@@ -1,5 +1,8 @@
 package dev.brahmkshatriya.echo.cast
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
 /**
  * The one flag that says whether a Cast session is live.
  *
@@ -30,8 +33,16 @@ object CastState {
     var isCasting: Boolean = false
         private set
 
+    /**
+     * [isCasting] as a flow, for UI that stays on screen while a session starts or ends (2026-11-01: the Audio
+     * effects screen, which Settings can keep open behind the player). Same writer, same moment.
+     */
+    private val _castingFlow = MutableStateFlow(false)
+    val castingFlow: StateFlow<Boolean> = _castingFlow
+
     /** Set by CastSessionController only. Main thread, session start/end. */
     fun setCasting(casting: Boolean) {
         isCasting = casting
+        _castingFlow.value = casting
     }
 }

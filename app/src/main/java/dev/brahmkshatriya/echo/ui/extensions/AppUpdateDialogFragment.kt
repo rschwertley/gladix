@@ -20,6 +20,8 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
  *           answers the tag only once the download starts.
  *   Later   ExtensionsViewModel.skipAppUpdate - answered at once.
  *   Back / outside tap  neither; an automatic offer returns on the next app open.
+ *     [CORRECTED 2026-11-01] Returns at most once per ~24h, at the next daily check or app open after
+ *     that - AppUpdater.promptedRecently. A newer release is offered at once.
  * A DialogFragment so it survives rotation. AlertDialog keeps the message in its own scroll view, so long
  * notes scroll; focus starts on Update so a TV remote lands on a button.
  */

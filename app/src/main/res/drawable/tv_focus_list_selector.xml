@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV dialog list rows (2026-11-01): the ListView selector for AlertDialog setItems / single- and multi-choice lists,
+     set as listChoiceBackgroundIndicator by the TV EchoDialog / EchoAlertDialog overlays. AppCompat's dialog list
+     (abc_select_dialog_material, appcompat 1.8.0) is styled Widget.AppCompat.ListView, whose listSelector is that
+     theme attribute; Material 1.14.0 sets it to m3_focus_ring_list_selector_background, the faint ring this replaces.
+     The selector takes the list's focused state, so the ring shows on the selected row while the list has focus. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:drawable="@drawable/tv_focus_ring_rect" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

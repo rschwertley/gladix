@@ -20,6 +20,40 @@
          up. With fitToContents (the default) BottomSheetBehavior.calculateCollapsedOffset (Material 1.14.0) uses
          max(parentHeight - peek, fitToContentsOffset), so a peek taller than the screen opens every sheet fully
          shown, top at most at the screen top. Keep the other two items in step with the phone style. -->
+    <!-- TV FOCUS RING ON PLAIN DIALOG BUTTONS (2026-11-01). TvFocusRing reaches the main window and every DialogFragment,
+         but an AlertDialog shown straight from a builder has no hook, so its buttons take the same pill ring as a
+         foreground through these styles. TV overrides of values/styles.xml's EchoDialog and EchoAlertDialog: keep their
+         items in step. Parents and attribute names read from material-1.14.0's values.xml
+         (ThemeOverlay.Material3.MaterialAlertDialog sets these four; .Dialog / .Dialog.Flush are its values). -->
+    <style name="TvDialogButton" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:foreground">@drawable/tv_focus_pill</item>
+    </style>
+
+    <style name="TvDialogButton.Flush" parent="Widget.Material3.Button.TextButton.Dialog.Flush">
+        <item name="android:foreground">@drawable/tv_focus_pill</item>
+    </style>
+
+    <style name="EchoDialog" parent="ThemeOverlay.Material3.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="buttonBarButtonStyle">@style/TvDialogButton.Flush</item>
+        <item name="buttonBarPositiveButtonStyle">@style/TvDialogButton.Flush</item>
+        <item name="buttonBarNegativeButtonStyle">@style/TvDialogButton.Flush</item>
+        <item name="buttonBarNeutralButtonStyle">@style/TvDialogButton.Flush</item>
+        <!-- List rows (setItems / choice lists): see tv_focus_list_selector. -->
+        <item name="listChoiceBackgroundIndicator">@drawable/tv_focus_list_selector</item>
+        <item name="android:listChoiceBackgroundIndicator">@drawable/tv_focus_list_selector</item>
+    </style>
+
+    <style name="EchoAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/EchoDialogStyle</item>
+        <item name="buttonBarButtonStyle">@style/TvDialogButton</item>
+        <item name="buttonBarPositiveButtonStyle">@style/TvDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/TvDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/TvDialogButton.Flush</item>
+        <item name="listChoiceBackgroundIndicator">@drawable/tv_focus_list_selector</item>
+        <item name="android:listChoiceBackgroundIndicator">@drawable/tv_focus_list_selector</item>
+    </style>
+
     <style name="EchoBottomSheetStyle" parent="Widget.Material3.BottomSheet">
         <item name="backgroundTint">?navBackground</item>
         <item name="behavior_peekHeight">4000dp</item>

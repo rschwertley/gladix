@@ -66,6 +66,25 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (hidden) swipeRefresh?.isRefreshing = false
+        // TabsProbe (TEMPORARY, TV only): MainFragment switches tabs with hide/show, so a visit starts and ends here.
+        if (hidden) TabsProbe.onLibraryLeft("hidden") else view?.let(TabsProbe::onLibraryShown)
+    }
+
+    // TabsProbe (TEMPORARY, TV only): the other ways a Library visit starts and ends. Leaving it some other way (a
+    // detail page added over MainFragment) is caught by the next key, in TabsProbe.onActivityKey.
+    override fun onResume() {
+        super.onResume()
+        if (!isHidden) view?.let(TabsProbe::onLibraryShown)
+    }
+
+    override fun onPause() {
+        TabsProbe.onLibraryLeft("paused")
+        super.onPause()
+    }
+
+    override fun onDestroyView() {
+        TabsProbe.onLibraryLeft("view-destroyed")
+        super.onDestroyView()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

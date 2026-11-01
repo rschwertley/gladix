@@ -193,6 +193,9 @@ data class FeedData(
         if (state?.save == true) app.context.saveToCache(key, state, "sort")
         else runCatching { File(cacheDir(app.context, "sort"), key.hashCode().toString()).delete() }
     }
+    // ⚠️ NO INITIAL VALUE, AND cached/loadedFeedTypeFlow COMBINE IT - so pagingFlow emits nothing until this has
+    // emitted once (2026-11-01). On every feed screen that first emission is ButtonsAdapter's first bind (see
+    // FeedAdapter.withLoading's searchPrimed note). A screen that leaves the buttons row out must emit it itself.
     val searchClickedFlow = MutableSharedFlow<Unit>()
 
     private val stateFlow = cachedState.combine(loadedState) { a, b -> a to b }

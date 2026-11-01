@@ -15,14 +15,10 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentAudioFxBinding
 import dev.brahmkshatriya.echo.databinding.FragmentGenericCollapsableBinding
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.resetGlobalFx
-import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.globalFx
-import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment.Companion.bind
-import dev.brahmkshatriya.echo.ui.player.audiofx.AudioEffectsBottomSheet.Companion.bind
-import dev.brahmkshatriya.echo.ui.player.audiofx.AudioEffectsBottomSheet.Companion.onEqualizerClicked
+import dev.brahmkshatriya.echo.ui.player.audiofx.AudioEffectsBottomSheet.Companion.setupAudioFx
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
 import dev.brahmkshatriya.echo.utils.ui.FastScrollerHelper
 import dev.brahmkshatriya.echo.utils.ui.FastScrollerHelper.applyInsets
@@ -51,14 +47,8 @@ class AudioEffectsFragment : Fragment() {
             .commit()
         // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.
         focusFirstRowOnTv(binding.genericFragmentContainer)
-
-        binding.toolBar.inflateMenu(R.menu.refresh_menu)
-        binding.toolBar.setOnMenuItemClickListener {
-            val context = requireContext()
-            context.resetGlobalFx()
-            fragment.bind()
-            true
-        }
+        // The refresh icon is gone (2026-11-01): reset is the labelled last row of the shared content, with a
+        // confirmation - AudioEffectsBottomSheet.setupAudioFx.
     }
 
     class AudioFxFragment : Fragment() {
@@ -73,12 +63,9 @@ class AudioEffectsFragment : Fragment() {
             return binding.root
         }
 
-        fun bind() = binding.bind(
-            requireContext().globalFx(), requireContext().getSettings()
-        ) { onEqualizerClicked() }
-
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-            bind()
+            // The same content, bind, reset and casting state as the player's sheet (2026-11-01, one screen).
+            setupAudioFx(binding)
             binding.root.apply {
                 clipToPadding = false
                 // Handle kept and re-padded in the same inset block that pads the list, rather than left

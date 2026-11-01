@@ -6,6 +6,8 @@
         <item name="android:paddingEnd">4dp</item>
     </style>
 
+    <!-- values-television/styles.xml overrides EchoDialog and EchoAlertDialog (2026-11-01, TV focus ring on dialog
+         buttons): a change here must be made there too. -->
     <style name="EchoDialog" parent="ThemeOverlay.Material3.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_bg</item>
     </style>

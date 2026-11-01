@@ -112,6 +112,8 @@
     <string name="audio_fx">Audio Effects</string>
     <string name="audio_fx_summary">Effects applied for all songs</string>
     <string name="reset">Reset</string>
+    <string name="reset_audio_fx">Reset audio effects</string>
+    <string name="reset_audio_fx_confirm">Reset all audio effects to their defaults?</string>
     <string name="playback_speed">Playback Speed</string>
     <string name="change_pitch_with_speed">Change pitch with speed</string>
     <string name="bass_boost">Bass Boost</string>

@@ -12,13 +12,9 @@
                     <corners android:radius="?itemCorner" />
                 </shape>
             </item>
-            <!-- Strong focus border: 4dp (was 2dp), theme accent so it tracks dynamic color. -->
-            <item>
-                <shape android:shape="rectangle">
-                    <stroke android:width="4dp" android:color="?attr/colorPrimary" />
-                    <corners android:radius="?itemCorner" />
-                </shape>
-            </item>
+            <!-- Strong focus border: 4dp (was 2dp), theme accent so it tracks dynamic color. The shape is
+                 tv_focus_ring_rect (2026-11-01), shared with TvFocusRing; same values as before. -->
+            <item android:drawable="@drawable/tv_focus_ring_rect" />
         </layer-list>
     </item>
     <item android:drawable="@drawable/ripple_item_container" />

@@ -11,6 +11,19 @@
         android:clipToPadding="false"
         android:orientation="vertical">
 
+        <!-- ONE AUDIO EFFECTS SCREEN (2026-11-01): this layout is the whole content of BOTH the player's sheet and
+             Settings -> Audio effects, wired by AudioEffectsBottomSheet.setupAudioFx. The description and the reset
+             row live here, not in either container, so the two cannot drift apart. -->
+        <TextView
+            android:id="@+id/audioFxDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="24dp"
+            android:layout_marginBottom="16dp"
+            android:alpha="0.66"
+            android:text="@string/audio_fx_summary"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -44,6 +57,7 @@
 
         <LinearLayout
             android:id="@+id/pitch"
+            android:focusable="true"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="?selectableItemBackground"
@@ -116,6 +130,7 @@
 
         <LinearLayout
             android:id="@+id/equalizer"
+            android:focusable="true"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="?selectableItemBackground"
@@ -250,6 +265,7 @@
 
         <LinearLayout
             android:id="@+id/skipFadeOnAlbums"
+            android:focusable="true"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="?selectableItemBackground"
@@ -290,6 +306,26 @@
                 android:layout_marginEnd="24dp"
                 android:clickable="false" />
 
+        </LinearLayout>
+
+        <!-- Labelled reset, last row, both screens (2026-11-01) - replaces the unlabelled refresh icon each toolbar
+             had. Asks first; see setupAudioFx. -->
+        <LinearLayout
+            android:id="@+id/resetAudioFx"
+            android:focusable="true"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?selectableItemBackground"
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/reset_audio_fx"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="18sp" />
         </LinearLayout>
 
     </LinearLayout>

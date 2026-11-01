@@ -238,10 +238,16 @@ class FeedAdapter(
     // showTabsAndButtons = false (2026-10-31, the player's Info tab only): the tab and buttons rows are left out of the
     // returned Concat. Their observers still run - the buttons observer also sets isPlayButtonShown and declaredTracks,
     // which taps rely on - only the two (empty there) rows and the grid spacing each one took are gone.
-    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null, showTabsAndButtons: Boolean = true): GridAdapter.Concat {
-        val tabs = TabsAdapter<FeedTab>({ tab.title }) { view, index, tab ->
+    // [CORRECTED 2026-11-01] Not "only": the buttons row's first bind was also what started the feed (see the
+    // searchPrimed note below). 1160 shipped without it and the Info tab showed "So empty" on every song.
+    // [CORRECTED 2026-11-01] showTabsAndButtons is now showButtons, and the tab row is back on the Info tab whenever
+    // the feed HAS tabs (any extension - "never shows tabs" was checked for Deezer only). It is left out only while
+    // there are none (TabsAdapter.collapseWhenEmpty), so the 1160 spacing applies to tab-less feeds. The buttons row
+    // stays out there (sort/filter does not belong on the Info tab, Jun 7).
+    fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null, showButtons: Boolean = true): GridAdapter.Concat {
+        val tabs = TabsAdapter<FeedTab>({ tab.title }, { view, index, tab ->
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
-        }
+        }, collapseWhenEmpty = !showButtons)
         fragment.observe(viewModel.tabsFlow) { tabs.data = it }
         var buttonsAdapter: ButtonsAdapter? = null
         // Last declared track list for this feed, read by the tap path AT TAP TIME rather than
@@ -318,7 +324,21 @@ class FeedAdapter(
             fragment.observe(editPlaylistVisible) { buttons.showEditPlaylist = it }
         }
         if (initialButtons) buttons.buttons = FeedData.Buttons("", "", Feed.Buttons(showPlayAndShuffle = true))
+        // ⚠⚠ WITHOUT THE BUTTONS ROW, NOTHING STARTS THE FEED (2026-11-01, 1160 regression: the Info tab showed
+        // "So empty" for every song). FeedData's cached/loadedFeedTypeFlow combine searchClickedFlow, a
+        // MutableSharedFlow with no initial value, so pagingFlow emits nothing until it has emitted once. The only
+        // thing that did that on open is ButtonsAdapter's FIRST BIND: item_feed_buttons inflates searchToggleButton
+        // with android:checked="true", bind sets isChecked = searchToggled (false), and the checked listener calls
+        // onSearchClicked (MaterialButton.setCheckedInternal notifies only on a change - Material 1.14.0, decoded).
+        // A Concat without the row never binds it. So that one emission is made here instead, on the first loaded
+        // buttons value - after getFeedAdapter's pagingFlow observer, registered earlier, has subscribed.
+        // Media pages keep the row and are unchanged.
+        var searchPrimed = showButtons
         fragment.observe(viewModel.buttonsFlow) {
+            if (!searchPrimed && it != null) {
+                searchPrimed = true
+                viewModel.onSearchClicked()
+            }
             buttons.buttons = it
             // See the retention note above: a null emission keeps the last description of the rows
             // that are still drawn; a non-null one always replaces it.
@@ -351,8 +371,8 @@ class FeedAdapter(
             else loadStates.refresh
             footer.loadState = loadStates.append
         }
-        return if (showTabsAndButtons) GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)
-        else GridAdapter.Concat(*before, header, empty, this, footer)
+        return if (showButtons) GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)
+        else GridAdapter.Concat(*before, tabs, header, empty, this, footer)
     }
 
     override val adapter = this

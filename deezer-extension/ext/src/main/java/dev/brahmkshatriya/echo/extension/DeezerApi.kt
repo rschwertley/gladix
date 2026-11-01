@@ -19,6 +19,8 @@ import dev.brahmkshatriya.echo.extension.api.DeezerTrack
 import dev.brahmkshatriya.echo.extension.api.DeezerUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -235,6 +237,10 @@ class DeezerAuthRejectedException(
 class DeezerApi(private val session: DeezerSession) {
 
     companion object {
+        // One ARL renewal at a time, process-wide (DeezerExtension() instances each own a DeezerApi, the session is
+        // shared) - see renewSessionFromArl.
+        private val arlRenewal = Mutex()
+
         // ⚠️ BOTH DERIVED FROM ONE MEASURED FACT - the pipe JWT's TTL is ~6 minutes (recorded at
         // smartTracklistTrackIds before the holder existed). 30s of margin is a twentieth of that; 60s
         // would be a sixth. The FALLBACK is used only when `exp` will not parse, and is deliberately far
@@ -458,15 +464,19 @@ class DeezerApi(private val session: DeezerSession) {
         method: String,
         paramsBuilder: JsonObjectBuilder.() -> Unit = {},
         gatewayInput: String? = "",
-        np: Boolean = false
+        np: Boolean = false,
+        // True on the one retry after renewSessionFromArl, so a session that still fails is not renewed again.
+        arlRenewed: Boolean = false,
     ): JsonObject = withContext(Dispatchers.IO) {
+        // The token THIS request carries, so a renewal can tell whether another call already replaced it.
+        val usedToken = token
         val url = HttpUrl.Builder()
             .scheme("https").host("www.deezer.com")
             .addPathSegments("ajax/gw-light.php")
             .addQueryParameter("method", method)
             .addQueryParameter("input", "3")
             .addQueryParameter("api_version", "1.0")
-            .addQueryParameter("api_token", token)
+            .addQueryParameter("api_token", usedToken)
             .apply {
                 if (!gatewayInput.isNullOrEmpty()) {
                     addQueryParameter("gateway_input", gatewayInput)
@@ -521,8 +531,20 @@ class DeezerApi(private val session: DeezerSession) {
             if (errorObj != null) {
                 if (errorObj["VALID_TOKEN_REQUIRED"]?.jsonPrimitive?.content?.contains("Invalid CSRF token") == true) {
                     if (email.isEmpty() && pass.isEmpty()) {
+                        // ⚠⚠ ARL-ONLY SESSION: RENEW FROM THE ARL, DO NOT GIVE UP (2026-11-01). The linked TV and a
+                        // pasted ARL have no email/password, and this used to latch isArlExpired and throw "Please
+                        // re-login" on the first stale CSRF token - so ~a day after a TV link (the gateway session,
+                        // sid + checkForm, expires; the stored ones are also reused on every cold start via
+                        // setLoginUser) Search, playback and song actions said login required while the ARL was
+                        // never re-checked. Now a fresh sid + checkForm is fetched from the ARL and the call retried
+                        // once; only Deezer serving the ARL as a guest latches and asks to sign in.
+                        // [CORRECTED 2026-11-01] Was `isArlExpired(true); throw Exception("Please re-login (Best use
+                        // User + Pass method)")` with no renewal.
+                        if (!arlRenewed && renewSessionFromArl(usedToken))
+                            return@withContext callApi(method, paramsBuilder, gatewayInput, np, arlRenewed = true)
+                        if (arlRenewed) throw Exception("Deezer refused a freshly renewed session (Invalid CSRF token)")
                         session.isArlExpired(true)
-                        throw Exception("Please re-login (Best use User + Pass method)")
+                        throw ClientException.LoginRequired()
                     } else {
                         session.isArlExpired(false)
                         // ⚠⚠ THE ENCLOSING CSRF BRANCH IS PROTECTED BY TWO PRIOR SESSIONS - DO
@@ -722,8 +744,18 @@ class DeezerApi(private val session: DeezerSession) {
                 // `runCatching { handleArlExpiration() }` and swallows everything, so this cannot escape the
                 // Injectable injection block.
                 val gatewayError = DeezerGatewayException(method, errorText, langCode)
-                if (gatewayError.isUserAuthRequired && method != "deezer.getUserData")
+                if (gatewayError.isUserAuthRequired && method != "deezer.getUserData") {
+                    // ARL-only session (2026-11-01): the same renewal as the CSRF branch above, once, before asking
+                    // to sign in - an expired gateway session can answer this way too. Email/password sessions are
+                    // unchanged. A renewed session that still gets this is a real refusal for the method: sign in,
+                    // without latching (the ARL itself just passed).
+                    if (!arlRenewed && email.isEmpty() && pass.isEmpty() && method != "user.getArl") {
+                        if (renewSessionFromArl(usedToken))
+                            return@withContext callApi(method, paramsBuilder, gatewayInput, np, arlRenewed = true)
+                        session.isArlExpired(true)
+                    }
                     throw ClientException.LoginRequired()
+                }
                 throw gatewayError
             }
             result
@@ -961,6 +993,88 @@ class DeezerApi(private val session: DeezerSession) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * ⚠⚠ A NEW GATEWAY SESSION FROM THE ARL ALONE (2026-11-01), for a session with no email/password - the linked TV,
+     * or a pasted ARL. Called by callApi when Deezer answers Invalid CSRF token or NEED_USER_AUTH_REQUIRED.
+     * The same two requests as userIdForArl (a cookie-less user.getArl GET for a fresh sid, then deezer.getUserData
+     * with only arl + that sid and api_token "null" - deezer-py's login_via_arl, RemixDev/deezer-py,
+     * deezer/__init__.py:87-110), but this one KEEPS the result: sid, checkForm token, user id and license token go
+     * into the session, and the user is saved over the stored one through DeezerSession.onUserRenewed, so the next
+     * cold start does not restore the stale pair. Raw requests, not callApi, so a failure here cannot re-enter
+     * callApi's error branches.
+     * RETURNS: true = renewed (or another call already renewed while this one waited on [arlRenewal]); false = Deezer
+     * served the ARL as a GUEST (USER_ID "0" or blank, see hasUserId) - the one answer that means the ARL is dead.
+     * THROWS on anything else (network, HTTP status, no USER object, no checkForm): not a verdict on the ARL, so
+     * nothing is latched and the next call tries again. That split is what keeps this off the 1108 / September
+     * credentialsRejected path: only an explicit guest answer latches, and setLoginUser clears it on the next login.
+     */
+    private suspend fun renewSessionFromArl(staleToken: String): Boolean = arlRenewal.withLock {
+        val current = session.credentials
+        if (current.token.isNotEmpty() && current.token != staleToken) return@withLock true
+        val arl = current.arl.takeIf { it.isNotEmpty() } ?: return@withLock false
+        val sidRequest = Request.Builder()
+            .url("https://www.deezer.com/ajax/gw-light.php?method=user.getArl&input=3&api_version=1.0&api_token=null")
+            .get()
+            .build()
+        val freshSid = clientLog.newCall(sidRequest).await().use { response ->
+            response.headers.firstOrNull { it.second.startsWith("sid=") }
+                ?.second?.substringAfter("sid=")?.substringBefore(";")
+        } ?: throw Exception("Deezer session renewal: no sid issued")
+        val url = HttpUrl.Builder()
+            .scheme("https").host("www.deezer.com")
+            .addPathSegments("ajax/gw-light.php")
+            .addQueryParameter("method", "deezer.getUserData")
+            .addQueryParameter("input", "3")
+            .addQueryParameter("api_version", "1.0")
+            .addQueryParameter("api_token", "null")
+            .build()
+        val headers = staticHeaders.newBuilder()
+            .add("Cookie", "arl=${arl.sanitizeHeader()}; sid=${freshSid.sanitizeHeader()}")
+            .add("Accept-Language", "$language,*")
+            .add("Content-Language", language)
+            .build()
+        val request = Request.Builder().url(url).post("{}".toRequestBody()).headers(headers).build()
+        val (body, setSid) = client.newCall(request).await().use { response ->
+            if (!response.isSuccessful) throw Exception("Deezer session renewal failed with status ${response.code}")
+            val sidCookie = response.headers.firstOrNull { it.second.startsWith("sid=") }
+                ?.second?.substringAfter("sid=")?.substringBefore(";")
+            response.body.string() to sidCookie
+        }
+        val results = decodeJson(body)["results"].objOrNull()
+            ?: throw Exception("Deezer session renewal: no results in getUserData")
+        val user = results["USER"].objOrNull()
+            ?: throw Exception("Deezer session renewal: no USER in getUserData")
+        val userId = (user["USER_ID"] as? JsonPrimitive)?.contentOrNull
+        if (userId.isNullOrBlank() || userId == "0") return@withLock false
+        val token = (results["checkForm"] as? JsonPrimitive)?.contentOrNull
+            ?: throw Exception("Deezer session renewal: no checkForm token")
+        val licenseToken = (user["OPTIONS"] as? JsonObject)
+            ?.get("license_token")?.let { (it as? JsonPrimitive)?.contentOrNull } ?: ""
+        val sid = setSid ?: freshSid
+        session.updateCredentials(sid = sid, token = token, userId = userId, licenseToken = licenseToken)
+        session.isArlExpired(false)
+        // Same fields as makeUser builds, so the stored user keeps its name and picture.
+        val name = (user["BLOG_NAME"] as? JsonPrimitive)?.contentOrNull ?: ""
+        val cover = (user["USER_PICTURE"] as? JsonPrimitive)?.contentOrNull ?: ""
+        session.notifyUserRenewed(
+            User(
+                id = userId,
+                name = name,
+                cover = "https://cdn-images.dzcdn.net/images/user/$cover/100x100-000000-80-0-0.jpg".toImageHolder(),
+                extras = mapOf(
+                    "arl" to arl,
+                    "user_id" to userId,
+                    "sid" to sid,
+                    "token" to token,
+                    "license_token" to licenseToken,
+                    "email" to current.email,
+                    "pass" to current.pass
+                )
+            )
+        )
+        true
     }
 
     suspend fun getSid() {

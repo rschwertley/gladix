@@ -16,6 +16,8 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.viewModelScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.cast.CastState
@@ -55,29 +57,61 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
         // CUSTOM_EFFECTS on every bind and edit that song's private copy, rebinding on every track change; it
         // now edits the same global file as Settings -> Audio effects, binds once, and its refresh resets the
         // global values as Settings' does. See EffectsListener.dropPerSongFx.
-        fun bind() = binding.audioFxFragment.bind(
-            requireContext().globalFx(), requireContext().getSettings()
-        ) { onEqualizerClicked() }
-        bind()
+        // [CORRECTED 2026-11-01] Content, reset and casting state now come from setupAudioFx, shared with Settings.
+        setupAudioFx(binding.audioFxFragment)
         binding.topAppBar.setNavigationOnClickListener { dismiss() }
-        binding.topAppBar.setOnMenuItemClickListener {
-            when (it.itemId) {
-                R.id.menu_refresh -> {
-                    requireContext().resetGlobalFx()
-                    bind()
-                    true
-                }
-
-                else -> false
-            }
-        }
     }
 
     companion object {
+        /**
+         * ⚠⚠ ONE AUDIO EFFECTS SCREEN (2026-11-01, design decision). The player's ⋮ -> Audio effects (this sheet) and
+         * Settings -> Audio effects (AudioEffectsFragment.AudioFxFragment) both call THIS with the same
+         * fragment_audio_fx content, so rows, order, wording, reset and the casting state cannot differ. Only the
+         * container does: the sheet's close button and centred title, the page's collapsing toolbar and back arrow,
+         * and the page's insets, fast scroller and TV focus handling.
+         * Reset is the labelled last row, behind a confirmation, and restores EVERY control here - see resetAudioFx.
+         * Casting is followed live (CastState.castingFlow): Settings can stay on screen behind the player while a
+         * session starts, which the read-once state assumed could not happen.
+         */
+        fun Fragment.setupAudioFx(binding: FragmentAudioFxBinding) {
+            val context = requireContext()
+            fun bind(casting: Boolean) = binding.bind(
+                context.globalFx(), context.getSettings(), casting
+            ) { onEqualizerClicked() }
+            bind(CastState.isCasting)
+            viewLifecycleOwner.observe(CastState.castingFlow) { bind(it) }
+            binding.resetAudioFx.setOnClickListener {
+                MaterialAlertDialogBuilder(context)
+                    .setMessage(R.string.reset_audio_fx_confirm)
+                    .setPositiveButton(R.string.reset) { _, _ ->
+                        context.resetAudioFx()
+                        bind(CastState.isCasting)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+
+        /**
+         * Every control on the Audio effects screen back to its default (2026-11-01): the global effects file
+         * (speed, pitch, bass boost) and the two app settings the screen shares with Settings -> Player - Crossfade
+         * to off and "skip fade on albums" to on, the same defaults SettingsPlayerFragment and PlayerService use.
+         * Written explicitly rather than removed, so both screens read the default from a stored value. PlayerService's
+         * listener on the same file picks up the Crossfade write (see the ONE PREFERENCE note in bind).
+         */
+        fun Context.resetAudioFx() {
+            resetGlobalFx()
+            getSettings().edit {
+                putInt(TRUE_CROSSFADE_SECONDS, CrossfadeController.FADE_SECONDS_MIN)
+                putBoolean(SKIP_FADE_ON_ALBUMS, true)
+            }
+        }
+
         @SuppressLint("SetTextI18n")
         fun FragmentAudioFxBinding.bind(
             settings: SharedPreferences,
             appSettings: SharedPreferences,
+            casting: Boolean,
             onEqualizerClicked: () -> Unit,
         ) {
             // ⚠️ bind() RUNS AGAIN ON EVERY REBIND (2026-10-31) - the player sheet on each playerState.current
@@ -170,6 +204,8 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
                 skipFadeOnAlbums.isVisible = value.toInt() > 0
             }
             skipFadeOnAlbums.isVisible = trueCrossfadeSeconds > 0
+            // Cleared first like pitchSwitch (2026-11-01): bind now re-runs on every cast change and reset.
+            skipFadeOnAlbumsSwitch.setOnCheckedChangeListener(null)
             skipFadeOnAlbumsSwitch.isChecked = appSettings.getBoolean(SKIP_FADE_ON_ALBUMS, true)
             skipFadeOnAlbums.setOnClickListener {
                 skipFadeOnAlbumsSwitch.isChecked = !skipFadeOnAlbumsSwitch.isChecked
@@ -196,18 +232,21 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             // cannot be open when a session starts - the route picker lives in the quality sheet,
             // not this one. If a second entry point ever appears, this needs the live treatment
             // the quality sheet's AudioDeviceCallback got.
-            if (CastState.isCasting) {
-                listOf(equalizer, pitch, trueCrossfade, skipFadeOnAlbums).forEach { row ->
-                    row.isEnabled = false
-                    row.alpha = DISABLED_ALPHA
-                    row.setOnClickListener(null)
-                }
-                listOf(speedSlider, bassBoostSlider, trueCrossfadeSlider).forEach { it.isEnabled = false }
-                pitchSwitch.isEnabled = false
-                skipFadeOnAlbumsSwitch.isEnabled = false
-                // Speed joins them (2026-10-31): the ruler could not be disabled, the Slider can.
-                listOf(speedSlider, bassBoostSlider).forEach { it.alpha = DISABLED_ALPHA }
+            // [CORRECTED 2026-11-01] A second entry point existed: Settings -> Audio effects can stay on screen while a
+            // session starts. Both now rebind on CastState.castingFlow (setupAudioFx), so this sets the state BOTH
+            // ways. A disabled row gets no click from touch or D-pad (View.onTouchEvent / onKeyUp check enabled), so
+            // the click listeners are left in place rather than nulled - re-enabling then needs nothing else.
+            val enabled = !casting
+            val alpha = if (enabled) 1f else DISABLED_ALPHA
+            listOf(equalizer, pitch, trueCrossfade, skipFadeOnAlbums).forEach { row ->
+                row.isEnabled = enabled
+                row.alpha = alpha
             }
+            listOf(speedSlider, bassBoostSlider, trueCrossfadeSlider).forEach { it.isEnabled = enabled }
+            pitchSwitch.isEnabled = enabled
+            skipFadeOnAlbumsSwitch.isEnabled = enabled
+            // Speed joins them (2026-10-31): the ruler could not be disabled, the Slider can.
+            listOf(speedSlider, bassBoostSlider).forEach { it.alpha = alpha }
         }
 
         // System-EQ presence is fixed for the process lifetime — only an app install/uninstall could
