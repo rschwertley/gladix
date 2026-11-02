@@ -16,6 +16,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsetsWithChild
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
@@ -43,6 +44,10 @@ class TvPairingFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         setupTransition(view)
+        // [2026-11-01] The only full-screen page with no inset handling: its toolbar drew under the status bar on the
+        // phone. App bar gets top (status bar) and start/end (rail); the scroll view gets start/end and bottom
+        // (navigation bar, nav view, mini player - UiViewModel.combined). bottom = 0: the content keeps its own 24dp.
+        applyInsetsWithChild(binding.appBarLayout, binding.nestedScrollView, bottom = 0)
         binding.toolBar.setNavigationOnClickListener {
             parentFragmentManager.popBackStack()
         }

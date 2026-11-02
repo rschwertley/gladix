@@ -80,6 +80,10 @@ class TabsAdapter<T>(
         }
     }
 
+    // The tab that received the last OK/ENTER DOWN, selected on the UP whichever button gets it; -1 = none
+    // (2026-11-01, see the key listener in apply()). On the adapter, not the button, so every tab's listener sees it.
+    private var okDownTab = -1
+
     // TabsProbe (TEMPORARY): true while apply() sets the checked states, so a checked change can be attributed.
     private var applying = false
 
@@ -154,16 +158,36 @@ class TabsAdapter<T>(
                 // the selection either way, while the symptom (content never changes) is after the write. Kept
                 // because it matches the phone's tap path and cannot do harm; not expected to be the fix. Whether
                 // OK ever switched tabs on the device after 2026-07-23 is unrecorded (marked fixed with no device check).
-                setOnKeyListener { v, keyCode, event ->
+                // [CORRECTED 2026-11-01] "not expected to be the fix" held, and the 1160 GladixTabs report (Onn 4K
+                // Pro) showed what was happening instead: OK DOWN reached the focused tab (3), ~30 ms later focus
+                // moved to tab 0 (All, also the checked tab), and the UP was delivered to tab 0 - so the click
+                // landed on All ("already selected") and the chosen tab was never selected. What moved focus is NOT
+                // identified by reading: Material 1.14.0's press path (MaterialButton.setPressed -> the group's
+                // PressedStateTracker, which only invalidates, and maybeAnimateSize, the buttonSizeChange width
+                // animation that Widget.Material3.MaterialButtonGroup sets) makes no focus call; recyclerview
+                // 1.4.0's recoverFocusFromState acts only when the focused row is hidden; refocusSelected needs a
+                // tabsFlow emission, which logs a breadcrumb. So now, both halves:
+                // (1) DOWN no longer sets the pressed state, which removes the one thing a press does here (that
+                //     width animation and its relayouts). If the jump persists, (2) still selects the right tab.
+                // (2) DOWN records which tab took it ([okDownTab]); UP - on whichever button it is delivered to -
+                //     focuses and clicks THAT tab, so the selection no longer depends on where focus is at release.
+                //     An UP with no DOWN in this row (the press started elsewhere) is consumed and does nothing.
+                // Phone: touch never reaches a key listener; a hardware keyboard's Enter loses only the pressed look.
+                setOnKeyListener { _, keyCode, event ->
                     TabsProbe.log("key tab=$i code=$keyCode action=${event.action} selected=$selected")
                     val confirm = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
                     if (confirm && event.action == KeyEvent.ACTION_DOWN) {
-                        v.isPressed = true
+                        if (event.repeatCount == 0) okDownTab = i
                         true
                     } else if (confirm && event.action == KeyEvent.ACTION_UP) {
-                        v.isPressed = false
-                        v.performClick()
-                        TabsProbe.markAfterOk(i) {
+                        val target = okDownTab
+                        okDownTab = -1
+                        val chosen = parent.getChildAt(target)?.takeIf { target < data.size && it.isVisible }
+                        if (chosen != null) {
+                            if (!chosen.hasFocus()) chosen.requestFocus()
+                            chosen.performClick()
+                        }
+                        TabsProbe.markAfterOk(target) {
                             val checked = (0 until parent.childCount)
                                 .filter { (parent.getChildAt(it) as? MaterialButton)?.isChecked == true }
                             "selected=$selected checked=$checked focused=${(0 until parent.childCount)

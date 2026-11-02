@@ -1,18 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- ⚠️ A PLAIN COLUMN, NOT A COORDINATORLAYOUT (2026-11-01). This was a CoordinatorLayout (match_parent) with an
+     AppBarLayout and the content on appbar_scrolling_view_behavior. That sized the scroll view from the
+     coordinator's full height, which is NOT what the bottom sheet shows: BottomSheetBehavior decides the on-screen
+     part (the 512dp phone peek, expansion, edge-to-edge insets) separately, so the scroll viewport could reach below
+     the visible sheet and its last rows could never be scrolled into view. It went unseen while the content fit;
+     1162's description and Reset row made it one row too tall (Reset unreachable, a gap at the bottom).
+     Now the sheet is as tall as the toolbar plus the content, capped at what the sheet may occupy (the scroll view is
+     wrap_content under an AT_MOST height, so it never exceeds the space left), and AudioEffectsBottomSheet.onStart
+     opens it expanded - the viewport is inside the visible sheet by construction. The toolbar never scrolled
+     (no scroll flags), so nothing visible is lost. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:fitsSystemWindows="false"
-    android:layout_height="match_parent">
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
 
     <!-- Container only (2026-11-01): close button and title. The description and the reset row moved into
          fragment_audio_fx, shared with Settings -> Audio effects; the refresh icon is gone. -->
-    <com.google.android.material.appbar.AppBarLayout
+    <FrameLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:liftOnScroll="false"
-        android:background="@android:color/transparent"
         android:paddingHorizontal="4dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -26,13 +34,12 @@
             app:title="@string/audio_fx"
             app:titleCentered="true" />
 
-    </com.google.android.material.appbar.AppBarLayout>
+    </FrameLayout>
 
     <include
         android:id="@+id/audioFxFragment"
         layout="@layout/fragment_audio_fx"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+        android:layout_height="wrap_content" />
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</LinearLayout>

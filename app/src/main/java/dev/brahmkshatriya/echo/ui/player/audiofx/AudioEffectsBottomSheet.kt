@@ -15,6 +15,8 @@ import androidx.core.content.edit
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.viewModelScope
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -60,6 +62,15 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
         // [CORRECTED 2026-11-01] Content, reset and casting state now come from setupAudioFx, shared with Settings.
         setupAudioFx(binding.audioFxFragment)
         binding.topAppBar.setNavigationOnClickListener { dismiss() }
+    }
+
+    // ⚠️ OPENS FULLY (2026-11-01). The phone's EchoBottomSheetStyle opens sheets at a 512dp peek; this sheet is now
+    // as tall as its content (dialog_player_audio_fx), which can exceed 512dp (inferred from the row list, not
+    // measured), and opening at the peek would leave its end below the screen. Expanded, the whole sheet - and so the whole scroll viewport - is on screen. TV already
+    // opens fully (values-television peek 4000dp), so this changes nothing there.
+    override fun onStart() {
+        super.onStart()
+        (dialog as? BottomSheetDialog)?.behavior?.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     companion object {

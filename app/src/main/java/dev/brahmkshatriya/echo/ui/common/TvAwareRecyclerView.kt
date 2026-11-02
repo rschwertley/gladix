@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.common
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.FocusFinder
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewParent
@@ -91,9 +92,17 @@ class TvAwareRecyclerView @JvmOverloads constructor(
                     ?: revealFocusableAbove(glm, currentPos, focused)
             }
             FOCUS_LEFT -> {
+                // [2026-11-01] Left first moves WITHIN the focused item, then to the rail. The rail rule (e2f958dd)
+                // keyed only on the ITEM's span index, so every focusable inside a full-span item counted as the left
+                // edge: on HeaderAdapter's row (Home, Search, Library, History) Left from accountsCont skipped
+                // extensionsCont and jumped to the rail. Now the rail is reached only when nothing focusable lies left
+                // of `focused` inside its own item. Rows whose item itself holds focus skip the in-item search (unchanged).
+                val inItem = (itemView as? ViewGroup)?.takeIf { focused !== it }
+                    ?.let { FocusFinder.getInstance().findNextFocus(it, focused, direction) }
                 val spanIndex = glm.spanSizeLookup.getSpanIndex(currentPos, glm.spanCount)
-                if (spanIndex == 0) navRailView ?: super.focusSearch(focused, direction)
-                else super.focusSearch(focused, direction)
+                inItem
+                    ?: if (spanIndex == 0) navRailView ?: super.focusSearch(focused, direction)
+                    else super.focusSearch(focused, direction)
             }
             else -> super.focusSearch(focused, direction)
         }

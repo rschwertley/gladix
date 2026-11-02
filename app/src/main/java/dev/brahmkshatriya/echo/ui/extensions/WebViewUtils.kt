@@ -21,6 +21,8 @@ import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.WebStorageCompat
+import androidx.webkit.WebViewFeature
 import com.acsbendi.requestinspectorwebview.RequestInspectorWebViewClient
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import dev.brahmkshatriya.echo.R
@@ -67,11 +69,25 @@ object WebViewUtils {
                 webView.goBack()
             }
         }
+        // ⚠️ EVERY WEBVIEW START WIPES ALL WEBVIEW BROWSER DATA, SERVICE WORKERS INCLUDED (2026-11-01). The main phone's
+        // web login failed instantly with net::ERR_FAILED on 1162, while the same code (unchanged since 1159), the same
+        // WebView version (updated 2026-10-27) and a fresh install on another phone all worked - so by elimination what
+        // differed was the browser data left by the Oct 31 login. deleteAllData + removeAllCookies did NOT clear all of it: WebView's
+        // deleteAllData removes only file systems, IndexedDB and localStorage (Chromium
+        // AwQuotaManagerBridge::DeleteAllDataFramework, read 2026-11-01), so the HTTP cache, Cache Storage and any
+        // service worker a site registered survived every wipe. A service worker controls its site's page loads before
+        // the network, which fits a failure with no load at all (inference - not observed on the device).
+        // WebStorageCompat.deleteBrowsingData deletes all of it (cookies, network cache, every storage API) and the page
+        // loads only once it reports done. Where the WebView lacks that feature, the old wipe plus clearCache runs.
+        // Scope: WebView data only - the app's own files, cache and database are untouched. The two callers
+        // (LoginFragment.WebView, every extension's web login; Hidden, extensions' background WebView requests) already
+        // started cookie- and storage-clean, and nothing else in the app reads WebView data.
         WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().run {
             removeAllCookies(null)
             flush()
         }
+        webView.clearCache(true)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -80,14 +96,19 @@ object WebViewUtils {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                 isAlgorithmicDarkeningAllowed = true
         }
-        runCatching {
-            webView.load(lifecycleScope, progress, callback, target, skipTimeout, onComplete)
-        }.getOrElse {
-            lifecycleScope.launch {
-                webView.stop(callback)
-                onComplete(Result.failure(it))
+        fun start() {
+            runCatching {
+                webView.load(lifecycleScope, progress, callback, target, skipTimeout, onComplete)
+            }.getOrElse {
+                lifecycleScope.launch {
+                    webView.stop(callback)
+                    onComplete(Result.failure(it))
+                }
             }
         }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA))
+            WebStorageCompat.deleteBrowsingData(WebStorage.getInstance()) { start() } // done callback on the UI thread
+        else start()
         return callback
     }
 

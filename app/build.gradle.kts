@@ -328,6 +328,7 @@ dependencies {
     implementation(libs.fastscroll)
     implementation(libs.nestedscrollwebview)
     implementation(libs.acsbendi.webview)
+    implementation(libs.androidx.webkit)
 
     testImplementation(libs.junit)
 
