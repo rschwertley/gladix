@@ -285,7 +285,8 @@ class DeezerApi(private val session: DeezerSession) {
         // country" for some of these, and tracksAvailability cannot tell removed from region-blocked, so it
         // is a plain "Not available". The row tap (FeedClickListener.onUnplayableClicked) shows it alone; the
         // track page header and playback errors still wrap it in not_playable_x.
-        private const val NOT_AVAILABLE_REASON = "Not available"
+        // internal, not private (2026-11-02): DeezerParser.toEpisode marks an episode with no stream URL the same way.
+        internal const val NOT_AVAILABLE_REASON = "Not available"
 
         // Deezer picture hashes are 32 lowercase hex. See the ALB_PICTURE note at searchTracksPipe for
         // why a non-matching id yields no cover instead of a broken one.
@@ -1169,6 +1170,8 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun removeFavoriteShow(id: String) = deezerShow.removeFavoriteShow(id)
 
     suspend fun getBookmarkedEpisodes() = deezerShow.getBookmarkedEpisodes(userId)
+
+    suspend fun getEpisode(id: String): JsonObject = deezerShow.getEpisode(id)
 
     suspend fun bookmarkEpisode(id: String, offset: Long, duration: Double) = deezerShow.bookmarkEpisode(id, offset, duration)
 

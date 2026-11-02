@@ -27,6 +27,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.observeUserRefresh
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment.Companion.bind
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
@@ -284,12 +285,8 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             binding.swipeRefresh.run {
                 configure()
                 setOnRefreshListener { feedData.refresh() }
-                var hasEverLoaded = false
-                observe(feedData.isRefreshingFlow) {
-                    if (!it) hasEverLoaded = true
-                    isRefreshing = hasEverLoaded && it
-                }
             }
+            observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
         }
     }
 }

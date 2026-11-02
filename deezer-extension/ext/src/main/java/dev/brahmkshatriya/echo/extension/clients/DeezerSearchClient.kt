@@ -102,7 +102,20 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         query: String, shelf: String, isUserInitiated: Boolean = true
     ): Feed<Shelf> {
         deezerExtension.handleArlExpiration()
-        query.ifBlank { return browseFeed(shelf).toFeed() }
+        // ⚠️ A BLANK QUERY IS TWO TABS NOW (2026-11-02), ported from upstream 43998ca ("New Podcasts-Tab") onto our
+        // own browse code: Explore is browseFeed exactly as before, Podcasts is channels/podcasts through the same
+        // toBrowseShelves, timeout and failure handling ([podcastsFeed]). Tab ids are compared with == - upstream's
+        // `tab!!.id in "explore"` is a substring test on a String. A null tab is Explore, the first.
+        // Android Auto's Browse node shows the two tabs as folders (AndroidAutoCallback's toMediaItems makes one
+        // node per tab), one level deeper than before.
+        query.ifBlank {
+            return Feed(BROWSE_TABS) { tab ->
+                when (tab?.id) {
+                    PODCASTS_TAB_ID -> podcastsFeed(shelf)
+                    else -> browseFeed(shelf)
+                }.toFeedData()
+            }
+        }
 
         // ⚠⚠ TWO CONDITIONS, AND THEY MEAN DIFFERENT THINGS — DO NOT COLLAPSE THEM.
         //   `history`         — the USER'S SETTING. Master switch: off means never record, ever.
@@ -212,7 +225,9 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
         }
     }
 
-    private suspend fun browseFeed(shelf: String): List<Shelf> {
+    // The login check and the country push both browse tabs run first. Moved out of browseFeed unchanged
+    // (2026-11-02), notes included, so the Podcasts tab gets exactly the same two steps.
+    private suspend fun browsePreamble() {
         // ⚠⚠ THE LOGIN CHECK AND THE COUNTRY PUSH ARE SPLIT, AND THE SPLIT IS THE WHOLE POINT.
         // handleArlExpiration keeps THIS EXACT try/catch - log then `throw e` - character for
         // character, so its propagation is unchanged: a ClientException.LoginRequired still reaches the
@@ -244,7 +259,18 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             if (it is CancellationException) throw it
             println("GladixDeezer Search: updateCountry failed (continuing): ${it.message}")
         }
+    }
 
+    // The Podcasts browse tab: one page, with browseFeed's per-page timeout and failure handling (a failed or slow
+    // page is an empty tab, not an error), minus its PAGE[...] log lines - no new logging (2026-11-02).
+    private suspend fun podcastsFeed(shelf: String): List<Shelf> {
+        browsePreamble()
+        return runCatching { withTimeout(5000) { api.page("channels/podcasts") } }
+            .getOrNull()?.toBrowseShelves(shelf) ?: emptyList()
+    }
+
+    private suspend fun browseFeed(shelf: String): List<Shelf> {
+        browsePreamble()
         val (searchHomePipeShelves, exploreTabShelves) = coroutineScope {
             val searchHomePipe = async {
                 runCatching { withTimeout(5000) { api.page("channels/search-home-pipe") } }
@@ -396,6 +422,9 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             setOf("TOP_RESULT", "FLOW_CONFIG", "LIVESTREAM", "RADIO", "LYRICS", "CHANNEL", "USER")
 
         private const val EXPLORE_MODULE_ID = "8b2c6465-874d-4752-a978-1637ca0227b5"
+
+        private const val PODCASTS_TAB_ID = "podcasts"
+        private val BROWSE_TABS = listOf(Tab("explore", "Explore"), Tab(PODCASTS_TAB_ID, "Podcasts"))
         private const val GO_BEYOND_STREAMING_MODULE_ID = "20748fc9-bf55-41e6-a50f-2b26c0c8da48"
     }
 }

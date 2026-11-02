@@ -79,9 +79,65 @@ class LoginViewModel(
         loadingOver.emit(Unit)
     }
 
-    fun onSmartLoginComplete(arl: String) = viewModelScope.launch {
+    /**
+     * What the pairing relay handed this TV (SmartLogin.pollWorker). [arl] is today's handoff; [email] and [pass] come
+     * only from a phone on 2026-11-02 or later, and only when it had (or was given) the account's Deezer password.
+     */
+    data class SmartPairing(val arl: String?, val email: String?, val pass: String?)
+
+    private fun Result<List<User>>.isRealUser() =
+        getOrNull()?.firstOrNull()?.extras?.get("user_id").let { !it.isNullOrBlank() && it != "0" }
+
+    /**
+     * ⚠⚠ A LINKED TV SIGNS IN BY ITSELF WHEN IT CAN (2026-11-02). With email and password it runs the same login as the
+     * phone's E-Mail and Password form (Deezer's onLogin "userPass" -> getArlByEmail), so it gets ITS OWN ARL and
+     * session, is stored exactly like a phone signed in with that form, and renews silently with its own password
+     * (DeezerApi.callApi's CSRF branch). Before this the TV only ever held a copy of the phone's ARL, and that copy
+     * died when the phone's session was renewed or replaced (the Nov 1 and Nov 2 TV failures); an ARL-only session
+     * cannot sign in again by itself.
+     * If that sign-in fails (wrong password, or a web-login password Deezer will not take) and an ARL came too, the
+     * TV falls back to today's ARL handoff. Deezer's onLogin put the failed email/password into the live session
+     * before trying them, and its ARL branch keeps whatever email/password the session holds, so they are cleared
+     * first (setLoginUser(null)); otherwise the stored user would carry a password that does not work. With no
+     * ARL to fall back on, the stored current user is put back and the sign-in error is shown.
+     * Only an ARL arriving is handled exactly as before.
+     */
+    fun onSmartLoginComplete(pairing: SmartPairing) = viewModelScope.launch {
         loading.value = true
         val extension = extension.first { it != null }!!
+        val email = pairing.email
+        val pass = pairing.pass
+        val arl = pairing.arl
+        if (!email.isNullOrEmpty() && !pass.isNullOrEmpty()) {
+            val own = extension.getAs<LoginClient.CustomInput, List<User>> {
+                onLogin("userPass", mapOf("email" to email, "pass" to pass))
+            }
+            if (own.isRealUser()) {
+                afterLogin(own)
+                return@launch
+            }
+            extension.getAs<LoginClient, Unit> { setLoginUser(null) }
+            if (arl.isNullOrEmpty()) {
+                val stored = extensionId?.let { id ->
+                    userDao.getCurrentUser(extensionType, id)
+                        ?.let { userDao.getUser(extensionType, id, it.userId) }?.user?.getOrNull()
+                }
+                extension.getAs<LoginClient, Unit> { setLoginUser(stored) }
+                if (own.isFailure) afterLogin(own)
+                else {
+                    messageFlow.emit(Message(app.context.getString(R.string.tv_pairing_link_failed)))
+                    loading.value = false
+                    loadingOver.emit(Unit)
+                }
+                return@launch
+            }
+        }
+        if (arl.isNullOrEmpty()) {
+            // Unreachable from SmartLogin.pollWorker, which returns a pairing only with an ARL or both email and pass.
+            loading.value = false
+            loadingOver.emit(Unit)
+            return@launch
+        }
         val users = extension.getAs<LoginClient.CustomInput, List<User>> {
             onLogin("manual", mapOf("arl" to arl))
         }

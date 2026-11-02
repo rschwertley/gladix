@@ -7,10 +7,8 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import dev.brahmkshatriya.echo.ui.feed.TabsProbe
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -87,13 +85,6 @@ open class MainActivity : AppCompatActivity() {
         val uiModeManager = getSystemService(UI_MODE_SERVICE) as UiModeManager
         packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
             uiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
-    }
-
-    // TabsProbe (TEMPORARY, TV only, 2026-11-01): every OK-type key on the Library, seen here BEFORE any view - the
-    // tab button's own listener cannot report a press that never reaches it. Observes only; never consumes.
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (isTV) TabsProbe.onActivityKey(this, event)
-        return super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -225,8 +216,6 @@ open class MainActivity : AppCompatActivity() {
         setupPermissionRequests(app)
         // TV: the pink focus ring on every focused view that does not draw its own - see TvFocusRing. Phone: not installed.
         if (isTV) TvFocusRing.install(this)
-        // TabsProbe (TEMPORARY, TV only): the app-level scope its marker is recorded from - see dispatchKeyEvent.
-        if (isTV) TabsProbe.attach(app.scope)
         checkBatteryOptimization()
         configureExtensionsUpdater()
         supportFragmentManager.commit {

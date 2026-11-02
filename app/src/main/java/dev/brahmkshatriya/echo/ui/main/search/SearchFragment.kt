@@ -34,6 +34,7 @@ import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.observeUserRefresh
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
@@ -262,12 +263,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         swipeRefresh = binding.swipeRefresh
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
-            var hasEverLoaded = false
-            observe(feedData.isRefreshingFlow) {
-                if (!it) hasEverLoaded = true
-                isRefreshing = hasEverLoaded && it
-            }
         }
+        observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
         binding.quickSearchView.editText.setText(searchViewModel.queryFlow.value)
         // TV: give the on-screen keyboard a concrete submit action so its "done"/OK reliably fires the
         // editor-action listener below (hide + run the search). Phone keeps the SearchView's default action.

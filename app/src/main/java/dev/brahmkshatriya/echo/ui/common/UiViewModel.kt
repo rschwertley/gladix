@@ -950,5 +950,19 @@ class UiViewModel(
         fun SwipeRefreshLayout.configure(it: Insets = Insets()) {
             setProgressViewOffset(true, it.top, 72.dpToPx(context) + it.top)
         }
+
+        /**
+         * ⚠⚠ THE PULL-TO-REFRESH SPINNER IS THE USER'S PULL, NOTHING ELSE (2026-11-02). This only ever turns it OFF,
+         * when [loading] goes false. SwipeRefreshLayout turns it on by itself for a pull (1.2.0 source:
+         * finishSpinner -> setRefreshing(true, notify = true), then onRefresh after the animation).
+         * It replaces `isRefreshing = hasEverLoaded && loading` (68462fb2, Jun 22), which hid the spinner on the FIRST
+         * load only and showed it for every later one. A sub-tab tap is a later load: FeedData.selectTab ->
+         * loadedDataFlow and loadedFeedTypeFlow emit null -> isRefreshingFlow true until the tab's first network page.
+         * So on 1163 (and by reading since Jun 22) every tab tap dropped the spinner in and pulled it back out.
+         * Other reloads (refresh() after a playlist is created, deleted, an extension switch) no longer show it either.
+         */
+        fun Fragment.observeUserRefresh(swipeRefresh: SwipeRefreshLayout, loading: Flow<Boolean>) {
+            observe(loading) { if (!it) swipeRefresh.isRefreshing = false }
+        }
     }
 }

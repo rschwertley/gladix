@@ -3,7 +3,6 @@ package dev.brahmkshatriya.echo.ui.feed
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.core.widget.addTextChangedListener
 import com.google.android.material.chip.Chip
@@ -120,16 +119,11 @@ class ButtonsAdapter(
                 } else null
                 listener.onPlayClicked(it, feed?.extensionId, feed?.item, list, true)
             }
-            // TV only (phone: isTv() == false → no-op, layout unchanged): add the focus frame to each feed
-            // action button so D-pad focus is visible. New Drawable instance per button (foregrounds must
-            // not be shared across views).
+            // TV only (phone: isTv() == false → no-op, layout unchanged).
+            // [CORRECTED 2026-11-02] These eight buttons no longer get a tv_focus_pill foreground: all are Expressive
+            // buttons whose shape changes with state (pressed, and checked for the search toggle), which the fixed
+            // pill did not follow. TvFocusRing now draws their focus as each button's own stroke.
             if (binding.root.context.isTv()) {
-                val ctx = binding.root.context
-                listOf(
-                    binding.shuffleButton, binding.playButton, binding.searchToggleButton,
-                    binding.sortToggleButton, binding.createPlaylistButton, binding.editPlaylistButton,
-                    binding.micButton, binding.searchClose
-                ).forEach { it.foreground = ContextCompat.getDrawable(ctx, R.drawable.tv_focus_pill) }
                 // playButton is the only text button here — bump its 10-foot text size.
                 binding.playButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             }

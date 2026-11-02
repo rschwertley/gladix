@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.observeUserRefresh
 import dev.brahmkshatriya.echo.ui.extensions.list.ExtensionsListBottomSheet
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
@@ -91,11 +92,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         swipeRefresh = binding.swipeRefresh
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
-            var hasEverLoaded = false
-            observe(feedData.isRefreshingFlow) {
-                if (!it) hasEverLoaded = true
-                isRefreshing = hasEverLoaded && it
-            }
         }
+        observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
     }
 }

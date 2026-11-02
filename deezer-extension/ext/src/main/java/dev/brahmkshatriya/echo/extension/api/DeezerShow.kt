@@ -76,6 +76,24 @@ class DeezerShow(private val deezerApi: DeezerApi) {
         )
     }
 
+    /**
+     * ONE EPISODE BY ID (2026-11-02), for DeezerTrackClient.loadTrack's re-fetch of an episode restored without its
+     * stream. ⚠️ NOT FROM AN OPEN-SOURCE CLIENT: none of deezer-py's gw.py, upstream's DeezerShow.kt or yne/dzr has a
+     * one-episode method. Measured instead, anonymously (guest sid + checkForm, no account), on public show 585702:
+     * episode.getData returns results = the episode's own fields (EPISODE_ID, EPISODE_DIRECT_STREAM_URL, SHOW_ID,
+     * SHOW_NAME, __TYPE__ "episode", ...), the same shape DeezerParser.toEpisode reads from deezer.pageShow;
+     * without the parameter it answers MISSING_PARAMETER_EPISODE_ID, so EPISODE_ID is its name. deezer.pageEpisode
+     * does not exist (GATEWAY_ERROR).
+     */
+    suspend fun getEpisode(id: String): JsonObject {
+        return deezerApi.callApi(
+            method = "episode.getData",
+            paramsBuilder = {
+                put("EPISODE_ID", id)
+            }
+        )
+    }
+
     suspend fun bookmarkEpisode(id: String, offset: Long, duration: Double) {
         deezerApi.callApi(
             method = "episode.bookmarkSet",

@@ -1514,7 +1514,9 @@ class PlayerFragment : Fragment() {
             likeListener.enabled = true
             lifecycleScope.launch {
                 val isTrackClient = viewModel.isLikeClient(item.extensionId)
-                trackHeart.isVisible = isTrackClient
+                // && isLikeable (2026-11-02): an item the extension marks not likeable (a Deezer podcast episode) shows
+                // no heart, as the ⋮ menu already did, instead of one whose tap can only fail.
+                trackHeart.isVisible = isTrackClient && item.track.isLikeable
             }
         }
     }

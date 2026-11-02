@@ -25,10 +25,10 @@ import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyBackPressCallback
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.observeUserRefresh
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener.Companion.getFeedListener
-import dev.brahmkshatriya.echo.ui.feed.TabsProbe
 import dev.brahmkshatriya.echo.ui.feed.FeedData
 import dev.brahmkshatriya.echo.ui.feed.FeedViewModel
 import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
@@ -66,33 +66,9 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (hidden) swipeRefresh?.isRefreshing = false
-        // TabsProbe (TEMPORARY, TV only): MainFragment switches tabs with hide/show, so a visit starts and ends here.
-        if (hidden) TabsProbe.onLibraryLeft("hidden") else view?.let(TabsProbe::onLibraryShown)
-    }
-
-    // TabsProbe (TEMPORARY, TV only): the other ways a Library visit starts and ends. Leaving it some other way (a
-    // detail page added over MainFragment) is caught by the next key, in TabsProbe.onActivityKey.
-    override fun onResume() {
-        super.onResume()
-        if (!isHidden) view?.let(TabsProbe::onLibraryShown)
-    }
-
-    override fun onPause() {
-        TabsProbe.onLibraryLeft("paused")
-        super.onPause()
-    }
-
-    override fun onDestroyView() {
-        TabsProbe.onLibraryLeft("view-destroyed")
-        super.onDestroyView()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        // TabsProbe (TEMPORARY): enabled on TV only, before the tab row is built; then the FeedViewModel and
-        // FeedData this screen displays, to compare with FeedClickListener.onTabSelected's "writesTo" line.
-        TabsProbe.enableIfTv(requireContext())
-        val vm by viewModel<FeedViewModel>()
-        TabsProbe.log("library observes fragment=${TabsProbe.id(this)} vm=${TabsProbe.id(vm)} feedData=${TabsProbe.id(feedData)}")
         val binding = FragmentLibraryBinding.bind(view)
         val recyclerView = binding.recyclerView as RecyclerView
         setupTransition(view, false, MaterialSharedAxis.Y)
@@ -128,12 +104,8 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         swipeRefresh = binding.swipeRefresh
         binding.swipeRefresh.run {
             setOnRefreshListener { feedData.refresh() }
-            var hasEverLoaded = false
-            observe(feedData.isRefreshingFlow) {
-                if (!it) hasEverLoaded = true
-                isRefreshing = hasEverLoaded && it
-            }
         }
+        observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
 
         parent.parentFragmentManager.setFragmentResultListener("createPlaylist", this) { _, data ->
             val extensionId = data.getString("extensionId")

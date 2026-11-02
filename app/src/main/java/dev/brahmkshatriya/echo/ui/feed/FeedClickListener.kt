@@ -132,14 +132,7 @@ open class FeedClickListener(
         position: Int
     ): Boolean {
         val vm by fragment.viewModel<FeedViewModel>()
-        val feedData = vm.feedDataMap[feedId]
-        // TabsProbe (TEMPORARY, TV only): which FeedViewModel/FeedData the selection is written to - compare with
-        // LibraryFragment's "observes" line.
-        TabsProbe.log(
-            "onTabSelected pos=$position feedId=$feedId ext=$extensionId fragment=${TabsProbe.id(fragment)} " +
-                "writesTo vm=${TabsProbe.id(vm)} feedData=${TabsProbe.id(feedData)}"
-        )
-        feedData ?: return notFoundSnack(R.string.feed)
+        val feedData = vm.feedDataMap[feedId] ?: return notFoundSnack(R.string.feed)
         feedData.selectTab(extensionId, position)
         return true
     }
@@ -407,9 +400,12 @@ open class FeedClickListener(
             vm.setPlaying(true)
             return true
         }
+        // Podcast episodes are exempt like videos (2026-11-02): a single episode tap played a TRACK RADIO seeded with an
+        // episode id. It now plays the list it was tapped in from that episode, the branch below.
         val single = tracks.getOrNull(pos)?.takeIf {
             !isOrderedCollection(context) &&
-                it.type != Track.Type.Video && it.type != Track.Type.HorizontalVideo
+                it.type != Track.Type.Video && it.type != Track.Type.HorizontalVideo &&
+                it.type != Track.Type.Podcast
         }
         if (single != null) {
             vm.playTrackRadio(extensionId, single)

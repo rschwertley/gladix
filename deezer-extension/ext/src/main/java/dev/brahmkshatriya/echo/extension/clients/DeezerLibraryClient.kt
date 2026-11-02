@@ -12,6 +12,7 @@ import dev.brahmkshatriya.echo.extension.objOrNull
 import dev.brahmkshatriya.echo.extension.arrOrNull
 import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -35,6 +36,9 @@ class DeezerLibraryClient(
         Tab(TabId.ALBUMS.id, "Albums"),
         Tab(TabId.TRACKS.id, "Tracks"),
         Tab(TabId.ARTISTS.id, "Artists"),
+        // Restored 2026-11-02; removed by a401b5e1 (2026-05-08) when the tab came back empty. Its row on All and the
+        // Podcasts folder in Android Auto's Library come back with it (loadAll iterates every config).
+        Tab(TabId.SHOWS.id, "Podcasts"),
     )
 
     private data class TabConfig(
@@ -49,7 +53,8 @@ class DeezerLibraryClient(
         PLAYLISTS("playlists"),
         ALBUMS("albums"),
         TRACKS("tracks"),
-        ARTISTS("artists")
+        ARTISTS("artists"),
+        SHOWS("shows")
     }
 
     private val configs: Map<String, TabConfig> = listOf(
@@ -57,6 +62,7 @@ class DeezerLibraryClient(
         TabConfig(TabId.ALBUMS, "Albums", { getAlbums() }) { it.tabDataArray("albums") },
         TabConfig(TabId.TRACKS, "Tracks", { getTracks() }) { it.resultsDataArray() },
         TabConfig(TabId.ARTISTS, "Artists", { getArtists() }) { it.tabDataArray("artists") },
+        TabConfig(TabId.SHOWS, "Podcasts", { getShows() }) { it.tabDataArray("shows") },
     ).associateBy { it.id.id }
 
 
@@ -100,32 +106,52 @@ class DeezerLibraryClient(
     /** Shelves for the All tab, plus the grafted favorites so [loadLibraryFeed] can declare them. */
     private suspend fun loadAll(): Pair<List<Shelf>, List<Track>?> = supervisorScope {
         deezerExtension.handleArlExpiration()
+        // ⚠️ ONE FAILING TAB NO LONGER FAILS ALL (2026-11-02). awaitAll rethrows the first failure, so a refused
+        // Podcasts request (restored today) or any other tab's error emptied the whole All page. Each tab's work is
+        // now caught and that row is left out; the others load. Only when EVERY tab failed is the first failure
+        // rethrown - a sign-in or network failure hits all of them, and must still show as the page's error, not as
+        // an empty All. Cancellation is never caught. The tab pages themselves (loadSingle) are unchanged.
+        // Android Auto's Library uses this same feed, so its All folder behaves the same way.
+        val failures = mutableListOf<Throwable>()
         val results = configs.values.map { cfg ->
             async(cpuDispatcher) {
-                val json = cfg.request(api)
-                // Before the null return below, so the tile shows for an account with no playlists.
-                if (cfg.id == TabId.PLAYLISTS) {
-                    val list = withFavoriteTracks(playlistItems(cfg.extractor(json)))
-                    return@async list.takeIf { it.isNotEmpty() }
-                        ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) } to null
+                try {
+                    allRow(cfg)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    synchronized(failures) { failures.add(e) }
+                    null to null
                 }
-                val items = cfg.extractor(json) ?: return@async null to null
-                if (cfg.id == TabId.TRACKS) {
-                    // One batched availability pass over the same rows - see DeezerApi.markUnplayable.
-                    // Both tab paths get it because the same list is declared to the app from both; see
-                    // the customTrackList note at loadLibraryFeed.
-                    val grafted = api.markUnplayable(
-                        items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-                    )
-                    // The artist page's liked index, refreshed from this list at no cost.
-                    deezerExtension.refreshLiked(grafted)
-                    val shelf = grafted.takeIf { it.isNotEmpty() }
-                        ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) }
-                    shelf to grafted
-                } else parser.run { items.toShelfItemsList(cfg.title) } to null
             }
         }.awaitAll()
+        if (failures.size == configs.size) throw failures.first()
         results.mapNotNull { it.first } to results.firstNotNullOfOrNull { it.second }
+    }
+
+    // One tab's row on All, and the liked list when it is the Tracks tab.
+    private suspend fun allRow(cfg: TabConfig): Pair<Shelf?, List<Track>?> {
+        val json = cfg.request(api)
+        // Before the null return below, so the tile shows for an account with no playlists.
+        if (cfg.id == TabId.PLAYLISTS) {
+            val list = withFavoriteTracks(playlistItems(cfg.extractor(json)))
+            return list.takeIf { it.isNotEmpty() }
+                ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) } to null
+        }
+        val items = cfg.extractor(json) ?: return null to null
+        if (cfg.id == TabId.TRACKS) {
+            // One batched availability pass over the same rows - see DeezerApi.markUnplayable.
+            // Both tab paths get it because the same list is declared to the app from both; see
+            // the customTrackList note at loadLibraryFeed.
+            val grafted = api.markUnplayable(
+                items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+            )
+            // The artist page's liked index, refreshed from this list at no cost.
+            deezerExtension.refreshLiked(grafted)
+            val shelf = grafted.takeIf { it.isNotEmpty() }
+                ?.let { Shelf.Lists.Items(id = cfg.title, title = cfg.title, list = it) }
+            return shelf to grafted
+        } else return parser.run { items.toShelfItemsList(cfg.title) } to null
     }
 
     /** As [loadAll], for one tab: shelves plus the favorites when this IS the Tracks tab. */

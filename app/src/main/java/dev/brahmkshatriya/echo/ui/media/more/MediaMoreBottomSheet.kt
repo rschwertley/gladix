@@ -348,6 +348,10 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     ) = run {
         if (client !is PlaylistEditClient) return@run listOf()
         val item = state?.item ?: item
+        // No "Save to playlist" for a podcast episode (2026-11-02): :common has no flag for it (unlike isSaveable and
+        // isLikeable, which gate the rows below), and Deezer's playlist endpoint takes song ids, so the row could only
+        // fail. Keyed on Track.Type.Podcast, so it applies to any extension's episodes.
+        if (item is Track && item.type == Track.Type.Podcast) return@run listOf()
         val isEditable = item is Playlist && item.isEditable
         listOfNotNull(
             when {

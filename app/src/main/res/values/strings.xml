@@ -315,6 +315,12 @@
     <string name="tv_pairing_link_failed">Link failed. Open Gladix on your phone and try again.</string>
     <string name="tv_pairing_expires_in">Expires in: %1$ds</string>
     <string name="tv_pairing_new_code">Generate new code</string>
+    <string name="tv_pairing_credentials_title">Sign the TV in by itself</string>
+    <string name="tv_pairing_credentials_message">Enter your Deezer email and password. They are sent to your TV once so it can sign in on its own, and are not saved on this phone. If you sign in to Deezer with Google, Apple or Facebook, tap Skip.</string>
+    <string name="tv_pairing_email_hint">Deezer email</string>
+    <string name="tv_pairing_password_hint">Deezer password</string>
+    <string name="tv_pairing_credentials_continue">Continue</string>
+    <string name="tv_pairing_credentials_skip">Skip</string>
     <string name="tv_pairing_instructions">Enter the 6-character code shown on your TV, or scan its QR code with your camera app.</string>
     <string name="tv_pairing_code_hint">Code (e.g. GX4821)</string>
     <string name="qr_code">QR code</string>

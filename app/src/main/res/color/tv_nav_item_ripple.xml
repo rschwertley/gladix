@@ -3,8 +3,11 @@
      layout-land-television/activity_main.xml). A strong translucent colorPrimary on state_focused gives
      the rail item a clear persistent focus tint that is distinct from the active-indicator "selected" pill,
      fixing "focus vs selected is indistinguishable". Phone's shared @style/NavView is untouched. -->
+<!-- [CORRECTED 2026-11-02] The focused wash is now transparent: focus is one pink ring around the item's
+     active-indicator pill, drawn by TvFocusRing, which keeps focus and selection apart the way this wash did
+     (4b665eb5, Jul 17). With both, a focused item showed the wash AND a ring. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:alpha="0.30" android:color="?attr/colorPrimary" android:state_focused="true" />
+    <item android:color="@android:color/transparent" android:state_focused="true" />
     <item android:alpha="0.24" android:color="?attr/colorPrimary" android:state_pressed="true" />
     <item android:alpha="0.20" android:color="?attr/colorPrimary" android:state_hovered="true" />
     <item android:alpha="0.08" android:color="?attr/colorOnSurface" />

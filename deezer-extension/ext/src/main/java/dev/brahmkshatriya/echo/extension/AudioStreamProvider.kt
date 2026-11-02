@@ -6,25 +6,49 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.internal.closeQuietly
-import java.io.BufferedInputStream
-import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
-import java.util.Collections
+import java.util.ArrayDeque
 
+/**
+ * ⚠⚠ PORTED FROM UPSTREAM 43998ca (LuftVerbot/echo-deezer-extension, 2026-10-27), ADAPTED (2026-11-02). Three parts
+ * taken, the rest deliberately not:
+ * - THE BUFFER POOL IS ATOMIC. Ours was a Collections.synchronizedList read with removeFirstOrNull(), which is
+ *   isEmpty() then removeAt(0) - two separately locked calls - so two streams opening at once could race for the
+ *   last pooled buffer and throw IndexOutOfBoundsException. Opens do overlap: the main player's load, preload, the
+ *   crossfade sidecar's hole fetches (CacheOnlyTailSource is cache-FIRST, its holes go upstream through
+ *   RawDataSource to here) and cast materialising.
+ * - THE RANGE RESPONSE IS VALIDATED ([validateRangeResponse]). A server that ignored Range after a seek used to be
+ *   decrypted from the wrong stripe and played as noise with no error; it is now an IOException, which every
+ *   consumer already treats as a network failure: the main player retries it, the crossfade sidecar aborts the
+ *   overlap (CrossfadeController's TAIL_DIED) and the main track plays on.
+ * - DECRYPTION IS PER STRIPE, NOT PER READ ([StripeDecryptingInputStream]). The old FilterInputStream decrypted
+ *   correctly only for reads of at least one whole 2048-byte stripe, and its skip() and single-byte read() went to
+ *   the still-encrypted bytes. Neither could happen through RawDataSource (it calls read(buf, off, len) only, and
+ *   the BufferedInputStream around it always asked for a full buffer), so this removes a trap, not a live bug; it
+ *   also lets the BufferedInputStream go, one copy fewer.
+ * NOT TAKEN: upstream's blocking execute() - our await() (ce917c18) stays; rounding endByte to a stripe end (no
+ * caller passes endByte; the InputProvider in DeezerTrackClient.loadStreamableMedia passes only the start); a
+ * mandatory Blowfish key (every encrypted streamable carries one, DeezerTrackClient's Streamable.server extras) and
+ * the Cache-Control header rename (the extension has no OkHttp cache). Episodes (quality 12) never come here.
+ */
 object AudioStreamProvider {
 
-    private val bufferPool = Collections.synchronizedList(
-        mutableListOf<ByteArray>()
-    )
+    private const val BLOCK_SIZE = 2048
+    private const val BUFFER_POOL_LIMIT = 10
 
-    private fun getBuffer(size: Int): ByteArray {
-        return bufferPool.removeFirstOrNull() ?: ByteArray(size)
-    }
+    private val bufferPool = ArrayDeque<ByteArray>()
+    private val poolLock = Any()
+
+    private fun getBuffer(): ByteArray =
+        synchronized(poolLock) { bufferPool.pollFirst() } ?: ByteArray(BLOCK_SIZE)
 
     private fun returnBuffer(buffer: ByteArray) {
-        if (bufferPool.size < 10) {
-            bufferPool.add(buffer)
+        if (buffer.size != BLOCK_SIZE) return
+        synchronized(poolLock) {
+            if (bufferPool.size < BUFFER_POOL_LIMIT) bufferPool.addLast(buffer)
         }
     }
 
@@ -34,9 +58,7 @@ object AudioStreamProvider {
         startByte: Long = 0,
         endByte: Long = -1
     ): InputStream = withContext(Dispatchers.IO) {
-        val blockSize = 2048L
-        val alignedStart = startByte - (startByte % blockSize)
-        val dropBytes = (startByte % blockSize).toInt()
+        val alignedStart = startByte - (startByte % BLOCK_SIZE)
 
         val rangeHeader = if (endByte < 0) {
             "bytes=$alignedStart-"
@@ -54,51 +76,146 @@ object AudioStreamProvider {
             .build()
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
+        try {
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
+            }
+            validateRangeResponse(response, alignedStart)
+            val decrypted = StripeDecryptingInputStream(
+                source = response.body.byteStream(),
+                key = key,
+                initialChunkIndex = alignedStart / BLOCK_SIZE,
+                onClose = { response.close() },
+            )
+            RangeSlicingInputStream(decrypted, skipBytes = startByte - alignedStart)
+        } catch (e: Exception) {
             response.closeQuietly()
-            throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
+            throw e
+        }
+    }
+
+    // 206 must start exactly at the aligned stripe; any other success code is only right from byte 0.
+    private fun validateRangeResponse(response: Response, alignedStart: Long) {
+        if (response.code == 206) {
+            val contentRange = response.header("Content-Range")
+                ?: throw IOException("HTTP 206 response is missing Content-Range")
+            if (!contentRange.startsWith("bytes $alignedStart-")) {
+                throw IOException("Unexpected Content-Range: $contentRange; expected start at $alignedStart")
+            }
+        } else if (alignedStart != 0L) {
+            throw IOException("Server ignored the byte-range request: HTTP ${response.code}, start=$alignedStart")
+        }
+    }
+
+    // Reads one whole stripe from the network at a time and hands it out in any read size. Every third full
+    // stripe, counted from the start of the FILE, is Blowfish-encrypted; a short final stripe never is.
+    private class StripeDecryptingInputStream(
+        private val source: InputStream,
+        private val key: String,
+        initialChunkIndex: Long,
+        private val onClose: () -> Unit,
+    ) : InputStream() {
+        private var chunkIndex = initialChunkIndex
+        private val inputBuffer = getBuffer()
+        private var outputBuffer: ByteArray? = null
+        private var outputPosition = 0
+        private var outputLimit = 0
+        private var eof = false
+        private var closed = false
+
+        private fun loadNextStripe(): Boolean {
+            var total = 0
+            while (total < BLOCK_SIZE) {
+                val count = source.read(inputBuffer, total, BLOCK_SIZE - total)
+                if (count < 0) break
+                if (count == 0) {
+                    val single = source.read()
+                    if (single < 0) break
+                    inputBuffer[total++] = single.toByte()
+                } else total += count
+            }
+            if (total == 0) {
+                eof = true
+                return false
+            }
+            outputPosition = 0
+            outputLimit = total
+            if (total == BLOCK_SIZE) {
+                outputBuffer = if (chunkIndex % 3L == 0L) Utils.decryptBlowfish(inputBuffer, key) else inputBuffer
+                chunkIndex++
+            } else {
+                outputBuffer = inputBuffer
+                eof = true
+            }
+            return true
         }
 
-        val rawStream = response.body.byteStream()
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
 
-        BufferedInputStream(object : FilterInputStream(rawStream) {
-            private var blockCounter = alignedStart / blockSize
-            private var toDrop = dropBytes
-            private val tempBuffer = getBuffer(blockSize.toInt())
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (closed) throw IOException("Stream is closed")
+            if (offset < 0 || length < 0 || offset > buffer.size - length) throw IndexOutOfBoundsException()
+            if (length == 0) return 0
+            if (outputPosition >= outputLimit && (eof || !loadNextStripe())) return -1
+            val current = outputBuffer ?: throw IOException("Missing stripe output")
+            val count = minOf(length, outputLimit - outputPosition)
+            System.arraycopy(current, outputPosition, buffer, offset, count)
+            outputPosition += count
+            return count
+        }
 
-            override fun read(buf: ByteArray, off: Int, len: Int): Int {
-                while (true) {
-                    val chunkSize = blockSize.toInt().coerceAtMost(len)
-                    var totalRead = 0
-
-                    while (totalRead < chunkSize) {
-                        val r = `in`.read(tempBuffer, totalRead, chunkSize - totalRead)
-                        if (r == -1) break
-                        totalRead += r
-                    }
-                    if (totalRead == 0) return -1
-
-                    val processed = if (totalRead == chunkSize && blockCounter % 3 == 0L) {
-                        Utils.decryptBlowfish(tempBuffer, key)
-                    } else {
-                        tempBuffer
-                    }
-                    blockCounter++
-
-                    val drop = minOf(toDrop, totalRead)
-                    toDrop -= drop
-                    val toCopy = totalRead - drop
-                    if (toCopy == 0) continue
-                    System.arraycopy(processed, drop, buf, off, toCopy)
-                    return toCopy
+        // Closed once: the pooled buffer must never be returned twice, or two streams would share it.
+        override fun close() {
+            if (closed) return
+            closed = true
+            try {
+                source.close()
+            } finally {
+                try {
+                    onClose()
+                } finally {
+                    returnBuffer(inputBuffer)
                 }
             }
+        }
+    }
 
-            override fun close() {
-                super.close()
-                returnBuffer(tempBuffer)
+    // Drops the bytes between the aligned stripe start and the requested start, then passes the rest through.
+    private class RangeSlicingInputStream(
+        private val source: InputStream,
+        private var skipBytes: Long,
+    ) : InputStream() {
+        private var closed = false
+        private val discardBuffer = ByteArray(BLOCK_SIZE)
+
+        private fun discardPrefix() {
+            while (skipBytes > 0) {
+                val count = source.read(discardBuffer, 0, minOf(skipBytes, discardBuffer.size.toLong()).toInt())
+                if (count < 0) throw IOException("Unexpected EOF while seeking to requested byte")
+                skipBytes -= count
             }
+        }
 
-        }, blockSize.toInt() * 4)
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (closed) throw IOException("Stream is closed")
+            if (offset < 0 || length < 0 || offset > buffer.size - length) throw IndexOutOfBoundsException()
+            if (length == 0) return 0
+            discardPrefix()
+            return source.read(buffer, offset, length)
+        }
+
+        override fun close() {
+            if (closed) return
+            closed = true
+            source.close()
+        }
     }
 }

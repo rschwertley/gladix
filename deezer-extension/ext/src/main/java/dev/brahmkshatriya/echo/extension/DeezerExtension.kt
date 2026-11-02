@@ -377,6 +377,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         index: Int,
         new: List<Track>
     ) {
+        new.forEach { refuseEpisode(it, "Adding a podcast episode to a playlist") }
         handleArlExpiration()
         api.addToPlaylist(playlist, new)
     }
@@ -417,7 +418,24 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         api.updatePlaylist(playlist.id, title, description)
     }
 
+    /**
+     * ⚠⚠ A PODCAST EPISODE IS NOT A SONG (2026-11-02). Every Track branch here is a SONG endpoint keyed by id
+     * (favorite_song for like and save, playlist.addSongs, the loved-songs set for the reads), so an episode id sent
+     * to one of them names whatever song has that number. Refused with NotSupported, the type the app already shows
+     * as "not supported", and read back as not liked / not saved. Deezer's own episode favourites are not wired;
+     * that would be a feature, not this fix.
+     * [CORRECTED 2026-11-02, same day] "the app reads neither isLikeable nor isSaveable, so the guard is here" was
+     * wrong - the grep behind it was cut short. MediaMoreBottomSheet's Like and Save rows honour both (and on
+     * Oct 30-31 isSaveable = false removed "Remove from library" from Favorite tracks, confirmed on the device), so
+     * DeezerParser.toEpisode now clears them and the player hearts read isLikeable. This guard stays as the safety
+     * net for anything that still calls in (an episode built before this change, another entry point).
+     */
+    private fun refuseEpisode(item: EchoMediaItem, operation: String) {
+        if (item is Track && item.type == Track.Type.Podcast) throw ClientException.NotSupported(operation)
+    }
+
     override suspend fun likeItem(item: EchoMediaItem, shouldLike: Boolean) {
+        refuseEpisode(item, "Liking a podcast episode")
         handleArlExpiration()
         when (item) {
             is Track -> {
@@ -434,7 +452,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override suspend fun isItemLiked(item: EchoMediaItem): Boolean =
-        item is Track && isTrackLoved(item)
+        item is Track && item.type != Track.Type.Podcast && isTrackLoved(item)
 
     /**
      * Loved-list membership, session-cached. ONE definition, because for a Deezer TRACK the heart
@@ -579,6 +597,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override suspend fun isItemSaved(item: EchoMediaItem): Boolean {
+        if (item is Track && item.type == Track.Type.Podcast) return false
         return when (item) {
             is Album -> {
                 if (item.type == Album.Type.Show) {
@@ -628,6 +647,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     }
 
     override suspend fun saveToLibrary(item: EchoMediaItem, shouldSave: Boolean) {
+        refuseEpisode(item, "Saving a podcast episode")
         handleArlExpiration()
         when (item) {
             is Album -> {
@@ -771,7 +791,8 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                 async(Dispatchers.Default) {
                     parser.run {
                         val obj = section.jsonObject
-                        val title = obj["title"]?.jsonPrimitive?.contentOrNull
+                        // An EMPTY title falls back too (2026-11-02, as upstream 43998ca), not only an absent or null one.
+                        val title = obj["title"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }
                             ?: pageTitle.orEmpty()
                         val id = obj["section_id"]?.jsonPrimitive?.contentOrNull
                             ?: obj["module_id"]?.jsonPrimitive?.contentOrNull
@@ -940,8 +961,11 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * account: first the live session's ARL, then the ARL from a silent email/password re-login. Nothing else
      * is ever sent.
      * Never throws except on cancellation: every failure is a null, and the caller opens the sign-in screen.
+     * [2026-11-02] [allowRelogin] = false skips the silent email/password re-login, so linking never signs the phone
+     * in again. TvPairingFragment passes false: a phone with a stored password now sends that to the TV instead of
+     * relying on its own ARL, and the ARL beside it is only for TVs on older builds.
      */
-    suspend fun userForPairing(): User? {
+    suspend fun userForPairing(allowRelogin: Boolean = true): User? {
         fun User?.isReal() = this != null && !extras["arl"].isNullOrEmpty() &&
             extras["user_id"].let { !it.isNullOrBlank() && it != "0" }
         suspend fun User.worksOnTv() = api.userIdForArl(extras["arl"].orEmpty()) == extras["user_id"]
@@ -953,6 +977,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             null
         }
         if (live.isReal() && live!!.worksOnTv()) return live.also { session.notifyUserRenewed(it) }
+        if (!allowRelogin) return null
         val creds = session.credentials
         if (creds.email.isEmpty() || creds.pass.isEmpty() || session.credentialsRejected) return null
         val renewed = try {

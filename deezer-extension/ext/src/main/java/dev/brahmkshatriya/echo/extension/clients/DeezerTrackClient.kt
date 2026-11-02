@@ -7,6 +7,7 @@ import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSourc
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extension.AudioStreamProvider
 import dev.brahmkshatriya.echo.extension.DeezerApi
+import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import dev.brahmkshatriya.echo.extension.objOrNull
 import dev.brahmkshatriya.echo.extension.requireObj
 import dev.brahmkshatriya.echo.extension.DeezerExtension
@@ -17,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,7 +34,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         val source = media["sources"]?.jsonArray?.getOrNull(1)?.jsonObject
             ?: media["sources"]?.jsonArray?.firstOrNull()?.jsonObject
             ?: return null
-        return source["url"]?.jsonPrimitive?.content
+        // contentOrNull, not content (2026-11-02): `.content` on a JSON null is the STRING "null", which is not null,
+        // so the caller's `?: refusedAtRung(...)` never stepped down and the player was handed the URL "null".
+        // Still throws on an object or array here - only the null case changes.
+        return source["url"]?.jsonPrimitive?.contentOrNull
     }
 
     /**
@@ -709,6 +714,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // the old toSource() result and the pill shows exactly what it showed before.
         val isAlternateRecording = resolvedStreamable.extras.containsKey(ALT_VERSION_EXTRA)
         return if (resolvedStreamable.quality == 12) {
+            // A podcast episode's direct URL. Blank = no stream: "Not available", the same type and text as other
+            // unplayable items (2026-11-02), instead of handing the player an empty URL. DeezerParser.toEpisode
+            // already marks such an episode unplayable; this is the belt for anything that reaches playback anyway.
+            if (resolvedStreamable.id.isBlank()) throw MediaUnavailableException(DeezerApi.NOT_AVAILABLE_REASON)
             resolvedStreamable.id.toSource().toMedia()
         } else {
             Streamable.Source.Raw(
@@ -727,11 +736,35 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
 
     private val qualityOptions = listOf("flac", "320", "128")
 
+    /**
+     * ⚠⚠ AN EPISODE WITHOUT ITS STREAM IS RE-FETCHED HERE (2026-11-02), which is this function's half of the
+     * contract at HistoryEntity.toSlim: History and the saved queue drop every track's streamables on purpose
+     * (CursorWindow, 333bb36d) and each extension's loadTrack must restore them. Songs do (the TRACK_TOKEN
+     * re-fetch below); episodes were returned unchanged, so an episode replayed from History had nothing to play.
+     * Now episode.getData (DeezerShow.getEpisode) fetches it again by id and DeezerParser.toEpisode rebuilds it.
+     * The resume position travels with the restored track (playedDuration), so it is kept.
+     * "Not available" (MediaUnavailableException, as other unplayable items) when Deezer refuses the id or the
+     * episode has no direct stream URL. Network failures are NOT relabelled: they propagate as themselves, so a
+     * replay while offline reads as offline.
+     */
+    private suspend fun refetchEpisode(original: Track): Track {
+        val results = try {
+            api.getEpisode(original.id)["results"] as? JsonObject
+        } catch (_: DeezerGatewayException) {
+            null
+        }
+        val fresh = results?.let { parser.run { it.toEpisode() } }
+        if (fresh == null || fresh.streamables.none { it.id.isNotBlank() })
+            throw MediaUnavailableException(DeezerApi.NOT_AVAILABLE_REASON)
+        return fresh.copy(playedDuration = original.playedDuration ?: fresh.playedDuration)
+    }
+
     suspend fun loadTrack(original: Track): Track {
         deezerExtension.handleArlExpiration()
 
         if (original.type == Track.Type.Podcast) {
-            return original
+            if (original.streamables.any { it.id.isNotBlank() }) return original
+            return refetchEpisode(original)
         }
         if (original.extras[INFO_DETAILS_EXTRA] == "1") return withInfoDetails(original)
 

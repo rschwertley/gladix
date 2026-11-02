@@ -284,8 +284,6 @@ class FeedAdapter(
         var retainedButtons: FeedData.Buttons? = null
         var retainedTabIndex: Int? = null
         fragment.observe(viewModel.selectedTabIndexFlow) { index ->
-            // TabsProbe (TEMPORARY, TV only): what the tab row is told to check.
-            TabsProbe.log("selectedIndex -> $index fd=${TabsProbe.id(viewModel)}")
             tabs.selected = index
             if (retainedTabIndex != index) {
                 retainedTabIndex = index
@@ -363,6 +361,7 @@ class FeedAdapter(
                 shouldShowEmpty && itemCount == 0 && loadStates.append is LoadState.NotLoading
             empty.loadState = if (isEmpty) LoadState.Loading else LoadState.NotLoading(false)
         }
+        // Inline loading row hidden after the first load on purpose (Jun 13, "Detail Page Second-Load Spinner Suppression": stops the cache-then-network flash); not shown for tab changes either (decided 2026-11-02).
         var hasEverLoaded = false
         addLoadStateListener { loadStates ->
             if (loadStates.refresh is LoadState.NotLoading) hasEverLoaded = true

@@ -413,16 +413,18 @@ class LoginFragment : Fragment() {
                 pollingJob = launch {
                     while (isActive) {
                         delay(3000L)
-                        val arl = pollWorker(code) ?: continue
+                        val pairing = pollWorker(code) ?: continue
                         countdownJob?.cancel()
-                        loginViewModel.onSmartLoginComplete(arl)
+                        loginViewModel.onSmartLoginComplete(pairing)
                         return@launch
                     }
                 }
             }
         }
 
-        private suspend fun pollWorker(code: String): String? = withContext(Dispatchers.IO) {
+        // [2026-11-02] Returns the whole pairing: email and pass from a phone on a current build, the ARL from any
+        // build. Null until a pairing with an ARL or with both email and pass arrives.
+        private suspend fun pollWorker(code: String): LoginViewModel.SmartPairing? = withContext(Dispatchers.IO) {
             // Deliberate best-effort poll: a failure just means "try again next tick", so returning null is
             // intended. The cause is logged below; rethrowing would change the poll-retry control flow.
             // Suppressing Detekt SwallowedException here.
@@ -434,7 +436,13 @@ class LoginFragment : Fragment() {
                 conn.readTimeout = 8000
                 if (conn.responseCode == 200) {
                     val body = conn.inputStream.bufferedReader().readText()
-                    org.json.JSONObject(body).optString("arl", "").takeIf { it.isNotEmpty() }
+                    val json = org.json.JSONObject(body)
+                    fun field(key: String) = json.optString(key, "").takeIf { it.isNotEmpty() }
+                    val arl = field("arl")
+                    val email = field("email")
+                    val pass = field("password")
+                    if (arl == null && (email == null || pass == null)) null
+                    else LoginViewModel.SmartPairing(arl, email, pass)
                 } else null
             } catch (e: Exception) {
                 // Fires only on a real connection failure (DNS/timeout/cert/offline) — NOT the normal

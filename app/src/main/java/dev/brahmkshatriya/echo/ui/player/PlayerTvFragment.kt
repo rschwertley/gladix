@@ -204,7 +204,9 @@ class PlayerTvFragment : Fragment() {
             binding.tvTrackHeart.isChecked = item.isLiked
             likeListener.enabled = true
             lifecycleScope.launch {
-                val showHeart = viewModel.isLikeClient(item.extensionId)
+                // && isLikeable (2026-11-02): no heart for an item the extension marks not likeable (a Deezer podcast
+                // episode), as on the phone. The focus hand-off below covers this hide too.
+                val showHeart = viewModel.isLikeClient(item.extensionId) && item.track.isLikeable
                 // Hiding the FOCUSED heart (next track from an extension without likes) dropped focus out of the
                 // player entirely (2026-10-31). Hand it to the heart's own Down neighbour first.
                 if (!showHeart && binding.tvTrackHeart.hasFocus()) binding.tvSeekBar.requestFocus()

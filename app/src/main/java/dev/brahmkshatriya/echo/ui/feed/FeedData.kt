@@ -262,13 +262,12 @@ data class FeedData(
     // [CORRECTED 2026-10-31, same day] "on TV that dropped focus from the chosen tab (the Library bounce)" rests on
     // the superseded reload theory (see chosenTabId's correction): selecting a tab was found not to re-emit
     // stateFlow, and the bounce shows no loading flash. This skip is not the bounce fix; the cause is open (TabsProbe).
+    // [CORRECTED 2026-11-02] No longer open: the bounce was the OK key itself (focus jumped to tab 0 ~30 ms after OK
+    // DOWN), fixed by TabsAdapter's OK-down/OK-up handling and confirmed on the device 2026-11-02. TabsProbe is removed.
     val tabsFlow = stateFlow.filter { (cached, loaded) -> cached != null || loaded != null }.map { (cached, loaded) ->
         val state = (loaded?.getOrNull() ?: cached?.getOrNull()) ?: return@map listOf()
         state.feed.tabs.map {
             FeedTab(feedId, state.extensionId, it)
-        }.also { tabs ->
-            // TabsProbe (TEMPORARY, TV only).
-            TabsProbe.log("tabsFlow feedId=$feedId fd=${TabsProbe.id(this)} ext=${state.extensionId} tabs=${tabs.map { it.tab.id }}")
         }
     }
 
@@ -576,6 +575,8 @@ data class FeedData(
      * cachedDataFlow/loadedDataFlow emit null first), and because selecting a tab was found not to re-emit
      * stateFlow. It is recorded as superseded. The field stays as a correct guard against that race, not as the
      * bounce fix; the bounce cause is open (TabsProbe).
+     * [CORRECTED 2026-11-02] Closed: the cause was the OK key (see TabsAdapter's OK-down/OK-up note), confirmed fixed
+     * on the device 2026-11-02; TabsProbe is removed.
      */
     @Volatile
     private var chosenTabId: String? = null
@@ -584,11 +585,6 @@ data class FeedData(
         val state = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }
         val tab = state?.feed?.tabs?.getOrNull(pos)
             ?.takeIf { state.extensionId == extensionId }
-        // TabsProbe (TEMPORARY, TV only): the write, and the extension check that can turn it into null.
-        TabsProbe.log(
-            "write selectedTab=${tab?.id} site=selectTab pos=$pos tabAtPos=${state?.feed?.tabs?.getOrNull(pos)?.id} " +
-                "stateExt=${state?.extensionId} tabExt=$extensionId fd=${TabsProbe.id(this)} caller=${TabsProbe.caller()}"
-        )
         if (tab != null) chosenTabId = tab.id
         selectedTabFlow.value = tab
         // Off Main + single-flight: cancel any pending save and persist the CURRENT selection (read at
@@ -603,13 +599,8 @@ data class FeedData(
 
     init {
         scope.launch(Dispatchers.IO) {
-            // Each source mapped to its name (TabsProbe, TEMPORARY): the merge, debounce and collectLatest are as
-            // before; only the emitted value changes, and nothing but the probe line reads it.
-            listOfNotNull(
-                current.map { "current" }, refreshFlow.map { "refresh" }, usersFlow.map { "users" },
-                extraLoadFlow.map { "extra" },
-            ).merge().debounce(100L).collectLatest { source ->
-                    TabsProbe.log("reload feedId=$feedId fd=${TabsProbe.id(this@FeedData)} source=$source")
+            listOfNotNull(current, refreshFlow, usersFlow, extraLoadFlow)
+                .merge().debounce(100L).collectLatest {
                     cachedState.value = null
                     loadedState.value = null
                     extensionLoader.current.value ?: return@collectLatest
@@ -631,11 +622,6 @@ data class FeedData(
                     }
                     feed.find { it.id == last } ?: feed.firstOrNull()
                 }
-                // TabsProbe (TEMPORARY, TV only).
-                TabsProbe.log(
-                    "write selectedTab=${selectedTabFlow.value?.id} site=stateCollector chosen=$chosenTabId " +
-                        "fd=${TabsProbe.id(this@FeedData)} caller=${TabsProbe.caller()}"
-                )
             }
         }
     }

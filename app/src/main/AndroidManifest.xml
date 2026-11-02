@@ -88,6 +88,12 @@
         </intent>
     </queries>
 
+    <!-- android:banner: res/drawable-xhdpi/tv_banner.png (320x180) and drawable-xxhdpi/tv_banner.png (480x270), rendered
+         2026-11-02 with resvg from the Option A vector (drawable/tv_banner.xml, last in f674494c, its comment has the
+         layout): launcher logo plus "Gladix" in Nunito ExtraBold outlines on #1A0A2E, visible content 252.33 of 320
+         units wide, centred. Raster, and the activities' own android:banner, because Wolf Launcher (Onn 4K Pro) showed
+         the icon fallback with the vector set on <application> only; which of the two it needed is not known.
+         To change the design, edit that vector and render it again; it is the source. -->
     <application
         android:name=".MainApplication"
         android:appCategory="audio"
@@ -148,8 +154,12 @@
                 android:resource="@xml/widget_horizontal" />
         </receiver>
 
+        <!-- android:banner on both LEANBACK_LAUNCHER activities as well as <application> (2026-11-02): the framework
+             falls back to the application's (ComponentInfo.getBannerResource), but a launcher that reads the
+             activity's own banner field gets 0 and shows the icon-plus-name fallback instead. -->
         <activity
             android:name=".MainActivity"
+            android:banner="@drawable/tv_banner"
             android:enableOnBackInvokedCallback="false"
             android:enabled="true"
             android:exported="true"
@@ -251,6 +261,7 @@
 
         <activity
             android:name=".MainActivity$Back"
+            android:banner="@drawable/tv_banner"
             android:enableOnBackInvokedCallback="true"
             android:enabled="false"
             android:exported="true"

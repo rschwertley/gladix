@@ -5,13 +5,11 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.core.view.children
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonGroup
-import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.ItemTabBinding
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.databinding.ItemTabContainerBinding
@@ -84,9 +82,6 @@ class TabsAdapter<T>(
     // (2026-11-01, see the key listener in apply()). On the adapter, not the button, so every tab's listener sees it.
     private var okDownTab = -1
 
-    // TabsProbe (TEMPORARY): true while apply() sets the checked states, so a checked change can be attributed.
-    private var applying = false
-
     fun apply(parent: MaterialButtonGroup) {
         val tabs = data
         parent.isVisible = tabs.isNotEmpty()
@@ -95,32 +90,18 @@ class TabsAdapter<T>(
         val inflater = LayoutInflater.from(parent.context)
         if (toKeep > 0) repeat(toKeep) {
             val tab = ItemTabBinding.inflate(inflater, parent, false).root
-            // TV only (phone: isTv() == false → no-op, layout unchanged): focus frame (distinguish D-pad
-            // focus from the checked tab) + bigger 10-foot tab text. New foreground instance per tab
-            // (Drawables must not be shared across views).
+            // TV only (phone: isTv() == false → no-op, layout unchanged): bigger 10-foot tab text.
+            // [CORRECTED 2026-11-02] The focus frame is no longer a tv_focus_pill foreground here: the checked tab is
+            // a rounded rectangle (Expressive state-list shape), so the fixed pill did not fit it. TvFocusRing now
+            // draws focus as the tab's own stroke, which follows its shape in every state.
             if (parent.context.isTv()) {
-                tab.foreground = ContextCompat.getDrawable(parent.context, R.drawable.tv_focus_pill)
                 tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             }
             parent.addView(tab)
-            // TabsProbe (TEMPORARY, TV only - enabled is false on the phone): every checked change with its source,
-            // and focus moves in the tab row.
-            if (TabsProbe.enabled) {
-                tab.addOnCheckedChangeListener { b, checked ->
-                    TabsProbe.log(
-                        "checked tab=${parent.indexOfChild(b)} -> $checked source=${if (applying) "apply" else "other"} " +
-                            "selected=$selected"
-                    )
-                }
-                tab.setOnFocusChangeListener { v, hasFocus ->
-                    TabsProbe.log("focus tab=${parent.indexOfChild(v)} has=$hasFocus")
-                }
-            }
         } else if (toKeep < 0) repeat(-toKeep) {
             parent.getChildAt(tabs.size + it).isVisible = false
         }
-        applying = true
-        try { tabs.indices.forEach { i ->
+        tabs.indices.forEach { i ->
             val tab = tabs[i]
             val button = parent.getChildAt(i) as MaterialButton
             button.apply {
@@ -130,7 +111,6 @@ class TabsAdapter<T>(
                 isChecked = i == selected
                 // Single selection action shared by touch (OnClickListener) and D-pad OK (OnKeyListener).
                 val select = View.OnClickListener { v ->
-                    TabsProbe.log("select tab=$i selected=$selected -> ${if (i == selected) "already selected" else "onTabSelected"}")
                     if (i == selected) isChecked = true
                     else onTabSelected(v, i, tab)
                 }
@@ -173,8 +153,9 @@ class TabsAdapter<T>(
                 //     focuses and clicks THAT tab, so the selection no longer depends on where focus is at release.
                 //     An UP with no DOWN in this row (the press started elsewhere) is consumed and does nothing.
                 // Phone: touch never reaches a key listener; a hardware keyboard's Enter loses only the pressed look.
+                // [CONFIRMED 2026-11-02] On the device (TV): OK on Playlists opens Playlists. Which of the two halves
+                // did it was not measured - both stay. The temporary TabsProbe that reported the 1160 jump is removed.
                 setOnKeyListener { _, keyCode, event ->
-                    TabsProbe.log("key tab=$i code=$keyCode action=${event.action} selected=$selected")
                     val confirm = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
                     if (confirm && event.action == KeyEvent.ACTION_DOWN) {
                         if (event.repeatCount == 0) okDownTab = i
@@ -187,17 +168,11 @@ class TabsAdapter<T>(
                             if (!chosen.hasFocus()) chosen.requestFocus()
                             chosen.performClick()
                         }
-                        TabsProbe.markAfterOk(target) {
-                            val checked = (0 until parent.childCount)
-                                .filter { (parent.getChildAt(it) as? MaterialButton)?.isChecked == true }
-                            "selected=$selected checked=$checked focused=${(0 until parent.childCount)
-                                .firstOrNull { parent.getChildAt(it).hasFocus() }}"
-                        }
                         true
                     } else false
                 }
             }
-        } } finally { applying = false }
+        }
     }
 
     class ViewHolder(

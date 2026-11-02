@@ -32,6 +32,7 @@ import dev.brahmkshatriya.echo.ui.playlist.edit.EditPlaylistFragment
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyContentInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.configure
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.observeUserRefresh
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getFeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getTouchHelper
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
@@ -229,11 +230,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         binding.swipeRefresh.run {
             configure()
             setOnRefreshListener { viewModel.refreshTracks() }
-            var hasEverLoaded = false
-            observe(loadingFlow) { isLoading ->
-                if (!isLoading) hasEverLoaded = true
-                isRefreshing = hasEverLoaded && isLoading
-            }
+            observeUserRefresh(this, loadingFlow)
         }
         if (parent.fromPlayer) {
             binding.swipeRefresh.isEnabled = false

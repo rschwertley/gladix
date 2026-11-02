@@ -463,8 +463,10 @@ class DeezerParser(private val session: DeezerSession) {
                 "album" in t -> toAlbum()
                 "song" in t -> toTrack()
                 "artist" in t -> toArtist(isShelfItem = true)
-                "show" in t -> toShow()
+                // Episode BEFORE show (2026-11-02): both are substring tests, so a __TYPE__ that contains both
+                // words would have been parsed as a show. Exact "show" and "episode" are unaffected.
                 "episode" in t -> toEpisode()
+                "show" in t -> toShow()
                 "flow" in t -> toRadio()
                 else -> null
             }
@@ -489,16 +491,30 @@ class DeezerParser(private val session: DeezerSession) {
         val md5 = data.str("SHOW_ART_MD5")
         val title = data.str("EPISODE_TITLE").orEmpty()
         val id = data.str("EPISODE_ID").orEmpty()
+        val url = data.str("EPISODE_DIRECT_STREAM_URL").orEmpty()
         Track(
             id = id,
             title = title,
             type = Track.Type.Podcast,
+            // ⚠️ NO DIRECT STREAM URL IS "Not available" (2026-11-02), marked exactly as DeezerApi.markUnplayable marks a
+            // dead song, so the row is dimmed, kept out of the queue and skipped like one. The episode used to play
+            // an empty URL and fail with the player's own error. DeezerTrackClient.loadStreamableMedia refuses a
+            // blank episode URL as well, for anything that reaches playback anyway (an older saved queue).
+            isPlayable = if (url.isBlank()) Track.Playable.No(DeezerApi.NOT_AVAILABLE_REASON) else Track.Playable.Yes,
+            // No Radio, Like or Save (2026-11-02): each is a SONG endpoint keyed by id, so an episode id names whatever
+            // song has that number. MediaMoreBottomSheet offers each row only when its flag is true (Cached fills
+            // isSaved/isLiked only for isSaveable/isLikeable items), and the player heart reads isLikeable. "Save to
+            // playlist" has no flag in :common; MediaMoreBottomSheet.getPlaylistEditButtons leaves it out for
+            // Track.Type.Podcast. DeezerExtension.refuseEpisode stays as the safety net.
+            isRadioSupported = false,
+            isLikeable = false,
+            isSaveable = false,
             cover = getCover(md5, "talk"),
             duration = data.long("DURATION")?.times(1000),
             playedDuration = bookmark[id]?.times(1000),
             streamables = listOf(
                 Streamable.server(
-                    id = data.str("EPISODE_DIRECT_STREAM_URL").orEmpty(),
+                    id = url,
                     title = title,
                     quality = 12
                 )
@@ -509,7 +525,10 @@ class DeezerParser(private val session: DeezerSession) {
                 "TRACK_TOKEN_EXPIRE" to data.str("TRACK_TOKEN_EXPIRE").orEmpty(),
                 "FILESIZE_MP3_MISC" to (data.str("FILESIZE_MP3_MISC") ?: "0"),
                 "TYPE" to "talk",
-                "__TYPE__" to "show"
+                // "episode", was "show" (2026-11-02). Nothing reads this extra in either module today (grep of both
+                // for __TYPE__ and for the extras key); corrected so it cannot mislead a future reader into treating
+                // an episode as a show.
+                "__TYPE__" to "episode"
             )
         )
     }
