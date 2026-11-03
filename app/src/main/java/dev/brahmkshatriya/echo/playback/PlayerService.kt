@@ -115,7 +115,8 @@ class PlayerService : MediaLibraryService() {
 
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
-    private val exoPlayer by lazy {
+    // Explicit type: with the probe's .also below, inferring it recursed (release build, 2026-11-02). Keep it after removal.
+    private val exoPlayer: ExoPlayer by lazy {
         createExoplayer(this.audioEffectsProcessor)
             // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Main player only; the sidecar keeps no listeners.
             .also { it.addAnalyticsListener(StartProbe.listener(app)) }
