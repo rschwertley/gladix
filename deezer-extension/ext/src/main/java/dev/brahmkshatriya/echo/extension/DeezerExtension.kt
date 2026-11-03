@@ -54,7 +54,9 @@ import dev.brahmkshatriya.echo.extension.clients.DeezerPlaylistClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerRadioClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerSearchClient
 import dev.brahmkshatriya.echo.extension.clients.DeezerTrackClient
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -1271,6 +1273,37 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * (credentials present, used, and REFUSED) look unfixable. That state is distinguishable where
      * it happens; see the note at DeezerApi.callApi's CSRF branch.
      */
+    /**
+     * ⚠⚠ THE DEAD-SONG CHECK RUNS HERE, OFF THE LIST LOAD (2026-11-02). It used to run inside each list loader
+     * (DeezerApi.markUnplayable), so a page, Play, Shuffle and the Android Auto browse all waited for it: 15
+     * sequential pipe requests for a ~1,500-song playlist before the first song. Now a loader returns its rows with
+     * the verdicts already known (DeezerApi.markKnown) and calls this; the unknown ids are checked in the
+     * background and land in DeezerApi's in-memory verdicts, which the next load, the playlist page's marks pass
+     * (DeezerPlaylistClient's AVAILABILITY_AWAIT_EXTRA) and the stream path (DeezerTrackClient) read.
+     * One job per [key]: a second call while one runs joins it rather than starting another pass.
+     * ⚠️ NOTHING ESCAPES extensionScope: the body is runCatching'd, so the Deferred never completes exceptionally
+     * and an awaiting [awaitAvailability] never rethrows. A failed or timed-out chunk just leaves its ids unknown,
+     * which is the fail-open answer markUnplayable always gave.
+     */
+    fun checkAvailabilityLater(key: String, tracks: List<Track>): Boolean {
+        if (api.unknownIds(tracks).isEmpty()) return false
+        val job = availabilityChecks.compute(key) { _, running ->
+            running?.takeIf { it.isActive } ?: extensionScope.async {
+                runCatching { api.tracksAvailability(api.unknownIds(tracks)) }
+                Unit
+            }
+        }!!
+        job.invokeOnCompletion { availabilityChecks.remove(key, job) }
+        return true
+    }
+
+    // Waits for [key]'s running check, if any. Never throws (see checkAvailabilityLater).
+    suspend fun awaitAvailability(key: String) {
+        availabilityChecks[key]?.await()
+    }
+
+    private val availabilityChecks = ConcurrentHashMap<String, Deferred<Unit>>()
+
     suspend fun handleArlExpiration() {
         val creds = session.credentials
         val isArlExpired = session.arlExpired || creds.arl.isEmpty()

@@ -143,9 +143,19 @@ class DeezerLibraryClient(
             // One batched availability pass over the same rows - see DeezerApi.markUnplayable.
             // Both tab paths get it because the same list is declared to the app from both; see
             // the customTrackList note at loadLibraryFeed.
-            val grafted = api.markUnplayable(
-                items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-            )
+            // [CORRECTED 2026-11-02] No longer waited for: the known verdicts are applied now and the rest are
+            // checked in the background (DeezerExtension.checkAvailabilityLater), so they mark the next load -
+            // Library and the Android Auto declared list, which is rewritten on every browse.
+            // ⚠️ NEXT LOAD BY DESIGN, NOT THE SAME VISIT (decided 2026-11-02). Same-visit dimming, as playlist pages
+            // get, needs a channel the library feed lacks (loadLibraryFeed takes no item to carry the await flag, the
+            // All tab's carousel would need marks too): ~100 lines across ~7 files, judged not worth it. Do not move
+            // this back inline either: that blocked Library behind 100-id pipe requests, one after another, on large
+            // libraries. A dead liked song played before it is dimmed still skips instantly once its verdict is known
+            // (DeezerTrackClient.loadTrack's isKnownDead check). Library pull-to-refresh does not clear these
+            // verdicts (no flag reaches here); they expire after DeezerApi's AVAIL_TTL_MS.
+            val grafted = items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it) }
+                .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
             deezerExtension.refreshLiked(grafted)
             val shelf = grafted.takeIf { it.isNotEmpty() }
@@ -166,9 +176,10 @@ class DeezerLibraryClient(
         return if (id == TabId.TRACKS.id) {
             // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed,
             // plus one batched availability pass - see DeezerApi.markUnplayable.
-            val liked = api.markUnplayable(
-                arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-            )
+            // [CORRECTED 2026-11-02] Background check, as in allRow above; marks on the next load by design (see there).
+            val liked = arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it) }
+                .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
             deezerExtension.refreshLiked(liked)
             liked.map { it.toShelf() } to liked
@@ -213,6 +224,8 @@ class DeezerLibraryClient(
     private companion object {
         // US English, matching Deezer's US app.
         const val FAVORITE_TRACKS = "Favorite tracks"
+        // One background check for the liked list, whichever tab or Android Auto asked first.
+        const val LIKED_AVAILABILITY_KEY = "liked"
     }
 
     // Lenient at every hop (DeezerJson): an empty library tab is a genuine state, and every

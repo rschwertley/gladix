@@ -33,6 +33,7 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.bustAlbumTracksCache
 import dev.brahmkshatriya.echo.extensions.cache.Cached.bustPlaylistTracksCache
 import dev.brahmkshatriya.echo.extensions.cache.Cached.getFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.getTracks
+import dev.brahmkshatriya.echo.extensions.cache.Cached.tracksMarkedFlow
 import dev.brahmkshatriya.echo.extensions.cache.Cached.tracksRevalidatedFlow
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadFeed
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadItem
@@ -183,7 +184,16 @@ abstract class MediaDetailsViewModel(
         })
     }.stateIn(viewModelScope, Eagerly, null)
 
+    // Dead-song marks for this page's rows, by track id, from Cached's marks pass (2026-11-02). Applied in place by
+    // FeedAdapter.playableMarks - never through tracksSwappedIn, which would reload the feed.
+    val playableMarks = MutableStateFlow<Map<String, Track.Playable>>(emptyMap())
+
     init {
+        viewModelScope.launch {
+            tracksMarkedFlow.collect { (id, marks) ->
+                if (id == itemResultFlow.value?.getOrNull()?.item?.id) playableMarks.value = marks
+            }
+        }
         viewModelScope.launch {
             tracksRevalidatedFlow.collect { id ->
                 // Id match only: one instance of this ViewModel exists per open page, and a

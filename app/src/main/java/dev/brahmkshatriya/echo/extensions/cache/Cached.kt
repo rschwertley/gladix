@@ -41,6 +41,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.history.db.toSlim
+import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.utils.CacheUtils
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
@@ -111,6 +112,15 @@ object Cached {
     // every existing playlist entry for no gain. Two folders cost nothing and cannot collide.
     private const val DURABLE_ALBUM_FOLDER = "album-tracks"
     private const val MEMO_ALBUM_PREFIX = "album:"
+    // The marks pass's memo entry (see launchMarksPass) - its own key, so it never joins or replaces the rows'.
+    private const val MEMO_MARKS_PREFIX = "marks:"
+    // DeezerPlaylistClient's two availability extras, by literal: app code cannot see that module (the same
+    // reason HistoryEntity names FALLBACK_ID by literal). Keep the strings in step with it.
+    // On a row: its dead-song check is still running. On the Playlist handed to loadTracks: the marks pass.
+    private const val AVAILABILITY_PENDING_EXTRA = "gladix_availability_pending"
+    private const val AVAILABILITY_AWAIT_EXTRA = "gladix_availability_await"
+    // On the item handed to loadTracks after a cache bust: forget this list's verdicts and check again.
+    private const val AVAILABILITY_RECHECK_EXTRA = "gladix_availability_recheck"
     // Shared by both stores: the reasoning is identical (people reopen the same lists across days, and the
     // things that change underneath - a playlist edited elsewhere, an album's catalog metadata - change far
     // more slowly than that). Every in-app mutation busts its own entry, so this bounds only EXTERNAL edits.
@@ -219,8 +229,16 @@ object Cached {
      * ONE FUNCTION, NOT TWO: the old pair differed only in which context key it allowlisted, so the
      * note claiming the two forms "cannot be merged" expired with the allowlist itself.
      */
+    // ⚠⚠ [2026-11-02] NO VERDICT IN THE STORE: isPlayable is written as Yes ("no opinion") and the pending
+    // marker is dropped. The Oct 25 rule (a persisted verdict must not outlive a list reload) was applied to the
+    // saved queue and History but not here, and the page paints this store at any age while the background
+    // refresh only swaps it on an id change (revalidatePlaylistTracks) - so a dimmed row stayed dimmed across
+    // reloads. Marks now come only from this session's check, through launchMarksPass.
     private fun Track.toTracksCacheSlim(): Track =
-        toSlim().copy(extras = extras - "TRACK_TOKEN")
+        toSlim().copy(
+            extras = extras - "TRACK_TOKEN" - AVAILABILITY_PENDING_EXTRA,
+            isPlayable = Track.Playable.Yes,
+        )
 
     /**
      * Bump when the stored shape changes meaning; see [CachedPlaylistTracks.schema].
@@ -268,7 +286,19 @@ object Cached {
         // coalescedTracks call in loadPlaylistTracksCached. A raw-id removal would silently miss for
         // any extension that canonicalizes (YouTube Music's "VL" prefix).
         inFlightTracks.remove(memoPrefix + canonicalId(id))
+        // The marks pass's entry too (2026-11-02): it holds the pre-edit rows, and would re-emit their marks
+        // without checking any song the edit added.
+        inFlightTracks.remove(MEMO_MARKS_PREFIX + canonicalId(id))
+        // And the extension's verdicts for this list (2026-11-02): the next fetch carries AVAILABILITY_RECHECK_EXTRA,
+        // so Deezer forgets those rows' 30-minute verdicts and checks them again - a verdict must not outlive a
+        // reload (Oct 25). Consumed by that fetch (recheckRequested).
+        recheckLists += memoPrefix + canonicalId(id)
     }
+
+    private val recheckLists: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    // True once after a bust of [key]'s list - the fetch that asks for it passes AVAILABILITY_RECHECK_EXTRA.
+    private fun recheckRequested(key: String) = recheckLists.remove(key)
 
     /**
      * Write a KNOWN-GOOD track list straight into both layers, bypassing any fetch.
@@ -589,7 +619,10 @@ object Cached {
                 ?.takeUnless {
                     (it.item as? Track)?.servers?.isEmpty() == true || it.probesDegraded
                 }
-                ?.let { return@runCatching withCallerVerdict(state.item, it) }
+                ?.let {
+                    StartProbe.cacheHit(state.item.id) // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+                    return@runCatching withCallerVerdict(state.item, it)
+                }
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
                 // Deleted/unavailable content: some extensions (e.g. Deezer) return a BLANK item (empty id)
@@ -872,6 +905,53 @@ object Cached {
     private val tracksRevalidated = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val tracksRevalidatedFlow = tracksRevalidated.asSharedFlow()
 
+    /**
+     * Emits (playlist id, verdicts of its marked rows) when the background dead-song check for an open page
+     * finds rows to dim. ⚠⚠ NOT A SWAP-IN: the page applies these to the rows it already shows
+     * (FeedAdapter.playableMarks), with no feed reload - no blank frame, no scroll jump. Routing marks through
+     * [tracksRevalidated] would rebuild the whole feed, which is exactly what that flow's note warns against.
+     */
+    private val tracksMarked =
+        MutableSharedFlow<Pair<String, Map<String, Track.Playable>>>(extraBufferCapacity = 8)
+    val tracksMarkedFlow = tracksMarked.asSharedFlow()
+
+    /**
+     * The marks pass for an open playlist page (2026-11-02). Deezer's loadTracks no longer waits for its dead-song
+     * check, so rows arrive with only the verdicts already known and AVAILABILITY_PENDING_EXTRA on each. This asks
+     * once more with AVAILABILITY_AWAIT_EXTRA, which waits for that check and returns the same rows marked - no
+     * second getSongs, no second check (DeezerPlaylistClient.loadTracks) - and emits the dimmed ones to the page.
+     * ⚠️ OPT-IN BY THE ROWS: nothing runs unless a row carries the pending extra, which only Deezer writes, so no
+     * other extension gets a second request. Background on app.scope, failures swallowed (a missed pass costs only
+     * the dimming; the 1148 skip handles a dead song either way). Its own memo key, so a page reopened inside
+     * MEMORY_TTL_MS re-emits from the memo without asking again.
+     */
+    private fun launchMarksPass(app: App, extension: Extension<*>, item: Playlist, rows: List<Track>) {
+        if (rows.none { it.extras[AVAILABILITY_PENDING_EXTRA] == "1" }) return
+        app.scope.launch {
+            runCatching {
+                val marked = coalescedTracks(app, MEMO_MARKS_PREFIX + canonicalId(item.id)) {
+                    val awaiting = item.copy(extras = item.extras + (AVAILABILITY_AWAIT_EXTRA to "1"))
+                    extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(awaiting) }
+                        .getOrThrow().loadAll()
+                }.tracks
+                val marks = marked.filter { it.isPlayable != Track.Playable.Yes }
+                    .associate { it.id to it.isPlayable }
+                if (marks.isNotEmpty()) tracksMarked.emit(item.id to marks)
+            }
+        }
+    }
+
+    /**
+     * The playlist's track list if the page has already loaded it or is loading it right now (the shared memo),
+     * else null. For PlayerCallback.listTracks: Play or Shuffle that cannot reuse the page's rows joins the page's
+     * own load instead of starting a second getSongs. ⚠️ NEVER STARTS A LOAD: with no live entry the caller keeps
+     * its own path, so a paged extension's first-page start and background fill (playItem) are unchanged.
+     */
+    suspend fun joinPlaylistTracks(item: Playlist): List<Track>? =
+        inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
+            ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
+            ?.second?.await()
+
 
     /**
      * [fetched] is false when the list came from the 5-minute memo rather than from a real request.
@@ -953,8 +1033,11 @@ object Cached {
         // carries the loaded id, so it is self-consistent on the raw value. The memory entry is the one a
         // prefetch warm (unloaded id) and a user tap (loaded id) must BOTH hit, so it has to normalize or
         // every warm would silently miss and the feature would do nothing at all.
-        val result = coalescedTracks(app, MEMO_PLAYLIST_PREFIX + canonicalId(item.id)) {
-            val feed = extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow()
+        val memoKey = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
+        val result = coalescedTracks(app, memoKey) {
+            val asked = if (!recheckRequested(memoKey)) item
+            else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
+            val feed = extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }.getOrThrow()
             feed.loadAll()
         }
         // result.fetched: only a REAL request may write the store or renew the 24h lease. See the
@@ -968,6 +1051,7 @@ object Cached {
             ),
             DURABLE_PLAYLIST_FOLDER, durable = true
         )
+        launchMarksPass(app, extension, item, result.tracks)
         return result.tracks.toFeed()
     }
 
@@ -1007,7 +1091,11 @@ object Cached {
         app.scope.launch {
             runCatching {
                 val result = coalescedTracks(app, key) {
-                    extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }
+                    // A bust followed by a known-good write (a playlist save) paints from the store, so this is
+                    // the fetch that carries the re-check - see bustTracksCache.
+                    val asked = if (!recheckRequested(key)) item
+                    else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
+                    extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
                         .getOrThrow().loadAll()
                 }
                 // ⚠⚠ THIS PATH WRITES WHETHER OR NOT IT FETCHED, UNLIKE THE ONE IN
@@ -1019,6 +1107,9 @@ object Cached {
                 // thing savedAtMs still gates for a playlist is [warmPlaylistTracks]' skip, where
                 // suppressing a warm after a real list arrived is also correct.
                 val fresh = result.tracks
+                // Before the swap checks below: the page painted from the store, which holds no verdicts, so the
+                // marks for those rows come from this pass whether or not the list itself changed.
+                launchMarksPass(app, extension, item, fresh)
                 // An empty result is not evidence of an empty playlist. DeezerPlaylistClient already
                 // refuses to degrade a gateway error into an empty list, but a third-party extension
                 // may not - so an empty fetch never replaces a non-empty cached list.
@@ -1099,8 +1190,12 @@ object Cached {
         // "album:" prefix for the same reason the folders are separate: coalescedTracks is ONE map, and an
         // album and a playlist sharing an id string would otherwise share an in-flight entry and serve each
         // other's tracks. canonicalId for the same reason as the playlist path.
-        val result = coalescedTracks(app, MEMO_ALBUM_PREFIX + canonicalId(item.id)) {
-            val feed = extension.getAs<AlbumClient, Feed<Track>?> { loadTracks(item) }.getOrThrow()
+        val memoKey = MEMO_ALBUM_PREFIX + canonicalId(item.id)
+        val result = coalescedTracks(app, memoKey) {
+            // See bustTracksCache: the first fetch after a bust re-checks the extension's verdicts.
+            val asked = if (!recheckRequested(memoKey)) item
+            else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
+            val feed = extension.getAs<AlbumClient, Feed<Track>?> { loadTracks(asked) }.getOrThrow()
                 ?: return@coalescedTracks emptyList()
             feed.loadAll()
         }

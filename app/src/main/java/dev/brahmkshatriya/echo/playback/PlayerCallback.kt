@@ -917,7 +917,13 @@ class PlayerCallback(
 
         is Playlist -> extension.getAs<PlaylistClient, PagedData<Track>> {
             val playlist = if (!loaded) loadPlaylist(item) else item
-            loadTracks(playlist).pagedDataOfFirst()
+            // [2026-11-02] Joins the page's own load when there is one (running, or done within Cached's
+            // MEMORY_TTL_MS) instead of starting a second getSongs; the whole list, so no background fill follows.
+            // With none, unchanged: the extension's first page now, the rest after the queue starts.
+            Cached.joinPlaylistTracks(playlist)?.let { joined ->
+                StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+                PagedData.Single { joined }
+            } ?: loadTracks(playlist).pagedDataOfFirst()
         }
 
         is Radio -> extension.getAs<RadioClient, PagedData<Track>> {

@@ -72,6 +72,12 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
  *   The rail's own focus wash is gone with it (tv_nav_item_ripple's focused state is now transparent).
  * [CORRECTED 2026-11-02] "nav rail items" in the first paragraph's list: they get the indicator ring above, not
  * this overlay's ring.
+ * [CORRECTED 2026-11-02, later] "so the ring sits where the pill is" was wrong on the TV rail: it was centred on the
+ * indicator's LAYOUT box, while the pill draws with the icon container's bounds (taller here), so the ring sat ~2dp
+ * high - seen on the 1164 device (bottom touching, gap on top). It now uses the drawn bounds; see drawnPillBounds.
+ * [CORRECTED 2026-11-02, later] "e.g. the selected Library tab, a rounded rectangle" no longer holds on TV: the tabs
+ * and the feed's search toggle use values-television's TabButton / ToggleIconButton, a full pill in every state. Their
+ * shape is still a state LIST (xml/tv_button_shape_pill), so they still take this stroke path.
  */
 object TvFocusRing {
 
@@ -113,9 +119,14 @@ object TvFocusRing {
             place?.invoke()
             current?.invalidate()
         }
+        // Rail ring only: re-placed just before every frame, because the pill's drawn bounds can change with no layout
+        // change at all (see drawnPillBounds). Invalidates only when the ring actually moved.
+        var preDraw: ViewTreeObserver.OnPreDrawListener? = null
         root.viewTreeObserver.addOnGlobalFocusChangeListener(ViewTreeObserver.OnGlobalFocusChangeListener { _, new ->
             current?.let { old -> ring?.let { old.overlay.remove(it) } }
             followed.forEach { it.removeOnLayoutChangeListener(follow) }
+            preDraw?.let { listener -> root.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(listener) }
+            preDraw = null
             stroked?.run {
                 strokeWidth = savedStrokeWidth
                 strokeColor = savedStrokeColor
@@ -141,9 +152,19 @@ object TvFocusRing {
                 drawable = indicatorRing(indicator, ringWidth, ringColor)
                 val outset = railGap + ringWidth
                 place = {
-                    drawable.bounds = indicator.boundsIn(new).apply { inset(-outset, -outset) }
+                    val box = indicator.boundsIn(new)
+                    val drawn = indicator.drawnPillBounds()
+                    drawable.bounds = Rect(box.left + drawn.left, box.top + drawn.top, box.left + drawn.right, box.top + drawn.bottom)
+                        .apply { inset(-outset, -outset) }
                 }
                 followed = listOf(new, indicator)
+                val placed = Rect()
+                preDraw = ViewTreeObserver.OnPreDrawListener {
+                    placed.set(drawable.bounds)
+                    place?.invoke()
+                    if (placed != drawable.bounds) new.invalidate()
+                    true
+                }.also { root.viewTreeObserver.addOnPreDrawListener(it) }
             } else {
                 if (!needsRing(new)) return@OnGlobalFocusChangeListener
                 drawable = if (new.height <= pillMaxHeight) pill else rect
@@ -177,6 +198,25 @@ object TvFocusRing {
             setStroke(width.toFloat(), color)
         }
     }
+
+    /**
+     * ⚠⚠ WHERE THE PILL IS ACTUALLY DRAWN, in the indicator's own coordinates - NOT its layout box (2026-11-02, the
+     * 1164 ring sat ~2dp high: bottom touching the pill, a gap on top). Material 1.14.0's
+     * NavigationBarItemView.refreshItemBackground (decoded) builds the icon container's FOREGROUND as
+     * RippleDrawable(itemRippleColor, null, mask = getActiveIndicatorDrawable()), and that getter returns the
+     * indicator view's own background - the SAME MaterialShapeDrawable instance. FrameLayout sizes its foreground
+     * to the icon container, and RippleDrawable (a LayerDrawable) gives its mask layer those bounds; the indicator
+     * view resets its background's bounds only when its own size changes (View.setBackgroundBounds, API 34). So
+     * after the first frame the pill draws at the indicator's origin with the ICON CONTAINER's size. On the TV rail
+     * the 36dp icon (NavViewTv itemIconSize) makes that container 36dp tall around a 32dp indicator
+     * (BottomNavbarActiveIndicator), centred on it: the drawn pill starts at the indicator's top and runs 4dp
+     * further down, centre 2dp lower than the box this ring was centred on. Widths are equal, hence no horizontal
+     * error. Reading the drawable's current bounds follows whatever Material does; the layout box is the fallback
+     * before anything has been drawn. Unselected items draw the same bounds (only scaled and faded), so the ring
+     * sits where their pill appears.
+     */
+    private fun View.drawnPillBounds(): Rect =
+        background?.bounds?.takeUnless { it.isEmpty }?.let(::Rect) ?: Rect(0, 0, width, height)
 
     // This view's layout rect in [ancestor]'s coordinates. Layout positions only: the indicator's scale and alpha
     // animation is deliberately left out (see the class note).

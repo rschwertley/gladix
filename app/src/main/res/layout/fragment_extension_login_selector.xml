@@ -9,6 +9,7 @@
 
     <com.google.android.material.button.MaterialButtonToggleGroup
         android:id="@+id/loginToggleGroup"
+        style="@style/ConnectedToggleGroup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="24dp"

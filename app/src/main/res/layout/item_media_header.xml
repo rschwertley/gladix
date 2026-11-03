@@ -22,7 +22,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/followButton"
-                style="@style/IconButtonOutlined"
+                style="@style/ToggleIconButtonOutlined"
                 android:checkable="true"
                 android:checked="false"
                 android:paddingStart="24dp"
@@ -34,7 +34,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/savedButton"
-                style="@style/IconButtonOutlined"
+                style="@style/ToggleIconButtonOutlined"
                 android:checkable="true"
                 android:checked="false"
                 android:contentDescription="@string/save"
@@ -61,7 +61,7 @@
                  This overrides the tint inherited from @style/IconButtonTonal, deliberately. -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/likeButton"
-                style="@style/IconButtonTonal"
+                style="@style/ToggleIconButtonTonal"
                 android:checkable="true"
                 android:checked="false"
                 android:contentDescription="@string/like"
@@ -71,7 +71,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/hideButton"
-                style="@style/IconButtonTonal"
+                style="@style/ToggleIconButtonTonal"
                 android:checkable="true"
                 android:checked="false"
                 android:contentDescription="@string/hide"

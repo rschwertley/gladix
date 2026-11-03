@@ -16,6 +16,7 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.extensions.cache.Cached.loadStreamableMedia
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.backgroundIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.downloaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
@@ -158,6 +159,7 @@ class StreamableLoader(
     private suspend fun loadTrack(item: MediaItem): MediaState.Loaded<Track> {
         val stub = item.state.item
         Log.d("GladixPlayback", "loadTrack stub: id=${stub.id} servers=${stub.servers.map { it.id }} extras=${stub.extras}")
+        StartProbe.trackStart(stub.id) // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
         val track = withClient(item) {
             // preferCache = true: the ONLY caller that passes it. See Cached.loadMedia — this keeps a
             // restored queue resolving from cache instantly, which is what makes offline playback work,
@@ -165,6 +167,10 @@ class StreamableLoader(
             // throwing on a missing extension_id.
             Cached.loadMedia(app, it, item.state, preferCache = true)
         }
+        // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Tokens compared in memory; only the yes/no is logged.
+        StartProbe.trackEnd(
+            stub.id, track.getOrNull()?.item?.extras?.get("TRACK_TOKEN") != stub.extras["TRACK_TOKEN"]
+        )
         val result = track.getOrThrow()
         Log.d("GladixPlayback", "loadTrack result: id=${result.item.id} servers=${result.item.servers.map { it.id }}")
         return result
@@ -182,6 +188,7 @@ class StreamableLoader(
                 )
             }
         }
+        StartProbe.streamStart(mediaItem.track.id) // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
         return withClient(mediaItem) {
             runCatching {
                 val isPlayable = mediaItem.track.playableString(app.context)
@@ -225,6 +232,11 @@ class StreamableLoader(
                     app, it, mediaItem.track, streamable
                 ).getOrThrow() as Streamable.Media.Server
             }
+        }.also { result -> // TEMPORARY GladixStart probe - REMOVE WITH StartProbe ("Alt version" = Deezer substitute)
+            StartProbe.streamEnd(
+                mediaItem.track.id, result.isSuccess,
+                result.getOrNull()?.sources?.any { it.title == "Alt version" } == true
+            )
         }
     }
 

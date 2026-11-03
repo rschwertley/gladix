@@ -4,11 +4,16 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.children
+import androidx.core.view.doOnNextLayout
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePaddingRelative
 import androidx.core.widget.doOnTextChanged
@@ -28,6 +33,7 @@ import dev.brahmkshatriya.echo.databinding.FragmentSearchBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtension
 import dev.brahmkshatriya.echo.extensions.cache.Cached
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
@@ -45,6 +51,7 @@ import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.main.search.SearchViewModel.Companion.saveInHistory
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.setupTransition
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlinx.coroutines.flow.combine
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -156,8 +163,33 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+        val isTv = view.context.isTv()
+        /**
+         * ⚠⚠ TV: NO FOCUS IN THE RESULTS WHILE THE OVERLAY IS OPEN (2026-11-02). The overlay's root is a keyboard
+         * navigation cluster with touchscreenBlocksFocus, but FocusFinder.getEffectiveRoot (API 34) keeps D-pad
+         * search inside it only on a device with FEATURE_TOUCHSCREEN. A TV has none, so Down from the last
+         * suggestion row (or from the field with no rows) landed on a result row BEHIND the overlay - invisible, as
+         * TvFocusRing draws in the focused view's own overlay - and OK opened it. So the results' container blocks
+         * its descendants from SHOWING until HIDDEN.
+         * Safe for TvAwareRecyclerView's focus memory: blocking moves no focus, so requestChildFocus never runs and
+         * savedOuterPos stays the row the overlay was opened from; and every restore it attempts meanwhile
+         * (onVisibilityAggregated, establishFeedFocus, maybeInitialAnchor) is a requestFocus inside the blocked
+         * container, which Android refuses. Unblocked BEFORE the Jul 29 restore below requests the SearchBar.
+         */
+        val resultsFocusability = binding.swipeRefresh.descendantFocusability
+        fun blockResultsFocus(block: Boolean) {
+            if (!isTv) return
+            binding.swipeRefresh.descendantFocusability =
+                if (block) ViewGroup.FOCUS_BLOCK_DESCENDANTS else resultsFocusability
+        }
+        if (binding.quickSearchView.isShowing) blockResultsFocus(true)
         binding.quickSearchView.addTransitionListener { v, _, newState ->
             backCallback.isEnabled = v.isShowing
+            when (newState) {
+                SearchView.TransitionState.SHOWING, SearchView.TransitionState.SHOWN -> blockResultsFocus(true)
+                SearchView.TransitionState.HIDDEN -> blockResultsFocus(false)
+                else -> Unit
+            }
             // TV: when the overlay finishes collapsing, if Material's own restore-to-bar didn't land focus
             // (focus lost), put it on the search bar so the feed stays navigable — DOWN then enters the
             // freshly loaded, top-attached results. Only fires on lost focus, so it complements Material's
@@ -179,15 +211,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 // genuinely bulk action instead of apologising for a mislabelled per-item one. Read the note
                 // in search_mic_menu_white.xml before moving this back onto the rows.
                 R.id.menu_clear_search_history -> {
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.clear_search_history_confirm)
-                        .setNegativeButton(R.string.cancel, null)
-                        .setPositiveButton(R.string.clear) { _, _ ->
-                            searchViewModel.clearSearchHistory(
-                                argId, binding.quickSearchView.editText.text.toString()
-                            )
-                        }
-                        .show()
+                    confirmClearSearchHistory(binding)
                     true
                 }
                 else -> false
@@ -199,6 +223,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         observe(searchViewModel.queryFlow) {
             searchAdapter.notifyItemChanged(0)
             binding.quickSearchView.setText(it)
+            binding.quickSearchView.editText.cursorToEndOnTv()
         }
         // ⚠⚠ [CORRECTED 2026-09-13] THIS IS A VISIBILITY FAULT, NOT A GRAB FAULT, AND IT IS THE
         // SAME FAULT AS THE DRAG STOPPING TWO-THIRDS DOWN. THE THUMB IS NOT RENDERED over the card/tile
@@ -266,10 +291,42 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         }
         observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
         binding.quickSearchView.editText.setText(searchViewModel.queryFlow.value)
+        binding.quickSearchView.editText.cursorToEndOnTv()
         // TV: give the on-screen keyboard a concrete submit action so its "done"/OK reliably fires the
         // editor-action listener below (hide + run the search). Phone keeps the SearchView's default action.
-        if (view.context.isTv())
+        if (isTv) {
             binding.quickSearchView.editText.imeOptions = EditorInfo.IME_ACTION_SEARCH
+            // [2026-11-02] Open with the field focused and NO keyboard, so history is one Down away instead of under
+            // the keyboard. OK on the field opens it (TextView.onKeyUp, DPAD_CENTER on an editor with no click
+            // listener; Material sets only a focus listener). Material 1.14.0, decoded: with autoShowKeyboard false
+            // and not in touch mode, requestFocusAndShowKeyboardIfNeeded still focuses the field.
+            binding.quickSearchView.setAutoShowKeyboard(false)
+            // A2: with no rows, Down stays put from EVERY focusable in the overlay's toolbar - the field, the back
+            // arrow, X, the mic and ⋮ (see the blocking note above for where it went). Re-applied on each toolbar
+            // layout, because X appears with text and the menu's views are built during layout. None of these had a
+            // key listener of its own (Material 1.14.0 SearchView, appcompat 1.8.0 Toolbar / ActionMenuItemView /
+            // OverflowMenuButton - decoded), so nothing is overwritten.
+            val stayOnDownIfEmpty = View.OnKeyListener { _, keyCode, _ ->
+                keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+                    (binding.quickSearchRecyclerView.adapter?.itemCount ?: 0) == 0
+            }
+            fun View.applyStayOnDown() {
+                if (this is ViewGroup) children.forEach { it.applyStayOnDown() }
+                else if (isFocusable) setOnKeyListener(stayOnDownIfEmpty)
+            }
+            binding.quickSearchView.toolbar.run {
+                applyStayOnDown()
+                addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> v.applyStayOnDown() }
+            }
+            // The field's own focus ring (2026-11-02): TvFocusRing skips text fields (TextInputLayout draws theirs),
+            // and Material's field has no background, so on TV only the cursor showed focus. tv_focus_pill is the
+            // same 4dp colorPrimary pill, shown on state_focused; the padding keeps the text off its rounded ends.
+            binding.quickSearchView.editText.run {
+                foreground = AppCompatResources.getDrawable(context, R.drawable.tv_focus_pill)
+                val inset = 16.dpToPx(context)
+                updatePaddingRelative(start = inset, end = inset)
+            }
+        }
         binding.quickSearchView.editText.doOnTextChanged { text, _, _, _ ->
             searchViewModel.quickSearch(argId, text.toString())
         }
@@ -323,7 +380,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         }, onFirstRowUp = if (view.context.isTv())
             ({ binding.quickSearchView.editText.requestFocus() }) else null)
 
-        binding.quickSearchRecyclerView.adapter = quickSearchAdapter
+        val clearHistoryAdapter = QuickSearchAdapter.ClearHistoryAdapter { confirmClearSearchHistory(binding) }
+        binding.quickSearchRecyclerView.adapter =
+            if (isTv) ConcatAdapter(quickSearchAdapter, clearHistoryAdapter) else quickSearchAdapter
         observe(uiViewModel.combined) { insets ->
             binding.quickSearchRecyclerView.updatePaddingRelative(start = insets.start)
             // Rail parity for the SearchView's OWN header (the toolbar holding the back/hint icon + text
@@ -337,11 +396,48 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             }
         }
         observe(searchViewModel.quickFeed) { list ->
+            // ⚠️ TV: A LIVE UPDATE MUST NOT LOSE FOCUS (2026-11-02). Suggestions keep arriving after the user has gone
+            // Down into the rows; when the diff removes the focused row, RecyclerView's recovery can leave focus on
+            // the list itself (no ring - TvFocusRing skips scroll containers) or on nothing. After the next layout,
+            // only in that case, focus goes to the row now at the old position (or the last one), else the field.
+            val rv = binding.quickSearchRecyclerView
+            val focusedPos = if (isTv && rv.hasFocus())
+                rv.focusedChild?.let(rv::getChildAdapterPosition) ?: 0 else RecyclerView.NO_POSITION
             // The id arrives WITH each item (see `SearchViewModel.quickFeed`) rather than from a field
             // here - see the note at the removed `extensionId` field above.
             quickSearchAdapter.submitList(list.map { (extId, item) ->
                 QuickSearchAdapter.Item(extId, item)
-            })
+            }) {
+                clearHistoryAdapter.shown = isTv && list.any { it.second.searched }
+                if (focusedPos != RecyclerView.NO_POSITION) rv.doOnNextLayout {
+                    val focused = rv.rootView.findFocus()
+                    if (!binding.quickSearchView.isShowing || (focused != null && focused !== rv)) return@doOnNextLayout
+                    val count = rv.adapter?.itemCount ?: 0
+                    val row = if (count == 0) null
+                    else rv.layoutManager?.findViewByPosition(focusedPos.coerceIn(0, count - 1))
+                    if (row?.requestFocus() != true) binding.quickSearchView.editText.requestFocus()
+                }
+            }
         }
+    }
+
+    // TV: the cursor after a programmatic setText goes to the END (2026-11-02). setText leaves it at 0
+    // (ArrowKeyMovementMethod.initialize, API 34), and Right in the field moves the cursor before it leaves, so
+    // reaching X or the mic took one press per character.
+    private fun EditText.cursorToEndOnTv() {
+        if (context.isTv()) setSelection(length())
+    }
+
+    // The confirmed bulk clear, from the overlay's ⋮ menu (phone and TV) and the TV list's last row.
+    private fun confirmClearSearchHistory(binding: FragmentSearchBinding) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setMessage(R.string.clear_search_history_confirm)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.clear) { _, _ ->
+                searchViewModel.clearSearchHistory(
+                    argId, binding.quickSearchView.editText.text.toString()
+                )
+            }
+            .show()
     }
 }

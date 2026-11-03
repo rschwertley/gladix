@@ -94,6 +94,8 @@ class TabsAdapter<T>(
             // [CORRECTED 2026-11-02] The focus frame is no longer a tv_focus_pill foreground here: the checked tab is
             // a rounded rectangle (Expressive state-list shape), so the fixed pill did not fit it. TvFocusRing now
             // draws focus as the tab's own stroke, which follows its shape in every state.
+            // [CORRECTED 2026-11-02, later] On TV the checked tab is no longer a rounded rectangle: values-television's
+            // TabButton keeps a full pill in every state (1164: the selected fill and the focus ring did not match).
             if (parent.context.isTv()) {
                 tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             }

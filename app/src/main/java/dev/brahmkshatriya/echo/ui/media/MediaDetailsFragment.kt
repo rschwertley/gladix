@@ -181,6 +181,8 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         observe(viewModel.uiResultFlow) { result ->
             mediaHeaderAdapter.result = result
         }
+        // Dead-song marks from the background check, applied to the rows already on screen (2026-11-02).
+        if (fixedRows == null) observe(viewModel.playableMarks) { trackAdapter.playableMarks = it }
         binding.recyclerView.itemAnimator = null
         configureGridLayout(
             binding.recyclerView,

@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
+import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
@@ -178,12 +179,15 @@ open class FeedClickListener(
             // setShuffle(false, true). Only the Shuffle branch stops calling it, because the service
             // sets the flag itself and a second setShuffle(true) would re-enter changeQueue and
             // re-pin the head.
+            StartProbe.arm(StartProbe.srcOf(context, "library"), "page", shuffle) // TEMPORARY GladixStart probe
             vm.setQueue(extensionId, playable, 0, context, shuffleList = shuffle)
             if (!shuffle) vm.setShuffle(false, true)
             vm.setPlaying(true)
             return true
         }
         if (context == null) return notFoundSnack(R.string.item)
+        // TEMPORARY GladixStart probe; PlayerCallback.listTracks says "joined" when it joins the page's load.
+        StartProbe.arm(StartProbe.srcOf(context, "track"), "fresh", shuffle)
         if (shuffle) vm.shuffle(extensionId, context, true)
         else vm.play(extensionId, context, true)
         return true
@@ -396,6 +400,7 @@ open class FeedClickListener(
             // Nothing playable from here on: say so rather than setting an empty queue, which would
             // read as a dead tap.
             if (upcoming.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
+            StartProbe.arm("track", "page") // TEMPORARY GladixStart probe
             vm.setQueue(extensionId, upcoming, 0, null, respectShuffle = true)
             vm.setPlaying(true)
             return true
@@ -408,6 +413,7 @@ open class FeedClickListener(
                 it.type != Track.Type.Podcast
         }
         if (single != null) {
+            StartProbe.arm("track", "n/a") // TEMPORARY GladixStart probe
             vm.playTrackRadio(extensionId, single)
             return true
         }
@@ -420,6 +426,7 @@ open class FeedClickListener(
         val droppedBefore = tracks.take(pos).count { it.isPlayable != Track.Playable.Yes }
         val runPos = (pos - droppedBefore).coerceIn(0, maxOf(playableRun.size - 1, 0))
         if (playableRun.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
+        StartProbe.arm(StartProbe.srcOf(context, "track"), "page") // TEMPORARY GladixStart probe
         vm.setQueue(extensionId, playableRun, runPos, context, respectShuffle = true)
         vm.setPlaying(true)
         return true

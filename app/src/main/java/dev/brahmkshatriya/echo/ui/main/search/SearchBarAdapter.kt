@@ -1,8 +1,11 @@
 package dev.brahmkshatriya.echo.ui.main.search
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.doOnLayout
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import com.google.android.material.search.SearchView
 import dev.brahmkshatriya.echo.databinding.ItemSearchBarBinding
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
@@ -42,6 +45,13 @@ class SearchBarAdapter(
                     onMicClick()
                     true
                 } else false
+            }
+            // TV (2026-11-02): Right from the bar to the mic, Left from the mic BACK TO THE BAR. Left used to reach the
+            // rail: TvAwareRecyclerView's in-item Left search starts at the row's root, which IS this full-width bar,
+            // and Android never counts a view as left of a button it contains. The mic view carries the menu item's id
+            // (appcompat ActionMenuItemView.initialize sets it), and exists once the bar is laid out. Phone: no-op.
+            binding.root.doOnLayout { bar ->
+                bar.findViewById<View>(R.id.menu_voice_search)?.let { bar.setTvRowButtons(listOf(it)) }
             }
         }
     }

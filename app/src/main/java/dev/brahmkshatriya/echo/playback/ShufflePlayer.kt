@@ -178,7 +178,10 @@ class ShufflePlayer(
      * bounded by resumptionApplying, and the cost if it ever happened is one mis-ordered queue that
      * the tap's own setMediaItems replaces microseconds later — not worth declining a resume for.
      */
-    val isTapShufflePending: Boolean get() = pendingTapRespectShuffle
+    // [2026-11-02] Also the fresh-list latch, the same one-command-then-setMediaItems shape: a restore landing
+    // between them would shuffle the RESTORED queue and the header Shuffle would then play in order. Before this
+    // build only Library and sorted pages took that path; unsorted album and playlist pages now do too.
+    val isTapShufflePending: Boolean get() = pendingTapRespectShuffle || pendingFreshListShuffle
 
     /** `original` as mediaIds (= track ids), for [ResumptionUtils]. Empty when nothing is queued. */
     val originalOrderIds: List<String> get() = original.map { it.mediaId }

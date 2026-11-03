@@ -45,7 +45,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/searchToggleButton"
-            style="@style/IconButton"
+            style="@style/ToggleIconButton"
             android:checkable="true"
             android:checked="true"
             android:contentDescription="@string/search"

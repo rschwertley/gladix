@@ -18,6 +18,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
 
 class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val parser: DeezerParser) {
 
@@ -74,6 +75,39 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
     fun loadTracks(playlist: Playlist): Feed<Track> = PagedData.Single {
         deezerExtension.handleArlExpiration()
         playlist.extras[SMART_TRACKLIST_EXTRA]?.let { return@Single smartTracklistTracks(it) }
+        val key = AVAILABILITY_KEY_PREFIX + playlist.id
+        // ⚠⚠ THE MARKS PASS (2026-11-02): only Cached.launchMarksPass sets this extra, after the page already
+        // shows the rows. It waits for the background check and returns the SAME rows (kept below, no second
+        // getSongs) with every verdict applied. Without kept rows - a pass that outlived ROWS_TTL_MS - it falls
+        // back to a fresh load, checked inline: it is a background job, so waiting costs nobody anything.
+        if (playlist.extras[AVAILABILITY_AWAIT_EXTRA] == "1") {
+            val rows = keptRows[playlist.id]
+                ?.takeIf { System.currentTimeMillis() - it.first < ROWS_TTL_MS }?.second
+                ?: playlistRows(playlist)
+            deezerExtension.awaitAvailability(key)
+            return@Single api.markUnplayable(rows)
+        }
+        // ⚠⚠ NO LONGER WAITS FOR THE DEAD-SONG CHECK (2026-11-02). The rows go back with the verdicts already
+        // known, and the rest are checked in the background - see DeezerExtension.checkAvailabilityLater. A
+        // ~1,500-song playlist waited for 15 sequential pipe requests here before the page, Play or Shuffle
+        // could start (1148 to 1164). Rows still unchecked carry AVAILABILITY_PENDING_EXTRA, which is what
+        // tells Cached to run the marks pass for the open page.
+        val rows = playlistRows(playlist)
+        // A reload the user asked for re-checks every row - see DeezerApi.forgetVerdicts.
+        if (playlist.extras[AVAILABILITY_RECHECK_EXTRA] == "1") api.forgetVerdicts(rows)
+        keptRows[playlist.id] = System.currentTimeMillis() to rows
+        val pending = deezerExtension.checkAvailabilityLater(key, rows)
+        api.markKnown(rows).let { marked ->
+            if (!pending) marked
+            else marked.map { it.copy(extras = it.extras + (AVAILABILITY_PENDING_EXTRA to "1")) }
+        }
+    }.toFeed()
+
+    // The parsed getSongs rows of the last plain load per playlist, for the marks pass. Rows only (no verdicts).
+    private val keptRows = ConcurrentHashMap<String, Pair<Long, List<Track>>>()
+
+    // One playlist.getSongs, parsed, with NEXT / playlist_id stamped. No availability verdicts.
+    private suspend fun playlistRows(playlist: Playlist): List<Track> {
         // Tracks come from the dedicated playlist.getSongs (the app/deezer-py authoritative path), NOT from
         // deezer.pagePlaylist's inline SONGS (a summary that can carry a wrong same-named-artist twin).
         // pagePlaylist is still used for playlist METADATA in loadPlaylist above.
@@ -118,19 +152,18 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
                 }
             }
         }
-        // One batched availability pass before the NEXT/playlist_id stamping - see
-        // DeezerApi.markUnplayable. It changes no ids and drops no rows, so the NEXT chain below is
-        // the same chain; it is read off `marked` only so the two cannot drift apart later.
-        val marked = api.markUnplayable(baseTracks)
-        marked.mapIndexed { index, track ->
+        // [CORRECTED 2026-11-02] The availability pass that ran here ("one batched availability pass before the
+        // NEXT/playlist_id stamping") moved out to loadTracks' background check. It changed no ids and dropped no
+        // rows, so the NEXT chain read off baseTracks is the chain it always was.
+        return baseTracks.mapIndexed { index, track ->
             track.copy(
                 extras = track.extras + mapOf(
-                    "NEXT" to marked.getOrNull(index + 1)?.id.orEmpty(),
+                    "NEXT" to baseTracks.getOrNull(index + 1)?.id.orEmpty(),
                     "playlist_id" to playlist.id
                 )
             )
         }
-    }.toFeed()
+    }
 
     /**
      * Tracks for a smarttracklist, via page.get on "smarttracklist/<id>" — the same gateway method Home
@@ -242,5 +275,17 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
     companion object {
         // Set by DeezerParser.toSmartTracklist; the sole routing signal for the two branches above.
         const val SMART_TRACKLIST_EXTRA = "smarttracklist"
+
+        // The app reads and writes these two by literal (it cannot see this module): Cached's
+        // AVAILABILITY_PENDING_EXTRA / AVAILABILITY_AWAIT_EXTRA. Keep the strings in step.
+        // On a row: its dead-song check is still running. On the Playlist passed to loadTracks: the marks pass.
+        const val AVAILABILITY_PENDING_EXTRA = "gladix_availability_pending"
+        const val AVAILABILITY_AWAIT_EXTRA = "gladix_availability_await"
+        // On the Playlist or Album passed to loadTracks: the app busted its cache (pull-to-refresh, an edit), so
+        // forget this list's verdicts and check again. Cached.AVAILABILITY_RECHECK_EXTRA, same string.
+        const val AVAILABILITY_RECHECK_EXTRA = "gladix_availability_recheck"
+        private const val AVAILABILITY_KEY_PREFIX = "playlist:"
+        // keptRows lifetime; matches Cached's MEMORY_TTL_MS, the window its marks pass runs in.
+        private const val ROWS_TTL_MS = 5L * 60 * 1000
     }
 }

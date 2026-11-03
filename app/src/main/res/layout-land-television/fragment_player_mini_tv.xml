@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- No nextFocusLeft on the root (2026-11-02): Left goes to the rail's selected item, set in code by
+     MainActivity.setupTvMiniPlayer. It was self (Jun 1–5 left-edge containment). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -12,7 +14,6 @@
     android:focusable="true"
     android:foreground="@drawable/tv_focused_list_item"
     android:nextFocusDown="@id/tvMiniPlayer"
-    android:nextFocusLeft="@id/tvMiniPlayer"
     android:nextFocusRight="@+id/miniPlayPause"
     android:nextFocusUp="@id/navHostFragment"
     android:visibility="gone">

@@ -71,6 +71,8 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentLibraryBinding.bind(view)
         val recyclerView = binding.recyclerView as RecyclerView
+        // No add/remove/change fades (2026-11-02): a tab switch replaces every row, which the default animator played as a flash. Same as MediaDetailsFragment (Jun 13).
+        recyclerView.itemAnimator = null
         setupTransition(view, false, MaterialSharedAxis.Y)
         val headerAdapter = HeaderAdapter(this)
         val uiViewModel by activityViewModel<UiViewModel>()

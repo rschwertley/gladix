@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV ONLY (2026-11-02), used by values-television's ConnectedToggleGroup: Material 1.14.0's
+     m3expressive_connected_buttons_inner_corner_size_state_list with every state at its unchecked value
+     (m3_comp_button_group_connected_small_inner_corner_corner_size = ?attr/shapeCornerSizeSmall), so the bar stays
+     connected and no segment changes shape when checked (Material's checked inner corner is 50%) or pressed.
+     More than one item on purpose: MaterialButtonGroup.updateChildShapes gives a child a state-list shape only when the
+     result isStateful (StateListCornerSize: stateCount > 1), and TvFocusRing.shapeChangingButton draws the ring as the
+     segment's own stroke only for a stateful shape. A single size would fall back to the overlay ring on the view's
+     bounds, which does not follow the segment's corners. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:state_checked="true" app:cornerSize="?attr/shapeCornerSizeSmall" />
+    <item app:cornerSize="?attr/shapeCornerSizeSmall" />
+</selector>

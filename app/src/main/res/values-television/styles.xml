@@ -54,6 +54,35 @@
         <item name="android:listChoiceBackgroundIndicator">@drawable/tv_focus_list_selector</item>
     </style>
 
+    <!-- TV overrides of values/styles.xml's TabButton and ToggleIconButton(+Outlined/Tonal) (2026-11-02): a full pill
+         in every state. values-television, not values-land-television: no -land folder defines these names, so nothing
+         outranks this on a landscape TV.
+         Expressive buttons are CornerMedium when checked and CornerSmall when pressed (material-1.14.0
+         SizeOverlay.Material3Expressive.Button.Small / .IconButton.Small), so the selected Library tab was a rounded
+         rectangle beside the pill ring on a focused tab. See xml/tv_button_shape_pill. Phone keeps Material's shapes. -->
+    <style name="TabButton" parent="Widget.Material3Expressive.Button">
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="ToggleIconButton" parent="IconButton">
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="ToggleIconButtonOutlined" parent="IconButtonOutlined">
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="ToggleIconButtonTonal" parent="IconButtonTonal">
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <!-- TV override of values/styles.xml's ConnectedToggleGroup (2026-11-02): equal inner corners in every state, so the
+         checked segment no longer rounds its inner corners to 50%. Outer corners and spacing still come from the
+         theme's Widget.Material3Expressive.MaterialButtonToggleGroup. See xml/tv_connected_inner_corner_fixed. -->
+    <style name="ConnectedToggleGroup" parent="">
+        <item name="innerCornerSize">@xml/tv_connected_inner_corner_fixed</item>
+    </style>
+
     <style name="EchoBottomSheetStyle" parent="Widget.Material3.BottomSheet">
         <item name="backgroundTint">?navBackground</item>
         <item name="behavior_peekHeight">4000dp</item>

@@ -115,7 +115,11 @@ class PlayerService : MediaLibraryService() {
 
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
-    private val exoPlayer by lazy { createExoplayer(this.audioEffectsProcessor) }
+    private val exoPlayer by lazy {
+        createExoplayer(this.audioEffectsProcessor)
+            // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Main player only; the sidecar keeps no listeners.
+            .also { it.addAnalyticsListener(StartProbe.listener(app)) }
+    }
 
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession

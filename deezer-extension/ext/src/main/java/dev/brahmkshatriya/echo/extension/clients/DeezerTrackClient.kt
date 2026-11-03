@@ -14,7 +14,11 @@ import dev.brahmkshatriya.echo.extension.DeezerExtension
 import dev.brahmkshatriya.echo.extension.DeezerParser
 import dev.brahmkshatriya.echo.extension.Utils
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -126,6 +130,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         track: Track, topQuality: String, retry: Boolean, allowSubstitute: Boolean,
         atQuality: String = topQuality,
     ): Streamable {
+        currentCoroutineContext()[StartRungs]?.tokenRefreshed = true // TEMPORARY GladixStart probe
         val refetched = api.track(track.id)
         val results = refetched["results"].requireObj("results")
         val rebuilt = parser.run { results.toTrack() }
@@ -139,7 +144,29 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         return descend(fresh, atQuality, retry, topQuality, allowSubstitute, allowRetoken = false)
     }
 
+    // TEMPORARY GladixStart probe - REMOVE WITH the app's StartProbe: delete this wrapper and rename
+    // createStreamableForQualityUnprobed back to createStreamableForQuality. Every rung, including the recursive
+    // descents, enters here, so each is timed as one StartRungs entry.
     private suspend fun createStreamableForQuality(
+        track: Track,
+        quality: String,
+        retry: Boolean = true,
+        topQuality: String = quality,
+        allowSubstitute: Boolean = true,
+        allowRetoken: Boolean = true,
+    ): Streamable {
+        val rungs = currentCoroutineContext()[StartRungs]
+        val rung = rungs?.begin(quality)
+        return try {
+            createStreamableForQualityUnprobed(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+                .also { rungs?.done(rung, "ok") }
+        } catch (e: Throwable) {
+            rungs?.done(rung, if (e is CancellationException) "cancelled" else "err")
+            throw e
+        }
+    }
+
+    private suspend fun createStreamableForQualityUnprobed(
         track: Track,
         quality: String,
         retry: Boolean = true,
@@ -620,6 +647,13 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             val info = streamable.id.removePrefix(placeholderPrefix).split(":")
             val trackId = info[0]
             val quality = info.getOrNull(1) ?: "128"
+            // Same check as loadTrack's, for the path that skips it: a media-state cache hit hands its stored
+            // streamable straight here (see createStreamableForQuality's token-age note). No ladder for a song
+            // already known dead; MediaUnavailableException is the Unavailable skip family, as the ladder's own.
+            if (api.isKnownDead(trackId, streamable.extras["FALLBACK_ID"])) {
+                println("GladixStart ext id=$trackId q=$quality rungs=- result=known-dead") // TEMPORARY probe
+                throw MediaUnavailableException(DeezerApi.NOT_AVAILABLE_REASON)
+            }
             val newTrack = Track(
                 id = trackId,
                 title = quality,
@@ -636,14 +670,19 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // distinct track ids all reporting "Track not available after retries" with no transport error,
             // and token/session staleness, an account-level limit and a server outage were indistinguishable.
             var lastError: Throwable? = null
+            // TEMPORARY GladixStart probe - REMOVE WITH the app's StartProbe (rungs, attempts and the finally below).
+            val rungs = StartRungs()
+            var attempts = 0
+            try {
             for (attempt in 0..1) {
                 if (attempt > 0) delay(2000L)
+                attempts++
                 // Best-effort retry: the loop continues past a failed attempt and ends in the throw below.
                 // The caught exception IS used now (captured as lastError and chained), but the annotation
                 // stays because the catch still does not rethrow on the non-final attempt.
                 @Suppress("SwallowedException")
                 try {
-                    resolved = createStreamableForQuality(newTrack, quality)
+                    resolved = withContext(rungs) { createStreamableForQuality(newTrack, quality) }
                     break
                 } catch (e: CancellationException) {
                     throw e
@@ -653,6 +692,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // chained, so attempt 0's reason exists nowhere else. The two are complementary.
                     println("GladixDeezer loadStreamableMedia attempt $attempt failed id=$trackId q=$quality: ${e.message}")
                 }
+            }
+            } finally {
+                rungs.print(trackId, quality, attempts, resolved?.extras?.containsKey(ALT_VERSION_EXTRA))
             }
             // Typed for the same reason as the throw above; `lastError` still rides along as the
             // cause, which is what MediaUnavailableException's optional second parameter exists for.
@@ -767,6 +809,16 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             return refetchEpisode(original)
         }
         if (original.extras[INFO_DETAILS_EXTRA] == "1") return withInfoDetails(original)
+
+        // ⚠⚠ A SONG THE BACKGROUND CHECK FOUND DEAD STOPS HERE, BEFORE ANY REQUEST (2026-11-02). Lists no longer
+        // wait for the check (DeezerExtension.checkAvailabilityLater), so a song queued before its verdict
+        // arrived carries Yes; without this it would run the token re-fetch below and the whole
+        // createStreamableForQuality ladder (up to ~22 calls) before skipping. Returned as No, StreamableLoader
+        // .loadServer throws TrackUnavailableException before its first request - the 1148 instant skip. The
+        // FALLBACK belt is in DeezerApi.isKnownDead. A caller's own non-Yes verdict is left as it is.
+        if (original.isPlayable == Track.Playable.Yes &&
+            api.isKnownDead(original.id, original.extras["FALLBACK_ID"])
+        ) return original.copy(isPlayable = Track.Playable.No(DeezerApi.NOT_AVAILABLE_REASON))
 
         // Self-heal a missing/empty TRACK_TOKEN (e.g. a context-less bare track recovered from an
         // Android Auto cache-miss, or a stale persisted seed): re-fetch the track fresh by id so its
@@ -1077,5 +1129,62 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // "128kbps", "MP3") are hardcoded in createStreamableForQuality the same way. If this module
         // ever gains localisation, these four move together.
         private const val ALT_VERSION_LABEL = "Alt version"
+    }
+}
+/**
+ * ⚠⚠ TEMPORARY GladixStart PROBE (2026-11-02) - REMOVE WITH the app's StartProbe. Records every stream-ladder
+ * rung one loadStreamableMedia tries: begin() at each createStreamableForQuality entry, done() at its exit. A rung
+ * still open when the next one begins did not serve - it is closed as "refused" at that moment (its refusal, or the
+ * token refresh that followed it, led to the next entry), so each duration is that rung's own time. One line per
+ * lookup, every outcome: "GladixStart ext id=<Deezer track id> q=<requested> rungs=320:refused(410ms),128:ok(290ms)
+ * sub=0|1 tokenRefresh=0|1 attempts=<n> ms=<total>". println, so logcat tag System.out (a JVM module has no
+ * android.util.Log); `adb logcat | grep GladixStart` reads it beside the app's line. No tokens or URLs.
+ */
+private class StartRungs : AbstractCoroutineContextElement(StartRungs) {
+    companion object Key : CoroutineContext.Key<StartRungs>
+
+    class Entry(val quality: String, val start: Long) {
+        var ms = -1L
+        var result: String? = null
+    }
+
+    private val started = System.currentTimeMillis()
+    private val entries = mutableListOf<Entry>()
+    private val open = ArrayDeque<Entry>()
+
+    @Volatile
+    var tokenRefreshed = false
+
+    @Synchronized
+    fun begin(quality: String): Entry {
+        val now = System.currentTimeMillis()
+        open.lastOrNull()?.takeIf { it.result == null }?.let {
+            it.result = "refused"
+            it.ms = now - it.start
+        }
+        return Entry(quality, now).also {
+            entries += it
+            open.addLast(it)
+        }
+    }
+
+    @Synchronized
+    fun done(entry: Entry?, result: String) {
+        entry ?: return
+        if (entry.result == null) {
+            entry.result = result
+            entry.ms = System.currentTimeMillis() - entry.start
+        }
+        open.remove(entry)
+    }
+
+    @Synchronized
+    fun print(trackId: String, quality: String, attempts: Int, substitute: Boolean?) {
+        val rungs = entries.joinToString(",") { "${it.quality}:${it.result ?: "open"}(${it.ms}ms)" }.ifEmpty { "-" }
+        println(
+            "GladixStart ext id=$trackId q=$quality rungs=$rungs sub=${if (substitute == true) 1 else 0} " +
+                "tokenRefresh=${if (tokenRefreshed) 1 else 0} attempts=$attempts " +
+                "ms=${System.currentTimeMillis() - started} result=${if (substitute != null) "ok" else "failed"}"
+        )
     }
 }

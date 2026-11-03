@@ -419,6 +419,21 @@
         <item name="android:textSize">14sp</item>
     </style>
 
+    <!-- Library-style tabs (item_tab), the feed's search toggle and item_media_header's four checkable buttons. Plain
+         aliases here; values-television overrides each to keep a full pill in every state (2026-11-02). -->
+    <style name="TabButton" parent="Widget.Material3Expressive.Button" />
+
+    <style name="ToggleIconButton" parent="IconButton" />
+
+    <style name="ToggleIconButtonOutlined" parent="IconButtonOutlined" />
+
+    <style name="ToggleIconButtonTonal" parent="IconButtonTonal" />
+
+    <!-- The extension-type, account and login-method toggle groups. EMPTY on purpose: a view's style attribute adds to
+         its default style (materialButtonToggleGroupStyle) rather than replacing it, so the phone keeps exactly the
+         theme's Widget.Material3Expressive.MaterialButtonToggleGroup. values-television sets innerCornerSize. -->
+    <style name="ConnectedToggleGroup" parent="" />
+
     <style name="IconButtonTertiary" parent="IconButton">
         <item name="materialThemeOverlay">@style/ButtonTertiaryOverlay</item>
     </style>

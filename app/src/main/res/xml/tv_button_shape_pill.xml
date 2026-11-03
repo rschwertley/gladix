@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV ONLY (2026-11-02), used by values-television's TabButton and ToggleIconButton(+Outlined/Tonal): Material 1.14.0's
+     m3expressive_button_shape_state_list with every state a full pill, so a checked or pressed button keeps the shape
+     of the focus ring on its neighbours. Kept as a list of more than one state on purpose: TvFocusRing.shapeChangingButton
+     picks buttons by ShapeAppearance.isStateful (StateListShapeAppearanceModel: stateCount > 1), and that path draws the
+     ring as the button's own stroke, on its drawn (inset) shape. A single fixed shape would fall back to the overlay
+     pill on the view's full bounds. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:state_pressed="true"
+        app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
+    <item android:state_checkable="true" android:state_checked="true"
+        app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
+    <item app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
+</selector>

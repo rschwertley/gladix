@@ -7,10 +7,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.speech.RecognizerIntent
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.paging.LoadState
@@ -23,6 +27,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemLoadingBinding
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
+import dev.brahmkshatriya.echo.ui.common.PagedSource
 import dev.brahmkshatriya.echo.ui.feed.FeedData.FeedTab
 import dev.brahmkshatriya.echo.ui.feed.FeedLoadingAdapter.Companion.createListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType.Enum.Category
@@ -132,7 +137,7 @@ class FeedAdapter(
         val from = list.take(index).indexOfLast { it.type != feed.type }
         val to = list.drop(index + 1).indexOfFirst { it.type != feed.type }
         val feeds = list.subList(from + 1, if (to == -1) list.size else index + to + 1)
-        val tracks = feeds.mapNotNull { it.toTrack() }
+        val tracks = feeds.mapNotNull { it.toTrack()?.marked() }
         // The row's place in the run, counted in tracks - not an id lookup, for the same reason.
         val inRun = index - (from + 1)
         val newIndex = if (feeds[inRun].toTrack() == null) -1
@@ -176,9 +181,70 @@ class FeedAdapter(
         }
     }
 
+    // The previous tab's rows while a switched-to tab is still loading past the grace (see withLoading's tab-switch
+    // note). INVISIBLE keeps the rows laid out but untappable and unfocusable; set through a payload rebind so the
+    // RecyclerView's cached holders are covered too, not only the attached ones.
+    private var rowsHidden = false
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount, ROWS_HIDDEN)
+        }
+
+    override fun onBindViewHolder(holder: FeedViewHolder<*>, position: Int, payloads: MutableList<Any>) {
+        holder.itemView.isInvisible = rowsHidden
+        if (payloads.isNotEmpty() && payloads.all { it == ROWS_HIDDEN }) return
+        // A marks rebind binds the row's content only: ScrollAnimPagingAdapter's bind starts a translation
+        // animation from the last scroll delta, which on rows already on screen would read as a jolt. And only the
+        // row types a mark can reach - a HorizontalList rebind would reset its carousel (scrollToPosition(0)).
+        if (payloads.isNotEmpty() && payloads.all { it == ROWS_HIDDEN || it == PLAYABLE_MARKS }) {
+            if (holder is MediaViewHolder || holder is MediaGridViewHolder ||
+                holder is VideoViewHolder || holder is VideoHorizontalViewHolder
+            ) bindRow(holder, position)
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
+    /**
+     * ⚠⚠ DEAD-SONG MARKS APPLIED IN PLACE (2026-11-02), by track id, from MediaDetailsViewModel.playableMarks. The
+     * Deezer check now finishes after the page shows, and reloading the feed to show its result would blank it for
+     * a frame and lose the scroll position (Cached.tracksRevalidated's note) - the flash just removed from Library
+     * tab switches. Instead the rows already bound are re-bound with the mark: a payload notify, so cached holders
+     * are covered too and the RecyclerView keeps its position. Only a Yes row takes a mark; a row's own non-Yes
+     * verdict stands. Read by the bind below, by both getAllTracks (Play, Shuffle and row taps queue what is
+     * dimmed) and so by every viewholder's unplayable-tap gate, which reads the bound item.
+     */
+    var playableMarks: Map<String, Track.Playable> = emptyMap()
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount, PLAYABLE_MARKS)
+        }
+
+    private fun Track.marked(): Track =
+        if (isPlayable != Track.Playable.Yes) this
+        else playableMarks[id]?.let { copy(isPlayable = it) } ?: this
+
+    private fun FeedType.marked(): FeedType = if (playableMarks.isEmpty()) this else when (this) {
+        is FeedType.Media -> (item as? Track)?.marked()?.takeIf { it !== item }?.let { copy(item = it) } ?: this
+        is FeedType.MediaGrid -> (item as? Track)?.marked()?.takeIf { it !== item }?.let { copy(item = it) } ?: this
+        is FeedType.Video -> item.marked().takeIf { it !== item }?.let { copy(item = it) } ?: this
+        else -> this
+    }
+
+    // Whether the rows hold the WHOLE list: the last page has loaded and there is no next one. ButtonsAdapter queues
+    // the rows only then (2026-11-02); a partial window (Jun 1 - Oct 24 played only what was loaded) keeps the item
+    // path, which loads the rest.
+    private var isFullyLoaded = false
+
     override fun onBindViewHolder(holder: FeedViewHolder<*>, position: Int) {
         super.onBindViewHolder(holder, position)
-        val feed = runCatching { getItem(position) }.getOrNull() ?: return
+        bindRow(holder, position)
+    }
+
+    private fun bindRow(holder: FeedViewHolder<*>, position: Int) {
+        val feed = runCatching { getItem(position) }.getOrNull()?.marked() ?: return
         when (holder) {
             is HeaderViewHolder -> holder.bind(feed as FeedType.Header)
             is CategoryViewHolder -> holder.bind(feed as FeedType.Category)
@@ -233,7 +299,7 @@ class FeedAdapter(
             is FeedType.HorizontalList -> it.shelf.list.filterIsInstance<Track>()
             else -> null
         }
-    }.flatten()
+    }.flatten().map { it.marked() }
 
     // showTabsAndButtons = false (2026-10-31, the player's Info tab only): the tab and buttons rows are left out of the
     // returned Concat. Their observers still run - the buttons observer also sets isPlayButtonShown and declaredTracks,
@@ -245,7 +311,10 @@ class FeedAdapter(
     // there are none (TabsAdapter.collapseWhenEmpty), so the 1160 spacing applies to tab-less feeds. The buttons row
     // stays out there (sort/filter does not belong on the Info tab, Jun 7).
     fun withLoading(fragment: Fragment, vararg before: GridAdapter, initialButtons: Boolean = false, onCreatePlaylistClick: (() -> Unit)? = null, onEditPlaylistClick: (() -> Unit)? = null, editPlaylistVisible: Flow<Boolean>? = null, showButtons: Boolean = true): GridAdapter.Concat {
+        // Starts the tab-switch grace; assigned at the load-state listener below. TabsAdapter calls this only for a tap on a DIFFERENT tab.
+        var onTabSwitch: () -> Unit = {}
         val tabs = TabsAdapter<FeedTab>({ tab.title }, collapseWhenEmpty = !showButtons) { view, index, tab ->
+            onTabSwitch()
             listener.onTabSelected(view, tab.feedId, tab.extensionId, index)
         }
         fragment.observe(viewModel.tabsFlow) { tabs.data = it }
@@ -305,7 +374,7 @@ class FeedAdapter(
                     }
             }
         }
-        val buttons = ButtonsAdapter(viewModel, listener, ::getAllTracks, onCreatePlaylistClick, onEditPlaylistClick) {
+        val buttons = ButtonsAdapter(viewModel, listener, ::getAllTracks, { isFullyLoaded }, onCreatePlaylistClick, onEditPlaylistClick) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             }
@@ -362,12 +431,78 @@ class FeedAdapter(
             empty.loadState = if (isEmpty) LoadState.Loading else LoadState.NotLoading(false)
         }
         // Inline loading row hidden after the first load on purpose (Jun 13, "Detail Page Second-Load Spinner Suppression": stops the cache-then-network flash); not shown for tab changes either (decided 2026-11-02).
+        // [CORRECTED 2026-11-02] "Not shown for tab changes" was not what the code did: a tab change first builds a PagedSource with neither side ready, whose refresh is Error(LoadingException), which FeedLoadingAdapter draws as the same spinner, and only Loading is masked here. Now handled by the tab-switch grace below; every other reload is unchanged.
         var hasEverLoaded = false
+        /**
+         * ⚠️ TAB-SWITCH GRACE (2026-11-02, Library tab-switch flash). Only a tap on a different tab arms it
+         * ([onTabSwitch]); reloads, searches, extension/account switches and pull-to-refresh never do, and keep the
+         * rule above exactly. For [TAB_SWITCH_GRACE_MS] after the tap, Error(LoadingException) is masked too, so a tab
+         * whose first page comes from the disk cache shows no spinner row. Still waiting when the grace ends (a tab
+         * never opened, so the network) - the spinner row shows as before, AND the previous tab's rows are hidden
+         * ([rowsHidden]: invisible, so neither tappable nor focusable) until the new tab's first page arrives, so the
+         * spinner never sits above the old rows. A real error after a tap hides them the same way.
+         * [switchSawPending]: the switch ends only on a NotLoading that FOLLOWS a pending state, so a late update from
+         * the previous tab's list cannot end it before the new one starts.
+         */
+        var switchedAt = 0L
+        var switchSawPending = false
+        var lastRefresh: LoadState = LoadState.NotLoading(false)
+        val graceHandler = Handler(Looper.getMainLooper())
+        fun isWaiting(state: LoadState) = state is LoadState.Error && state.error is PagedSource.LoadingException
+        // ⚠️ TV: a row going INVISIBLE while it holds focus would CLEAR focus (View.setFlags, API 34), and lost or
+        // jumping focus on the Library tabs took many builds to fix (TabsAdapter's OK DOWN/UP note). So focus in one
+        // of these rows (D-pad Down right after OK) is handed to the selected tab button first. Phone: no row holds
+        // focus in touch mode, so this does nothing.
+        fun hideOldRows() {
+            if (rowsHidden) return
+            val rv = recyclerView
+            val focused = rv?.focusedChild
+            if (rv != null && focused != null && rv.getChildViewHolder(focused)?.bindingAdapter === this) {
+                tabs.parent?.getChildAt(tabs.selected)?.takeIf { tabs.selected >= 0 }?.requestFocus()
+            }
+            rowsHidden = true
+        }
+        fun applyRefresh() {
+            val refresh = lastRefresh
+            val switching = switchedAt != 0L
+            val inGrace = switching && SystemClock.uptimeMillis() - switchedAt < TAB_SWITCH_GRACE_MS
+            header.loadState = when {
+                hasEverLoaded && refresh is LoadState.Loading -> LoadState.NotLoading(false)
+                inGrace && isWaiting(refresh) -> LoadState.NotLoading(false)
+                else -> refresh
+            }
+            if (switching && !inGrace && refresh is LoadState.Error) hideOldRows()
+        }
+        val graceEnd = Runnable { applyRefresh() }
+        onTabSwitch = {
+            if (hasEverLoaded) {
+                switchedAt = SystemClock.uptimeMillis()
+                switchSawPending = false
+                graceHandler.removeCallbacks(graceEnd)
+                graceHandler.postDelayed(graceEnd, TAB_SWITCH_GRACE_MS)
+            }
+        }
         addLoadStateListener { loadStates ->
-            if (loadStates.refresh is LoadState.NotLoading) hasEverLoaded = true
-            header.loadState = if (hasEverLoaded && loadStates.refresh is LoadState.Loading)
-                LoadState.NotLoading(false)
-            else loadStates.refresh
+            val refresh = loadStates.refresh
+            lastRefresh = refresh
+            if (switchedAt != 0L) when {
+                refresh is LoadState.Loading || isWaiting(refresh) -> switchSawPending = true
+                refresh is LoadState.Error -> if (SystemClock.uptimeMillis() - switchedAt < TAB_SWITCH_GRACE_MS) {
+                    // A real error inside the grace: shown at once, and the old rows go with it.
+                    switchedAt = 0L
+                    graceHandler.removeCallbacks(graceEnd)
+                    hideOldRows()
+                }
+                switchSawPending -> {
+                    switchedAt = 0L
+                    graceHandler.removeCallbacks(graceEnd)
+                }
+            }
+            if (refresh is LoadState.NotLoading) {
+                hasEverLoaded = true
+                if (switchedAt == 0L) rowsHidden = false
+            }
+            applyRefresh()
             footer.loadState = loadStates.append
         }
         return if (showButtons) GridAdapter.Concat(*before, tabs, buttons, header, empty, this, footer)
@@ -427,6 +562,7 @@ class FeedAdapter(
     init {
         addLoadStateListener {
             if (it.refresh == LoadState.Loading) clearState()
+            isFullyLoaded = it.refresh is LoadState.NotLoading && it.append.endOfPaginationReached
         }
     }
 
@@ -437,6 +573,11 @@ class FeedAdapter(
     }
 
     companion object {
+        // See withLoading's tab-switch note: long enough for a disk-cached first page, short enough to read as instant.
+        private const val TAB_SWITCH_GRACE_MS = 300L
+        private val ROWS_HIDDEN = Any()
+        private val PLAYABLE_MARKS = Any()
+
         fun Fragment.getFeedAdapter(
             viewModel: FeedData,
             listener: FeedClickListener,

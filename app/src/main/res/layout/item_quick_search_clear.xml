@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV only: the last row of the search overlay's list, QuickSearchAdapter.ClearHistoryAdapter (2026-11-02).
+     tv_focused_list_item gives it the TV focus ring; a view with its own foreground is skipped by TvFocusRing. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Selectable"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:foreground="@drawable/tv_focused_list_item"
+    android:gravity="center_vertical"
+    android:minHeight="56dp"
+    android:paddingHorizontal="8dp">
+
+    <ImageView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="6dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_delete" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:text="@string/clear_search_history" />
+</LinearLayout>

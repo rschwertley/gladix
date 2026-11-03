@@ -22,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -273,6 +275,13 @@ class DeezerApi(private val session: DeezerSession) {
          * answer is a capture rather than a guess - the same instruction GET_LIST_DATA_CHUNK carries.
          */
         private const val PIPE_AVAIL_CHUNK = 100
+
+        // Overall limit per tracksByIds request (2026-11-02). The pipe client (clientNP) has no callTimeout, so a
+        // hanging chunk waited out 15 s connect + 10 s reads before failing open. 117 ids measured 323-546 ms.
+        private const val PIPE_AVAIL_TIMEOUT_MS = 4_000L
+
+        // How long a verdict in [availability] is reused before the id is checked again (2026-11-02).
+        private const val AVAIL_TTL_MS = 30L * 60 * 1000
 
         // DeezerParser.toTrack writes this key unconditionally; a grafted row has it non-blank.
         // Named here rather than shared because app code cannot see the extension's strings and the
@@ -1576,8 +1585,50 @@ class DeezerApi(private val session: DeezerSession) {
         val distinct = ids.filter { it.isNotBlank() }.distinct()
         if (distinct.isEmpty()) return emptyMap()
         val out = mutableMapOf<String, Boolean>()
-        distinct.chunked(PIPE_AVAIL_CHUNK).forEach { out += availabilityChunk(it) }
+        // Still one chunk at a time (Oct 26), but each one fails open after PIPE_AVAIL_TIMEOUT_MS: the request
+        // is cancelled (ContinuationCallback.await cancels the call) and its ids stay unknown.
+        distinct.chunked(PIPE_AVAIL_CHUNK).forEach { chunk ->
+            val verdicts = withTimeoutOrNull(PIPE_AVAIL_TIMEOUT_MS) { availabilityChunk(chunk) }.orEmpty()
+            out += verdicts
+            val now = System.currentTimeMillis()
+            verdicts.forEach { (id, available) -> availability[id] = available to now }
+        }
         return out
+    }
+
+    /**
+     * ⚠⚠ IN-MEMORY VERDICTS, SO THE CHECK NEVER HAS TO BLOCK A LIST (2026-11-02). Every [tracksAvailability]
+     * answer is kept here for [AVAIL_TTL_MS]: a list load applies what is known at once ([markKnown]) and checks
+     * the rest in the background (DeezerExtension.checkAvailabilityLater), and the stream path asks
+     * [isKnownDead] so a song found dead after it was queued still skips at zero ladder requests.
+     * Process memory only - nothing here is persisted, so the Oct 25 rule (a stored verdict must not outlive a
+     * list reload) is not touched; an id older than the TTL is simply checked again.
+     */
+    private val availability = ConcurrentHashMap<String, Pair<Boolean, Long>>()
+
+    private fun knownVerdict(id: String): Boolean? = availability[id]
+        ?.takeIf { System.currentTimeMillis() - it.second < AVAIL_TTL_MS }?.first
+
+    // The ids of [tracks] with no verdict in [availability] (never checked, or older than the TTL).
+    fun unknownIds(tracks: List<Track>): List<String> =
+        tracks.map { it.id }.filter { it.isNotBlank() && knownVerdict(it) == null }.distinct()
+
+    // FALLBACK belt as in markUnplayable: a grafted row plays through its substitute and is never dead here.
+    fun isKnownDead(id: String, fallbackId: String?): Boolean =
+        fallbackId.isNullOrBlank() && knownVerdict(id) == false
+
+    // Drops these rows' verdicts so the next check asks again (2026-11-02). For an explicit reload - pull-to-refresh
+    // or any app-side cache bust, which pass AVAILABILITY_RECHECK_EXTRA - so a verdict never outlives a reload the
+    // user asked for (the Oct 25 rule). A plain open still reuses them for AVAIL_TTL_MS.
+    fun forgetVerdicts(tracks: List<Track>) {
+        tracks.forEach { availability.remove(it.id) }
+    }
+
+    // Applies the verdicts already known, with no request. Every other row is left byte-identical.
+    fun markKnown(tracks: List<Track>): List<Track> = tracks.map { track ->
+        if (isKnownDead(track.id, track.extras[FALLBACK_ID_EXTRA]))
+            track.copy(isPlayable = Track.Playable.No(NOT_AVAILABLE_REASON))
+        else track
     }
 
     /**
@@ -1664,16 +1715,12 @@ class DeezerApi(private val session: DeezerSession) {
      * tap. A restored queue therefore still relies entirely on the silent skip, the catalogue-dead
      * breaker exemption and the crossfade decline.
      */
+    // [2026-11-02] Asks only for the ids with no fresh verdict, then applies every known one - same result as
+    // before for a cold list, and no request at all for one checked within AVAIL_TTL_MS.
     suspend fun markUnplayable(tracks: List<Track>): List<Track> {
         if (tracks.isEmpty()) return tracks
-        val verdicts = tracksAvailability(tracks.map { it.id })
-        if (verdicts.isEmpty()) return tracks
-        return tracks.map { track ->
-            val grafted = !track.extras[FALLBACK_ID_EXTRA].isNullOrBlank()
-            if (!grafted && verdicts[track.id] == false)
-                track.copy(isPlayable = Track.Playable.No(NOT_AVAILABLE_REASON))
-            else track
-        }
+        tracksAvailability(unknownIds(tracks))
+        return markKnown(tracks)
     }
 
     //<============= Util =============>

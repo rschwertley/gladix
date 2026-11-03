@@ -1008,6 +1008,9 @@ abstract class AndroidAutoCallback(
         startIndex: Int,
         startPositionMs: Long
     ) = scope.future {
+        // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Every controller's setMediaItems lands here, the
+        // phone UI's too (its own taps arm in FeedClickListener / HistoryFragment), so only another package arms.
+        if (controller.packageName != app.context.packageName) StartProbe.arm("aa", "n/a")
         userQueueSet.set(true)
         val shuffleItem = mediaItems.singleOrNull()
             ?.takeIf { it.mediaId.startsWith("$SHUFFLE_PREFIX/") }

@@ -367,6 +367,17 @@ open class MainActivity : AppCompatActivity() {
 
         miniPlayer.setOnClickListener { uiViewModel.changePlayerState(STATE_EXPANDED) }
 
+        // LEFT from the bar → the rail's SELECTED item, the current tab (2026-11-02). Was nextFocusLeft = self in
+        // fragment_player_mini_tv.xml (Jun 1–5 left-edge containment, from before Left-to-rail became the rule in
+        // TvAwareRecyclerView). Follows `navigation`, the same flow that sets navView.selectedItemId
+        // (UiViewModel.setupNavBarAndInsets); a rail item view carries its menu item's id, and the id is looked up
+        // at key time, so the rail's item rebuild (navNowPlaying's visibility toggle) does not drop it. The rail is
+        // never blocked while the bar shows: the bar is visible only with the sheet HIDDEN, the one state in which
+        // setupPlayerBehavior leaves navRailContainer FOCUS_AFTER_DESCENDANTS. miniPlayPause keeps Left → this root.
+        observe(uiViewModel.navigation) { index ->
+            miniPlayer.nextFocusLeftId = uiViewModel.navIds.getOrNull(index) ?: R.id.tvMiniPlayer
+        }
+
         val playPauseListener = CheckBoxListener { playerViewModel.setPlaying(it) }
         miniPlayPause.addOnCheckedStateChangedListener(playPauseListener)
 

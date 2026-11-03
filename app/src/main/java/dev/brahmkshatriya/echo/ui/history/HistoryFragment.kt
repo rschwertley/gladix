@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isReplayableContext
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.trackRadioPlaceholder
+import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
 import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
@@ -40,6 +41,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
             // like any other and follows the same rule as a feed tap - shuffle ON keeps the tapped
             // track first and shuffles the rest. The seed path below sets a ONE-TRACK queue, where
             // there is nothing to shuffle, so it stays as it was.
+            StartProbe.arm("history", "fresh") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
             playerViewModel.backfillQueue(
                 item.extensionId, context, false, track.id, respectShuffle = true
             )
@@ -66,6 +68,7 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
             // to name, so it stamps a display-only "<track> Radio" header from the first second, marked
             // LABEL_ONLY_RADIO so generation still runs off a null context exactly as before.
             val seedContext = context ?: trackRadioPlaceholder(track)
+            StartProbe.arm("history", "n/a") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
             playerViewModel.setQueue(item.extensionId, listOf(track), 0, seedContext)
             playerViewModel.setPlaying(true)
         }

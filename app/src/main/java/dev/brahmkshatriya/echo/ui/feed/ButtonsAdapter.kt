@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.feed
 
 import android.util.TypedValue
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.core.widget.addTextChangedListener
@@ -21,13 +22,14 @@ class ButtonsAdapter(
     private val viewModel: FeedData,
     private val listener: FeedClickListener,
     private val getAllLoaded: () -> List<Track>,
+    private val isComplete: () -> Boolean,
     private val onCreatePlaylistClick: (() -> Unit)? = null,
     private val onEditPlaylistClick: (() -> Unit)? = null,
     private val onMicClick: () -> Unit,
 ) : ScrollAnimRecyclerAdapter<ButtonsAdapter.ViewHolder>(), GridAdapter {
     override fun getItemCount() = 1
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-        ViewHolder(parent, viewModel, listener, getAllLoaded, onCreatePlaylistClick, onEditPlaylistClick, onMicClick)
+        ViewHolder(parent, viewModel, listener, getAllLoaded, isComplete, onCreatePlaylistClick, onEditPlaylistClick, onMicClick)
 
     var buttons: FeedData.Buttons? = null
         set(value) {
@@ -60,6 +62,7 @@ class ButtonsAdapter(
         private val viewModel: FeedData,
         private val listener: FeedClickListener,
         private val getAllLoaded: () -> List<Track>,
+        private val isComplete: () -> Boolean,
         private val onCreatePlaylistClick: (() -> Unit)? = null,
         private val onEditPlaylistClick: (() -> Unit)? = null,
         private val onMicClick: () -> Unit,
@@ -69,6 +72,7 @@ class ButtonsAdapter(
     ) : ScrollAnimViewHolder(binding.root) {
 
         private var feed: FeedData.Buttons? = null
+        private var wasShowingButtons = false
 
         init {
             binding.micButton.setOnClickListener { onMicClick() }
@@ -106,28 +110,42 @@ class ButtonsAdapter(
             // An album or playlist page (feed.item != null) used to ALWAYS hand the item to vm.play,
             // which reloads in the source's order - so with a sort applied it now queues the rows as
             // shown, still with the item as the queue's context. Unsorted pages keep the item path.
+            // ⚠⚠ [2026-11-02] AN UNSORTED PAGE NOW QUEUES ITS ROWS TOO, ONCE THEY ARE THE WHOLE LIST (isComplete:
+            // the last page loaded, no next one). It handed the item to vm.play instead, which re-fetched the list
+            // in the service - on Deezer a second getSongs plus, until this build, the full dead-song check before
+            // the first song (a ~1,500-song playlist waited ~10 s or more). The item path stays for a partial window
+            // (rows still paging in), where it loads the rest. Same context: feed?.item goes to vm.setQueue as the
+            // queue's context exactly as it went to vm.play (Playing from, History's Go to, isOrderedCollection).
+            // Shuffle goes through the 1151 fresh-list path (setQueue shuffleList -> ShufflePlayer.setMediaItems),
+            // as Library and sorted pages already did. Rows carry no TRACK_TOKEN when painted from the store; the
+            // first song's DeezerTrackClient.loadTrack re-fetches one (hasUsableToken), one extra lookup.
             binding.playButton.setOnClickListener {
-                val list = if (feed?.item == null || viewModel.displayOrder != FeedData.DisplayOrder.Source) {
-                    listener.declaredTracks() ?: getAllLoaded()
-                } else null
+                val list = if (rowsAreTheList()) listener.declaredTracks() ?: getAllLoaded() else null
                 listener.onPlayClicked(it, feed?.extensionId, feed?.item, list, false)
             }
             binding.shuffleButton.setOnClickListener {
                 val feed = feed
-                val list = if (feed?.item == null || viewModel.displayOrder != FeedData.DisplayOrder.Source) {
-                    listener.declaredTracks() ?: getAllLoaded()
-                } else null
+                val list = if (rowsAreTheList()) listener.declaredTracks() ?: getAllLoaded() else null
                 listener.onPlayClicked(it, feed?.extensionId, feed?.item, list, true)
             }
             // TV only (phone: isTv() == false → no-op, layout unchanged).
             // [CORRECTED 2026-11-02] These eight buttons no longer get a tv_focus_pill foreground: all are Expressive
             // buttons whose shape changes with state (pressed, and checked for the search toggle), which the fixed
             // pill did not follow. TvFocusRing now draws their focus as each button's own stroke.
+            // [CORRECTED 2026-11-02, later] The search toggle no longer changes shape when checked on TV: it uses
+            // ToggleIconButton, a full pill in every state on TV, like the Library tabs. The others still go CornerSmall
+            // while OK is held.
             if (binding.root.context.isTv()) {
                 // playButton is the only text button here — bump its 10-foot text size.
                 binding.playButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             }
         }
+
+        // Sorted or item-less pages as before (1155), plus an unsorted page whose rows are the whole, non-empty list.
+        // An empty one keeps the item path and its "list is empty" message.
+        private fun rowsAreTheList() = feed?.item == null ||
+            viewModel.displayOrder != FeedData.DisplayOrder.Source ||
+            (isComplete() && getAllLoaded().isNotEmpty())
 
         fun bind(feed: FeedData.Buttons?, showEditPlaylist: Boolean) {
             val buttons = feed?.buttons ?: Feed.Buttons.EMPTY
@@ -136,7 +154,17 @@ class ButtonsAdapter(
             binding.searchToggleButton.isChecked = viewModel.searchToggled
             binding.searchBarText.setText(viewModel.searchQuery)
             binding.chipGroup.configure(feed?.sortState)
-            binding.buttonGroup.isVisible = showButtons
+            // A null feed is a reload or tab switch in progress (FeedData's dataFlow emits null first). The row keeps
+            // its height then, INVISIBLE rather than GONE (2026-11-02, Library tab-switch flash; Jun 13 precedent:
+            // initialButtons). Invisible also means not tappable: with a null feed, Play would queue the PREVIOUS
+            // tab's rows (getAllLoaded) and Sort would open with no feed id. Only a row that was showing keeps its
+            // height, so a feed without buttons still starts and stays GONE.
+            binding.buttonGroup.visibility = when {
+                showButtons -> View.VISIBLE
+                feed == null && wasShowingButtons -> View.INVISIBLE
+                else -> View.GONE
+            }
+            if (feed != null) wasShowingButtons = showButtons
             if (!showButtons) return
             binding.playButton.isVisible = buttons.showPlayAndShuffle
             binding.shuffleButton.isVisible = buttons.showPlayAndShuffle

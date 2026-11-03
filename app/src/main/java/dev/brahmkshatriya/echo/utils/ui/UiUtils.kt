@@ -160,10 +160,13 @@ object UiUtils {
      * consumed and focus moves on as before - so a two-column feed still reaches the next column.
      * Not the slider fix's "row unfocusable", because these rows have an action of their own.
      * [rowKeys] runs first for a row that already needs its own key handling (a view has one key listener).
+     * [buttonKeys] is the same for the buttons (2026-11-02, quick search's last row keeps Down). ⚠️ KEEP IT BEFORE
+     * rowKeys: callers pass rowKeys as a TRAILING LAMBDA, which binds to the LAST parameter.
      * Phone: returns without registering anything.
      */
     fun View.setTvRowButtons(
         buttons: List<View>,
+        buttonKeys: ((keyCode: Int, event: KeyEvent) -> Boolean)? = null,
         rowKeys: ((keyCode: Int, event: KeyEvent) -> Boolean)? = null,
     ) {
         if (!context.isTv()) return
@@ -183,6 +186,7 @@ object UiUtils {
         buttons.forEach { button ->
             button.isFocusable = true
             button.setOnKeyListener { v, keyCode, event ->
+                if (buttonKeys?.invoke(keyCode, event) == true) return@setOnKeyListener true
                 val visible = shown()
                 val index = visible.indexOf(v)
                 if (index < 0) return@setOnKeyListener false
