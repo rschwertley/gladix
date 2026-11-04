@@ -132,6 +132,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
     ): Streamable {
         currentCoroutineContext()[StartRungs]?.tokenRefreshed = true // TEMPORARY GladixStart probe
         val refetched = api.track(track.id)
+        currentCoroutineContext()[OwnAccountVerdict]?.tokenRefreshed = true
         val results = refetched["results"].requireObj("results")
         val rebuilt = parser.run { results.toTrack() }
         // FALLBACK_ID carried when the re-fetch omits it - see the [CORRECTED 2026-10-26] note at
@@ -190,8 +191,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
             val currentTrackId = track.id
             val mediaJson =
-                if (quality != "128" && quality != "mp3") api.getMediaUrl(track, quality)
-                else api.getMP3MediaUrl(track, quality == "128")
+                if (quality != "128" && quality != "mp3") {
+                    currentCoroutineContext()[OwnAccountVerdict]?.relayAsked = true
+                    api.getMediaUrl(track, quality)
+                } else api.getMP3MediaUrl(track, quality == "128")
             val mjString = mediaJson.toString()
             if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
                 "flac" -> descend(track, "320", retry, topQuality, allowSubstitute, allowRetoken)
@@ -267,6 +270,15 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // two: 3 + 1 + 3 + 1 + 3 = 11. The new call sites let the refresh be spent from
                     // the substitute branch as well as the decode branch; they do not add a third
                     // chance to spend it.
+                    // [CORRECTED 2026-11-04, relay128 RUNG] The 11 / 22 ceiling and the "3 media calls"
+                    // above were for a three-rung ladder. Point 1's ladder is now flac -> 320 -> 128 ->
+                    // relay128, and the same budget gives, from the top rung (per attempt / per resolve):
+                    //   flac 4+1+4+1+4 = 14 / 28, of which relay 9 / 18
+                    //   320  3+1+3+1+3 = 11 / 22, of which relay 6 / 12
+                    //   128  2+1+2+1+2 =  8 / 16, of which relay 3 / 6 (it was 5 / 10 and 0 relay)
+                    // A failing track with no FALLBACK_ID, same order: flac 4+1+4 = 9 / 18, 320 7 / 14,
+                    // 128 5 / 10. A relay that THROWS "Song not available" adds a repeat of that rung.
+                    // StreamableLoader.safetyNet can run all of this once more.
                     // WHAT DOES CHANGE IS THE COST OF A FAILING TRACK WITH NO FALLBACK_ID, which is
                     // the unmarked-dead population: it used to leave at the blank terminal after one
                     // ladder (3 per attempt, 6 per resolve) and now pays a refresh and a second
@@ -334,7 +346,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // report (see the step-down note on the token_rights branch) had FALLBACK_IDs, so a
                 // stale token sent straight to refusedAtRung could play the standard recording under
                 // the acoustic title. Only once the refresh is spent is this handled like token_rights.
-                // ⚠️ NOT AT A RELAY RUNG (flac/320): getMediaUrl sends the id alone, so a refresh would
+                // ⚠️ NOT AT A RELAY RUNG (flac/320/relay128): getMediaUrl sends the id alone, so a refresh would
                 // repeat a byte-identical relay request against its shared daily ceiling. There
                 // refusedAtRung only steps down, and the 128 rung below it applies this rule.
                 else -> extractUrlFromJson(mediaJson) ?: run {
@@ -347,13 +359,13 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             val qualityValue = when (quality) {
                 "flac" -> 9
                 "320" -> 6
-                "128" -> 3
+                "128", "relay128" -> 3
                 else -> 0
             }
             val qualityTitle = when (quality) {
                 "flac" -> "FLAC"
                 "320" -> "320kbps"
-                "128" -> "128kbps"
+                "128", "relay128" -> "128kbps"
                 else -> "UNKNOWN"
             }
             // ⚠⚠ ALWAYS THIS RUNG'S OWN TRACK ID NOW - A SIMPLIFICATION, NOT A LOSS.
@@ -399,6 +411,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // duplicate pass was also an UNDECLARED retry - the declared one is loadStreamableMedia's
             // two attempts with a 2 s delay, which this does not touch.
             if (e is LadderDescentException) throw e.cause ?: e
+            if (e !is MediaUnavailableException) currentCoroutineContext()[OwnAccountVerdict]?.unclassified = true
             if (e.message?.contains("Song not available") == true) {
                 if (retry) {
                     // Deliberate best-effort fallback: the cause is logged above; rethrowing would change
@@ -427,6 +440,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 "320" -> createStreamableForQuality(
                     track, "128", retry, topQuality, allowSubstitute, allowRetoken
                 )
+                "128" -> createStreamableForQuality(
+                    track, "relay128", retry, topQuality, allowSubstitute, allowRetoken
+                )
+                // ⚠️ `e` IS NOT PASSED AS THE CAUSE, ON PURPOSE (2026-11-04). onPlayerError dispatches on rootCause, the
+                // deepest node, so a chained IOException would take this out of its Unavailable branch and into the
+                // transport ones. The retry decision does not need it: see OwnAccountVerdict.
                 // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
                 // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
                 // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
@@ -458,13 +477,21 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         val lower = when (quality) {
             "flac" -> "320"
             "320" -> "128"
-            // "128" and "mp3" (MP3_MISC) are bottom rungs - nothing lower exists, so the
+            // The same format through the relay, no token, before any substitute (2026-11-04). The medley
+            // 668937892: its substitute was refused at 128 by the user's own account, and the relay serves
+            // that substitute at MP3_128 (see DeezerMedia.getMediaUrl), so a 128 user skipped a song a 320
+            // user plays.
+            "128" -> "relay128"
+            // "relay128" and "mp3" (MP3_MISC) are bottom rungs - nothing lower exists, so the
             // substitution below is the only remaining option.
+            // [CORRECTED 2026-11-04] This named "128" as a bottom rung; it no longer is. "mp3" stays
+            // own-account only: nothing has measured that format through the relay.
             else -> null
         }
         if (lower != null)
             return descend(track, lower, retry, topQuality, allowSubstitute, allowRetoken)
 
+        // [CORRECTED 2026-11-04] By here `quality` is "relay128" or "mp3", not "128" as the next line says.
         // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
         // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
         // QUALITY.
@@ -676,13 +703,14 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             try {
             for (attempt in 0..1) {
                 if (attempt > 0) delay(2000L)
+                val verdict = OwnAccountVerdict()
                 attempts++
                 // Best-effort retry: the loop continues past a failed attempt and ends in the throw below.
                 // The caught exception IS used now (captured as lastError and chained), but the annotation
                 // stays because the catch still does not rethrow on the non-final attempt.
                 @Suppress("SwallowedException")
                 try {
-                    resolved = withContext(rungs) { createStreamableForQuality(newTrack, quality) }
+                    resolved = withContext(rungs + verdict) { createStreamableForQuality(newTrack, quality) }
                     break
                 } catch (e: CancellationException) {
                     throw e
@@ -691,6 +719,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // Kept alongside the chaining, not made redundant by it: only the LAST attempt's cause is
                     // chained, so attempt 0's reason exists nowhere else. The two are complementary.
                     println("GladixDeezer loadStreamableMedia attempt $attempt failed id=$trackId q=$quality: ${e.message}")
+                    if (verdict.ownAccountRefusedAll) break
                 }
             }
             } finally {
@@ -1131,6 +1160,28 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         private const val ALT_VERSION_LABEL = "Alt version"
     }
 }
+/**
+ * One loadStreamableMedia attempt's answer to "is a second attempt pointless?". It is, only when every request went to
+ * the user's own account, each failure was the ladder's own verdict, and the token refresh had been spent, so the
+ * same account would be asked the same thing with an equally fresh token.
+ * ⚠⚠ ANY RELAY RUNG KEEPS THE RETRY. The retry (cdbfc3c1, 2026-05-10) is for transient failures of the shared relay,
+ * which can arrive as an ordinary answer with no media, so a relay refusal cannot be told from an outage. The commit's
+ * subject says only "retry loop with backoff"; the doc a80f1e28 added that day calls the shared server "inherently
+ * unstable"; the no-media shape is the user's history, 2026-11-04, not something observed here.
+ * ⚠️ SINCE relay128, ONLY AN "mp3" (MP3_MISC) LADDER CAN SATISFY THIS: every other ladder reaches a relay rung.
+ * ⚠️ unclassified IS THE DEFAULT-TO-RETRY HALF: a network error, a licence refusal and "Song not available" all arrive
+ * at the rung's catch as something other than MediaUnavailableException.
+ */
+private class OwnAccountVerdict : AbstractCoroutineContextElement(OwnAccountVerdict) {
+    companion object Key : CoroutineContext.Key<OwnAccountVerdict>
+
+    var relayAsked = false
+    var tokenRefreshed = false
+    var unclassified = false
+
+    val ownAccountRefusedAll get() = tokenRefreshed && !relayAsked && !unclassified
+}
+
 /**
  * ⚠⚠ TEMPORARY GladixStart PROBE (2026-11-02) - REMOVE WITH the app's StartProbe. Records every stream-ladder
  * rung one loadStreamableMedia tries: begin() at each createStreamableForQuality entry, done() at its exit. A rung

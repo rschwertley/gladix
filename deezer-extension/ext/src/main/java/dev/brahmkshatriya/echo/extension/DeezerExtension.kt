@@ -158,6 +158,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                         // through to the APP-level stream_quality, which defaults to "medium", so
                         // mobile data would stream 320kbps. Pinning it here caps mobile data while
                         // Wi-Fi stays on index 3 (Auto) and therefore still gets the app's Medium.
+                        // [CORRECTED 2026-11-03] The premise no longer holds: the app-level stream_quality
+                        // default is "lowest" again (the May 17 decision, restored at PlayerService.select),
+                        // so Auto here would also give 128 on mobile. The pin is now redundant but harmless.
+                        // The Wi-Fi half still holds - the app-level Wi-Fi default is "medium" again.
                         2
                     ),
                     SettingSwitch(

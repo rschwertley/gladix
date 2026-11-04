@@ -37,7 +37,9 @@ import dev.brahmkshatriya.echo.playback.PlayerService.Companion.UNMETERED_STREAM
  * tag System.out because it is a JVM module with no android.util.Log; `adb logcat | grep GladixStart` reads both,
  * matched on id. Ids: the Deezer track id only. No tokens, ARL or URLs. No Crashlytics.
  * Zero cost when idle: every hook returns at `!armed`. Arm sites: FeedClickListener (onPlayClicked, onMediaClicked,
- * onTracksClicked), HistoryFragment, MediaHeaderAdapter's Play, AndroidAutoCallback.onSetMediaItems.
+ * onTracksClicked), HistoryFragment, MediaHeaderAdapter's Play, AndroidAutoCallback.onSetMediaItems, and (added
+ * 2026-11-03) MediaMoreBottomSheet's Play and Shuffle. Still unarmed: a shared-link start (FragmentUtils), a Radio
+ * card (FeedClickListener.onMediaClicked) and the player's own controls; none of them prints a line.
  * q is the APP-level quality setting (an extension-level override is not reflected); net is App.networkFlow's
  * metered flag, logged as wifi (Unmetered) / cell (Metered) / none.
  */
@@ -151,8 +153,9 @@ object StartProbe {
         val app = app
         val settings = app?.settings
         val q = settings?.let {
-            val unmetered = it.getString(UNMETERED_STREAM_QUALITY, "off")
-            if (app?.isUnmetered == true && unmetered != "off") unmetered else it.getString(STREAM_QUALITY, "medium")
+            // Mirrors PlayerService.select's app-level defaults (restored 2026-11-03): Wi-Fi "medium", Mobile "lowest".
+            val unmetered = it.getString(UNMETERED_STREAM_QUALITY, "medium")
+            if (app?.isUnmetered == true && unmetered != "off") unmetered else it.getString(STREAM_QUALITY, "lowest")
         } ?: "-"
         val net = when (app?.networkFlow?.value) {
             NetworkConnection.Unmetered -> "wifi"

@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- TV ONLY (2026-11-02), used by values-television's TabButton and ToggleIconButton(+Outlined/Tonal): Material 1.14.0's
-     m3expressive_button_shape_state_list with every state a full pill, so a checked or pressed button keeps the shape
-     of the focus ring on its neighbours. Kept as a list of more than one state on purpose: TvFocusRing.shapeChangingButton
-     picks buttons by ShapeAppearance.isStateful (StateListShapeAppearanceModel: stateCount > 1), and that path draws the
-     ring as the button's own stroke, on its drawn (inset) shape. A single fixed shape would fall back to the overlay
-     pill on the view's full bounds. -->
+<!-- TV ONLY (2026-11-02), used by values-television's button styles: Material 1.14.0's
+     m3expressive_button_shape_state_list reduced to a full pill, so a checked or pressed button keeps the shape of the
+     focus ring around it.
+     [CORRECTED 2026-11-04] This was a list of THREE states "on purpose", so that TvFocusRing.shapeChangingButton
+     (ShapeAppearance.isStateful: StateListShapeAppearanceModel's stateCount > 1) drew the ring as the button's own stroke.
+     It is ONE state now, also on purpose: a stroke has one colour, and the two-tone ring needs the overlay on the view's
+     full bounds, which is what a non-stateful shape falls back to. Connected groups keep their stroke; see
+     xml/tv_connected_inner_corner_fixed. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-    <item android:state_pressed="true"
-        app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
-    <item android:state_checkable="true" android:state_checked="true"
-        app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
     <item app:shapeAppearance="@style/ShapeAppearance.Material3.Corner.Full" />
 </selector>

@@ -1502,6 +1502,9 @@ class PlayerEventListener(
      *     and every track pays: ten of them is ~140 requests before the probe, against ~60
      *     before. Bounded, one probe, then the stop - but it is the number to look at first if a
      *     cold start on a dead-heavy queue ever reads as slow.
+     * [CORRECTED 2026-11-04] These are FLAC counts from before Deezer's relay128 rung. Now ~28 per resolve at the
+     * ceiling and 18 for an unmarked dead track (9 per attempt), so ten of them is ~180 requests; 128 users pay 10 per
+     * resolve, ~100 for ten. Recomputed at createStreamableForQuality.
      * A marked dead track still costs ZERO: MediaItemUtils.droppingUnplayable keeps it out of the
      * queue and StreamableLoader.loadServer throws before any request, so this only applies to the
      * unmarked populations (verdict absent, pipe failed, restored queue, other extensions).

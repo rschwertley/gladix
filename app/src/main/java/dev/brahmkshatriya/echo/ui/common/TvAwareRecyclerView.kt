@@ -213,14 +213,26 @@ class TvAwareRecyclerView @JvmOverloads constructor(
             ?: NO_POSITION
     }
 
+    private var aggregatedVisible = false
+
     override fun onVisibilityAggregated(isVisible: Boolean) {
         super.onVisibilityAggregated(isVisible)
+        val becameVisible = isVisible && !aggregatedVisible
+        aggregatedVisible = isVisible
         if (!isVisible || !isTv || savedOuterPos == NO_POSITION) return
         // Don't steal focus if it currently sits OUTSIDE this feed — e.g. on the nav rail during a
         // lateral tab switch. Only restore when nothing is focused (returning from a popped fragment)
         // or focus is already inside us (framework dumped it on the default item).
+        // [CORRECTED 2026-11-04] "Focus is already inside us" also matched every layout, not only a return to this
+        // page: ViewGroup.attachViewToParent (AOSP android14-release, ViewGroup.java:5935) calls this with true each
+        // time a layout re-attaches a row, with no visibility change. The restore then ran itemView.requestFocus()
+        // on the tabs row's HorizontalScrollView, whose first focusable is child 0 - so OK on a Library tab switched
+        // the content and focus went back to All (read from source, 1166; not measured). The inside-us case now
+        // applies only to a real false-to-true change; on a re-attach a real row keeps focus, while null or the list
+        // itself still restores as before.
         val current = rootView?.findFocus()
         if (current != null && current !== this && !current.isDescendantOfThis()) return
+        if (!becameVisible && current != null && current !== this) return
         restoreSavedFocus()
     }
 

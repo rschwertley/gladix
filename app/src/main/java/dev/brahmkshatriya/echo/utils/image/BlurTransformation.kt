@@ -35,9 +35,14 @@ class BlurTransformation(
 
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             val scale = width.toFloat() / MAX_WIDTH
-            val scaledHeight = (height / scale).toInt()
-            val output =
-                createBitmap(MAX_WIDTH, scaledHeight, config ?: Bitmap.Config.ARGB_8888)
+            val scaledHeight = (height / scale).toInt().coerceAtLeast(1)
+            // ⚠️ ALWAYS ARGB_8888, NOT THE SOURCE'S CONFIG (2026-11-04). Crashlytics, 1166, browsing iptv_org:
+            // RSInvalidStateException "Bad bitmap type: RGBA_F16" at Allocation.createFromBitmap. RenderScript has no
+            // F16 element, and this copied the source's config. Forcing 8-bit at decode cannot prevent it: Android
+            // decodes a high-precision image to F16 even when ARGB_8888 is requested (SkAndroidCodec
+            // .computeOutputColorType, android12-release) and Coil 3.6.3's BitmapFactoryDecoder.configureConfig forces
+            // F16 too. Drawing into this bitmap converts it, and the result is a blur, so the lost precision cannot show.
+            val output = createBitmap(MAX_WIDTH, scaledHeight, Bitmap.Config.ARGB_8888)
             output.applyCanvas {
                 scale(1 / scale, 1 / scale)
                 drawBitmap(this@blurred, 0f, 0f, paint)

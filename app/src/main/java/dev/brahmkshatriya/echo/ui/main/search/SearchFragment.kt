@@ -330,19 +330,26 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         binding.quickSearchView.editText.doOnTextChanged { text, _, _, _ ->
             searchViewModel.quickSearch(argId, text.toString())
         }
-        binding.quickSearchView.editText.setOnEditorActionListener { textView, _, _ ->
-            val query = textView.text.toString()
+        fun submitQuery(query: String) {
             binding.quickSearchView.hide()
             searchViewModel.queryFlow.value = query
+        }
+        binding.quickSearchView.editText.setOnEditorActionListener { textView, _, _ ->
+            submitQuery(textView.text.toString())
             false
         }
         val quickSearchAdapter = QuickSearchAdapter(object : QuickSearchAdapter.Listener {
             override fun onClick(item: QuickSearchAdapter.Item, transitionView: View) {
                 when (val actualItem = item.actual) {
                     is QuickSearchItem.Query -> {
+                        // ⚠️ TV SUBMITS DIRECTLY, NO onEditorAction (2026-11-04). The editor listener returns false, so
+                        // TextView.onEditorAction then sends a synthetic ENTER to the FOCUSED view. On TV that is this
+                        // row, which clicks again; the last ENTER can land where focus goes as the overlay hides (the
+                        // bar, or the rail's Search item), and either reopens it. Seen on 1166: the panel closes and
+                        // reopens, sometimes. Where the ENTER lands is inferred from source, not measured.
                         binding.quickSearchView.editText.run {
                             setText(actualItem.query)
-                            onEditorAction(imeOptions)
+                            if (isTv) submitQuery(actualItem.query) else onEditorAction(imeOptions)
                         }
                     }
 

@@ -9,9 +9,11 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.Window
 import android.widget.AbsListView
+import android.widget.Button
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.DialogFragment
@@ -75,9 +77,23 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
  * [CORRECTED 2026-11-02, later] "so the ring sits where the pill is" was wrong on the TV rail: it was centred on the
  * indicator's LAYOUT box, while the pill draws with the icon container's bounds (taller here), so the ring sat ~2dp
  * high - seen on the 1164 device (bottom touching, gap on top). It now uses the drawn bounds; see drawnPillBounds.
+ * [CORRECTED 2026-11-04] "It now uses the drawn bounds" overcorrected on 1166 (thin gap on top, larger below): those
+ * are the drawable's current bounds, not necessarily what is on screen. The TV indicator is now 36dp, so the two
+ * agree; see drawnPillBounds.
  * [CORRECTED 2026-11-02, later] "e.g. the selected Library tab, a rounded rectangle" no longer holds on TV: the tabs
  * and the feed's search toggle use values-television's TabButton / ToggleIconButton, a full pill in every state. Their
  * shape is still a state LIST (xml/tv_button_shape_pill), so they still take this stroke path.
+ * [CORRECTED 2026-11-04] Nearly all of that stroke path is gone on TV. A stroke has one colour, so a pink one vanished
+ * on a pink fill (the Play pill) and barely showed on a selected tab. tv_button_shape_pill is now one state, not
+ * stateful, and values-television gives it to the tabs, toggles and the app's Expressive button styles (FilledButton,
+ * IconButton, IconButtonTonal, IconButtonOutlined, IconButtonTransparent, SideBarButton), so they take the two-tone
+ * overlay ring (tv_focus_ring_pill: pink, then a ?colorSurface gap). "Every Widget.Material3Expressive.Button style"
+ * above now means only what still reaches shapeChangingButton: connected-group segments, whose corners a pill cannot
+ * match, and dialog_settings' closeButton (its layout names Material's style directly); both stay one pink stroke.
+ * The Shuffle cookie never took the stroke path, as its replaced background makes getShapeAppearance throw. The rail
+ * ring also stays one colour: it has a real 2dp gap outside the pill.
+ * The 64dp limit: a TextView with text is always the rect ring, as a pill's curve crossed the first letters of a
+ * multi-line block (MediaHeaderAdapter's description, 1166). Those views add their own clearance.
  */
 object TvFocusRing {
 
@@ -167,7 +183,8 @@ object TvFocusRing {
                 }.also { root.viewTreeObserver.addOnPreDrawListener(it) }
             } else {
                 if (!needsRing(new)) return@OnGlobalFocusChangeListener
-                drawable = if (new.height <= pillMaxHeight) pill else rect
+                val isTextBlock = new is TextView && new !is Button && !new.text.isNullOrEmpty()
+                drawable = if (new.height <= pillMaxHeight && !isTextBlock) pill else rect
                 place = { drawable.setBounds(0, 0, new.width, new.height) }
                 followed = listOf(new)
             }
@@ -214,6 +231,15 @@ object TvFocusRing {
      * error. Reading the drawable's current bounds follows whatever Material does; the layout box is the fallback
      * before anything has been drawn. Unselected items draw the same bounds (only scaled and faded), so the ring
      * sits where their pill appears.
+     * [CORRECTED 2026-11-04] "After the first frame the pill draws ... with the ICON CONTAINER's size" treats the
+     * bounds as the picture, and 1166 showed the opposite error (thin gap on top, larger below). Read from source: the
+     * pill on screen is what was recorded the last time the indicator view itself drew (View.getDrawableRenderNode,
+     * AOSP android14-release, View.java:24161), while the ripple mask can change these bounds later without
+     * re-recording it, so it could show 32dp while this read 36dp. INFERRED, not measured: 32dp on the 1166 item and
+     * 36dp on the 1164 one fit both photos; why each item had which was not found. Fixed at the source of the two
+     * heights: NavViewTv's BottomNavbarActiveIndicatorTv is 36dp, the icon container's height, so both writers set
+     * the same bounds, and the "32dp indicator" above no longer applies on TV. This read and the pre-draw re-place in
+     * install are now redundant; kept until the device confirms equal gaps.
      */
     private fun View.drawnPillBounds(): Rect =
         background?.bounds?.takeUnless { it.isEmpty }?.let(::Rect) ?: Rect(0, 0, width, height)

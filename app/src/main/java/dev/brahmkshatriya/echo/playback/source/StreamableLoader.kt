@@ -143,7 +143,10 @@ class StreamableLoader(
      * calls typically and 12 at worst for a 320 user (3 ladder passes x 2 attempts, x2 when the relay
      * throws). The 320 relay is shared and has a ~1,000/day threshold, so an unmarked dead run - a
      * restored queue, where the verdict is reset - must not double its relay cost without limit.
-     * With the cap a dead run adds at most +18..36 relay calls. Atomic: loads run concurrently
+     * With the cap a dead run adds at most +18..36 relay calls.
+     * [CORRECTED 2026-11-04] Those counts predate Deezer's relay128 rung. Per resolve at the worst, relay calls are now
+     * 6 for a 128 user (it was 0), 12 for a 320 user and 18 for FLAC (3 passes x relay rungs x 2 attempts), doubled when
+     * the relay throws. Three failed nets add +18..36 / +36..72 / +54..108. Atomic: loads run concurrently
      * (preloads, crossfade). The 3 is uncalibrated.
      */
     private val failedNets = AtomicInteger(0)

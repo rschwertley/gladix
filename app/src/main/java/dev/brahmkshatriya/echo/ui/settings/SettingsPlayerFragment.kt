@@ -74,7 +74,12 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     // streamQualities[1] == "medium", matching PlayerService.select's `default`
                     // parameter. This row declared [2] ("lowest") while every read used [1], so the
                     // screen showed Lowest on a device that was streaming Medium.
-                    setDefaultValue(streamQualities[1])
+                    // [CORRECTED 2026-11-03] The mismatch was real, but d0ad6b93 fixed it in the wrong
+                    // direction: [2] here was the May 17 decision (810dc984, app Mobile = Lowest) and the
+                    // read default had simply never followed it. This commit silently reversed that
+                    // decision. Restored 2026-11-03 by moving BOTH sides to [2] ("lowest"): this row,
+                    // PlayerService.select's `default` and StartProbe's mirror. Change all three together.
+                    setDefaultValue(streamQualities[2])
                     addPreference(this)
                 }
 
@@ -90,7 +95,14 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     // "off" is the Auto entry appended to entryValues just above, and matches the
                     // default PlayerService.select reads for this key. It declared "medium" while
                     // every read used "off", so the screen showed Medium on a device using Auto.
-                    setDefaultValue("off")
+                    // [CORRECTED 2026-11-03] Same wrong direction as the Mobile row above: "medium" here
+                    // was the May 17 decision (810dc984, app Wi-Fi = Medium), and d0ad6b93 reversed it
+                    // without saying so. Worse, because androidx persists a displayed default on first
+                    // attach, every install that opened this screen afterwards STORED "off" - so a stored
+                    // "off" is not evidence the user chose Auto. Restored to [1] ("medium") here, in
+                    // PlayerService.select's app-level read default and in StartProbe; the stored "off"
+                    // values are handled by PlayerService.migrateWifiQualityDefault.
+                    setDefaultValue(streamQualities[1])
                     addPreference(this)
                 }
             }

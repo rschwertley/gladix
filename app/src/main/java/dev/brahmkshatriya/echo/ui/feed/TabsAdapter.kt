@@ -96,6 +96,8 @@ class TabsAdapter<T>(
             // draws focus as the tab's own stroke, which follows its shape in every state.
             // [CORRECTED 2026-11-02, later] On TV the checked tab is no longer a rounded rectangle: values-television's
             // TabButton keeps a full pill in every state (1164: the selected fill and the focus ring did not match).
+            // [CORRECTED 2026-11-04] "TvFocusRing now draws focus as the tab's own stroke" no longer holds: tabs take its
+            // two-tone overlay ring (see the class note there).
             if (parent.context.isTv()) {
                 tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             }

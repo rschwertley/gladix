@@ -73,7 +73,9 @@ class DeezerMedia(
      * AND THAT IS WHAT KEEPS THE QUALITY LADDER UNTOUCHED. One request carries both formats and
      * Deezer answers with the best it has for that song, so DeezerTrackClient's ladder still sees
      * flac -> 320 -> 128, topQuality still has three values, and the substitute ladder's
-     * re-entry at topQuality needs no new case. Adapted from upstream
+     * re-entry at topQuality needs no new case.
+     * [CORRECTED 2026-11-04] The ladder is now flac -> 320 -> 128 -> relay128; see the note at getMediaUrl's
+     * relay128 arm. topQuality still has three values, and the HiFi point here is unaffected. Adapted from upstream
      * (LuftVerbot/echo-deezer-extension, 865463c); the rest of that commit is deliberately not
      * taken.
      * ⚠️ WHAT THE RELAY WAS MEASURED TO DO, 2026-10-24, AND WHAT WAS NOT
@@ -109,7 +111,12 @@ class DeezerMedia(
 
     suspend fun getMediaUrl(track: Track, quality: String): JsonObject {
         val formats = when (quality) {
-            "128" -> arrayOf("MP3_128")
+            // relay128: DeezerTrackClient's rung below its own-account 128. The "128" label has no caller, because
+            // that function sends "128" to getMP3MediaUrl. MEASURED 2026-11-04, one request per id, track looked up
+            // with a guest session: substitute 13982230 got format MP3_128, cipher BF_CBC_STRIPE, a stream whose size
+            // equals its FILESIZE_MP3_128 (3323610); original 668937892 got code 2002 and empty media. Decryption of
+            // that stream was not run.
+            "128", "relay128" -> arrayOf("MP3_128")
             "flac" -> if (hiFiWanted()) arrayOf("FLAC_24", "FLAC") else arrayOf("FLAC")
             else -> arrayOf("MP3_320")
         }

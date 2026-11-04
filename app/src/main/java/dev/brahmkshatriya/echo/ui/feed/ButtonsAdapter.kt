@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.ui.feed
 
+import android.graphics.drawable.InsetDrawable
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
@@ -14,6 +15,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemFeedButtonsBinding
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animateVisibility
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
@@ -135,7 +137,22 @@ class ButtonsAdapter(
             // [CORRECTED 2026-11-02, later] The search toggle no longer changes shape when checked on TV: it uses
             // ToggleIconButton, a full pill in every state on TV, like the Library tabs. The others still go CornerSmall
             // while OK is held.
+            // [CORRECTED 2026-11-04] Two more claims here were wrong or are gone. "All are Expressive buttons whose shape
+            // changes" was never true of Shuffle: its replaced background makes getShapeAppearance throw, so it always
+            // took TvFocusRing's overlay. And the rest now take that overlay too, as a two-tone ring, with no corner
+            // change while OK is held (FilledButton and the icon button styles in values-television).
             if (binding.root.context.isTv()) {
+                // Shuffle: the cookie's points reach ~2dp from the view's edge, inside the ring's 6dp, so it is inset to
+                // sit clear of the circular ring. Its tint carries over (AppCompat re-applies it to a new background).
+                // Padding restored because an InsetDrawable's insets otherwise replace the view's padding (View.setBackground).
+                binding.shuffleButton.run {
+                    val start = paddingStart
+                    val top = paddingTop
+                    val end = paddingEnd
+                    val bottom = paddingBottom
+                    background = InsetDrawable(background, 4.dpToPx(context))
+                    setPaddingRelative(start, top, end, bottom)
+                }
                 // playButton is the only text button here — bump its 10-foot text size.
                 binding.playButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             }

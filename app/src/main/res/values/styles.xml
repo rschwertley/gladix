@@ -80,6 +80,12 @@
         <item name="android:color">?navBarBackground</item>
     </style>
 
+    <!-- TV rail only (2026-11-04), used by NavViewTv: the same height as the 36dp icon's container, so the indicator's
+         own size and the ripple mask's size agree and the pill is one height. See TvFocusRing.drawnPillBounds. -->
+    <style name="BottomNavbarActiveIndicatorTv" parent="BottomNavbarActiveIndicator">
+        <item name="android:height">36dp</item>
+    </style>
+
     <style name="NavView" parent="Widget.Material3.BottomNavigationView">
         <item name="itemActiveIndicatorStyle">@style/BottomNavbarActiveIndicator</item>
         <item name="itemTextAppearanceActiveBoldEnabled">false</item>
@@ -99,6 +105,7 @@
          (distinct from the selected active-indicator). Applied ONLY in layout-land-television/activity_main.xml;
          phone/tablet keep @style/NavView unchanged. -->
     <style name="NavViewTv" parent="@style/NavView">
+        <item name="itemActiveIndicatorStyle">@style/BottomNavbarActiveIndicatorTv</item>
         <item name="itemRippleColor">@color/tv_nav_item_ripple</item>
         <!-- 10-foot rail: bigger icons + labels (default 24dp icon / BodySmall label). Only ever applied in
              layout-land-television/activity_main.xml, so phone's @style/NavView is untouched. -->
@@ -422,6 +429,10 @@
     <!-- Library-style tabs (item_tab), the feed's search toggle and item_media_header's four checkable buttons. Plain
          aliases here; values-television overrides each to keep a full pill in every state (2026-11-02). -->
     <style name="TabButton" parent="Widget.Material3Expressive.Button" />
+
+    <!-- The feed's Play pill and the playlist search page's Add button. An alias here; values-television keeps a full
+         pill in every state (2026-11-04). -->
+    <style name="FilledButton" parent="Widget.Material3Expressive.Button" />
 
     <style name="ToggleIconButton" parent="IconButton" />
 

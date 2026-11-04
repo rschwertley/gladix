@@ -457,9 +457,31 @@ class PlayerService : MediaLibraryService() {
         return PlaybackException(message, raw, code)
     }
 
+    /**
+     * One-time migration (2026-11-03), same pattern as normalization_force_disabled_v1: app Wi-Fi stored as
+     * "off" (Auto) with app Mobile resolving to "lowest" streams 128 on Wi-Fi, so it is rewritten to "medium".
+     * ⚠️ A STORED "off" IS NOT A CHOICE. From d0ad6b93 (2026-09-24) the settings screen persisted "off" as its
+     * displayed default on first attach - see the corrected note at SettingsPlayerFragment's Wi-Fi row. The
+     * condition therefore keys on the RESULT (128 on Wi-Fi) rather than on how the value was written. It only
+     * overrides someone who deliberately chose Wi-Fi Auto with Mobile Lowest. An absent Wi-Fi key needs no
+     * write: it reads as "medium" now. Runs before anything in this service selects a stream.
+     */
+    private fun migrateWifiQualityDefault() {
+        val settings = app.settings
+        if (settings.getBoolean("wifi_quality_default_v1", false)) return
+        val wifi = settings.getString(UNMETERED_STREAM_QUALITY, null)
+        val mobile = settings.getString(STREAM_QUALITY, streamQualities[2])
+        settings.edit {
+            if (wifi == "off" && mobile == streamQualities[2])
+                putString(UNMETERED_STREAM_QUALITY, streamQualities[1])
+            putBoolean("wifi_quality_default_v1", true)
+        }
+    }
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        runCatching { migrateWifiQualityDefault() }
         // age_s_svc + service_create_count + heap sample. service_create_count > 1 means this process has
         // destroyed and recreated the service — the kill/rebind loop that makes heap_used_mb_svc a LATE sample.
         CrashKeys.onServiceCreate()
@@ -1444,10 +1466,17 @@ class PlayerService : MediaLibraryService() {
             app: App,
             settings: SharedPreferences,
             quality: (E) -> Int,
-            default: String = streamQualities[1],
+            // "lowest" at the app level: the May 17 decision (810dc984), restored 2026-11-03. Mirrored at
+            // SettingsPlayerFragment's Mobile row and StartProbe. The extension call passes "off".
+            default: String = streamQualities[2],
         ): E? {
             if (app.isUnmetered) {
-                val unmeteredQuality = settings.getString(UNMETERED_STREAM_QUALITY, "off")
+                // ⚠️ THE WI-FI DEFAULT IS SPLIT BY LEVEL. The extension level must default to "off" so an
+                // untouched extension setting defers to the app; the app level defaults to "medium" (May
+                // 17 decision, restored 2026-11-03), mirrored at SettingsPlayerFragment's Wi-Fi row.
+                val unmeteredQuality = settings.getString(
+                    UNMETERED_STREAM_QUALITY, if (default == "off") "off" else streamQualities[1]
+                )
                 if (unmeteredQuality != "off") return selectQuality(unmeteredQuality, quality)
                 if (default == "off") return null  // extension level — stop here
                 // app level — fall through to stream_quality

@@ -256,6 +256,18 @@ class MediaHeaderAdapter(
 
         init {
             binding.run {
+                // TV: room for the focus ring (2026-11-04). The link movement method makes this block focusable, and at
+                // its 4dp padding the ring crossed "Album" and the artist's name on 1166. 16dp padding with a -12dp margin
+                // keeps the text where it was; the root stops clipping the ring, which now reaches outside it.
+                if (root.context.isTv()) {
+                    description.updatePaddingRelative(
+                        start = 16.dpToPx(root.context), end = 16.dpToPx(root.context), top = 8.dpToPx(root.context)
+                    )
+                    description.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                        marginStart = (-12).dpToPx(root.context)
+                    }
+                    root.clipChildren = false
+                }
                 description.movementMethod = LinkMovementMethod.getInstance()
                 description.setOnClickListener {
                     if (clickEnabled) listener.onDescriptionClicked(

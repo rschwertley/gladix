@@ -5,6 +5,7 @@ import android.content.Context.CONNECTIVITY_SERVICE
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.mayakapps.kache.FileKache
 import com.mayakapps.kache.KacheStrategy
@@ -355,13 +356,41 @@ data class App(
             val connectivityManager =
                 context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
             val networkCallback = object : ConnectivityManager.NetworkCallback() {
+                // ⚠⚠ [ADDED 2026-11-03] onAvailable ALONE COULD LEAVE Wi-Fi READ AS METERED FOR A WHOLE
+                // SESSION. Its isActiveNetworkMetered is a synchronous ConnectivityManager call made inside
+                // the callback, which Android's onAvailable docs warn may not be current yet (docs, not
+                // platform source), and nothing corrected it until the next onAvailable/onLost. On build
+                // 1166 a phone on WIFI / NOT_METERED streamed every auto-played song at 128: Deezer's Mobile
+                // setting (Lowest) can only be reached through PlayerService.select's METERED branch.
+                // onCapabilitiesChanged follows onAvailable for the default network and on every later
+                // capability change, so it is the authority; onAvailable's read stays as the fallback
+                // (1c9e4a3f, 2026-05-16) for devices where it is the only callback that arrives.
+                // `current` is the default network as last reported, so a late callback about a network
+                // that is no longer the default cannot overwrite the state of the one that is.
+                @Volatile
+                private var current: Network? = null
+
                 override fun onAvailable(network: Network) {
+                    current = network
                     val isMetered = connectivityManager.isActiveNetworkMetered
                     _networkFlow.value = if (isMetered) NetworkConnection.Metered
                     else NetworkConnection.Unmetered
                 }
 
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    if (current != null && network != current) return
+                    current = network
+                    _networkFlow.value =
+                        if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+                            NetworkConnection.Unmetered
+                        else NetworkConnection.Metered
+                }
+
                 override fun onLost(network: Network) {
+                    // Only the network we are on. A default-network switch reports the new one through
+                    // onAvailable; a late onLost for the old one must not mark a connected device offline.
+                    if (current != null && network != current) return
+                    current = null
                     _networkFlow.value = NetworkConnection.NotConnected
                 }
             }

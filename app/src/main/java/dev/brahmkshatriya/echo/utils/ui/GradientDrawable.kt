@@ -66,10 +66,15 @@ object GradientDrawable {
         val background = MaterialColors.getColor(context, R.attr.echoBackground, Color.BLACK)
         val primary = MaterialColors.getColor(context, colorPrimary, Color.BLACK)
         if (toBlur == null) return background.toDrawable()
-        val noise = ResourcesCompat.getDrawable(
-            context.resources, R.drawable.grain_noise, context.theme
-        )!!.toBitmap()
-        val bitmap = toBlur.blurred(context)
+        // A failed blur is no gradient, never a crash (2026-11-04): this runs for whatever image a feed supplies, and is
+        // only decoration. RuntimeException and Error alike: a RenderScript driver failure and OutOfMemoryError both end
+        // here. Nothing in this block suspends, so catching everything cannot swallow a cancellation.
+        val (noise, bitmap) = runCatching {
+            val grain = ResourcesCompat.getDrawable(
+                context.resources, R.drawable.grain_noise, context.theme
+            )!!.toBitmap()
+            grain to toBlur.blurred(context)
+        }.getOrElse { return background.toDrawable() }
         return PaintDrawable().apply {
             setShape(RectShape())
             paint.shader = null

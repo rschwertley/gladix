@@ -72,6 +72,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     //   armIncoming(token)  ->  output silence, remember the token;
     //   onFlush             ->  clears the COUNTERS, keeps muted and pendingToken;
     //   first post-flush queueInput -> publishes the token (still silent);
+    //   [CORRECTED 2026-11-03] "post-flush" was not enforced: a departing-track buffer rendered between
+    //   armIncoming and the seek published it first, and onFlush kept it. onFlush now clears the
+    //   PUBLISHED token (pendingToken and muted still stay) - see the note there.
     //   startFadeIn(ms) from the controller -> clears the mute and starts the ramp.
     // The controller owns every length decision on the main thread; the audio thread only reports
     // "my first real frame happened". That ordering is why no length arithmetic is needed here.
@@ -149,6 +152,18 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private val emittedFrames = AtomicLong(0)
     private val pendingToken = AtomicReference<Any?>(null)
     private val publishedToken = AtomicReference<Any?>(null)
+
+    /**
+     * ⚠⚠ [ADDED 2026-11-03] THE CROSSFADE BRIDGE'S "MAIN'S OLD AUDIO HAS STOPPED" SIGNAL. On the
+     * hand-off seek, ExoPlayerImplInternal.seekToPeriodPosition (media3 1.11.1, :1838) pauses this
+     * player's AudioTrack in stopRenderers() and then, in the same playback-thread message,
+     * disableRenderers() reaches DefaultAudioSink.flush (:1588-1600), which flushes this processor
+     * (resetSinkStateForFlush -> setupAudioProcessors -> pipeline flush, :855) BEFORE it releases
+     * the output. So a flush observed after the switch means the departing track's queued audio is
+     * already paused. Invoked on the PLAYBACK thread, on every flush (a hand-off produces two: the
+     * seek's and the new stream's start), so the listener does its own filtering and must not block.
+     */
+    @Volatile var onFlushed: (() -> Unit)? = null
     /**
      * ⚠⚠ VOLATILE, BECAUSE THE COEFFICIENT BUILD READS IT FROM THE OTHER THREAD.
      * [onConfigure] writes it on the PLAYBACK thread; [rebuildBands] reads it from there AND from
@@ -560,6 +575,17 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // longer part of what the sink is measuring - leaving the count behind would offset the
         // new stream's position by an amount that belongs to the previous one.
         clearPreRollState()
+        // ⚠⚠ [ADDED 2026-11-03] THE PUBLISHED TOKEN GOES; muted AND pendingToken STILL STAY. The field
+        // note's design is "first post-flush queueInput publishes the token", but armIncoming runs on
+        // the main thread BEFORE the seek, so a departing-track buffer rendered in between published
+        // it early, and the flush kept it. The controller then armed the ramps on its next tick; when
+        // that tick landed before this flush, the counters cleared above zeroed the fade-in and the
+        // incoming track entered at FULL gain (CrossfadeController.tickActive, rampsEarly). Clearing
+        // only the published copy lets the next muted frame - necessarily post-flush - republish it,
+        // and the stream-start flush (DefaultAudioSink.handleBuffer, before the first new buffer)
+        // clears it again before any new-track frame is processed.
+        publishedToken.set(null)
+        onFlushed?.invoke()
     }
 
     override fun onReset() {

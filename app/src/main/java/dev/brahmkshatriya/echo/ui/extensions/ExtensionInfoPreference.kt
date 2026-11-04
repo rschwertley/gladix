@@ -1,5 +1,10 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import android.view.ViewGroup
+import androidx.core.view.updatePaddingRelative
+import androidx.core.view.updateLayoutParams
 import android.annotation.SuppressLint
 import android.app.UiModeManager
 import android.content.pm.PackageManager
@@ -70,6 +75,19 @@ class ExtensionInfoPreference(
         }
         binding.extensionDescription.text = span
         binding.extensionDescription.movementMethod = LinkMovementMethod.getInstance()
+        // TV: room for the focus ring (2026-11-04), as MediaHeaderAdapter's description. This one has no padding of its
+        // own, so the ring would run through the text; the margins keep the text where it was.
+        if (context.isTv()) binding.extensionDescription.run {
+            updatePaddingRelative(
+                start = 16.dpToPx(context), end = 16.dpToPx(context),
+                top = 8.dpToPx(context), bottom = 8.dpToPx(context),
+            )
+            updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                marginStart = (-16).dpToPx(context)
+                marginEnd = (-16).dpToPx(context)
+            }
+            (parent as? ViewGroup)?.clipChildren = false
+        }
 
         fun updateText(enabled: Boolean) {
             binding.extensionEnabledText.text = fragment.getString(

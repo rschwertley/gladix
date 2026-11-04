@@ -64,6 +64,64 @@
         <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
     </style>
 
+    <!-- [2026-11-04] The rest of the Expressive buttons, the same way, so each takes TvFocusRing's two-tone overlay and
+         does not change corners inside it while OK is held. Each repeats values/styles.xml's items, because a style here
+         replaces that one whole; IconButton's and IconButtonTonal's children inherit from these. -->
+    <style name="FilledButton" parent="Widget.Material3Expressive.Button">
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="IconButton" parent="Widget.Material3Expressive.Button.IconButton">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="IconButtonTonal" parent="Widget.Material3Expressive.Button.IconButton.Tonal">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="IconButtonOutlined" parent="Widget.Material3Expressive.Button.IconButton.Outlined">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="materialThemeOverlay">@style/ButtonOutlinedOverlay</item>
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="IconButtonTransparent" parent="Widget.Material3Expressive.Button.IconButton.Outlined">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
+    <style name="SideBarButton" parent="Widget.Material3Expressive.Button.OutlinedButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">start|center_vertical</item>
+        <item name="iconPadding">16dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:insetLeft">4dp</item>
+        <item name="android:insetRight">4dp</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:layout_marginBottom">12dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="android:backgroundTint">?colorSurfaceContainerHigh</item>
+        <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
+    </style>
+
     <style name="ToggleIconButton" parent="IconButton">
         <item name="shapeAppearance">@xml/tv_button_shape_pill</item>
     </style>

@@ -499,10 +499,13 @@ class UiViewModel(
                     .toDrawable()
             } else null
             val context = view.context
-            val bitmap: Bitmap? = source?.toBitmap(
-                source.intrinsicWidth.coerceAtLeast(1),
-                source.intrinsicHeight.coerceAtLeast(1)
-            )
+            // No bitmap is createBlurred's plain background, the same fallback as a failed blur (2026-11-04).
+            val bitmap: Bitmap? = runCatching {
+                source?.toBitmap(
+                    source.intrinsicWidth.coerceAtLeast(1),
+                    source.intrinsicHeight.coerceAtLeast(1)
+                )
+            }.getOrNull()
             val bg = withContext(Dispatchers.Default) {
                 GradientDrawable.createBlurred(context, bitmap)
             }
