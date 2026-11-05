@@ -95,6 +95,12 @@ import kotlin.math.min
  * inaudible, and the 178 ms one followed an outlier 57 ms trim and was NOT checked by ear. So
  * the tolerable bound is known to be at least 119 ms and is otherwise unestablished, which is
  * precisely the state in which the measurement has to keep arriving.
+ * [CORRECTED 2026-11-04] lagVsMain NEVER MEASURED THE TAIL, AND NEITHER CLAIM ABOVE STANDS. Substitute measureAlignment's gap into
+ * activate's sideClock and the sidecar terms cancel: lag = main(now) - (main's median + elapsed). It compares main's position
+ * with itself 2 s earlier, so it cannot see where the tail is or whether a discard landed, and its sign does not mean repeat or
+ * skip. So the 119 and 178 above say nothing about alignment, and neither does the 1168 spread (-94..+135) that prompted this. And
+ * the framework DOES report it: AudioTrack.getTimestamp on both legs - see TrackGate and tsSwitchMs. lagVsMain stays one more build,
+ * as main's self-check.
  * ⚠️ AND THE COUNTER CANNOT DO THIS JOB, which is why the line carries a
  * DEAD-RECKONED estimate rather than the obvious subtraction. mainPos minus
  * sidecar.currentPosition would be simpler and is not usable: the sidecar's position counter
@@ -263,6 +269,16 @@ class CrossfadeController(
     private var rampsEarly = false
     private var tailUnderruns = 0
     private var switchFmt: String? = null
+
+    // ── Second trim state, app looper only, cleared by [resetSidecar]; see [secondTrim]. ──────
+    private var firstTrimBiasMs = 0L
+    private var secondTrimDone = false
+    private var tsPreMs: Long? = null
+    private var trim2Ms: Long? = null
+    private var tsSwitchMs: Long? = null
+    private var tsAgeMs = -1L
+    private var skipAtTrimUs: Long? = null
+    private var skipMs: Long? = null
     private val seekAfterMute = Runnable { handoffSeek() }
 
     // ── Pre-roll state. All written and read on the app looper only. ────────────────────────
@@ -806,6 +822,8 @@ class CrossfadeController(
      * independent clocks and each carries a few ms of jitter, so a tail that measures a hair
      * AHEAD is almost certainly aligned; [PREROLL_SLACK_MS] is the band where the honest answer
      * is "no correction needed" rather than "unfixable".
+     * [CORRECTED 2026-11-04] TWO CORRECTIONS NOW; see [secondTrim]. "One" rested on a second reading of the sink's counter coming back
+     * ~0, which does not apply to AudioTrack timestamps. This one is the coarse first trim, aimed [FIRST_TRIM_BIAS_MS] behind.
      */
     /**
      * Keeps the first [MAIN_SAMPLES] readings of the pre-roll. A cap rather than a ring buffer:
@@ -971,8 +989,55 @@ class CrossfadeController(
         alignmentReject = reject
         if (reject != null) return
         prerollAligned = true
-        measuredGapMs = gap
-        if (gap != 0L) sidecarProcessor.discard(gap)
+        // Aimed behind, so [secondTrim] only ever discards. Only where it can run; other speeds keep the whole gap here.
+        firstTrimBiasMs = if (canReTrim()) min(gap, FIRST_TRIM_BIAS_MS) else 0L
+        measuredGapMs = gap - firstTrimBiasMs
+        if (measuredGapMs != 0L) sidecarProcessor.discard(measuredGapMs)
+    }
+
+    // Frames and media time map one to one only at 1x; see TrackGate. [CORRECTED 2026-11-04] This also required skip-silence off,
+    // which is the default install's setting, so the second trim would not have run for most users. TrackGate now counts the skips.
+    private fun canReTrim() = exoPlayer.playbackParameters.speed == 1f
+
+    /** Main's media time minus the tail's at one instant, in microseconds, with the older timestamp's age in ms. */
+    private fun timestampOffsetUs(): Pair<Long, Long>? {
+        if (!canReTrim()) return null
+        val main = mainProcessor.trackGate.mediaTimestamp(mainProcessor::discardedFramesAt) ?: return null
+        val tail = sidecarProcessor.trackGate.mediaTimestamp(sidecarProcessor::discardedFramesAt) ?: return null
+        val at = max(main.nanoTime, tail.nanoTime)
+        val mainUs = main.mediaUs + (at - main.nanoTime) / 1000
+        val tailUs = tail.mediaUs + (at - tail.nanoTime) / 1000
+        val ageMs = (System.nanoTime() - min(main.nanoTime, tail.nanoTime)) / 1_000_000
+        return (mainUs - tailUs) to ageMs
+    }
+
+    /**
+     * ⚠⚠ THE SECOND TRIM (2026-11-04): the real offset from AudioTrack timestamps, cancelled to the frame while the tail is still
+     * at volume 0. NOT just before the mute, which is where both clocks are most mature, because a discard happens upstream of
+     * the track: ~500 ms is queued below it (sidecarQueuedMs), and the discard has to reach the mixer before the switch. Hence
+     * [SECOND_TRIM_AT_MS] into the 2 s pre-roll, and the same `queue` test as [measureAlignment], whose invariant this shares.
+     * With no timestamp, or one outside [MAX_DISCARD_MS], the first trim's bias goes instead, so the tail ends up where it would
+     * have without any of this. A tail still AHEAD cannot be fixed here: nothing is discarded, and tsPreMs reads negative.
+     * A silence skip on main queued at this moment counts as no timestamp (TrackGate.mediaTimestamp). So does one that jumps main past
+     * the cap. One AFTER this runs is not corrected, and tsSwitchMs reads high by it; the audio is silent there on both legs.
+     */
+    private fun secondTrim() {
+        secondTrimDone = true
+        skipAtTrimUs = mainProcessor.trackGate.skippedUs()
+        val reading = timestampOffsetUs()
+        if (reading != null) {
+            tsPreMs = reading.first / 1000
+            tsAgeMs = reading.second
+        }
+        val measuredUs = reading?.first?.takeIf { it <= MAX_DISCARD_MS * 1000 }
+        val discardUs = measuredUs ?: (firstTrimBiasMs * 1000)
+        if (discardUs <= 0L) return
+        val queuedMs = sidecarQueuedMs()
+        val toSwitchMs = PREROLL_MS - (System.currentTimeMillis() - prerollStartedAtMs)
+        if (queuedMs > 0L && queuedMs > toSwitchMs) return
+        sidecarProcessor.discardUs(discardUs)
+        trim2Ms = discardUs / 1000
+        measuredGapMs += discardUs / 1000
     }
 
     // ── The tick ────────────────────────────────────────────────────────────────────────────────
@@ -1213,6 +1278,9 @@ class CrossfadeController(
         if (!prerollMeasured && advancingAtMs != 0L &&
             System.currentTimeMillis() - advancingAtMs >= PREROLL_SETTLE_MS
         ) measureAlignment()
+        if (prerollAligned && !secondTrimDone &&
+            System.currentTimeMillis() - prerollStartedAtMs >= SECOND_TRIM_AT_MS
+        ) secondTrim()
         val position = exoPlayer.currentPosition
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         val remaining = duration - position
@@ -1757,6 +1825,13 @@ class CrossfadeController(
         }
         endPath = "preroll"
         switchQueuedMs = sidecarQueuedMs()
+        timestampOffsetUs()?.let { (offsetUs, ageMs) ->
+            tsSwitchMs = offsetUs / 1000
+            tsAgeMs = ageMs
+        }
+        val skipNowUs = mainProcessor.trackGate.skippedUs()
+        val skipThenUs = skipAtTrimUs
+        if (skipNowUs != null && skipThenUs != null) skipMs = (skipNowUs - skipThenUs) / 1000
         runCatching {
             sidecar.playbackParameters = exoPlayer.playbackParameters
             // skipSilenceEnabled is NOT mirrored here - the tail keeps it off; see
@@ -1945,6 +2020,16 @@ class CrossfadeController(
      * reaching the mixer and the model is wrong. Below ~45: the wait was cut short; check delivery.
      * `tailUnderruns` counts the sidecar's underruns from the switch to the end: above 0 on one source
      * and 0 on the other points at a starving tail; 0 on both points at lagVsMain or level.
+     * ⚠️ [ADDED 2026-11-04, USER-APPROVED] THE SECOND TRIM'S FIELDS, see [secondTrim]; `-` or -1 when not reached. `tsPreMs` is the
+     * timestamp offset before it, main minus tail, so positive means the tail is behind; `trim2Ms` is what it discarded; `tsSwitchMs`
+     * is the offset at the mute, THE PROOF; `tsMs` is the age of the older timestamp last read. `trim` now totals both trims. Stated
+     * before the build: tsSwitchMs within +-10 with the stutter gone means alignment was the cause. Within +-10 with the stutter
+     * still there means it is not alignment by media time: next is comparing the two legs' PCM, or a longer ramp. Above ~30 means
+     * the correction is not landing: read the queue depth and tsMs. tsPreMs near 150 on every switch means the first trim was already
+     * fine and lagVsMain's spread was noise. [CORRECTED 2026-11-04] lagVsMain above is main against itself - see the class note.
+     * `skipMs` (USER-APPROVED 2026-11-04) is the silence main's playing frame moved past from the second trim to the mute, on any path;
+     * `-` means no second trim, or no timestamp at either end. It splits the "above ~30" reading: tsSwitchMs close to skipMs means a
+     * skip moved main after the trim, which is silence on both legs. skipMs 0 means the correction is not landing, as above.
      * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
      * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
@@ -1957,7 +2042,9 @@ class CrossfadeController(
                 " elapsed=" + (if (armedAtMs == 0L) -1L else System.currentTimeMillis() - armedAtMs) +
                 " flushMs=" + sinceHandoff(firstFlushAtMs) + " quietMs=" + quietMs() +
                 " rampsEarly=" + (if (rampsEarly) 1 else 0) + " tailUnderruns=" + tailUnderruns +
-                " fmt=" + (switchFmt ?: "-")
+                " fmt=" + (switchFmt ?: "-") + " tsPreMs=" + (tsPreMs?.toString() ?: "-") +
+                " trim2Ms=" + (trim2Ms?.toString() ?: "-") + " tsSwitchMs=" + (tsSwitchMs?.toString() ?: "-") +
+                " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-")
         )
     }
 
@@ -2110,6 +2197,14 @@ class CrossfadeController(
         playoutStartAtMs = 0L
         prerollStartedAtMs = 0L
         measuredGapMs = 0L
+        firstTrimBiasMs = 0L
+        secondTrimDone = false
+        tsPreMs = null
+        trim2Ms = null
+        tsSwitchMs = null
+        tsAgeMs = -1L
+        skipAtTrimUs = null
+        skipMs = null
         mainCounterSuspect = false
         prerollRebuffered = false
         mainSampleCount = 0
@@ -2265,6 +2360,18 @@ class CrossfadeController(
          * crossfade; see [mainCounterSuspect].
          */
         private const val MAIN_SPREAD_TOLERANCE_MS = 60L
+
+        /**
+         * How far behind the first trim aims (2026-11-04), so the second is always a discard. Comfortably past the worst
+         * first-trim error in view, the 1168 spread of about +-135 ms, though that was main's own noise and no measure of the tail.
+         */
+        private const val FIRST_TRIM_BIAS_MS = 150L
+
+        /**
+         * When the second trim runs, from the pre-roll's start: late enough for the tail's timestamp, early enough for a
+         * discard to clear ~500 ms of queue before the switch at [PREROLL_MS]. On the 200 ms tick, so 1100-1300.
+         */
+        private const val SECOND_TRIM_AT_MS = 1_100L
 
         /** Fewest samples a trimmed spread needs: dropping two of three would leave one. */
         private const val MAIN_ROBUST_MIN = 4

@@ -148,6 +148,10 @@ class StreamableLoader(
      * 6 for a 128 user (it was 0), 12 for a 320 user and 18 for FLAC (3 passes x relay rungs x 2 attempts), doubled when
      * the relay throws. Three failed nets add +18..36 / +36..72 / +54..108. Atomic: loads run concurrently
      * (preloads, crossfade). The 3 is uncalibrated.
+     * [CORRECTED 2026-11-04] Deezer's new ladder order (DeezerTrackClient.afterRung): 6 for a 128 user, 10 for 320 and 14
+     * for FLAC, so three failed nets add +18 / +30 / +42 before any relay throw, which still adds to them.
+     * [CORRECTED 2026-11-04] A throw no longer doubles anything; it repeats one rung. Every relay rung throwing: 8 for 128, 12
+     * for 320 and 16 for FLAC, so three failed nets add at most +24 / +36 / +48.
      */
     private val failedNets = AtomicInteger(0)
 

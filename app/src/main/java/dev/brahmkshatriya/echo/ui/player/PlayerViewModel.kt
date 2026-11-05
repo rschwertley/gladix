@@ -1045,7 +1045,11 @@ class PlayerViewModel(
             // its source chips come from `server`, which is never gated, so "chips present, details line
             // absent, on every track" means the stamp is not matching and this gate is the place to look.
             // "Chips present, details absent, on one track" is the legitimate case.
-            Triple(if (stampedId != null && stampedId == currentId) tracks else null, server, index)
+            // [CORRECTED 2026-11-04] The stamp alone did not give "not known yet": a new queue reports Tracks.EMPTY
+            // (ExoPlayerImpl masks a changed period, media3 1.11.1) stamped with the new id, which is not null, so it reached
+            // FormatUtils.formatDetails and printed "Unknown Quality". Empty or nothing selected now means not known.
+            val usable = tracks?.takeIf { t -> t.groups.any { g -> g.isSelected } }
+            Triple(if (stampedId != null && stampedId == currentId) usable else null, server, index)
         }.stateIn(viewModelScope, SharingStarted.Lazily, Triple(null, null, null))
 
     companion object {

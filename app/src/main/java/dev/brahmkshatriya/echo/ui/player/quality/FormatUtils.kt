@@ -85,7 +85,9 @@ object FormatUtils {
         return firstNotNullOfOrNull { trackGroup ->
             val index = (0 until trackGroup.length).firstNotNullOfOrNull { i ->
                 if (trackGroup.isTrackSelected(i)) i else null
-            } ?: return null
+            // [2026-11-04] Next group, not out of the function: this returned null at the first unselected audio group, so a
+            // merged server whose selected track was in a later group read "Unknown Quality" for the whole song.
+            } ?: return@firstNotNullOfOrNull null
             trackGroup.getTrackFormat(index)
         }
     }
@@ -116,8 +118,14 @@ object FormatUtils {
         return trackGroups to select
     }
 
+    // TEMPORARY GladixPill probe - REMOVE WITH THE LINE IN PlayerUiListener.refreshTracks.
+    fun Tracks.selectedAudioDetails(): String? =
+        groups.filter { it.type == C.TRACK_TYPE_AUDIO }.getSelectedFormat()?.toAudioDetails()
+
     // Codec / bitrate / resolution. Falls back to "unknown quality" only when NO format resolved at all -
     // which on the player means no source was ever prepared, so it doubles as a tell for that.
+    // [CORRECTED 2026-11-04] It no longer reaches this for that case: PlayerViewModel.serverAndTracks passes only Tracks
+    // with something selected, so the pill and the sheet show nothing instead.
     private fun Tracks.formatDetails(context: Context): List<String> {
         val audios = groups.filter { it.type == C.TRACK_TYPE_AUDIO }
         val videos = groups.filter { it.type == C.TRACK_TYPE_VIDEO }

@@ -1136,6 +1136,9 @@ class PlayerFragment : Fragment() {
                 // this view has a 40dp minHeight and a shape_pill background, so an empty string leaves an
                 // empty capsule that reads as a failure. Absent reads as "not known yet", which is true.
                 // The text is deliberately left in place while hidden so a re-show does not repaint.
+                // [CORRECTED 2026-11-04] Not hidden until then, as this said: `tracks` was null only until the new item's
+                // Tracks.EMPTY arrived, stamped with the new id, and that printed "Unknown Quality" for the rest of the
+                // resolve. PlayerViewModel.serverAndTracks now returns null for it, so this description holds.
                 val details = tracks?.getDetailsFormatFirst(requireContext(), server, index)
                     ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
                 if (details != null) trackSubtitle.text = details

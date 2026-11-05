@@ -39,7 +39,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             ?: media["sources"]?.jsonArray?.firstOrNull()?.jsonObject
             ?: return null
         // contentOrNull, not content (2026-11-02): `.content` on a JSON null is the STRING "null", which is not null,
-        // so the caller's `?: refusedAtRung(...)` never stepped down and the player was handed the URL "null".
+        // so the caller's `?: refusedAtRung(...)` (afterRung since 2026-11-04) never stepped down and the player was handed the URL "null".
         // Still throws on an object or array here - only the null case changes.
         return source["url"]?.jsonPrimitive?.contentOrNull
     }
@@ -125,10 +125,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * refusedAtRung terminals, which re-enter the whole ladder as before; the rung itself for the
      * token-age check and the no_url branch (2026-10-27), which refresh BEFORE a token rung's request
      * or after its unrecognised answer, where re-entering higher would only repeat relay calls.
+     * [CORRECTED 2026-11-04] No default now: nothing re-enters at topQuality. The decode branch resumes at its own rung, and
+     * afterRung's last step (refusedAtRung's terminals) at the token rung.
      */
     private suspend fun refreshTokenAndRetry(
         track: Track, topQuality: String, retry: Boolean, allowSubstitute: Boolean,
-        atQuality: String = topQuality,
+        atQuality: String,
     ): Streamable {
         currentCoroutineContext()[StartRungs]?.tokenRefreshed = true // TEMPORARY GladixStart probe
         val refetched = api.track(track.id)
@@ -155,11 +157,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         topQuality: String = quality,
         allowSubstitute: Boolean = true,
         allowRetoken: Boolean = true,
+        levelOnly: Boolean = false,
     ): Streamable {
         val rungs = currentCoroutineContext()[StartRungs]
-        val rung = rungs?.begin(quality)
+        val rung = rungs?.begin(if (levelOnly) "s$quality" else quality)
         return try {
-            createStreamableForQualityUnprobed(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+            createStreamableForQualityUnprobed(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
                 .also { rungs?.done(rung, "ok") }
         } catch (e: Throwable) {
             rungs?.done(rung, if (e is CancellationException) "cancelled" else "err")
@@ -174,6 +177,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         topQuality: String = quality,
         allowSubstitute: Boolean = true,
         allowRetoken: Boolean = true,
+        levelOnly: Boolean = false,
     ): Streamable {
         return try {
             // ⚠⚠ THE TOKEN'S AGE IS CHECKED WHERE THE TOKEN IS SENT. Only the 128 and mp3 rungs send
@@ -196,11 +200,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     api.getMediaUrl(track, quality)
                 } else api.getMP3MediaUrl(track, quality == "128")
             val mjString = mediaJson.toString()
-            if (mjString.contains("License token has no sufficient rights on requested media")) return when (quality) {
-                "flac" -> descend(track, "320", retry, topQuality, allowSubstitute, allowRetoken)
-                "320" -> descend(track, "128", retry, topQuality, allowSubstitute, allowRetoken)
-                else -> throw Exception("Track not available on server")
-            }
+            if (mjString.contains("License token has no sufficient rights on requested media"))
+                return afterRungTagged(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
             val trackJsonData = mediaJson["data"]?.jsonArray?.firstOrNull()?.jsonObject
             val mediaIsEmpty = trackJsonData?.get("media")?.jsonArray?.isEmpty() == true
 
@@ -229,6 +230,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // was Combine's title matching, not Deezer's substitute. And no capture has ever shown an
                     // original refused at 320 but allowed at 128. What stays valid is the rule: try the
                     // original at every rung before any substitution (GitHub #2 rule).
+                    // [CORRECTED 2026-11-04] THAT RULE IS GONE TOO, by decision: substitute at Q now comes before the
+                    // original at the next Q. See afterRung, and CLAUDE.md, Known wrong history.
                     // ⚠️ SO THE BUG WAS A HOLE BETWEEN TWO EXISTING LADDERS, not a missing one.
                     // The licence branch above handles "License token has no sufficient rights"; the
                     // outer catch handles anything that THROWS. mediaIsEmpty is neither: it is a
@@ -242,6 +245,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // does send track_tokens, so there it is about ours. Either way the sentence says
                     // "on requested media", i.e. it is about the FORMAT, and stepping down first is
                     // safe under both readings because the fallback is still reached at the bottom.
+                    // [CORRECTED 2026-11-04] Not at the bottom: the substitute is tried at each level. See afterRung.
                     // ⚠️ BOUNDED AT ONE REQUEST PER QUALITY PER LADDER, AND AT TWO LADDERS.
                     // [CORRECTED 2026-10-16, when the substitute gained a ladder of its own] Three
                     // things bound this, and all three are needed:
@@ -299,7 +303,21 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // In the COMMON case (the substitute is available at the requested quality) the
                     // substitute's first call goes to the relay and SUCCEEDS, replacing the single
                     // media.deezer.com 128 call that used to happen here - one request either way.
-                    return refusedAtRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+                    // [CORRECTED 2026-11-04, NEW ORDER, see afterRung] The ladder bounds above are for the old order; the
+                    // terminals named here are afterRung's, and both a decode refresh and the last refresh now resume at their
+                    // token rung, so the third pass is one or two calls, not a ladder. From the top rung, rungs refused without
+                    // throwing, per attempt / per resolve (relay calls in brackets):
+                    //   with a substitute  flac 12 / 24 (7 / 14)   320 10 / 20 (5 / 10)   128 8 / 16 (3 / 6)
+                    //   no FALLBACK_ID     flac  7 / 14            320  6 / 12            128 5 / 10
+                    // 320 at the ceiling: orig 320, api.track, sub 320, orig 128, orig relay128, sub 128, sub relay128,
+                    // refresh, orig 128, orig relay128. A relay that THROWS is not in these numbers: the catch's retry
+                    // re-enters this rung and, if that fails, the catch walks what is left a second time.
+                    // [CORRECTED 2026-11-04] No second walk any more (see the catch). A throw repeats the first thrown rung
+                    // once, then retry is false for all that follows. Every relay rung throwing, with a substitute:
+                    //   flac 13 / 26 (8 / 16)   320 11 / 22 (6 / 12)   128 9 / 18 (4 / 8)
+                    // 320: orig 320 twice, api.track, sub 320, orig 128, orig relay128, sub 128, sub relay128, refresh, orig 128,
+                    // orig relay128. No FALLBACK_ID, relay calls only: flac 5 / 10, 320 4 / 8, 128 3 / 6.
+                    return afterRungTagged(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
                 }
 
                 mjString.contains("An error occurred while decoding track token") -> {
@@ -334,7 +352,10 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     // preserved the FLAG while this recovery destroyed the DATA the flag protects.
                     // The carry now lives in refreshTokenAndRetry, shared with the two
                     // substitute-branch terminals that need the same recovery.
-                    return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
+                    // [CORRECTED 2026-11-04] Resumes at this rung, by decision. The re-entry at topQuality came from fixing
+                    // the hard-wired 128 above; a token only reaches 128 and mp3, and the relay rungs above them send none,
+                    // so going back up only repeated refused relay calls. The !allowRetoken guard above is unchanged.
+                    return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
                 }
 
                 // ⚠⚠ no_url: AN ANSWER NONE OF THE BRANCHES ABOVE RECOGNISES, AND NO URL IN IT. This
@@ -355,13 +376,15 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // [CORRECTED 2026-10-30] The substitute is the same song on another release, not a standard
                 // recording under an acoustic title; that report was Combine's title matching (GitHub #2). See
                 // the correction on the token_rights branch. Refresh-first stays, as part of the GitHub #2 rule.
+                // [CORRECTED 2026-11-04] Not that rule, which is gone. Refresh-first stays because a stale token is this
+                // rung's most likely fault and costs one lookup to rule out. refusedAtRung here is afterRung.
                 // ⚠️ NOT AT A RELAY RUNG (flac/320/relay128): getMediaUrl sends the id alone, so a refresh would
                 // repeat a byte-identical relay request against its shared daily ceiling. There
                 // refusedAtRung only steps down, and the 128 rung below it applies this rule.
                 else -> extractUrlFromJson(mediaJson) ?: run {
                     if (allowRetoken && (quality == "128" || quality == "mp3"))
                         return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
-                    return refusedAtRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+                    return afterRungTagged(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
                 }
             }
 
@@ -421,48 +444,50 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // two attempts with a 2 s delay, which this does not touch.
             if (e is LadderDescentException) throw e.cause ?: e
             if (e !is MediaUnavailableException) currentCoroutineContext()[OwnAccountVerdict]?.unclassified = true
-            if (e.message?.contains("Song not available") == true) {
-                if (retry) {
-                    // Deliberate best-effort fallback: the cause is logged above; rethrowing would change
-                    // the intended quality-fallback control flow. Suppressing Detekt SwallowedException here.
-                    @Suppress("SwallowedException")
-                    try {
-                        deezerExtension.handleArlExpiration()
-                        return createStreamableForQuality(
-                            track, quality, false, topQuality, allowSubstitute, allowRetoken
-                        )
-                    } catch (retryEx: Exception) {
-                        // Best-effort: proceed to quality fallback. Log so a failing ARL-refresh retry
-                        // (a token issue) isn't invisible — control flow unchanged.
-                        println("GladixDeezer createStreamableForQuality ARL-refresh retry failed id=${track.id} q=$quality: ${retryEx.message}")
-                    }
+            if (retry && e.message?.contains("Song not available") == true) {
+                // Deliberate best-effort fallback: the cause is logged above; rethrowing would change
+                // the intended quality-fallback control flow. Suppressing Detekt SwallowedException here.
+                // [CORRECTED 2026-11-04] THE RETRY'S OWN FAILURE IS NO LONGER SWALLOWED, AND THE ABOVE WAS WRONG ABOUT IT. With
+                // retry = false that call already runs the fallback: its catch walks everything below this rung. This try
+                // caught the result and walked it all again, which the LadderDescentException line at the top of this catch
+                // cannot see, because a retry's failure is not a descent's. It predates afterRung, but afterRung made it far
+                // worse: the second walk re-ran the substitute and re-spent the refresh, 5 relay calls per attempt becoming 16
+                // on a 320 song whose relay rungs all throw. Now only handleArlExpiration failing falls through to the walk
+                // below; the retry's own failure leaves here, so a throw is handled once and the ladder is walked once.
+                val arlHandled = try {
+                    deezerExtension.handleArlExpiration()
+                    true
+                } catch (arlEx: Exception) {
+                    // Best-effort: proceed to quality fallback. Log so a failing ARL-refresh retry
+                    // (a token issue) isn't invisible — control flow unchanged.
+                    println("GladixDeezer createStreamableForQuality ARL-refresh retry failed id=${track.id} q=$quality: ${arlEx.message}")
+                    false
                 }
+                if (arlHandled) return createStreamableForQuality(
+                    track, quality, false, topQuality, allowSubstitute, allowRetoken, levelOnly
+                )
             }
 
-            when (quality) {
-                // DELIBERATELY NOT [descend]: a throw from here already propagates out of this catch,
-                // so there is no second ladder to suppress - and tagging it would only hide the cause
-                // from the frame above.
-                "flac" -> createStreamableForQuality(
-                    track, "320", retry, topQuality, allowSubstitute, allowRetoken
-                )
-                "320" -> createStreamableForQuality(
-                    track, "128", retry, topQuality, allowSubstitute, allowRetoken
-                )
-                "128" -> createStreamableForQuality(
-                    track, "relay128", retry, topQuality, allowSubstitute, allowRetoken
-                )
-                // ⚠️ `e` IS NOT PASSED AS THE CAUSE, ON PURPOSE (2026-11-04). onPlayerError dispatches on rootCause, the
-                // deepest node, so a chained IOException would take this out of its Unavailable branch and into the
-                // transport ones. The retry decision does not need it: see OwnAccountVerdict.
-                // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
-                // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
-                // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
-                // Exception gave skipFamilyOf nothing to classify - so an exhausted track was filed
-                // in the RESIDUAL Error family rather than Unavailable (Crashlytics 1fc0baac, 1119).
-                // The MESSAGE IS UNCHANGED on purpose: onPlayerError still falls back to matching
-                // "not available" for extensions that cannot name this type.
-                else -> throw MediaUnavailableException("Track not available on server")
+            // DELIBERATELY NOT [descend]: a throw from here already propagates out of this catch,
+            // so there is no second ladder to suppress - and tagging it would only hide the cause
+            // from the frame above.
+            // [CORRECTED 2026-11-04] The step-down `when` that stood here is afterRung now, which does use descend for its
+            // lower rungs; the unwrap below is what keeps a tag from leaving this frame. The two notes that follow were on
+            // its bottom-rung throw, which is afterRung's last line.
+            // ⚠️ `e` IS NOT PASSED AS THE CAUSE, ON PURPOSE (2026-11-04). onPlayerError dispatches on rootCause, the
+            // deepest node, so a chained IOException would take this out of its Unavailable branch and into the
+            // transport ones. The retry decision does not need it: see OwnAccountVerdict.
+            // TYPED, NOT A BARE Exception (2026-10-10). This is the throw that ESCAPES to the
+            // app: the bottom rung has no lower quality, so the ladder ends here. It arrives at
+            // PlayerEventListener.onPlayerError as the rootCause (deepest node), and a bare
+            // Exception gave skipFamilyOf nothing to classify - so an exhausted track was filed
+            // in the RESIDUAL Error family rather than Unavailable (Crashlytics 1fc0baac, 1119).
+            // The MESSAGE IS UNCHANGED on purpose: onPlayerError still falls back to matching
+            // "not available" for extensions that cannot name this type.
+            try {
+                afterRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
+            } catch (nested: LadderDescentException) {
+                throw nested.cause ?: nested
             }
         }
     }
@@ -474,32 +499,82 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * two cannot drift. Called from inside that function's try, so everything it throws reaches the
      * same catch it did when this body was inline. Its notes were written inline in that function's
      * `when`: "above", "below", "one branch down" and "this catch" in them refer to that function.
+     * [CORRECTED 2026-11-04] This was refusedAtRung, and the order above is gone. Every way a rung can fail now
+     * ends here - the licence branch, token_rights / media_empty, no_url and the catch - so the order is:
+     * original at Q, substitute at Q, original at the next Q, substitute at the next Q. A level is one rung, except
+     * 128, which is own account then relay128. So 320 is orig 320, sub 320, orig 128, orig relay128, sub 128, sub
+     * relay128; 128 is unchanged. WHY: the old order's reason was withdrawn on 2026-10-30 (CLAUDE.md, Known wrong
+     * history), and a 2026-11-04 capture spent ~0.7 s on two 128 rungs before a substitute that played at 320. It also
+     * closes a hole: a bottom relay rung that THREW used to skip the substitute.
+     * [levelOnly] is the substitute's walk through one level; it stops here instead of going lower.
      */
-    private suspend fun refusedAtRung(
+    private suspend fun afterRung(
         track: Track,
         quality: String,
         retry: Boolean,
         topQuality: String,
         allowSubstitute: Boolean,
         allowRetoken: Boolean,
+        levelOnly: Boolean,
     ): Streamable {
-        val lower = when (quality) {
-            "flac" -> "320"
-            "320" -> "128"
             // The same format through the relay, no token, before any substitute (2026-11-04). The medley
             // 668937892: its substitute was refused at 128 by the user's own account, and the relay serves
             // that substitute at MP3_128 (see DeezerMedia.getMediaUrl), so a 128 user skipped a song a 320
             // user plays.
-            "128" -> "relay128"
+        if (quality == "128")
+            return descend(track, "relay128", retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
+        if (levelOnly) throw MediaUnavailableException("Track not available on server")
+        // relay128 belongs to the 128 level, which the substitute enters at its own token rung.
+        if (allowSubstitute) {
+            val level = if (quality == "relay128") "128" else quality
+            trySubstitute(track, level)?.let { return it }
+        }
+        val next = when (quality) {
+            "flac" -> "320"
+            "320" -> "128"
             // "relay128" and "mp3" (MP3_MISC) are bottom rungs - nothing lower exists, so the
             // substitution below is the only remaining option.
             // [CORRECTED 2026-11-04] This named "128" as a bottom rung; it no longer is. "mp3" stays
             // own-account only: nothing has measured that format through the relay.
             else -> null
         }
-        if (lower != null)
-            return descend(track, lower, retry, topQuality, allowSubstitute, allowRetoken)
+        if (next != null) return descend(track, next, retry, topQuality, allowSubstitute, allowRetoken)
+        // Last step before giving up - see refreshTokenAndRetry. A stale token is the only recovery left, so this resumes at
+        // the token rung alone: a relay call sends the id only, so repeating one could not change its answer. No second
+        // substitute either: the substitute has had every level. An mp3 ladder has one rung, and that is where it resumes.
+        if (allowRetoken) return refreshTokenAndRetry(
+            track, topQuality, retry, allowSubstitute = false,
+            atQuality = if (quality == "mp3") "mp3" else "128",
+        )
+        // Typed, and `e` not chained - see the notes in the catch of createStreamableForQualityUnprobed.
+        throw MediaUnavailableException("Track not available on server")
+    }
 
+    // [afterRung] from inside the try: anything it throws has already walked what it could, so it is tagged to pass the
+    // catch instead of being read as this rung's own failure, the same reason as [descend].
+    private suspend fun afterRungTagged(
+        track: Track,
+        quality: String,
+        retry: Boolean,
+        topQuality: String,
+        allowSubstitute: Boolean,
+        allowRetoken: Boolean,
+        levelOnly: Boolean,
+    ): Streamable = try {
+        afterRung(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: LadderDescentException) {
+        throw e
+    } catch (e: Exception) {
+        throw LadderDescentException(e)
+    }
+
+    /**
+     * The substitute at one [level], or null to carry on with the original: no FALLBACK_ID, a record that will not
+     * load, or a refusal at this level. See [afterRung] for the order.
+     */
+    private suspend fun trySubstitute(track: Track, level: String): Streamable? {
         // [CORRECTED 2026-11-04] By here `quality` is "relay128" or "mp3", not "128" as the next line says.
         // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
         // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
@@ -535,13 +610,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // ladder got here arrived with the flag already spent, and this threw instead of
         // substituting. For a FALLBACK-grafted favourite that is the difference between
         // playing and being skipped as unplayable; see the note on this function.
-        if (!allowSubstitute) {
-            // Last step before giving up - see refreshTokenAndRetry. The substitution is
-            // already spent here, so a stale token is the only recovery left.
-            if (allowRetoken)
-                return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
-            throw MediaUnavailableException("Track not available on server")
-        }
+        // [CORRECTED 2026-11-04] The two notes just above now mean: this runs once per level, with the substitute walking
+        // only that level (levelOnly), not its own ladder from topQuality, and the original is no longer tried at every rung
+        // first. allowSubstitute = false still stops a substitute of a substitute.
         // ⚠⚠ NOTHING HERE VERIFIES THAT THE SUBSTITUTE IS THE SAME RECORDING.
         // ISRC / DURATION VERIFICATION: DECLINED OCT 16 2026. Recorded because the
         // absence looks like an oversight and is a choice, and because "declined" is a
@@ -613,30 +684,28 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // Aug 6 merge-instead-of-replace change fixed. Blank means give up, not retry.
         // Adapted from Evoe (github.com/Doggo785/evoe), 409c4c5e, UPL - their version
         // refetches the current track; ours declines to, for the reason above.
-        if (fallBackId.isBlank()) {
-            // The ordinary-track case that used to dead-end here with nothing tried -
-            // see refreshTokenAndRetry. Still no api.track(""): the refresh fetches THIS
-            // track's id, which is a real id, not the blank fallback one.
-            if (allowRetoken)
-                return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute)
-            throw MediaUnavailableException("Track not available on server")
-        }
-        val fallbackObject = api.track(fallBackId)
-        // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
-        // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
-        // this type anyway - via the catch below, two wasted rungs later.
-        val resultOj = fallbackObject["results"].objOrNull()
-            ?: throw MediaUnavailableException("Track not available on server")
-        val fallBackTrack = parser.run { resultOj.toTrack() }
+        // [CORRECTED 2026-11-04] Blank now means carry on with the original's next level. The refresh for an ordinary track
+        // moved to afterRung's last step.
+        if (fallBackId.isBlank()) return null
+        val fallBackTrack = substituteTrack(fallBackId) ?: return null
         // allowRetoken is passed UNCHANGED, not forced off: the substitute's record was
         // just fetched, so its token is fresh, and if it still fails to decode the same
         // one-shot recovery that works for any other track should be available to it. It
         // stays bounded either way - at most one re-token per resolve attempt, wherever
         // in the chain it is spent.
-        val fbStreamable = descend(
-            fallBackTrack, topQuality, retry, topQuality,
-            allowSubstitute = false, allowRetoken = allowRetoken
-        )
+        // [CORRECTED 2026-11-04] Now false, by decision: the record was fetched moments ago, so its token is fresh, and this
+        // keeps the budget at one refresh per attempt. A substitute whose token still fails to decode loses this level only.
+        // retry is false for the same reason: the catch's one repeat of a relay throw belongs to the original.
+        val fbStreamable = try {
+            descend(
+                fallBackTrack, level, false, level,
+                allowSubstitute = false, allowRetoken = false, levelOnly = true,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        }
         // ⚠⚠ STAMPED HERE BECAUSE THE INNER CALL CANNOT KNOW IT IS A
         // SUBSTITUTE. From inside its own ladder the fallback is just a track being
         // resolved; it substitutes nothing and so stamps nothing. Without this line the
@@ -649,6 +718,27 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         return fbStreamable.copy(
             extras = fbStreamable.extras + (ALT_VERSION_EXTRA to "1")
         )
+    }
+
+    // The substitute's record, fetched once per attempt however many levels ask (AttemptSubstitutes).
+    private suspend fun substituteTrack(fallBackId: String): Track? {
+        val slot = currentCoroutineContext()[AttemptSubstitutes]
+        if (slot != null && slot.tracks.containsKey(fallBackId)) return slot.tracks[fallBackId]
+        // Same throw rather than `!!`: a FALLBACK_ID that resolves to nothing is the
+        // same verdict as no FALLBACK_ID, and an NPE here only reached the player as
+        // this type anyway - via the catch below, two wasted rungs later.
+        // [CORRECTED 2026-11-04] Null now, read by trySubstitute as "carry on with the original". A failed request counts as
+        // unclassified, as it did in the rung's catch.
+        val fetched = try {
+            api.track(fallBackId)["results"].objOrNull()?.let { parser.run { it.toTrack() } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            currentCoroutineContext()[OwnAccountVerdict]?.unclassified = true
+            null
+        }
+        slot?.tracks?.put(fallBackId, fetched)
+        return fetched
     }
 
     /**
@@ -669,8 +759,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         topQuality: String,
         allowSubstitute: Boolean,
         allowRetoken: Boolean,
+        levelOnly: Boolean = false,
     ): Streamable = try {
-        createStreamableForQuality(track, quality, retry, topQuality, allowSubstitute, allowRetoken)
+        createStreamableForQuality(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -727,7 +818,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // stays because the catch still does not rethrow on the non-final attempt.
                 @Suppress("SwallowedException")
                 try {
-                    resolved = withContext(rungs + verdict) { createStreamableForQuality(newTrack, quality) }
+                    resolved = withContext(rungs + verdict + AttemptSubstitutes()) { createStreamableForQuality(newTrack, quality) }
                     break
                 } catch (e: CancellationException) {
                     throw e
@@ -1204,6 +1295,16 @@ private class OwnAccountVerdict : AbstractCoroutineContextElement(OwnAccountVerd
 }
 
 /**
+ * The substitute records fetched in one resolve attempt, by FALLBACK_ID, so each level of [afterRung]'s order does not
+ * ask again. Null is remembered too. New per attempt: a retry asks once more, as it always did.
+ */
+private class AttemptSubstitutes : AbstractCoroutineContextElement(AttemptSubstitutes) {
+    companion object Key : CoroutineContext.Key<AttemptSubstitutes>
+
+    val tracks = HashMap<String, Track?>()
+}
+
+/**
  * ⚠⚠ TEMPORARY GladixStart PROBE (2026-11-02) - REMOVE WITH the app's StartProbe. Records every stream-ladder
  * rung one loadStreamableMedia tries: begin() at each createStreamableForQuality entry, done() at its exit. A rung
  * still open when the next one begins did not serve - it is closed as "refused" at that moment (its refusal, or the
@@ -1211,6 +1312,7 @@ private class OwnAccountVerdict : AbstractCoroutineContextElement(OwnAccountVerd
  * lookup, every outcome: "GladixStart ext id=<Deezer track id> q=<requested> rungs=320:refused(410ms),128:ok(290ms)
  * sub=0|1 tokenRefresh=0|1 attempts=<n> ms=<total>". println, so logcat tag System.out (a JVM module has no
  * android.util.Log); `adb logcat | grep GladixStart` reads it beside the app's line. No tokens or URLs.
+ * [2026-11-04] A substitute's rung prints as s<quality> (s320), so the two walks of afterRung's order can be told apart.
  */
 private class StartRungs : AbstractCoroutineContextElement(StartRungs) {
     companion object Key : CoroutineContext.Key<StartRungs>

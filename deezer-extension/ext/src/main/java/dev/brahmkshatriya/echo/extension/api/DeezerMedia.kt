@@ -93,6 +93,8 @@ class DeezerMedia(
      * asked for alongside.
      * [CORRECTED 2026-10-30] That report was Combine's title matching, not Deezer's substitute, which
      * plays the same song on another release. The step-down itself stays (GitHub #2 rule).
+     * [CORRECTED 2026-11-04] That rule is gone: DeezerTrackClient.afterRung tries the substitute at this level first,
+     * then the original at the next.
      * ⚠️ `!= false` RATHER THAN `== true`, AND UPSTREAM HAS THIS WRONG. A
      * declared SettingSwitch default is NOT written to prefs until the user touches the switch -
      * ExtensionUtils.toSettings returns null for an absent key - so `== true` would leave the

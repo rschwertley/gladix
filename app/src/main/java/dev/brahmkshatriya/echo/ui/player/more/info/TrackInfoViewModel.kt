@@ -10,6 +10,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import androidx.lifecycle.viewModelScope
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.clients.TrackClient
+import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
@@ -74,7 +75,9 @@ class TrackInfoViewModel(
             emit(rows.toList())
             val extension = extensionFlow.value ?: return@transformLatest
             rows.indices.forEach { index ->
-                val loaded = loadItem(extension, rows[index]).getOrNull() ?: return@forEach
+                val row = rows[index]
+                val loaded = (if (row is Album) sharedAlbumLoad(extension, row).await()
+                else loadItem(extension, row).getOrNull()) ?: return@forEach
                 rows[index] = loaded
                 emit(rows.toList())
             }

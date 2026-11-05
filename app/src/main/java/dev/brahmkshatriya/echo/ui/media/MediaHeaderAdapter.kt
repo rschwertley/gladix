@@ -27,6 +27,7 @@ import dev.brahmkshatriya.echo.common.models.Album.Type.PreRelease
 import dev.brahmkshatriya.echo.common.models.Album.Type.Show
 import dev.brahmkshatriya.echo.common.models.Album.Type.Single
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.Date
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
@@ -83,7 +84,7 @@ class MediaHeaderAdapter(
         when (holder) {
             is Success -> {
                 val state = result?.getOrNull() ?: return
-                holder.bind(state)
+                holder.bind(state, trackHeaderDate(state.extensionId, state.item, trackAlbumDate))
             }
 
             is Error -> {
@@ -104,6 +105,13 @@ class MediaHeaderAdapter(
 
     var result: Result<MediaState.Loaded<*>>? = null
         set(value) {
+            field = value
+            notifyItemChanged(0)
+        }
+
+    var trackAlbumDate: Date? = null
+        set(value) {
+            if (field == value) return
             field = value
             notifyItemChanged(0)
         }
@@ -202,7 +210,7 @@ class MediaHeaderAdapter(
         var clickEnabled = true
         var state: MediaState.Loaded<*>? = null
 
-        fun bind(state: MediaState.Loaded<*>) = with(binding) {
+        fun bind(state: MediaState.Loaded<*>, trackDate: Date?) = with(binding) {
             this@Success.state = state
             followButton.isVisible = state.isFollowed != null
             followButton.isChecked = state.isFollowed ?: false
@@ -245,7 +253,7 @@ class MediaHeaderAdapter(
                 root.context.getString(R.string.x_followers, formatter.format(it))
             }
             val span =
-                root.context.getSpan(true, state.extensionId, state.item) { id, item ->
+                root.context.getSpan(true, state.extensionId, state.item, trackDate) { id, item ->
                     clickEnabled = false
                     listener.openMediaItem(id, item)
                     description.post { clickEnabled = true }
@@ -330,10 +338,23 @@ class MediaHeaderAdapter(
                 .toString().trim()
         }
 
+        /**
+         * The date on a track's header. ⚠️ FOR DEEZER, ONLY THE LOADED ALBUM'S (2026-11-04): nothing while it loads or if it
+         * fails, and never the song record's own date, which can be a reissue's. "What's the Dillio" read PHYSICAL
+         * 2025-07-11 under an album dated 7/18/00, with no ORIGINAL_RELEASE_DATE on the song. Other extensions keep theirs.
+         */
+        fun trackHeaderDate(extensionId: String, item: EchoMediaItem, albumDate: Date?): Date? =
+            if (item !is Track) null
+            else if (extensionId == DEEZER_ID) albumDate
+            else item.releaseDate
+
+        private const val DEEZER_ID = "deezer"
+
         fun Context.getSpan(
             compact: Boolean,
             extensionId: String,
             item: EchoMediaItem,
+            trackDate: Date? = (item as? Track)?.releaseDate,
             openMediaItem: (String, EchoMediaItem) -> Unit = { a, b -> },
         ): SpannableString = when (item) {
             is EchoMediaItem.Lists -> {
@@ -400,7 +421,7 @@ class MediaHeaderAdapter(
                 SpannableString(buildString {
                     val casualRow = listOfNotNull(
                         item.duration?.toTimeString(),
-                        item.releaseDate?.toString()
+                        trackDate?.toString()
                     ).joinToString(DIVIDER)
                     if (casualRow.isNotEmpty()) appendLine(casualRow)
 
@@ -537,7 +558,8 @@ class MediaHeaderAdapter(
                 var dialog: AlertDialog? = null
                 val builder = MaterialAlertDialogBuilder(context)
                 builder.setTitle(item.title)
-                builder.setMessage(context.getSpan(false, extensionId, item) { m, n ->
+                val date = trackHeaderDate(extensionId, item, viewModel.trackAlbumDate.value)
+                builder.setMessage(context.getSpan(false, extensionId, item, date) { m, n ->
                     openMediaItem(m, n)
                     dialog?.dismiss()
                 })

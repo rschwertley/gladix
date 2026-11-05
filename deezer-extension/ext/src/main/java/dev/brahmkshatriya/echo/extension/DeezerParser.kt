@@ -621,8 +621,10 @@ class DeezerParser(private val session: DeezerSession) {
             },
             cover = getCover(md5, "cover"),
             duration = data.long("DURATION")?.times(1000),
-            releaseDate = data.str("PHYSICAL_RELEASE_DATE")?.toDate()
-                ?: data.str("DIGITAL_RELEASE_DATE")?.toDate(),
+            // No DIGITAL_RELEASE_DATE (2026-11-04). Not an album date either: "What's the Dillio" read PHYSICAL 2025-07-11
+            // from deezer.pageTrack (guest session) under an album dated 7/18/00, with no ORIGINAL_RELEASE_DATE on the
+            // song. So this only feeds the Date sort, and MediaHeaderAdapter.trackHeaderDate shows the album's date.
+            releaseDate = data.str("PHYSICAL_RELEASE_DATE")?.toDate(),
             artists = parseArtists(artistsArr, data),
             album = Album(
                 id = data.str("ALB_ID").orEmpty(),

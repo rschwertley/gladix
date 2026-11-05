@@ -465,8 +465,31 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         return frames
     }
 
+    /** The second trim, to the frame (2026-11-04): CrossfadeController's timestamps can be read finer than a millisecond. */
+    fun discardUs(mediaUs: Long) {
+        val fmt = configuredFormat
+        if (fmt.sampleRate <= 0 || fmt.encoding != C.ENCODING_PCM_16BIT) return
+        discardFramesRemaining.set(fmt.sampleRate.toLong() * mediaUs / 1_000_000L)
+    }
+
     /** Cumulative dropped frames, for RenderersFactory's chain. See [discardedFrames]. */
     fun discardedFrameCount(): Long = discardedFrames.get()
+
+    // (frames emitted when a drop happened, cumulative dropped after it), for discardedFramesAt. A drop is one entry per
+    // buffer it touches, so a handful per crossfade; cleared with the output.
+    private val discardMarks = ArrayList<Pair<Long, Long>>()
+
+    /**
+     * Frames dropped BEFORE output frame [frame] (2026-11-04), which is not the same as dropped so far. A drop happens upstream of
+     * ~500 ms of queue, so while it is still queued the frame now playing precedes it; counting it anyway would misread the tail by
+     * the whole trim, and the second trim runs about when the first one reaches the mixer.
+     */
+    fun discardedFramesAt(frame: Long): Long = synchronized(discardMarks) {
+        discardMarks.lastOrNull { it.first <= frame }?.second ?: 0L
+    }
+
+    /** Frames emitted to the current output, for TrackGate. See [emittedFrames]. */
+    fun emittedFrameCount(): Long = emittedFrames.get()
 
     /**
      * Emitted output time in MEDIA milliseconds at the configured rate, or -1 when the format is
@@ -607,6 +630,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         discardFramesRemaining.set(0)
         discardedFrames.set(0)
         emittedFrames.set(0)
+        synchronized(discardMarks) { discardMarks.clear() }
         // ⚠️ THE FILTER HISTORY GOES WITH THE STREAM, NOT WITH THE CROSSFADE. A
         // biquad carries two samples of state per channel; after a flush the next buffer is
         // discontinuous with it, and feeding stale history into a new stream is a transient -
@@ -630,7 +654,8 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val dropped = min(wanted, (inputBuffer.remaining() / frameSize).toLong())
         if (dropped <= 0L) return
         discardFramesRemaining.addAndGet(-dropped)
-        discardedFrames.addAndGet(dropped)
+        val total = discardedFrames.addAndGet(dropped)
+        synchronized(discardMarks) { discardMarks += emittedFrames.get() to total }
         inputBuffer.position(inputBuffer.position() + (dropped * frameSize).toInt())
     }
 

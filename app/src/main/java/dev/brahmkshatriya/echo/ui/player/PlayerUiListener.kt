@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.ui.player
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.C.TIME_UNSET
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.PlaybackException
@@ -9,6 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.selectedAudioDetails
 
 class PlayerUiListener(
     private val player: Player,
@@ -75,7 +77,29 @@ class PlayerUiListener(
         it.post(updateProgressRunnable)
     }
 
+    /**
+     * ⚠⚠ THE PILL'S TRACKS, RE-READ ON THE POLL (2026-11-04). onTracksChanged writes them once per change, so a missed real
+     * value stuck: "Unknown Quality" for a whole song, until the next item or a quality pick. Reading current state cannot
+     * stick. Cheap and idempotent: a field read of the controller's PlayerInfo, and equal pairs return here.
+     * ⚠️ IF THE CONTROLLER ITSELF HOLDS EMPTY THIS CANNOT HEAL IT; the pill stays hidden, which is the safe direction.
+     * TEMPORARY GladixPill probe (user-approved 2026-11-04) - REMOVE the Log line and FormatUtils.selectedAudioDetails.
+     * It prints only when this read found something the listener missed and has a selected audio format. A line means the
+     * controller had the real tracks and the event did not deliver them. No line with the pill hidden for a whole song
+     * means the controller never had them, so the next step is reading from the service. No line with the pill showing
+     * says nothing: the stuck case did not occur.
+     */
+    private fun refreshTracks() {
+        val read = player.currentMediaItem?.mediaId to player.currentTracks
+        val held = viewModel.tracksFlow.value
+        if (read == held) return
+        viewModel.tracksFlow.value = read
+        val now = read.second.selectedAudioDetails() ?: return
+        val was = if (held.second?.groups?.any { it.isSelected } == true) "other" else "empty"
+        Log.d("GladixPill", "heal id=${read.first} was=$was now=$now")
+    }
+
     private fun updateProgress(caller: String = "poll") {
+        refreshTracks()
         val position = player.currentPosition
         val buffered = player.bufferedPosition
         val playerDuration = player.duration
@@ -130,8 +154,8 @@ class PlayerUiListener(
                 // PlayerInfo, no binder transaction. And it is idempotent: tracksFlow is a StateFlow and
                 // Tracks has value equality, so re-seeding the same pair on later tracks emits nothing.
                 // Same one-expression read as the init seed, for the same reason.
-                viewModel.tracksFlow.value =
-                    player.currentMediaItem?.mediaId to player.currentTracks
+                // [CORRECTED 2026-11-04] The seed is gone, replaced by refreshTracks on every poll. This call runs on this
+                // state change too (updateProgress, below), so the cold-start case above is still covered at READY.
             }
 
             else -> Unit

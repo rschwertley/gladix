@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.common.clients.SaveClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Date
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
@@ -41,13 +42,16 @@ import dev.brahmkshatriya.echo.extensions.cache.Cached.loadTracks
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.gladixLinkFor
 import dev.brahmkshatriya.echo.ui.feed.FeedData
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted.Companion.Eagerly
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
@@ -76,6 +80,18 @@ abstract class MediaDetailsViewModel(
      * class's construction, so overriding it is safe.
      */
     open val fixedTrackRows: StateFlow<List<EchoMediaItem>?>? get() = null
+
+    // One album load for a track's page (2026-11-04): the album row and [trackAlbumDate] share it, so the date costs no
+    // request. One slot, replaced when the album changes, and emptied by a refresh. A failed load stays null until then.
+    private var albumLoad: Pair<String, Deferred<Album?>>? = null
+
+    protected fun sharedAlbumLoad(extension: Extension<*>, album: Album): Deferred<Album?> = synchronized(this) {
+        val key = extension.id + ":" + album.id
+        albumLoad?.takeIf { it.first == key }?.second
+            ?: viewModelScope.async(Dispatchers.IO) { loadItem(extension, album).getOrNull() }
+                .also { albumLoad = key to it }
+    }
+
     val downloadsFlow = downloader.flow
 
     val refreshFlow = MutableSharedFlow<Unit>()
@@ -121,7 +137,7 @@ abstract class MediaDetailsViewModel(
         if (item is Track) runCatching {
             PagedData.Concat<Shelf>(
                 PagedData.Single {
-                    val album = item.album?.let { loadItem(extension, it).getOrNull() ?: it }
+                    val album = item.album?.let { sharedAlbumLoad(extension, it).await() ?: it }
                     listOfNotNull(album?.toShelf())
                 },
                 PagedData.Single {
@@ -132,6 +148,21 @@ abstract class MediaDetailsViewModel(
                 },
             ).toFeed(Feed.Buttons.EMPTY)
         } else null
+
+    // The loaded album's release date for this page's track; null while loading, on failure and on other pages. Read by
+    // MediaHeaderAdapter.trackHeaderDate. Keyed on the ids, so the loaded state replacing the first one does not restart it.
+    val trackAlbumDate: StateFlow<Date?> = cacheExtensionItemFlow
+        .map { (extension, item) -> extension to (item as? Track) }
+        .distinctUntilChanged { old, new ->
+            old.first?.id == new.first?.id && old.second?.id == new.second?.id &&
+                old.second?.album?.id == new.second?.album?.id
+        }
+        .transformLatest { (extension, track) ->
+            emit(null)
+            val album = track?.album ?: return@transformLatest
+            extension ?: return@transformLatest
+            emit(sharedAlbumLoad(extension, album).await()?.releaseDate)
+        }.stateIn(viewModelScope, Eagerly, null)
 
     val trackCachedFlow = cacheExtensionItemFlow.transformLatest { (extension, item) ->
         emit(null)
@@ -189,6 +220,9 @@ abstract class MediaDetailsViewModel(
     val playableMarks = MutableStateFlow<Map<String, Track.Playable>>(emptyMap())
 
     init {
+        viewModelScope.launch {
+            refreshFlow.collect { synchronized(this@MediaDetailsViewModel) { albumLoad = null } }
+        }
         viewModelScope.launch {
             tracksMarkedFlow.collect { (id, marks) ->
                 if (id == itemResultFlow.value?.getOrNull()?.item?.id) playableMarks.value = marks
