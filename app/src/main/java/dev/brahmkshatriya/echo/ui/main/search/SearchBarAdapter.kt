@@ -3,8 +3,11 @@ package dev.brahmkshatriya.echo.ui.main.search
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
+import androidx.core.view.children
 import androidx.core.view.doOnLayout
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import com.google.android.material.search.SearchView
 import dev.brahmkshatriya.echo.databinding.ItemSearchBarBinding
@@ -52,6 +55,14 @@ class SearchBarAdapter(
             // (appcompat ActionMenuItemView.initialize sets it), and exists once the bar is laid out. Phone: no-op.
             binding.root.doOnLayout { bar ->
                 bar.findViewById<View>(R.id.menu_voice_search)?.let { bar.setTvRowButtons(listOf(it)) }
+                // TV (2026-11-04): Up from the bar is the extension icon, not whichever header icon wins a tie, and the
+                // bar's magnifier takes no D-pad focus. It sits under the icon and at the same distance as the bar, so
+                // FocusFinder's sideways term would pick it over the bar on Down from the icon or Up from a result on the
+                // left (from reading FocusFinder; the 1167 report said the bar was skipped, not which view took focus).
+                if (bar.context.isTv()) {
+                    bar.nextFocusUpId = R.id.extensionsCont
+                    (bar as ViewGroup).children.filterIsInstance<ImageButton>().forEach { it.isFocusable = false }
+                }
             }
         }
     }

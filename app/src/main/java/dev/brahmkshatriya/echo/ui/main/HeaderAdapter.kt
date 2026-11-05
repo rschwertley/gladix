@@ -21,12 +21,15 @@ import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
 import dev.brahmkshatriya.echo.ui.settings.SettingsBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 
 class HeaderAdapter(
     private val fragment: Fragment,
+    // TV only (2026-11-04): where Down goes from the extension icon. Search passes its bar; see SearchBarAdapter.
+    private val tvNextFocusDown: Int = View.NO_ID,
 ) : ScrollAnimRecyclerAdapter<HeaderAdapter.ViewHolder>(), GridAdapter {
     private val viewModel by fragment.activityViewModel<LoginUserListViewModel>()
 
@@ -37,6 +40,8 @@ class HeaderAdapter(
         val holder = ViewHolder(parent)
         val binding = holder.binding
         val parentFragmentManager = fragment.parentFragmentManager
+        // Here, not in a bind: a rebuilt header row keeps it. FocusFinder takes a set id before comparing distances.
+        if (parent.context.isTv()) binding.extensionsCont.nextFocusDownId = tvNextFocusDown
         binding.extensionsCont.setOnClickListener {
             ExtensionsListBottomSheet.newInstance(ExtensionType.MUSIC)
                 .show(parentFragmentManager, null)

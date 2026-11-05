@@ -91,6 +91,8 @@ class DeezerMedia(
      * branch already treats it as "step down on the same track first" (the Oct 2026
      * acoustic-substitution report). Unreachable through this path anyway, since FLAC is always
      * asked for alongside.
+     * [CORRECTED 2026-10-30] That report was Combine's title matching, not Deezer's substitute, which
+     * plays the same song on another release. The step-down itself stays (GitHub #2 rule).
      * ⚠️ `!= false` RATHER THAN `== true`, AND UPSTREAM HAS THIS WRONG. A
      * declared SettingSwitch default is NOT written to prefs until the user touches the switch -
      * ExtensionUtils.toSettings returns null for an absent key - so `== true` would leave the

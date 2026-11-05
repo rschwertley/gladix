@@ -4,7 +4,12 @@ import android.content.Context
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioOutput
+import androidx.media3.exoplayer.audio.AudioOutputProvider
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioOutput
+import androidx.media3.exoplayer.audio.ForwardingAudioOutputProvider
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 
 
@@ -54,7 +59,26 @@ class RenderersFactory(
                     SonicAudioProcessor()
                 )
             )
+            // Builder(context).build() is what the sink builds by itself when no provider is set: same
+            // buffer size and offload defaults, no AudioTrackProvider (DefaultAudioSink.Builder.build,
+            // media3 1.11.1). The one thing the wrapper changes: getAudioCapabilities() returns null,
+            // because the sink tests `instanceof AudioTrackAudioOutputProvider` and that class is final.
+            // Its only reader is MediaCodecAudioRenderer's IAMF layout, which falls back to stereo.
+            .setAudioOutputProvider(
+                GatedOutputProvider(
+                    AudioTrackAudioOutputProvider.Builder(context).build(),
+                    audioEffectsProcessor.trackGate,
+                )
+            )
             .build()
+    }
+
+    private class GatedOutputProvider(
+        provider: AudioOutputProvider,
+        private val gate: TrackGate,
+    ) : ForwardingAudioOutputProvider(provider) {
+        override fun getAudioOutput(config: AudioOutputProvider.OutputConfig): AudioOutput =
+            gate.wrap(super.getAudioOutput(config))
     }
 
     /**
@@ -86,5 +110,47 @@ class RenderersFactory(
     ) {
         override fun getSkippedOutputFrameCount(): Long =
             super.getSkippedOutputFrameCount() + effects.discardedFrameCount()
+    }
+}
+
+/**
+ * ⚠⚠ MUTES THE CURRENT AudioTrack WITHOUT TOUCHING player.volume, SO THE CROSSFADE HAND-OFF CAN SILENCE
+ * AUDIO ALREADY QUEUED IN IT (see CrossfadeController.activate). Nothing else reaches queued audio:
+ * AudioEffectsProcessor only sees frames not yet written.
+ * ⚠️ PLAYBACK THREAD ONLY. AudioOutput states no thread contract, and the sink creates, drives and
+ * releases its output there, so the controller reaches this through a PlayerMessage, which also keeps
+ * it in order with the seek. No locks, and no volume write can follow a release.
+ * ⚠️ THE MUTE BELONGS TO THE OUTPUT, NOT TO THIS CLASS, so a new AudioTrack always starts at unity: a
+ * forgotten un-mute costs at most the one track the seek is about to release anyway.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+class TrackGate {
+    private var current: GatedOutput? = null
+
+    fun setMuted(muted: Boolean) {
+        current?.setScale(if (muted) 0f else 1f)
+    }
+
+    internal fun wrap(output: AudioOutput): AudioOutput = GatedOutput(output).also { current = it }
+
+    private inner class GatedOutput(output: AudioOutput) : ForwardingAudioOutput(output) {
+        // What the sink asked for, kept so a duck during the mute still applies when it lifts.
+        private var requested = 1f
+        private var scale = 1f
+
+        override fun setVolume(volume: Float) {
+            requested = volume
+            super.setVolume(volume * scale)
+        }
+
+        fun setScale(newScale: Float) {
+            scale = newScale
+            super.setVolume(requested * newScale)
+        }
+
+        override fun release() {
+            if (current === this) current = null
+            super.release()
+        }
     }
 }

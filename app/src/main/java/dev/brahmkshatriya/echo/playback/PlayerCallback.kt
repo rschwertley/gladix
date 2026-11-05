@@ -908,6 +908,10 @@ class PlayerCallback(
 
     private suspend fun listTracks(
         extension: Extension<*>, item: EchoMediaItem, loaded: Boolean,
+        // [2026-11-04] Playlists only: start from the page's load or the stored copy before asking the extension. Only
+        // playItem's whole-list start says yes. freshContextUpcoming must find a tapped track in a live list (a stale
+        // copy may not hold it), and Add to queue / Add next were not part of this change.
+        preferStored: Boolean = false,
     ) = when (item) {
         is Album -> extension.getAs<AlbumClient, PagedData<Track>> {
             val album = if (!loaded) loadAlbum(item) else item
@@ -916,14 +920,24 @@ class PlayerCallback(
         }
 
         is Playlist -> extension.getAs<PlaylistClient, PagedData<Track>> {
-            val playlist = if (!loaded) loadPlaylist(item) else item
-            // [2026-11-02] Joins the page's own load when there is one (running, or done within Cached's
-            // MEMORY_TTL_MS) instead of starting a second getSongs; the whole list, so no background fill follows.
-            // With none, unchanged: the extension's first page now, the rest after the queue starts.
-            Cached.joinPlaylistTracks(playlist)?.let { joined ->
-                StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
-                PagedData.Single { joined }
-            } ?: loadTracks(playlist).pagedDataOfFirst()
+            // [2026-11-04] Before loadPlaylist, so a hit waits for no request (the refresh runs behind it) - see Cached.storedPlaylistStart.
+            val joinedFirst = if (preferStored) Cached.joinPlaylistTracks(item) else null
+            if (joinedFirst != null) StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+            val quick = joinedFirst
+                ?: if (preferStored) Cached.storedPlaylistStart(app, extension, item, loaded)
+                    ?.also { StartProbe.rows("stored") } // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+                else null
+            if (quick != null) PagedData.Single { quick }
+            else {
+                val playlist = if (!loaded) loadPlaylist(item) else item
+                // [2026-11-02] Joins the page's own load when there is one (running, or done within Cached's
+                // MEMORY_TTL_MS) instead of starting a second getSongs; the whole list, so no background fill follows.
+                // With none, unchanged: the extension's first page now, the rest after the queue starts.
+                Cached.joinPlaylistTracks(playlist)?.let { joined ->
+                    StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+                    PagedData.Single { joined }
+                } ?: loadTracks(playlist).pagedDataOfFirst()
+            }
         }
 
         is Radio -> extension.getAs<RadioClient, PagedData<Track>> {
@@ -1013,7 +1027,8 @@ class PlayerCallback(
             }
 
             else -> {
-                val tracks = listTracks(extension, item, loaded).getOrElse {
+                // A start track must be found in a live list, for the same reason as freshContextUpcoming.
+                val tracks = listTracks(extension, item, loaded, preferStored = startTrackId == null).getOrElse {
                     if (it is CancellationException) throw it
                     throwableFlow.emit(it)
                     return@future error

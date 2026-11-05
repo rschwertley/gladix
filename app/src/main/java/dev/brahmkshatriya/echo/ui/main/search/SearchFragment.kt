@@ -281,7 +281,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         getTouchHelper(listener).attachToRecyclerView(recyclerView)
         configureGridLayout(
             recyclerView,
-            feedAdapter.withLoading(this, HeaderAdapter(this), searchAdapter),
+            feedAdapter.withLoading(this, HeaderAdapter(this, R.id.searchBar), searchAdapter),
         )
         (recyclerView as? TvAwareRecyclerView)?.navRailView =
             requireActivity().findViewById(R.id.navRailContainer)

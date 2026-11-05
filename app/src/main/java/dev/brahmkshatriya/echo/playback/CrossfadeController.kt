@@ -164,8 +164,12 @@ class CrossfadeController(
      * [onIsPlayingChanged] stops the tick whenever the phase is not ACTIVE - which would park
      * the tick with the tail still rolling if the main player stalled. Both are correct for a
      * PARKED sidecar and wrong for a pre-rolling one.
+     *
+     * HANDOFF (2026-11-04) is the wait between main's track going silent and the seek; see [activate].
+     * Separate from ACTIVE because main is still on the departing track: the hooks that keep an overlap
+     * alive across a pause must abort here instead, and that abort leaves nothing but main to restore.
      */
-    private enum class Phase { IDLE, ARMED, PREROLL, ACTIVE }
+    private enum class Phase { IDLE, ARMED, PREROLL, HANDOFF, ACTIVE }
 
     /** Closed set, so an abort line can never read as free text. */
     private enum class Abort {
@@ -188,8 +192,9 @@ class CrossfadeController(
         //   [plainTransition]. Do not triage a `reason=PLAIN` line as an error; the
         //   `switch path=plain reason=...` line beside it carries the actual statement.
         // NO_FLUSH (2026-11-03): the hand-off seek's flush of the main processor did not arrive within
-        //   BRIDGE_TIMEOUT_MS, so main may still be on the departing track; raising the tail would
-        //   double it. Aborted with the tail still at the bridge level - resetSidecar pauses it first.
+        //   FLUSH_TIMEOUT_MS, so main may still be on the departing track.
+        //   [CORRECTED 2026-11-04] This read "raising the tail would double it", with the tail held at a
+        //   bridge level. No such level exists now; what the flush gates is arming the ramps.
         NOT_READY, TAIL_DIED, RAMP_TIMEOUT, MAIN_RECOVERY, CASTING, PREROLL_STALL, PLAIN, NO_FLUSH,
     }
 
@@ -243,17 +248,22 @@ class CrossfadeController(
     /** Fresh per crossfade; the main processor republishes it from the audio thread. */
     private var overlapToken: Any? = null
 
-    // ── Bridge state (2026-11-03); see [activate] and [promote]. ─────────────────────────────
+    // ── Hand-off state; see [activate]. ──────────────────────────────────────────────────────
     /**
-     * True from just before the hand-off seek until [promote] or a reset. [firstFlushAtMs] is written
-     * on the MAIN player's playback thread by [onMainFlushed] and read here on the app looper, hence
-     * both volatile; every other bridge field is app-looper only.
+     * True from just before the hand-off seek until a reset. [firstFlushAtMs] and [mainMuteAppliedAtMs]
+     * are written on the MAIN player's playback thread and read here on the app looper, hence volatile;
+     * every other hand-off field is app-looper only.
+     * [CORRECTED 2026-11-04] This was the bridge's state, with a promotion to full level on the flush.
+     * The bridge is gone (see the correction in [activate]); the flush only gates the ramps now.
      */
     @Volatile private var awaitingFlush = false
     @Volatile private var firstFlushAtMs = 0L
-    private var promotedAtMs = 0L
-    private var promoteVia: String? = null
+    @Volatile private var mainMuteAppliedAtMs = 0L
+    private var mainMuted = false
     private var rampsEarly = false
+    private var tailUnderruns = 0
+    private var switchFmt: String? = null
+    private val seekAfterMute = Runnable { handoffSeek() }
 
     // ── Pre-roll state. All written and read on the app looper only. ────────────────────────
     private var prerollStartedAtMs = 0L
@@ -441,16 +451,13 @@ class CrossfadeController(
     }
 
     /**
-     * Main player's processor flush, on ITS PLAYBACK THREAD. Only the first one after the switch counts
+     * Main player's processor flush, on ITS PLAYBACK THREAD. Only the first one after the seek counts
      * (a hand-off flushes twice: the seek, then the new stream's start); it is stamped here, where it
-     * happened, and delivered at the front of the app looper's queue so the bridge does not wait for a
-     * tick. [promote] re-checks the phase, so a delivery that lands after an abort does nothing.
+     * happened. [CORRECTED 2026-11-04] It used to post a promotion to the tail's full level as well;
+     * [tickActive] now only reads the stamp, on its next tick, before arming the ramps.
      */
     private val onMainFlushed: () -> Unit = {
-        if (awaitingFlush && firstFlushAtMs == 0L) {
-            firstFlushAtMs = System.currentTimeMillis()
-            handler.postAtFrontOfQueue { promote("flush") }
-        }
+        if (awaitingFlush && firstFlushAtMs == 0L) firstFlushAtMs = System.currentTimeMillis()
     }
 
     init {
@@ -461,7 +468,7 @@ class CrossfadeController(
         if (tickPosted) return
         // PREROLL joins ACTIVE here: the tail is audible-capable and the phase has its own
         // abort to run, so the tick must not be allowed to lapse while it is live.
-        if (phase != Phase.ACTIVE && phase != Phase.PREROLL &&
+        if (phase != Phase.ACTIVE && phase != Phase.PREROLL && phase != Phase.HANDOFF &&
             (fadeSeconds == 0 || !exoPlayer.isPlaying)
         ) return
         tickPosted = true
@@ -564,7 +571,7 @@ class CrossfadeController(
      */
     fun onResumed() {
         if (phase == Phase.ACTIVE) runCatching {
-            sidecar.volume = sidecarLevel()
+            sidecar.volume = exoPlayer.volume
             sidecar.play()
         }
         startTick()
@@ -584,7 +591,7 @@ class CrossfadeController(
         // sidecar still playing, and it would drift by the whole stall before the tick returned.
         // The measured alignment is a one-shot, so a stall invalidates it either way.
         if (phase == Phase.PREROLL) return abort(Abort.PREROLL_STALL)
-        if (phase != Phase.ACTIVE) stopTick()
+        if (phase != Phase.ACTIVE && phase != Phase.HANDOFF) stopTick()
     }
 
     /**
@@ -650,6 +657,8 @@ class CrossfadeController(
             // started pre-roll - still the right answer: it was started on a predicate that no
             // longer holds.
             Phase.PREROLL -> if (armRefusal() != null) abort(Abort.QUEUE_EDIT)
+            // Same again: the seek has not gone out, so a next item that went away must cancel it.
+            Phase.HANDOFF -> if (armRefusal() != null) abort(Abort.QUEUE_EDIT)
         }
     }
 
@@ -713,7 +722,7 @@ class CrossfadeController(
      * never for main - PlayerService applies to the main processor before calling this.
      */
     fun onBassBoostChanged(strength: Int) {
-        if (phase == Phase.ACTIVE) return
+        if (phase == Phase.ACTIVE || phase == Phase.HANDOFF) return
         runCatching { sidecarProcessor.setBassBoost(strength) }
     }
 
@@ -745,6 +754,7 @@ class CrossfadeController(
      * That refusal ("the sidecar gets NONE of them") is about the Player.Listener in
      * PlayerEventListener, whose callbacks drive history, radio top-up and the skip breakers.
      * This is an AnalyticsListener implementing ONE audio callback, so none of that is reachable.
+     * [CORRECTED 2026-11-04] Two: onAudioUnderrun counts [tailUnderruns] for the CROSSFADE-FEEL line.
      *
      * ⚠️ onAudioPositionAdvancing IS THE SIGNAL THAT THE TAIL'S AudioTrack IS REALLY
      * RUNNING, which is exactly when a measurement becomes meaningful.
@@ -775,6 +785,15 @@ class CrossfadeController(
             // The instant everything is projected to; the sample set does the rest.
             playoutStartAtMs = playoutStartSystemTimeMs
             recordMainSample(exoPlayer.currentPosition, advancingAtMs)
+        }
+
+        override fun onAudioUnderrun(
+            eventTime: AnalyticsListener.EventTime,
+            bufferSize: Int,
+            bufferSizeMs: Long,
+            elapsedSinceLastFeedMs: Long,
+        ) {
+            if (phase == Phase.HANDOFF || phase == Phase.ACTIVE) tailUnderruns++
         }
     }
 
@@ -961,6 +980,7 @@ class CrossfadeController(
     private fun onTick() {
         when (phase) {
             Phase.ACTIVE -> tickActive()
+            Phase.HANDOFF -> tickHandoff()
             Phase.PREROLL -> tickPreroll()
             Phase.ARMED -> tickArmed()
             Phase.IDLE -> tickIdle()
@@ -1203,6 +1223,13 @@ class CrossfadeController(
         }
     }
 
+    /** The wait is [seekAfterMute]'s, not the tick's; this only keeps the two ACTIVE watches running. */
+    private fun tickHandoff() {
+        if (sidecar.playbackState == Player.STATE_IDLE || sidecar.playerError != null)
+            return abort(Abort.TAIL_DIED)
+        runCatching { sidecar.volume = exoPlayer.volume }
+    }
+
     private fun tickActive() {
         // 1. Did the tail die under us? The sidecar deliberately has NO listeners (attaching ours
         //    would double-fire history, radio top-up and the skip breakers), so polling the state we
@@ -1212,25 +1239,18 @@ class CrossfadeController(
         // 2. Mirror the duck. AudioFocusListener is the ONLY writer of the main player's volume
         //    (DUCK_VOLUME on TRANSIENT_CAN_DUCK, 1f on GAIN); we only ever write the sidecar's, so
         //    there is no second decider - this is a mirror, not a policy.
-        //    [2026-11-03] Through [sidecarLevel], so the mirror holds the bridge level until [promote]
-        //    rather than raising the tail to full while main's departing audio is still playing.
-        runCatching { sidecar.volume = sidecarLevel() }
-        // 2b. The bridge: nothing below runs until main's old output has stopped. A flush whose
-        //     front-of-queue delivery has not run yet is picked up here instead.
-        if (promotedAtMs == 0L) {
-            if (firstFlushAtMs != 0L) promote("flush")
-            else {
-                // rampsEarly: the token is visible BEFORE main's flush, i.e. it came from a
-                // departing-track buffer, and the pre-2026-11-03 code would have armed the ramps
-                // here (see AudioEffectsProcessor.onFlush). Recorded, not acted on.
-                val token = overlapToken
-                if (token != null && mainProcessor.overlapToken() === token) rampsEarly = true
-                if (System.currentTimeMillis() - handoffAtMs > BRIDGE_TIMEOUT_MS) {
-                    promoteVia = "timeout"
-                    return abort(Abort.NO_FLUSH)
-                }
-                return
-            }
+        //    [CORRECTED 2026-11-04] From 2026-11-03 this held a bridge level until main's flush, on a
+        //    wrong premise (see [activate]); the tail is at main's level from the switch again.
+        runCatching { sidecar.volume = exoPlayer.volume }
+        // 2b. The ramps stay unarmed until the seek's flush.
+        if (firstFlushAtMs == 0L) {
+            // rampsEarly: the token is visible BEFORE main's flush, i.e. it came from a
+            // departing-track buffer, and the pre-2026-11-03 code would have armed the ramps
+            // here (see AudioEffectsProcessor.onFlush). Recorded, not acted on.
+            val token = overlapToken
+            if (token != null && mainProcessor.overlapToken() === token) rampsEarly = true
+            if (System.currentTimeMillis() - handoffAtMs > FLUSH_TIMEOUT_MS) return abort(Abort.NO_FLUSH)
+            return
         }
         // 3. Waiting for the main player's first post-hand-off frame.
         if (rampStartedAtMs == 0L) {
@@ -1627,6 +1647,10 @@ class CrossfadeController(
      *        Since 2026-11-03 this step raises the tail only to BRIDGE_GAIN, and [promote] takes it to
      *        main's level once main's processor reports the seek's flush. Steps 9-10 now wait for that
      *        too: the token is cleared by the flush and the ramps arm only after [promote];
+     *        [CORRECTED 2026-11-04] Steps 5-7 no longer run together and the bridge is gone. Now: the tail
+     *        goes to main's level and main's TRACK is muted in one task, MAIN_QUIET_MS later main's
+     *        processor is muted and the seek goes out, and steps 8-10 follow as written, with the flush
+     *        gating the ramps. See the correction in [activate];
      *   7.   the seek, inside [handoff] so our own onSeek/onTransition do not abort it;
      *   8.   media3 flushes the main processor; its onFlush clears the COUNTERS but keeps the mute
      *        and the token - that asymmetry is what lets step 5 survive the seek;
@@ -1738,9 +1762,26 @@ class CrossfadeController(
             // skipSilenceEnabled is NOT mirrored here - the tail keeps it off; see
             // [maybePrepareSidecar]. Volume is NOT set here either: it is step 6, below.
         }
-        val token = Any()
-        overlapToken = token
-        mainProcessor.armIncoming(token)
+        switchFmt = runCatching {
+            sidecar.audioFormat?.let { it.sampleMimeType + "/" + it.sampleRate }
+        }.getOrNull()
+        // ⚠⚠ [CORRECTED 2026-11-04] THE "160-200 ms DOUBLING" IN THE NEXT BLOCK NEVER HAPPENED, AND THE
+        // BRIDGE BUILT ON IT IS GONE. That reading compared the sidecar's unmute, stamped at MIX time
+        // (AudioFlinger processMuteEvent_l), with main leaving the active list, which waits for the HAL
+        // to play out what was mixed (Threads.cpp prepareTracks_l -> Track::presentationComplete,
+        // android14-release). 1167 dumpsys, phone speaker: HAL 1920 frames at 48 kHz = a 40 ms mix cycle, latency 70 ms, so 2 -> 1 at +160-200
+        // ms is latency plus 2-3 cycles, with both legs delayed equally by the shared output.
+        // THE REAL DEFECT IS A CUT. AudioTrackAudioOutput.release (media3 1.11.1) flushes 20 ms after the
+        // pause, assuming the pause has been mixed by then. With a 40 ms cycle it often has not: PAUSING
+        // becomes FLUSHED (Track::flush), the volume-0 ramp is skipped (prepareTracks_l's isPausing arm)
+        // and the track stops at full level. AudioFlinger's removal gain on 1167, main's old track at five
+        // normal switches: YouTube Music -inf, -19, -19; Deezer -inf, -19. -inf is ramped, -19 is cut.
+        // SO MAIN IS SILENCED BEFORE THE SEEK, AT THE ONLY POINT THAT REACHES QUEUED AUDIO: its track
+        // volume, via [setMainTrackMuted]. Both legs change at the mixer, each ramped over one cycle, which
+        // is the cross-ramp the next blocks hoped for, and the seek's pause and flush then act on silence.
+        // armIncoming moved to [handoffSeek]: an abort during the wait would otherwise leave zeros queued
+        // in the track main carries on playing. No sidecar seek or play() here, and player.volume is
+        // unwritten. This does not address the lagVsMain skip/repeat at the splice.
         // [CORRECTED 2026-11-03] "~20 ms" AND "NOT A DOUBLING" BELOW ARE BOTH WRONG. Measured on 1166
         // (phone speaker, three switches): main's old track left the deep-buffer mix 160/198 ms after
         // this unmute and its new track started 172/242/281 ms after it. 20 ms is
@@ -1785,39 +1826,46 @@ class CrossfadeController(
         // ~20 ms above has passed, main's output is gone and only the tail is audible, at main's
         // own level - which is what a plain transition sounds like too. Our curves then take over
         // from unity on both legs, which is where equal power expects to start.
-        // Armed BEFORE the volume and the seek, so the seek's flush cannot be missed; the flag is
-        // cleared again only by [promote] or [clearRampState]. promotedAtMs is still 0, so this is
-        // the bridge level.
-        promotedAtMs = 0L
+        runCatching { sidecar.volume = exoPlayer.volume }
+        setMainTrackMuted(true)
+        phase = Phase.HANDOFF
+        handler.postDelayed(seekAfterMute, MAIN_QUIET_MS)
+    }
+
+    /**
+     * Second half of the switch, [MAIN_QUIET_MS] after [activate]. Cancelled by [clearRampState], so
+     * every abort in the wait leaves main playing on; the phase check is only a belt.
+     */
+    private fun handoffSeek() {
+        if (phase != Phase.HANDOFF) return
+        val token = Any()
+        overlapToken = token
+        mainProcessor.armIncoming(token)
+        // Armed BEFORE the seek, so the seek's flush cannot be missed; the flag is cleared again only by
+        // [clearRampState].
         firstFlushAtMs = 0L
         awaitingFlush = true
-        runCatching { sidecar.volume = sidecarLevel() }
         phase = Phase.ACTIVE
         handoffAtMs = System.currentTimeMillis()
         rampStartedAtMs = 0L
         handoff { sessionPlayer.seekToNextMediaItem() }
+        startTick()
     }
 
     /**
-     * The sidecar's level in ACTIVE: main's own volume (ducking reaches the tail through it - see the
-     * note in [activate]), scaled by BRIDGE_GAIN until [promote]. Every ACTIVE-phase write of the
-     * sidecar's volume goes through here - [activate], [tickActive]'s mirror and [onResumed] - so none
-     * of them can raise the tail early. The pre-roll's `0f` and resetSidecar's `1f` are outside ACTIVE.
+     * Mutes or restores main's current AudioTrack, on main's playback thread; see [TrackGate] for why
+     * there, and why a new track cannot inherit the mute. A message rather than a direct call, which is
+     * also the route the sidecar's volume takes, so the two reach the mixer as nearly together as they can.
      */
-    private fun sidecarLevel(): Float =
-        if (promotedAtMs != 0L) exoPlayer.volume else exoPlayer.volume * BRIDGE_GAIN
-
-    /**
-     * Main's departing audio has stopped (its processor saw the seek's flush): the tail goes to full,
-     * and from here [tickActive] may arm the ramps. Idempotent, and a no-op outside an active bridge,
-     * which is what makes the front-of-queue post from [onMainFlushed] safe to land late.
-     */
-    private fun promote(via: String) {
-        if (phase != Phase.ACTIVE || !awaitingFlush || promotedAtMs != 0L) return
-        awaitingFlush = false
-        promotedAtMs = System.currentTimeMillis()
-        promoteVia = via
-        runCatching { sidecar.volume = sidecarLevel() }
+    private fun setMainTrackMuted(muted: Boolean) {
+        mainMuted = muted
+        if (muted) mainMuteAppliedAtMs = 0L
+        runCatching {
+            exoPlayer.createMessage { _, _ ->
+                if (muted) mainMuteAppliedAtMs = System.currentTimeMillis()
+                runCatching { mainProcessor.trackGate.setMuted(muted) }
+            }.send()
+        }
     }
 
     /**
@@ -1887,6 +1935,18 @@ class CrossfadeController(
      * track buffer. Expected: flushMs ~150-280 (the 1166 AudioFlinger timings), promoteMs - flushMs
      * under ~30, via=flush. A click that persists with those values means level was not the cause;
      * promoteMs - flushMs well above ~50 means delivery latency is lengthening the -6 dB stretch.
+     * [CORRECTED 2026-11-04] 1167 measured flushMs at 2-13, refuting ~150-280: the AudioFlinger timings
+     * were play-out, not the mix (see [activate]). promoteMs and via went with the bridge.
+     * ⚠️ [ADDED 2026-11-04, USER-APPROVED] `quietMs` is main's flush minus the moment its track mute was
+     * applied, both on main's playback thread; -1 when the seek never went out. Read it with AudioFlinger's
+     * removal gain for main's old track (dumpsys media.audio_flinger; 40 ms cycle on the test phone).
+     * ~190+ and -inf on every switch with the click gone: fixed. ~190+, -inf, click still there: the cut
+     * was not all of it; read lagVsMain and tailUnderruns. Above ~45 with a gain of -19: the mute is not
+     * reaching the mixer and the model is wrong. Below ~45: the wait was cut short; check delivery.
+     * `tailUnderruns` counts the sidecar's underruns from the switch to the end: above 0 on one source
+     * and 0 on the other points at a starving tail; 0 on both points at lagVsMain or level.
+     * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
+     * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
     private fun logTransition(reason: String) {
         Log.d(
@@ -1895,9 +1955,16 @@ class CrossfadeController(
                 " queuedMs=" + switchQueuedMs +
                 " lagVsMain=" + (switchLagVsMainMs?.toString() ?: "n/a") +
                 " elapsed=" + (if (armedAtMs == 0L) -1L else System.currentTimeMillis() - armedAtMs) +
-                " flushMs=" + sinceHandoff(firstFlushAtMs) + " promoteMs=" + sinceHandoff(promotedAtMs) +
-                " via=" + (promoteVia ?: "-") + " rampsEarly=" + (if (rampsEarly) 1 else 0)
+                " flushMs=" + sinceHandoff(firstFlushAtMs) + " quietMs=" + quietMs() +
+                " rampsEarly=" + (if (rampsEarly) 1 else 0) + " tailUnderruns=" + tailUnderruns +
+                " fmt=" + (switchFmt ?: "-")
         )
+    }
+
+    private fun quietMs(): Long {
+        val mutedAt = mainMuteAppliedAtMs
+        val flushedAt = firstFlushAtMs
+        return if (mutedAt == 0L || flushedAt == 0L) -1L else flushedAt - mutedAt
     }
 
     private fun sinceHandoff(atMs: Long): Long =
@@ -1921,6 +1988,10 @@ class CrossfadeController(
     }
 
     private fun clearRampState() {
+        // The pending seek and main's track mute, whatever phase this is. After the seek the un-mute
+        // reaches main's new track, already at unity, so it does nothing.
+        handler.removeCallbacks(seekAfterMute)
+        if (mainMuted) setMainTrackMuted(false)
         // Both, always, and the main one FIRST: it is the leg that can be muted, and an un-mute that
         // does not happen is silence the user cannot clear.
         runCatching { mainProcessor.clearRamps() }
@@ -1929,12 +2000,13 @@ class CrossfadeController(
         rampStartedAtMs = 0L
         rampMs = 0L
         handoffAtMs = 0L
-        // The bridge, after logTransition has read it on both paths ([complete] and [abort] log first).
+        // After logTransition has read them on both paths ([complete] and [abort] log first).
         awaitingFlush = false
         firstFlushAtMs = 0L
-        promotedAtMs = 0L
-        promoteVia = null
+        mainMuteAppliedAtMs = 0L
         rampsEarly = false
+        tailUnderruns = 0
+        switchFmt = null
     }
 
     /**
@@ -2094,19 +2166,21 @@ class CrossfadeController(
         private const val RAMP_TIMEOUT_MS = 4_000L
 
         /**
-         * The tail's level between the switch and main's flush (2026-11-03): -6 dB, which with main at
-         * full scale is ~1.5x - the level the signed-off 1144 window had (main 0.926 + tail 0.577 under
-         * the old LUT). An inference from those numbers, not a measured optimum.
+         * From muting main's track to the seek. The ramp is computed when the next mix cycle starts, so
+         * the test phone (40 ms cycle) needs the message hop plus one cycle, ~45 ms; HAL latency does not
+         * count, since mixed audio plays out whatever the flush does. 200 is generous on purpose: other
+         * outputs may cycle slower and were not measured, and the wait costs little - main is silent and
+         * the tail plays the same audio. A second opinion's 150-200 ms was the upper bound considered.
          */
-        private const val BRIDGE_GAIN = 0.5f
+        private const val MAIN_QUIET_MS = 200L
 
         /**
-         * How long the bridge waits for main's flush before giving up (NO_FLUSH). The flush was measured
-         * not measured directly; on 1166 main's old track left the mix 160/198 ms after the switch and its
-         * new track started 172-281 ms after it (AudioFlinger). Checked on the 200 ms tick, so it fires at
-         * 600-800 ms.
+         * How long the ramps wait for main's flush, from the seek, before giving up (NO_FLUSH). 1167
+         * measured the flush at 2-13 ms. Checked on the 200 ms tick, so it fires at 600-800 ms.
+         * [CORRECTED 2026-11-04] Was BRIDGE_TIMEOUT_MS, justified by "old track left the mix 160/198 ms
+         * after the switch": that was play-out, not the mix (see [activate]).
          */
-        private const val BRIDGE_TIMEOUT_MS = 600L
+        private const val FLUSH_TIMEOUT_MS = 600L
 
         /** Shortest overlap worth running; also the length used when the tail already ended. */
         private const val MIN_RAMP_MS = 1_000L

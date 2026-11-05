@@ -293,6 +293,8 @@ object Cached {
         // so Deezer forgets those rows' 30-minute verdicts and checks them again - a verdict must not outlive a
         // reload (Oct 25). Consumed by that fetch (recheckRequested).
         recheckLists += memoPrefix + canonicalId(id)
+        // The same rule for the app's copy of them (2026-11-04); see knownMarks.
+        knownMarks.remove(canonicalId(id))
     }
 
     private val recheckLists: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -924,19 +926,91 @@ object Cached {
      * other extension gets a second request. Background on app.scope, failures swallowed (a missed pass costs only
      * the dimming; the 1148 skip handles a dead song either way). Its own memo key, so a page reopened inside
      * MEMORY_TTL_MS re-emits from the memo without asking again.
+     * [CORRECTED 2026-11-04] "Nothing runs unless a row carries the pending extra" dropped the marks of a list whose
+     * verdicts were ALL known already: a page reopened after MEMORY_TTL_MS but inside the verdicts' 30 minutes paints
+     * the store's all-Yes rows, the fresh rows carry no pending extra, and nothing dimmed them or kept them out of
+     * Play and Shuffle. Such rows are now read as they are. The opt-in still holds for the REQUEST: only a pending row
+     * asks the extension again, so no other extension gets a second one.
      */
     private fun launchMarksPass(app: App, extension: Extension<*>, item: Playlist, rows: List<Track>) {
-        if (rows.none { it.extras[AVAILABILITY_PENDING_EXTRA] == "1" }) return
         app.scope.launch {
             runCatching {
-                val marked = coalescedTracks(app, MEMO_MARKS_PREFIX + canonicalId(item.id)) {
+                val marked = if (rows.none { it.extras[AVAILABILITY_PENDING_EXTRA] == "1" }) rows
+                else coalescedTracks(app, MEMO_MARKS_PREFIX + canonicalId(item.id)) {
                     val awaiting = item.copy(extras = item.extras + (AVAILABILITY_AWAIT_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(awaiting) }
                         .getOrThrow().loadAll()
                 }.tracks
                 val marks = marked.filter { it.isPlayable != Track.Playable.Yes }
                     .associate { it.id to it.isPlayable }
+                knownMarks[canonicalId(item.id)] = System.currentTimeMillis() to marks
                 if (marks.isNotEmpty()) tracksMarked.emit(item.id to marks)
+            }
+        }
+    }
+
+    /**
+     * ⚠⚠ THE LATEST MARKS PER PLAYLIST, BY canonicalId, SO A START THAT BYPASSES THE EXTENSION'S LIST LOAD STILL BUILDS
+     * THE QUEUE THE PAGE WOULD (2026-11-04). MEMORY ONLY, per the Oct 25 rule that a stored verdict must not outlive a
+     * reload: the store holds no verdicts (toTracksCacheSlim), and a bust clears this too (bustTracksCache).
+     * KNOWN_MARKS_TTL_MS mirrors DeezerApi.AVAIL_TTL_MS, the lifetime of the verdicts behind these. It counts from the
+     * pass, and rows can carry a verdict up to that old already, so a mark can reach about twice that at worst.
+     */
+    private val knownMarks = ConcurrentHashMap<String, Pair<Long, Map<String, Track.Playable>>>()
+    private const val KNOWN_MARKS_TTL_MS = 30L * 60 * 1000
+
+    // As FeedAdapter.marked: only a Yes row takes a mark, and a row's own verdict stands.
+    private fun List<Track>.withKnownMarks(item: Playlist): List<Track> {
+        val marks = knownMarks[canonicalId(item.id)]
+            ?.takeIf { System.currentTimeMillis() - it.first < KNOWN_MARKS_TTL_MS }?.second
+        if (marks.isNullOrEmpty()) return this
+        return map { track ->
+            if (track.isPlayable != Track.Playable.Yes) track
+            else marks[track.id]?.let { track.copy(isPlayable = it) } ?: track
+        }
+    }
+
+    /**
+     * ⚠⚠ THE STORED COPY AS A PLAY OR SHUFFLE START, WITH THE REFRESH GOING ON BEHIND IT (2026-11-04). 3.8 s of a
+     * long-press Shuffle on a 1,884-song playlist was the live reload; the page's own buttons already start from these
+     * rows. Null means use the live path: no entry, an item with its own expiry, or an empty one, which is not
+     * evidence of an empty playlist (see revalidatePlaylistTracks).
+     * ⚠️ WHAT THE TRADE IS. An edit in Gladix shows at once: the editor's save writes this store and every other edit
+     * deletes it (writePlaylistTracksCache, bustTracksCache). An edit made elsewhere has no signal, so it can miss the
+     * first start after it, and the running queue stays as it started; the refresh below corrects the next one.
+     * [loaded] is the count guard's condition: a loaded playlist's trackCount differing from the stored size means an
+     * add or remove elsewhere, so that start goes live. It cannot catch a reorder or a same-size swap. An age limit
+     * would not work: savedAtMs does not move when a refresh finds nothing changed.
+     * ⚠️ AN UNLOADED ITEM REFRESHES MEMORY ONLY, THE SAME SAFETY ARGUMENT AS warmPlaylistTracks: a thin feed-row item
+     * must not write the durable store. The memo it fills is what the next start or page open joins.
+     */
+    suspend fun storedPlaylistStart(
+        app: App, extension: Extension<*>, item: Playlist, loaded: Boolean,
+    ): List<Track>? {
+        if (item.carriesExpiry()) return null
+        val cached = withContext(Dispatchers.IO) { readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER) }
+            ?: return null
+        if (cached.tracks.isEmpty()) return null
+        val count = item.trackCount
+        if (loaded && count != null && count != cached.tracks.size.toLong()) return null
+        if (loaded) revalidatePlaylistTracks(app, extension, item, cached)
+        else refreshPlaylistMemo(app, extension, item)
+        return cached.tracks.withKnownMarks(item)
+    }
+
+    // The memo half of revalidatePlaylistTracks, for storedPlaylistStart's unloaded item. Failures swallowed: a refresh
+    // nobody is waiting for must not surface, and coalescedTracks evicts the failed entry.
+    private fun refreshPlaylistMemo(app: App, extension: Extension<*>, item: Playlist) {
+        val key = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
+        app.scope.launch {
+            runCatching {
+                val rows = coalescedTracks(app, key) {
+                    val asked = if (!recheckRequested(key)) item
+                    else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
+                    extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
+                        .getOrThrow().loadAll()
+                }.tracks
+                launchMarksPass(app, extension, item, rows)
             }
         }
     }
@@ -950,7 +1024,7 @@ object Cached {
     suspend fun joinPlaylistTracks(item: Playlist): List<Track>? =
         inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
-            ?.second?.await()
+            ?.second?.await()?.withKnownMarks(item)
 
 
     /**

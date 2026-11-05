@@ -162,8 +162,14 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * the output. So a flush observed after the switch means the departing track's queued audio is
      * already paused. Invoked on the PLAYBACK thread, on every flush (a hand-off produces two: the
      * seek's and the new stream's start), so the listener does its own filtering and must not block.
+     * [CORRECTED 2026-11-04] "already paused" is true of the CALL, not of the mixer: the flush says
+     * nothing about whether AudioFlinger has handled the pause, and when it had not, the release's flush
+     * cut the track with no ramp (see CrossfadeController.activate). The signal now gates only the ramps.
      */
     @Volatile var onFlushed: (() -> Unit)? = null
+
+    /** This player's current AudioTrack, for the crossfade hand-off; see [TrackGate]. */
+    val trackGate = TrackGate()
     /**
      * ⚠⚠ VOLATILE, BECAUSE THE COEFFICIENT BUILD READS IT FROM THE OTHER THREAD.
      * [onConfigure] writes it on the PLAYBACK thread; [rebuildBands] reads it from there AND from

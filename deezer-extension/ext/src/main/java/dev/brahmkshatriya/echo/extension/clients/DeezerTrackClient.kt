@@ -223,6 +223,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     //   in the reporter's region the same unavailability arrives as an HTTP 200 with an
                     //     EMPTY `media` array instead - nothing throws, no licence string - so it landed
                     //     here and substituted FALLBACK_ID's audio.
+                    // [CORRECTED 2026-10-30] BOTH HALVES OF THE ABOVE ARE WRONG; DO NOT CITE THEM. No verified
+                    // case exists of the FALLBACK_ID substitute playing a different song: it is the same song
+                    // on another release (different album and art). The GitHub #2 "acoustic as standard" swap
+                    // was Combine's title matching, not Deezer's substitute. And no capture has ever shown an
+                    // original refused at 320 but allowed at 128. What stays valid is the rule: try the
+                    // original at every rung before any substitution (GitHub #2 rule).
                     // ⚠️ SO THE BUG WAS A HOLE BETWEEN TWO EXISTING LADDERS, not a missing one.
                     // The licence branch above handles "License token has no sufficient rights"; the
                     // outer catch handles anything that THROWS. mediaIsEmpty is neither: it is a
@@ -346,6 +352,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // report (see the step-down note on the token_rights branch) had FALLBACK_IDs, so a
                 // stale token sent straight to refusedAtRung could play the standard recording under
                 // the acoustic title. Only once the refresh is spent is this handled like token_rights.
+                // [CORRECTED 2026-10-30] The substitute is the same song on another release, not a standard
+                // recording under an acoustic title; that report was Combine's title matching (GitHub #2). See
+                // the correction on the token_rights branch. Refresh-first stays, as part of the GitHub #2 rule.
                 // ⚠️ NOT AT A RELAY RUNG (flac/320/relay128): getMediaUrl sends the id alone, so a refresh would
                 // repeat a byte-identical relay request against its shared daily ceiling. There
                 // refusedAtRung only steps down, and the 128 rung below it applies this rule.
@@ -502,6 +511,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // consequence was missed. With no arm above 128 the substitute could only ever be
         // FETCHED at 128, so a user who selected 320 got a 128 stream OF A DIFFERENT
         // RECORDING - and no other part of the chain was wrong.
+        // [CORRECTED 2026-10-30] Not a different recording: the substitute is the same song on another
+        // release (different album and art), with no verified case otherwise. The bitrate finding stands.
         // MEASURED, QUALITY-PROBE capture 2026-10-16: for the failing tracks Deezer answers
         // code 2002 "Track token has no sufficient rights on requested media" at flac, 320
         // AND 128 - from the relay and from the user's own account - so every manual pick in
@@ -511,6 +522,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // ⚠⚠ SO THE SUBSTITUTE NOW RUNS ITS OWN LADDER FROM topQuality, AND
         // 2419867c's RULE IS UNTOUCHED: the original recording is still tried at EVERY rung
         // before any substitution, because this block is only reachable once it has been.
+        // [CORRECTED 2026-10-30] The rule stays valid (GitHub #2 rule); the reasons 2419867c was given do
+        // not: the substitute plays the same song, and no original was ever seen refused at 320 but allowed
+        // at 128. See the correction on the token_rights branch.
         // ⚠⚠ allowSubstitute = false IS WHAT TERMINATES THIS, AND IT IS
         // NOT DEFENSIVE. Every descent propagates it unchanged, so inside a substitute's
         // ladder the throw below fires instead of fetching a substitute OF a substitute -
@@ -537,6 +551,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // above is exactly that (two Pretty Reckless "- Acoustic" tracks played the
         // standard versions). The step-down made that rarer; it did not make the
         // substitute correct when it does happen.
+        // [CORRECTED 2026-10-30] "DEMONSTRABLY" IS WRONG: no verified case exists of FALLBACK_ID playing a
+        // different song. The substitute is the same song on another release, and the Pretty Reckless report
+        // was Combine's title matching (GitHub #2). The decline and its bring-back trigger below still hold.
         // THE CHECK THAT WOULD WORK, so nobody has to re-derive it: ISRC identifies a
         // RECORDING, so an alternate release of the same master shares it while a
         // re-recording does not - precisely the distinction that failed. Both halves are
@@ -1026,6 +1043,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * ⚠️ WHICH ID: FALLBACK_ID when the track has one, else its own id, and the answer is used only if its
      * album matches the album shown. A FALLBACK-grafted favourite (graftFavTrack) shows the FALLBACK record's
      * album, so its own id would fetch the substitute's ISRC and credits for a different recording. A track
+     * [CORRECTED 2026-10-30] Different release, not a different song: no verified case exists of the substitute
+     * being another song (GitHub #2 was Combine's title matching). Matching the album shown still stands.
      * whose FALLBACK is not the record shown (an album-page row) fails the album check and gets no fill,
      * which is the safe miss.
      * ONE REQUEST PER SONG PER SESSION, failures included (remembered as null), keyed by the track's id.
@@ -1110,6 +1129,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // ⚠⚠ WHEN A SUBSTITUTION HAPPENED, SAY SO - A SILENT SWAP IS THE ACTUAL DEFECT.
         // The substitute's Track used to be consumed solely for the Blowfish key, so the user had
         // no way to tell that the audio was a different recording from the title on screen.
+        // [CORRECTED 2026-10-30] It is the same song on another release (different album and art); no
+        // verified case exists of a different song. GitHub #2's swap was Combine's title matching.
         // (These notes MOVED HERE on 2026-10-16 from createStreamableForQuality's
         // `isAlternateRecording`, which no longer exists: the substituting branch now returns the
         // result of its own recursive ladder and stamps this key on it directly, so the marker has
