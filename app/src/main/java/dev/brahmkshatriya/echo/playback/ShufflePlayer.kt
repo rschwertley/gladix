@@ -713,6 +713,12 @@ class ShufflePlayer(
     //      buffering-watchdog retries and every onPlayerError retry/skip arm, PlayerRadio's
     //      end-of-station advance. If a phantom play returns, these are the first suspects: no
     //      user request stands behind them.
+    //      [CORRECTED 2026-11-05] THE PHANTOM PLAY ON OPENING THE APP WAS NOT IN THIS BUCKET, AND THE PROBE
+    //      COULD NOT HAVE CAUGHT IT. It was bucket 1: a saved play/pause box restored as checked and pressed
+    //      play through PlayerViewModel.setPlaying, which the probe stamped as a UI request. Reproduced on the
+    //      phone with "Don't keep activities"; the fix and why are at PlayerFragment.configurePlayerControls.
+    //      Separately, every onPlayerError retry/skip arm used to play() even if the player was paused. They
+    //      now resume only if playWhenReady was true when the error arrived (PlayerEventListener.onPlayerError).
     //   5. THE ANDROID AUTO QUEUE-ITEM TAP - seekToDefaultPosition(mediaItemIndex) below. It arrives
     //      as COMMAND_SEEK_TO_MEDIA_ITEM, not COMMAND_PLAY_PAUSE, yet this class forces
     //      playWhenReady = true for it. Reachable only with a head unit connected.

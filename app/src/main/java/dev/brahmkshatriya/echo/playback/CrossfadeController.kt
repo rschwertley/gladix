@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -279,6 +280,7 @@ class CrossfadeController(
     private var tsAgeMs = -1L
     private var skipAtTrimUs: Long? = null
     private var skipMs: Long? = null
+    private var overlapStartAtMs = 0L
     private val seekAfterMute = Runnable { handoffSeek() }
 
     // ── Pre-roll state. All written and read on the app looper only. ────────────────────────
@@ -999,11 +1001,14 @@ class CrossfadeController(
     // which is the default install's setting, so the second trim would not have run for most users. TrackGate now counts the skips.
     private fun canReTrim() = exoPlayer.playbackParameters.speed == 1f
 
-    /** Main's media time minus the tail's at one instant, in microseconds, with the older timestamp's age in ms. */
-    private fun timestampOffsetUs(): Pair<Long, Long>? {
+    /**
+     * Main's media time minus the tail's at one instant, in microseconds, with the older timestamp's age in ms. [tailDiscards] picks
+     * which of the tail's drops count: the default, only those before the frame playing, is where the tail is now.
+     */
+    private fun timestampOffsetUs(tailDiscards: (Long) -> Long = sidecarProcessor::discardedFramesAt): Pair<Long, Long>? {
         if (!canReTrim()) return null
         val main = mainProcessor.trackGate.mediaTimestamp(mainProcessor::discardedFramesAt) ?: return null
-        val tail = sidecarProcessor.trackGate.mediaTimestamp(sidecarProcessor::discardedFramesAt) ?: return null
+        val tail = sidecarProcessor.trackGate.mediaTimestamp(tailDiscards) ?: return null
         val at = max(main.nanoTime, tail.nanoTime)
         val mainUs = main.mediaUs + (at - main.nanoTime) / 1000
         val tailUs = tail.mediaUs + (at - tail.nanoTime) / 1000
@@ -1020,16 +1025,21 @@ class CrossfadeController(
      * have without any of this. A tail still AHEAD cannot be fixed here: nothing is discarded, and tsPreMs reads negative.
      * A silence skip on main queued at this moment counts as no timestamp (TrackGate.mediaTimestamp). So does one that jumps main past
      * the cap. One AFTER this runs is not corrected, and tsSwitchMs reads high by it; the audio is silent there on both legs.
+     * [CORRECTED 2026-11-05] "One outside [MAX_DISCARD_MS]" is now one more than [RETRIM_TOLERANCE_MS] from the bias, either way, so a
+     * reading far enough ahead also takes the bias. The reading counts EVERY drop already made, played or not, because what is left
+     * to discard is what remains after them. It counted only the played ones, and 1169 shows the cost: with the first trim still
+     * queued the whole gap was discarded on top of it, leaving the tail ahead by exactly that trim (tsPreMs 543, first trim 334,
+     * tsSwitchMs -333). A drop not yet applied is not counted, and discardUs replaces it, so that cannot double either.
      */
     private fun secondTrim() {
         secondTrimDone = true
         skipAtTrimUs = mainProcessor.trackGate.skippedUs()
-        val reading = timestampOffsetUs()
+        val reading = timestampOffsetUs { sidecarProcessor.discardedFrameCount() }
         if (reading != null) {
             tsPreMs = reading.first / 1000
             tsAgeMs = reading.second
         }
-        val measuredUs = reading?.first?.takeIf { it <= MAX_DISCARD_MS * 1000 }
+        val measuredUs = reading?.first?.takeIf { abs(it - firstTrimBiasMs * 1000) <= RETRIM_TOLERANCE_MS * 1000 }
         val discardUs = measuredUs ?: (firstTrimBiasMs * 1000)
         if (discardUs <= 0L) return
         val queuedMs = sidecarQueuedMs()
@@ -1825,6 +1835,8 @@ class CrossfadeController(
         }
         endPath = "preroll"
         switchQueuedMs = sidecarQueuedMs()
+        overlapStartAtMs = System.currentTimeMillis()
+        sidecarProcessor.startTailMeter()
         timestampOffsetUs()?.let { (offsetUs, ageMs) ->
             tsSwitchMs = offsetUs / 1000
             tsAgeMs = ageMs
@@ -2027,9 +2039,21 @@ class CrossfadeController(
      * still there means it is not alignment by media time: next is comparing the two legs' PCM, or a longer ramp. Above ~30 means
      * the correction is not landing: read the queue depth and tsMs. tsPreMs near 150 on every switch means the first trim was already
      * fine and lagVsMain's spread was noise. [CORRECTED 2026-11-04] lagVsMain above is main against itself - see the class note.
+     * [CORRECTED 2026-11-05] `tsPreMs` now counts every drop already made, see [secondTrim], so it is what the second trim has left
+     * to do. Stated before the build: 150-230, with tsSwitchMs within +-20. tsSwitchMs still about minus the first trim (trim minus
+     * trim2Ms) means this reading is wrong. tsSwitchMs about +trim2Ms means the second drop had not played by the switch.
+     * A tsPreMs more than [RETRIM_TOLERANCE_MS] from the bias was not trusted, and trim2Ms then shows the bias instead.
      * `skipMs` (USER-APPROVED 2026-11-04) is the silence main's playing frame moved past from the second trim to the mute, on any path;
      * `-` means no second trim, or no timestamp at either end. It splits the "above ~30" reading: tsSwitchMs close to skipMs means a
      * skip moved main after the trim, which is silence on both legs. skipMs 0 means the correction is not landing, as above.
+     * ⚠️ [ADDED 2026-11-05, USER-APPROVED] `overlapMs` is the time from the switch to the tail's last frame above -60 dBFS, or to
+     * the tail being stopped if that came first; `tailDb` is the tail's average level up to that frame, before the fade gain, see
+     * AudioEffectsProcessor.TailMeter. They tell a near-silent ending from a crossfade that did not overlap. Stated before the build:
+     * overlapMs near the fade with tailDb above about -30, and no overlap heard: the tail really played, so read the ramps next.
+     * overlapMs well short of the fade, or tailDb below about -50: the song's ending was quiet, so there was little to hear.
+     * `<N`: nothing above -60 reached the processor after the switch, so the tail went quiet within the N ms already queued.
+     * `-`: no switch, or a format the processor does not count. The first ~queuedMs after the switch is not in tailDb: that audio
+     * had already passed through the processor.
      * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
      * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
@@ -2044,8 +2068,17 @@ class CrossfadeController(
                 " rampsEarly=" + (if (rampsEarly) 1 else 0) + " tailUnderruns=" + tailUnderruns +
                 " fmt=" + (switchFmt ?: "-") + " tsPreMs=" + (tsPreMs?.toString() ?: "-") +
                 " trim2Ms=" + (trim2Ms?.toString() ?: "-") + " tsSwitchMs=" + (tsSwitchMs?.toString() ?: "-") +
-                " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-")
+                " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-") +
+                " overlapMs=" + overlapField() + " tailDb=" + sidecarProcessor.tailDb()
         )
+    }
+
+    private fun overlapField(): String {
+        val audibleMs = sidecarProcessor.tailAudibleMs() ?: return "-"
+        val queuedMs = switchQueuedMs.coerceAtLeast(0L)
+        if (audibleMs == 0L) return "<$queuedMs"
+        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
+        return min(queuedMs + (audibleMs / speed).toLong(), System.currentTimeMillis() - overlapStartAtMs).toString()
     }
 
     private fun quietMs(): Long {
@@ -2094,6 +2127,7 @@ class CrossfadeController(
         rampsEarly = false
         tailUnderruns = 0
         switchFmt = null
+        overlapStartAtMs = 0L
     }
 
     /**
@@ -2366,6 +2400,12 @@ class CrossfadeController(
          * first-trim error in view, the 1168 spread of about +-135 ms, though that was main's own noise and no measure of the tail.
          */
         private const val FIRST_TRIM_BIAS_MS = 150L
+
+        /**
+         * How far from the first trim's aim the second trim's reading can be and still be believed (user decision, 2026-11-05). The
+         * six 1169 readings, once corrected, were 166-226 against an aim of at most 150; see [secondTrim].
+         */
+        private const val RETRIM_TOLERANCE_MS = 300L
 
         /**
          * When the second trim runs, from the pre-roll's start: late enough for the tail's timestamp, early enough for a

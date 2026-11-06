@@ -217,6 +217,8 @@ class PlayerTvFragment : Fragment() {
 
         // Play / pause
         val playPauseListener = CheckBoxListener { viewModel.setPlaying(it) }
+        // Not saved, or a restore presses play: see PlayerFragment.configurePlayerControls.
+        binding.tvTrackPlayPause.isSaveEnabled = false
         binding.tvTrackPlayPause.addOnCheckedStateChangedListener(playPauseListener)
         observe(viewModel.playWhenReady) {
             // Also the wave's primary driver — observe() is flowWithLifecycle(STARTED) over a StateFlow,

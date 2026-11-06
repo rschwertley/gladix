@@ -13,8 +13,10 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.log10
 import kotlin.math.pow
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
@@ -483,9 +485,50 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * Frames dropped BEFORE output frame [frame] (2026-11-04), which is not the same as dropped so far. A drop happens upstream of
      * ~500 ms of queue, so while it is still queued the frame now playing precedes it; counting it anyway would misread the tail by
      * the whole trim, and the second trim runs about when the first one reaches the mixer.
+     * [CORRECTED 2026-11-05] Right for where the tail is NOW, so it stays for tsSwitchMs. It was wrong for what the second trim has left
+     * to discard, which needs every drop already made: [discardedFrameCount]. "Misread" was this note's mistake, see
+     * CrossfadeController.secondTrim.
      */
     fun discardedFramesAt(frame: Long): Long = synchronized(discardMarks) {
         discardMarks.lastOrNull { it.first <= frame }?.second ?: 0L
+    }
+
+    /**
+     * The tail's level and where it went quiet, for the CROSSFADE-FEEL line (2026-11-05). Written once per buffer on the audio thread
+     * from [queueInput], before fadeGain so it reads the song and not our ramp; read on the app looper. It starts at the switch, so
+     * the audio already queued by then is not in it, and a frame here is heard about one queue-depth after the switch.
+     */
+    private class TailMeter {
+        @Volatile var frames = 0L
+        @Volatile var squares = 0.0
+        @Volatile var loudFrames = 0L
+        @Volatile var loudSquares = 0.0
+    }
+
+    @Volatile private var tailMeter: TailMeter? = null
+
+    /** A new meter rather than a reset, so the audio thread never publishes old totals into it. Dropped by [clearRamps]. */
+    fun startTailMeter() {
+        tailMeter = TailMeter()
+    }
+
+    /** Media ms from the meter's start to the last frame above [TAIL_SILENCE]; 0 if none, null with no meter. */
+    fun tailAudibleMs(): Long? {
+        val meter = tailMeter ?: return null
+        val rate = configuredFormat.sampleRate
+        return if (rate <= 0) 0L else meter.loudFrames * 1000L / rate
+    }
+
+    /** Average level in dBFS up to that frame, or over all of it when nothing passed; `-` with nothing measured. */
+    fun tailDb(): String {
+        val meter = tailMeter ?: return "-"
+        val loud = meter.loudFrames
+        val frames = if (loud > 0L) loud else meter.frames
+        val squares = if (loud > 0L) meter.loudSquares else meter.squares
+        val channels = configuredFormat.channelCount
+        if (frames == 0L || channels <= 0) return "-"
+        if (squares <= 0.0) return "-inf"
+        return (10.0 * log10(squares / (frames * channels))).roundToInt().toString()
     }
 
     /** Frames emitted to the current output, for TrackGate. See [emittedFrames]. */
@@ -539,6 +582,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         pendingToken.set(null)
         publishedToken.set(null)
         muted = false
+        tailMeter = null
     }
 
     /**
@@ -714,6 +758,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val total = rampTotalFrames.get()
         val channelCount = fmt.channelCount
         val applyFade = total > 0
+        val meter = tailMeter
+        var meterFrames = meter?.frames ?: 0L
+        var meterSquares = meter?.squares ?: 0.0
+        var meterLoudFrames = meter?.loudFrames ?: 0L
+        var meterLoudSquares = meter?.loudSquares ?: 0.0
 
         while (inputBuffer.remaining() >= channelCount * 2) {
             // Cosine² fade envelope — computed once per frame, applied to all channels
@@ -736,6 +785,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
             } else {
                 fadeGain = 1f
             }
+            var frameLoud = false
             for (ch in 0 until channelCount) {
                 val raw = inputBuffer.short.toInt()
                 val index = (raw + 32768).coerceIn(0, 65535)
@@ -762,13 +812,30 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
                     for (b in bands.indices) processed = bands[b].process(processed, ch)
                     processed = softLimit(processed)
                 }
+                if (meter != null) {
+                    meterSquares += (processed * processed).toDouble()
+                    if (abs(processed) >= TAIL_SILENCE) frameLoud = true
+                }
                 output.putShort(
                     (processed * fadeGain * 32768f).toInt()
                         .coerceIn(-32768, 32767).toShort()
                 )
             }
+            if (meter != null) {
+                meterFrames++
+                if (frameLoud) {
+                    meterLoudFrames = meterFrames
+                    meterLoudSquares = meterSquares
+                }
+            }
         }
 
+        if (meter != null) {
+            meter.frames = meterFrames
+            meter.squares = meterSquares
+            meter.loudFrames = meterLoudFrames
+            meter.loudSquares = meterLoudSquares
+        }
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
         countEmitted(output.position())
@@ -948,5 +1015,8 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // ⚠️ STILL OPEN IF NORMALIZATION IS EVER RE-ENABLED: the sidecar still gets no setTrackGain,
         // so the tail would play ungained against a gained main leg.
         const val OVERLAP_PEDESTAL = 1.0f
+
+        /** -60 dBFS: below this a sample counts as silence for [TailMeter]. Chosen, not measured. */
+        const val TAIL_SILENCE = 0.001f
     }
 }

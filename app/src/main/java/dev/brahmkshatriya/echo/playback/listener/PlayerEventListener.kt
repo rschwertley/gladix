@@ -2272,6 +2272,10 @@ class PlayerEventListener(
     }
 
     override fun onPlayerError(error: PlaybackException) {
+        // Read before anything below can move it: crossfade's abort, the Android Auto arms' pause(). Every
+        // retry and skip below resumes only on this, so a failure while paused re-prepares and stays paused
+        // (2026-11-05). See ShufflePlayer's every-route note.
+        val wasPlaying = player.playWhenReady
         // Abort first: every branch below either skips, holds or re-prepares, and none of them is a
         // state an armed sidecar should survive into.
         crossfade()?.onPlayerError()
@@ -2340,8 +2344,10 @@ class PlayerEventListener(
                 player.stop()
                 internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
-                player.play()
-                requestAudioFocus()
+                if (wasPlaying) {
+                    player.play()
+                    requestAudioFocus()
+                }
             } else {
                 retried404MediaId = null
                 Log.d("GladixPlayback", "onPlayerError: 404 retry failed for $currentMediaId, skipping")
@@ -2358,7 +2364,7 @@ class PlayerEventListener(
                 }
                 skipInvoluntarily()
                 player.prepare()
-                player.play()
+                if (wasPlaying) player.play()
             }
             return
         }
@@ -2395,7 +2401,7 @@ class PlayerEventListener(
                 player.replaceMediaItem(index, MediaItemUtils.withRetry(mediaItem))
             }
             player.prepare()
-            player.play()
+            if (wasPlaying) player.play()
             return
         }
 
@@ -2413,8 +2419,10 @@ class PlayerEventListener(
                 player.stop()
                 internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
-                player.play()
-                requestAudioFocus()
+                if (wasPlaying) {
+                    player.play()
+                    requestAudioFocus()
+                }
             } else {
                 retriedSocketMediaId = null
                 Log.d("GladixPlayback", "onPlayerError: SocketException retry failed for $currentMediaId, skipping")
@@ -2435,12 +2443,12 @@ class PlayerEventListener(
                         delay(50)
                         skipInvoluntarily()
                         player.prepare()
-                        player.play()
+                        if (wasPlaying) player.play()
                     }
                 } else {
                     skipInvoluntarily()
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
             }
             return
@@ -2488,8 +2496,10 @@ class PlayerEventListener(
                 player.stop()
                 internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
-                player.play()
-                requestAudioFocus()
+                if (wasPlaying) {
+                    player.play()
+                    requestAudioFocus()
+                }
             } else {
                 Log.d(
                     "GladixPlayback",
@@ -2498,7 +2508,7 @@ class PlayerEventListener(
                 scope.launch { throwableFlow.emit(PlayerException(mediaItem, rootCause)) }
                 // A hold like the offline one, so a later NotConnected -> connected transition can
                 // resume it. Unannounced: the emit above already tells the user.
-                holdForNetwork(wasPlaying = true, announce = false)
+                holdForNetwork(wasPlaying = wasPlaying, announce = false)
             }
             return
         }
@@ -2596,12 +2606,12 @@ class PlayerEventListener(
                     delay(50)
                     skipInvoluntarily()
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
             } else {
                 skipInvoluntarily()
                 player.prepare()
-                player.play()
+                if (wasPlaying) player.play()
             }
             return
         }
@@ -2728,8 +2738,10 @@ class PlayerEventListener(
                 player.stop()
                 internalSeek { player.seekTo(savedIndex, savedPosition) }
                 player.prepare()
-                player.play()
-                requestAudioFocus()
+                if (wasPlaying) {
+                    player.play()
+                    requestAudioFocus()
+                }
                 return
             }
             retriedMediaId = null
@@ -2788,12 +2800,12 @@ class PlayerEventListener(
                     delay(50)
                     skipInvoluntarily()
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
             } else {
                 skipInvoluntarily()
                 player.prepare()
-                player.play()
+                if (wasPlaying) player.play()
             }
             return
         }
@@ -2867,13 +2879,13 @@ class PlayerEventListener(
                     player.seekTo(player.currentMediaItemIndex, 0)
                     skipInvoluntarily()
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
             } else {
                 player.seekTo(player.currentMediaItemIndex, 0)
                 skipInvoluntarily()
                 player.prepare()
-                player.play()
+                if (wasPlaying) player.play()
             }
             return
         }
@@ -2914,7 +2926,7 @@ class PlayerEventListener(
             player.replaceMediaItem(index, newItem)
         }
         player.prepare()
-        player.play()
+        if (wasPlaying) player.play()
     }
 }
 

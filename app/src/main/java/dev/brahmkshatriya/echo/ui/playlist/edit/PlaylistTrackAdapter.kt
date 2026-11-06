@@ -209,7 +209,10 @@ class PlaylistTrackAdapter(
                 }
 
                 override fun onTrackClosedClicked(viewHolder: ViewHolder) {
-                    viewModel.edit(EditPlaylistViewModel.Action.Remove(listOf(viewHolder.bindingAdapterPosition)))
+                    // Same guard as onMove and onSwiped: a row in transition has no position, so the tap is ignored.
+                    val pos = viewHolder.bindingAdapterPosition
+                    if (pos == RecyclerView.NO_POSITION) return
+                    viewModel.edit(EditPlaylistViewModel.Action.Remove(listOf(pos)))
                 }
             }
             return listener to itemTouchHelper

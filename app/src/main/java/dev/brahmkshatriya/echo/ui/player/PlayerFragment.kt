@@ -953,6 +953,14 @@ class PlayerFragment : Fragment() {
         }
 
         val playPauseListener = CheckBoxListener { viewModel.setPlaying(it) }
+        // ⚠⚠ NOT SAVED, OR REOPENING THE APP STARTS THE MUSIC (2026-11-05, reproduced on the phone with "Don't
+        // keep activities": play, Home, pause from the notification, reopen). The saved state is from when the
+        // user left, so it can say playing while the player is paused. Restoring it runs in Fragment.restoreViewState
+        // after onViewCreated and before STARTED, when this listener is on and the observer below has not run, and
+        // MaterialCheckBox.setCheckedState notifies listeners of a restored change. viewModel.playWhenReady
+        // sets these boxes at every start, so the saved value is never needed.
+        binding.playerControls.trackPlayPause.isSaveEnabled = false
+        binding.playerCollapsedContainer.collapsedTrackPlayPause.isSaveEnabled = false
         binding.playerControls.trackPlayPause
             .addOnCheckedStateChangedListener(playPauseListener)
         binding.playerCollapsedContainer.collapsedTrackPlayPause

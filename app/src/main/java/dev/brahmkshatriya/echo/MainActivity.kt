@@ -379,6 +379,8 @@ open class MainActivity : AppCompatActivity() {
         }
 
         val playPauseListener = CheckBoxListener { playerViewModel.setPlaying(it) }
+        // Not saved, or a restore presses play: see PlayerFragment.configurePlayerControls.
+        miniPlayPause.isSaveEnabled = false
         miniPlayPause.addOnCheckedStateChangedListener(playPauseListener)
 
         fun updateVisibility() {
