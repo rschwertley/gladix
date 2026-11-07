@@ -61,6 +61,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -84,6 +85,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // The Loved Tracks playlist id for Library's "Favorite tracks" tile. null = not fetched yet this
     // session; "" = fetched and there is none, or the fetch failed (remembered, like likedTrackIds' failure
     // path, so a failing account costs one request per session, not one per Library load).
+    // [CORRECTED 2026-11-06] likedTrackIds no longer remembers a failure (fetchLiked). This id still does.
     private var lovedTracksId: String? = null
 
     // TEMPORARY - REMOVE WITH THE GladixFav PROBE in DeezerLibraryClient.withFavoriteTracks.
@@ -485,28 +487,69 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * hearts read empty until the next session, which is the pre-existing trade recorded at
      * DeezerTrack.addFavoriteTrack. Do not "fix" it by retrying - that is the per-track fetch
      * above, back again.
+     * [CORRECTED 2026-11-06] A failed fetch no longer caches anything (user decision). The cost named above became bigger once
+     * warmLiked could be the fetch that fails: empty hearts all session. What the empty set protected, no repeated fetch while the
+     * request is failing (e93d17b2's battery drain), is now ensureLiked's 60 s cooldown, so a retry is at most one a minute.
+     * And a failure now THROWS rather than answering false: Cached.loadMedia writes the answer into the song's media state, and a
+     * cache hit skips the probes, so a false here stayed that song's heart with no later ask to correct it. A throw is
+     * probeOrNull's "unknown" and sets probesDegraded, which re-probes on the next play. isItemLiked and isItemSaved's only
+     * caller is those probes (scope: app/src/main/java/dev/brahmkshatriya/echo, recursive).
      */
     private suspend fun isTrackLoved(track: Track): Boolean {
         if (!api.hasUserId) return false
         ensureLiked()
-        return track.id in likedTrackIds.orEmpty()
+        val liked = likedTrackIds ?: throw Exception("Deezer's liked list could not be fetched")
+        return track.id in liked
     }
 
     // ⚠️ THE LIKED LIST IS FETCHED AT MOST ONCE PER SESSION, BY WHICHEVER ASKS FIRST (2026-10-30): a heart /
     // saved check (isTrackLoved) or an artist page (likedByArtist). The Mutex makes "once" true - before it,
     // two concurrent probes could both fetch nb=10000. A Library -> Tracks load refreshes both for free
     // (refreshLiked). Callers check hasUserId first.
+    // [CORRECTED 2026-11-06] "At most once" holds for a fetch that succeeds. A failed one is retried after the cooldown below.
     private val likedMutex = Mutex()
 
+    // When the last fetch failed, 0 if it did not. Set only by a fetch that finished, so a cancelled one leaves the next ask free to try.
+    // A login, logout or switch clears it (setLoginUser): the next account has not failed.
+    @Volatile
+    private var likedFailedAtMs = 0L
+
+    // A backward clock jump ends the cooldown early rather than stretching it.
+    private fun likedCoolingDown() =
+        likedFailedAtMs != 0L && System.currentTimeMillis() - likedFailedAtMs in 0 until LIKED_RETRY_MS
+
+    // ⚠️ CHECKED AGAIN INSIDE THE LOCK, because isItemSaved and isItemLiked run together on every uncached load: the one that waited
+    // out the other's failed fetch must take that failure, not make a second request. During the cooldown an ask returns with the
+    // list unset, which isTrackLoved turns into a throw, so no start waits on a request known to be failing.
     private suspend fun ensureLiked() {
         if (likedTrackIds != null && likedIndex != null) return
-        likedMutex.withLock { if (likedTrackIds == null || likedIndex == null) fetchLiked() }
+        if (likedCoolingDown()) return
+        likedMutex.withLock {
+            if ((likedTrackIds == null || likedIndex == null) && !likedCoolingDown()) fetchLiked()
+        }
+    }
+
+    /**
+     * ⚠️ THE SESSION'S LIKED FETCH, STARTED BEFORE ANYTHING ASKS (2026-11-06). The 2026-11-06 capture on 1170: a first stored start
+     * with no Library visit waited about 3.5 s in the track step, about 230 ms after a Library visit, whose All tab makes this same
+     * request. Which part of that wait was the list and which a session renewal is not measured; this call pays both, since it
+     * goes through callApi. A start that arrives first still waits for the rest of it, as DECIDED at Cached.loadMedia's checks.
+     * ⚠⚠ CALLED BY ExtensionLoader's "user" delivery, NOT FROM setLoginUser. onExtensionSelected runs before the credentials arrive, and
+     * callApi's silent re-login calls setLoginUser on a throwaway DeezerExtension(), whose fetch would fill a list nothing reads.
+     * ⚠️ NEVER AWAITED, NOTHING ESCAPES: the delivery runs inside Injectable.value() holding its mutex (the 1108 lockout path).
+     * ⚠️ ONE REQUEST: repeat deliveries find the list filled, join the running fetch or land in the cooldown. A guest makes none. Android
+     * Auto's cold start comes through the same delivery, so it pays this one request, earlier than its first song would have.
+     */
+    fun warmLiked() {
+        extensionScope.launch { runCatching { if (api.hasUserId) ensureLiked() } }
     }
 
     // ONE favorite_song.getList - the request isTrackLoved always made - now fills BOTH likedTrackIds and
     // the artist page's light index (likedIndex) from the same records, which it used to discard after reading
     // SNG_ID. The index is built from the GRAFTED record (graftFavTrack) - see LikedEntry.
     // A failure still caches an empty set (and an empty index) for the session, as before - see isTrackLoved.
+    // [CORRECTED 2026-11-06] It caches nothing now and starts the cooldown; see isTrackLoved and ensureLiked. An empty list from a
+    // good answer is still a real answer and is kept.
     // ⚠️ A CANCELLATION NO LONGER DOES (2026-10-30): it is rethrown and nothing is cached, so a cancelled
     // first probe does not leave every heart reading "not liked" for the whole session.
     // ⚠️ DECIDED 2026-10-31: NOT REPLACED BY A SHARED TTL SNAPSHOT. Evoe c5b15279 (github.com/Doggo785/evoe, "serve
@@ -517,6 +560,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // like is already treated as success (DeezerTrack.addFavoriteTrack). Evoe 658fc80d (likes resolved after
     // playback starts) was declined at Cached.loadMedia's checks - see the note there.
     private suspend fun fetchLiked() {
+        val askedFor = session.credentials.userId
         val dataArray = try {
             api.getTracks()["results"]?.jsonObject?.get("data")?.jsonArray
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -524,7 +568,14 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         } catch (e: Exception) {
             null
         }
-        val records = dataArray.orEmpty().filterIsInstance<JsonObject>()
+        // warmLiked makes this reachable: a user switch while it runs must not leave this account's list, or its failure, on the next one.
+        if (session.credentials.userId != askedFor) return
+        val records = dataArray?.filterIsInstance<JsonObject>()
+        if (records == null) {
+            likedFailedAtMs = System.currentTimeMillis()
+            return
+        }
+        likedFailedAtMs = 0L
         likedTrackIds = records.mapNotNull {
             runCatching { it["SNG_ID"]?.jsonPrimitive?.content }.getOrNull()
         }.toHashSet()
@@ -1140,10 +1191,21 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         }
     }
 
+    private var deliveredAccount: String? = null
+
     override fun setLoginUser(user: User?) {
-        likedTrackIds = null
-        // Plain assignment, no fetch (the 1108 rule): the next isTrackLoved / likedByArtist refetches.
-        likedIndex = null
+        // [2026-11-06] Only when the account changes. ExtensionLoader delivers the same user again whenever its list re-emits, which
+        // would drop what warmLiked just fetched and cost the next miss the wait it exists to remove. What this clear is for, a
+        // login, logout or switch never showing the previous account's list (below), is unaffected.
+        // ⚠️ AGAINST THE LAST DELIVERY, NOT session.credentials: onLogin writes the new userId there first, so a switch would match.
+        val account = user?.extras?.get("user_id")
+        if (account != deliveredAccount) {
+            deliveredAccount = account
+            likedFailedAtMs = 0L
+            likedTrackIds = null
+            // Plain assignment, no fetch (the 1108 rule): the next isTrackLoved / likedByArtist refetches.
+            likedIndex = null
+        }
         // A plain assignment that cannot throw, and NOTHING ELSE for the loved id here: the fetch is lazy,
         // from a Library load or an owned playlist's open (lovedTracksIdOrNull). A network call in this
         // function is the 1108 lockout.
@@ -1294,7 +1356,6 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         val job = availabilityChecks.compute(key) { _, running ->
             running?.takeIf { it.isActive } ?: extensionScope.async {
                 runCatching { api.tracksAvailability(api.unknownIds(tracks)) }
-                Unit
             }
         }!!
         job.invokeOnCompletion { availabilityChecks.remove(key, job) }
@@ -1342,5 +1403,6 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
 
     companion object {
         private const val DEFAULT_TYPE = "grid"
+        private const val LIKED_RETRY_MS = 60_000L
     }
 }

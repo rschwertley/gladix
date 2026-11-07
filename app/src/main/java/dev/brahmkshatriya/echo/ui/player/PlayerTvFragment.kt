@@ -40,7 +40,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.defaultPlayerColors
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.getColorsFrom
-import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.getDetailsFormatFirst
+import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.getPillDetails
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.common.models.ImageHolder
@@ -355,7 +355,7 @@ class PlayerTvFragment : Fragment() {
             // StateFlow, so every ON_START replays the latest value. Under the old always-write shape a
             // stale value re-appeared on each return to the player; under this one an ungated (null)
             // value replays as hidden.
-            val details = tracks?.getDetailsFormatFirst(requireContext(), server, index)
+            val details = tracks?.getPillDetails(requireContext(), server, index)
                 ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
             if (details != null) binding.tvTrackSubtitle.text = details
             binding.tvTrackSubtitle.isVisible = details != null

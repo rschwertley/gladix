@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import dev.brahmkshatriya.echo.R
@@ -64,6 +65,8 @@ object FormatUtils {
     // rate a varying field worth reading, not a constant. It keeps its position because of the WIDTH
     // argument above, which stands on its own, and because [hertzLabel] now prints kHz and is no
     // longer the widest piece.
+    // [CORRECTED 2026-11-06] The pill no longer reads this, see [toPillDetails], so the width arguments above are history. It is
+    // the quality sheet's chips and info line now, and GladixPill's probe, which is why it is unchanged.
     @OptIn(UnstableApi::class)
     fun Format.toAudioDetails() = joinParts(
         listOfNotNull(getMimeType(), bitrateLabel()).joinToString(" ").takeIf { it.isNotEmpty() },
@@ -126,12 +129,15 @@ object FormatUtils {
     // which on the player means no source was ever prepared, so it doubles as a tell for that.
     // [CORRECTED 2026-11-04] It no longer reaches this for that case: PlayerViewModel.serverAndTracks passes only Tracks
     // with something selected, so the pill and the sheet show nothing instead.
-    private fun Tracks.formatDetails(context: Context): List<String> {
+    private fun Tracks.formatDetails(
+        context: Context,
+        audioDetails: (Format) -> String? = { it.toAudioDetails() },
+    ): List<String> {
         val audios = groups.filter { it.type == C.TRACK_TYPE_AUDIO }
         val videos = groups.filter { it.type == C.TRACK_TYPE_VIDEO }
         val subtitles = groups.filter { it.type == C.TRACK_TYPE_TEXT }
         return listOfNotNull(
-            audios.getSelectedFormat()?.toAudioDetails(),
+            audios.getSelectedFormat()?.let(audioDetails),
             videos.getSelectedFormat()?.toVideoDetails(),
             subtitles.getSelectedFormat()?.toSubtitleDetails()
         ).ifEmpty { listOf(context.getString(R.string.unknown_quality)) }
@@ -148,7 +154,7 @@ object FormatUtils {
 
     // SOURCES FIRST. For QualitySelectionBottomSheet, which joins the returned list with a newline into
     // a multi-line block where the source reads as a heading over its formats. Do not reorder this to fix
-    // a truncation problem - this consumer does not truncate; use getDetailsFormatFirst instead.
+    // a truncation problem - this consumer does not truncate; use getPillDetails instead.
     fun Tracks.getDetails(
         context: Context, server: Streamable.Media.Server?, index: Int?,
     ): List<String> = sourceTitles(server, index) + formatDetails(context)
@@ -160,7 +166,48 @@ object FormatUtils {
     // entirely. Ellipsis now falls on the part that was already unreadable.
     // Sources are still appended rather than dropped: on a non-merged extension the title is short and
     // occasionally meaningful, and the full list is one tap away in the quality sheet either way.
-    fun Tracks.getDetailsFormatFirst(
+    // [CORRECTED 2026-11-06] This was getDetailsFormatFirst. The source titles are gone from these two consumers by user decision:
+    // on YouTube Music they are internal names like "Audio - audio-audio/webm-WebM Opus - 70kbps". Video and subtitle details stay,
+    // since with Prefer Videos on they are what shows it is a video. The sheet still lists the titles. Deezer's only title, "Alt
+    // version" on a substitute, loses nothing: it never reached a screen (DeezerTrackClient.loadStreamableMedia's note).
+    fun Tracks.getPillDetails(
         context: Context, server: Streamable.Media.Server?, index: Int?,
-    ): List<String> = formatDetails(context) + sourceTitles(server, index)
+    ): List<String> = formatDetails(context) { it.toPillDetails(server, index) }
+
+    // Lossy: what the bitrate says. Lossless: bitrate says little, so bit depth and rate (2026-11-06). The Format's own bitrate wins,
+    // because the listed one is what was asked for and a Deezer step-down or substitute can deliver something else (see the note at
+    // QualitySelectionBottomSheet's server chips). The listed one covers a container that declares none: MatroskaExtractor never sets
+    // a bitrate, so WebM Opus has none. NEVER Source.quality: that is a rank, 3/6/9 on Deezer.
+    @OptIn(UnstableApi::class)
+    private fun Format.toPillDetails(server: Streamable.Media.Server?, index: Int?): String? {
+        val codec = if (sampleMimeType == MimeTypes.AUDIO_MPEG) "MP3" else getMimeType()
+        val parts = if (isLossless()) listOf(codec, bitDepthLabel(), hertzLabel())
+        else listOf(codec, bitrateLabel() ?: listedBitrateLabel(server, index))
+        return parts.filterNotNull().joinToString(" ").takeIf { it.isNotEmpty() }
+    }
+
+    private fun Format.isLossless() = when (sampleMimeType) {
+        MimeTypes.AUDIO_FLAC, MimeTypes.AUDIO_ALAC, MimeTypes.AUDIO_RAW -> true
+        else -> false
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun Format.bitDepthLabel() = when (pcmEncoding) {
+        C.ENCODING_PCM_8BIT -> "8-bit"
+        C.ENCODING_PCM_16BIT -> "16-bit"
+        C.ENCODING_PCM_24BIT -> "24-bit"
+        C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> "32-bit"
+        else -> null
+    }
+
+    private val LISTED_KBPS = Regex("""(\d+)\s*kbps""", RegexOption.IGNORE_CASE)
+
+    // singleOrNull first: a lone source plays whatever sourceIndex says (StreamableMediaSource). A merged server has no one source
+    // playing, so no title speaks for it.
+    private fun listedBitrateLabel(server: Streamable.Media.Server?, index: Int?): String? {
+        val sources = server?.sources ?: return null
+        val source = sources.singleOrNull() ?: sources.takeUnless { server.merged }?.getOrNull(index ?: -1)
+        val kbps = LISTED_KBPS.find(source?.title ?: return null)?.groupValues?.get(1) ?: return null
+        return "$kbps kbps"
+    }
 }

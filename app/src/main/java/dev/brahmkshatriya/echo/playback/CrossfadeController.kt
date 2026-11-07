@@ -188,6 +188,8 @@ class CrossfadeController(
         //   so its mute has to be lifted by force.
         // MAIN_RECOVERY: the main player was stopped, re-prepared or seeked under us (buffering
         //   watchdog, error retry) while ACTIVE.
+        //   [CORRECTED 2026-11-06] A user seek during ACTIVE logged this too, because [onSeek] could not tell them apart: 1170's
+        //   07:06:25 line was a user seek ~6 s after the switch, with nothing wrong. That is SEEK now; this is for the app's own.
         // CASTING: a Cast session started while something was armed or overlapping; see
         //   [onCastingStarted]. The overlap is a property of the LOCAL output, and while casting
         //   there is no local output.
@@ -509,10 +511,10 @@ class CrossfadeController(
         startTick()
     }
 
-    fun onSeek() {
+    fun onSeek(internal: Boolean) {
         if (handoffInFlight) return
         clearDeclineIfBeforeArm()
-        abort(if (phase == Phase.ACTIVE) Abort.MAIN_RECOVERY else Abort.SEEK)
+        abort(if (phase == Phase.ACTIVE && internal) Abort.MAIN_RECOVERY else Abort.SEEK)
         startTick()
     }
 

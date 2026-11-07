@@ -655,6 +655,8 @@ object Cached {
                 // timeout" variant would show an empty heart on liked songs, which is the 2026-10-23 stale-heart bug.
                 // Known cost: the first uncached play of a session can wait for Deezer's one liked-list fetch
                 // (DeezerExtension.fetchLiked). A restored queue is unaffected - preferCache serves it from cache.
+                // [2026-11-06] Still awaited. That fetch now starts at hydration (DeezerExtension.warmLiked), so a start waits only for
+                // what is left of it. A failed fetch reaches these probes as a throw now, so it is "unknown" and re-probed.
                 val isSaved = async {
                     if (new.isSaveable) extension.getIf<SaveClient, Boolean> {
                         isItemSaved(new)
@@ -1025,6 +1027,19 @@ object Cached {
         inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
             ?.second?.await()?.withKnownMarks(item)
+
+    /**
+     * [joinPlaylistTracks] for a start that has stored rows to fall back on: the memo only if it has already finished, else null.
+     * ⚠️ A START NEVER WAITS ON A BACKGROUND REFRESH (2026-11-06). 1170: a second long-press about 7 s after the first waited about
+     * 3 s for the refresh the first had launched (inferred from the timestamps; no line stamps the await). A refresh that failed
+     * would also have thrown out of the join with a good stored copy available, hence the runCatching.
+     * No second getSongs follows: storedPlaylistStart's refresh goes through coalescedTracks, which reuses the running job.
+     */
+    suspend fun finishedPlaylistTracks(item: Playlist): List<Track>? =
+        inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
+            ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
+            ?.second?.takeIf { it.isCompleted }
+            ?.let { runCatching { it.await() }.getOrNull() }?.withKnownMarks(item)
 
 
     /**

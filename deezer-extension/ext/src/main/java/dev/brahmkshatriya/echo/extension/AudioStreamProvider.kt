@@ -1,9 +1,12 @@
 package dev.brahmkshatriya.echo.extension
 
-import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Streamable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -11,6 +14,7 @@ import okhttp3.internal.closeQuietly
 import java.io.IOException
 import java.io.InputStream
 import java.util.ArrayDeque
+import kotlin.coroutines.resumeWithException
 
 /**
  * ⚠⚠ PORTED FROM UPSTREAM 43998ca (LuftVerbot/echo-deezer-extension, 2026-10-27), ADAPTED (2026-11-02). Three parts
@@ -33,11 +37,13 @@ import java.util.ArrayDeque
  * caller passes endByte; the InputProvider in DeezerTrackClient.loadStreamableMedia passes only the start); a
  * mandatory Blowfish key (every encrypted streamable carries one, DeezerTrackClient's Streamable.server extras) and
  * the Cache-Control header rename (the extension has no OkHttp cache). Episodes (quality 12) never come here.
+ * [CORRECTED 2026-11-06] "our await() stays": the opener's is now [awaitHeaders], still asynchronous, so it can close a lost response.
  */
 object AudioStreamProvider {
 
     private const val BLOCK_SIZE = 2048
     private const val BUFFER_POOL_LIMIT = 10
+    private const val OPEN_CEILING_MS = 30_000L
 
     private val bufferPool = ArrayDeque<ByteArray>()
     private val poolLock = Any()
@@ -52,12 +58,18 @@ object AudioStreamProvider {
         }
     }
 
-    suspend fun openStream(
+    /**
+     * The stream and the file's whole size, from one GET (2026-11-06). The size was a HEAD before it, a second request on every open:
+     * 221 and 348 ms for the pair on 1170. Utils.getContentLength is now the fallback, for a response that does not state the total.
+     * ⚠️ THE TOTAL FROM THE CDN IS NOT VERIFIED AGAINST ITS HEAD: no capture has compared them. RawDataSource's "stream ready total="
+     * line shows it per open.
+     */
+    suspend fun openStreamWithTotal(
         streamable: Streamable,
         client: OkHttpClient,
         startByte: Long = 0,
         endByte: Long = -1
-    ): InputStream = withContext(Dispatchers.IO) {
+    ): Pair<InputStream, Long> = withContext(Dispatchers.IO) {
         val alignedStart = startByte - (startByte % BLOCK_SIZE)
 
         val rangeHeader = if (endByte < 0) {
@@ -75,7 +87,7 @@ object AudioStreamProvider {
             .header("cache", "no-store")
             .build()
 
-        val response = client.newCall(request).await()
+        val response = awaitHeaders(client.newCall(request))
         try {
             if (!response.isSuccessful) {
                 throw IllegalStateException("Failed to fetch audio: HTTP ${response.code}")
@@ -87,9 +99,56 @@ object AudioStreamProvider {
                 initialChunkIndex = alignedStart / BLOCK_SIZE,
                 onClose = { response.close() },
             )
-            RangeSlicingInputStream(decrypted, skipBytes = startByte - alignedStart)
+            val stream = RangeSlicingInputStream(decrypted, skipBytes = startByte - alignedStart)
+            try {
+                stream to (response.totalBytes() ?: Utils.getContentLength(url, client))
+            } catch (e: Exception) {
+                // The whole stream, not just the response: this also returns its pooled buffer.
+                stream.closeQuietly()
+                throw e
+            }
         } catch (e: Exception) {
             response.closeQuietly()
+            throw e
+        }
+    }
+
+    // A 206's Content-Length is only the requested part. Null for "*" or a missing header: the HEAD answers instead.
+    private fun Response.totalBytes(): Long? =
+        if (code == 206) header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+        else header("Content-Length")?.toLongOrNull()
+
+    /**
+     * Up to the response headers, under the ceiling that was Utils.getContentLength's. The body read is outside it and takes minutes.
+     * ⚠⚠ 30 s MUST STAY ABOVE OKHTTP'S connect 15 s + read 10 s, FOR THE REASON AT Utils.getContentLength: okhttp's own timeout has to
+     * fire first, because its degraded ping is what evicts a dead HTTP/2 connection. With the HEAD gone from a normal open, this GET
+     * is the request that does that job (dbe877a9, 2026-10-03).
+     * ⚠️ A RESPONSE CAN BE LOST IN TWO PLACES, AND EACH HAS ITS OWN CLOSE:
+     * - resuming a continuation that was cancelled meanwhile drops the value (prompt cancellation, suspendCancellableCoroutine's
+     *   docs, read in 1.9.0's sources; the project is on 1.11.0, whose jar has the same resume overload). Hence resume's onCancellation,
+     *   and hence not :common's Call.await, which has none.
+     * - withTimeout can throw after its block returned ("Asynchronous timeout and resources" in its docs). Hence the var outside it.
+     */
+    private suspend fun awaitHeaders(call: Call): Response {
+        var response: Response? = null
+        try {
+            withTimeout(OPEN_CEILING_MS) {
+                response = suspendCancellableCoroutine { continuation ->
+                    call.enqueue(object : Callback {
+                        override fun onResponse(call: Call, response: Response) {
+                            continuation.resume(response) { _, lost, _ -> lost.closeQuietly() }
+                        }
+
+                        override fun onFailure(call: Call, e: IOException) {
+                            if (!call.isCanceled()) continuation.resumeWithException(e)
+                        }
+                    })
+                    continuation.invokeOnCancellation { call.cancel() }
+                }
+            }
+            return response!!
+        } catch (e: Exception) {
+            response?.closeQuietly()
             throw e
         }
     }

@@ -54,6 +54,15 @@ import okhttp3.Request
  * queue parked at ENDED is already what converts a phantom play into audible playback.
  * REVISIT WHEN THAT ITEM CLOSES. It is a small change and the cost of waiting is one button press in a
  * rare case; the cost of not waiting is a harder diagnosis on an open bug.
+ * [CORRECTED 2026-11-06] THE SOURCE WAS FOUND, SO THIS NOTE AND THE STATUS NOTE BELOW ARE OUT OF DATE. The play request came from our
+ * own UI: the play/pause checkbox's saved state replayed when the activity was recreated, and its listener pressed play. See
+ * PlayerFragment.configurePlayerControls. Reproduced with "Don't keep activities", and gone on 1170 with that state no longer saved.
+ * "Every app-side initiator was accounted for" below was wrong: this one was missed. The August reports were never captured, so
+ * that they were this same cause is inferred. The deferral's stated reason, not adding a candidate to an unidentified source, no
+ * longer holds; whether to build the auto-resume is a separate decision, not taken here.
+ * [CORRECTED 2026-11-06, the same day] RELEASED, BY USER DECISION, AND THE DEFERRAL BELOW IS OVER. The phantom play was its only recorded
+ * reason (this note, b214fec8). Built as LateAppendResume, phone only, with its conditions there. "The user presses play once" also
+ * undersold the wait: that press restarted the finished song, fixed at ShufflePlayer.leaveEnded. Read from source, not on a device.
  *
  * ⚠⚠ [STATUS 2026-09-23] THAT ITEM DID NOT CLOSE, AND IT IS NOT WAITING ON ANYONE EITHER -
  * IT WAS SET DOWN DELIBERATELY AT THE TIME. The decision taken then was: move on unless it becomes

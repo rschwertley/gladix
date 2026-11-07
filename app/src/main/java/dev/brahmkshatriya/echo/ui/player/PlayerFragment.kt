@@ -85,7 +85,7 @@ import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.defaultPlayerColors
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.getColorsFrom
 import dev.brahmkshatriya.echo.ui.player.PlayerTrackAdapter.Companion.configureClicking
-import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.getDetailsFormatFirst
+import dev.brahmkshatriya.echo.ui.player.quality.FormatUtils.getPillDetails
 import dev.brahmkshatriya.echo.ui.player.quality.QualitySelectionBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.emit
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
@@ -1147,7 +1147,7 @@ class PlayerFragment : Fragment() {
                 // [CORRECTED 2026-11-04] Not hidden until then, as this said: `tracks` was null only until the new item's
                 // Tracks.EMPTY arrived, stamped with the new id, and that printed "Unknown Quality" for the rest of the
                 // resolve. PlayerViewModel.serverAndTracks now returns null for it, so this description holds.
-                val details = tracks?.getDetailsFormatFirst(requireContext(), server, index)
+                val details = tracks?.getPillDetails(requireContext(), server, index)
                     ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
                 if (details != null) trackSubtitle.text = details
                 trackSubtitle.isVisible = details != null

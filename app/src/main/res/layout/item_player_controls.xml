@@ -275,6 +275,8 @@
              maxWidth is ONE dimen with NO values-land override: landscape is SHORT, not narrow (the
              controls column is a weighted half of ~914dp, comparable to portrait's 411dp), so an override
              would add the same drift risk flagged on collapsed_end_controls_width for no gain.
+             [CORRECTED 2026-11-06] The string is shorter now, FormatUtils.getPillDetails: "OPUS 70 kbps", "FLAC 24-bit 96 kHz". The
+             measurement above and the source titles below are history; only a video stream's segment can still reach the ellipsis.
              Ellipsis is the right outcome when it does happen - merged servers contribute one source
              title each, video streams add a whole segment - because the full string is one tap away in
              QualitySelectionBottomSheet. minHeight is what keeps that tap target a target at all,
@@ -310,7 +312,7 @@
             android:paddingHorizontal="10dp"
             android:textColor="@color/amoled_fg"
             android:textSize="12sp"
-            tools:text="MPEG - 44100 Hz - 2ch - 320 kbps" />
+            tools:text="MP3 320 kbps" />
 
         <TextView
             android:id="@+id/trackTotalTime"

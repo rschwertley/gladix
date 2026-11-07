@@ -404,7 +404,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             // FeedClickListener passes `pos = index`.
             //
             // ⚠⚠ DO NOT "FIX" THIS BY SOFTENING removeIndex's !! INSTEAD - IT LOOKS SAFER AND
-            // PRODUCES A SHEET THAT HANGS FOREVER. EditPlaylistViewModel:248 already accepts -1
+            // PRODUCES A SHEET THAT HANGS FOREVER. EditPlaylistViewModel's init already accepts -1
             // (`if (removeIndex == -1) return@launch`), so the !! was the ONLY thing rejecting it - but
             // that early return also means saveFlow never emits, so saveState stays SaveState.Initial,
             // whose toText is R.string.loading, and EditPlaylistBottomSheet only dismisses on

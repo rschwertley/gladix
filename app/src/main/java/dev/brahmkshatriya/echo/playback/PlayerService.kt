@@ -73,6 +73,7 @@ import dev.brahmkshatriya.echo.playback.listener.EffectsListener
 import dev.brahmkshatriya.echo.playback.listener.EffectsListener.Companion.globalFx
 import dev.brahmkshatriya.echo.playback.listener.MediaSessionServiceListener
 import dev.brahmkshatriya.echo.playback.listener.PlayerEventListener
+import dev.brahmkshatriya.echo.playback.listener.LateAppendResume
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.playback.listener.TrackingListener
 import dev.brahmkshatriya.echo.playback.listener.needsNetwork
@@ -319,7 +320,10 @@ class PlayerService : MediaLibraryService() {
     private val audioManager by lazy { getSystemService<AudioManager>()!! }
     private val audioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = recomputeRouteState()
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = recomputeRouteState()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            LateAppendResume.clear()
+            recomputeRouteState()
+        }
     }
 
     // True if any current OUTPUT device is not a built-in speaker/earpiece — i.e. a real external audio
@@ -588,6 +592,7 @@ class PlayerService : MediaLibraryService() {
                 },
                 focusAllowsResume = { audioFocusListener.resumeAfterNetworkHold() },
                 onNetworkHoldEnded = { audioFocusListener.onNetworkHoldEnded() },
+                sleepTimerRunning = { state.sleepTimerEndsAt.value != null },
             )
         player.addListener(eventListener)
         player.addListener(

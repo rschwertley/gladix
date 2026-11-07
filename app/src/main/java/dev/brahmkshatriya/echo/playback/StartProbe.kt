@@ -155,7 +155,7 @@ object StartProbe {
         val q = settings?.let {
             // Mirrors PlayerService.select's app-level defaults (restored 2026-11-03): Wi-Fi "medium", Mobile "lowest".
             val unmetered = it.getString(UNMETERED_STREAM_QUALITY, "medium")
-            if (app?.isUnmetered == true && unmetered != "off") unmetered else it.getString(STREAM_QUALITY, "lowest")
+            if (app.isUnmetered && unmetered != "off") unmetered else it.getString(STREAM_QUALITY, "lowest")
         } ?: "-"
         val net = when (app?.networkFlow?.value) {
             NetworkConnection.Unmetered -> "wifi"

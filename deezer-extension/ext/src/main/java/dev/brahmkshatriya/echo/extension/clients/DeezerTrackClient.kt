@@ -901,11 +901,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         } else {
             Streamable.Source.Raw(
                 streamProvider = Streamable.InputProvider { start, _ ->
-                    val contentLength = Utils.getContentLength(resolvedStreamable.id, client)
-                    Pair(
-                        AudioStreamProvider.openStream(resolvedStreamable, client, start),
-                        contentLength - start
-                    )
+                    val (stream, total) = AudioStreamProvider.openStreamWithTotal(resolvedStreamable, client, start)
+                    Pair(stream, total - start)
                 },
                 id = resolvedStreamable.id,
                 title = if (isAlternateRecording) ALT_VERSION_LABEL else null
@@ -1252,6 +1249,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // the whole Sources row when there is one source, which is always, for us. The full trace is
         // at loadStreamableMedia's Raw(...) note; read it before acting on anything in this
         // paragraph.
+        // [CORRECTED 2026-11-06] getDetailsFormatFirst is gone: FormatUtils.getPillDetails, on the pill and on TV's line, shows no
+        // source title at all, by user decision. Making "Alt version" visible now needs a surface of its own: those two will not
+        // show it even if the sourceIndex gate in the loadStreamableMedia note is fixed.
         // ⚠⚠ ONLY THE FALLBACK_ID BRANCH MARKS - AND THAT FIXES A BUG IN THE FIRST CUT
         // OF THIS CODE. TWO branches re-fetch a Track, and only one is a substitution: the "An
         // error occurred while decoding track token" branch re-fetches api.track(currentTrackId),

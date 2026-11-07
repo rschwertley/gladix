@@ -41,6 +41,7 @@ import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.extensions.exceptions.ExtensionNotFoundException
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.playback.CrossfadeController
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.downloaded
@@ -153,6 +154,8 @@ class PlayerEventListener(
     private val onKeepIdleNotification: (Boolean) -> Unit = {},
     private val focusAllowsResume: () -> Boolean = { true },
     private val onNetworkHoldEnded: () -> Unit = {},
+    // Whether a sleep timer is running, which refuses LateAppendResume's arm; see its note.
+    private val sleepTimerRunning: () -> Boolean = { false },
 ) : Player.Listener {
 
     // CACHED at construction, deliberately not `get() = session.player`.
@@ -191,6 +194,10 @@ class PlayerEventListener(
     // thread inside player.seekTo (updatePlaybackInfo → ListenerSet.flushEvents runs events inline), so the
     // set/clear reliably brackets the callback — the same single-thread invariant as resumptionApplying.
     private var internalSeekInFlight = false
+
+    // Brackets the cold-start re-seek, for the crossfade's log label only. Separate from internalSeekInFlight because that also
+    // decides the teardown-race check in onPlayerError, which this seek must not change.
+    private var restoreSeekInFlight = false
 
     // Brackets an internal seek (buffering-watchdog re-prepare or onPlayerError retry) with
     // internalSeekInFlight so the SEEK discontinuity it triggers is not mistaken for a user seek. try/finally
@@ -493,6 +500,7 @@ class PlayerEventListener(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        LateAppendResume.clear()
         if (mediaItem == null) return  // fired on player.release() with index=0; don't overwrite saved position
         updateCustomLayout()
         // Persist the current index so cold-start restore seeks to the correct track. mediaItem is the
@@ -597,6 +605,9 @@ class PlayerEventListener(
     // This is a MITIGATION, not the fix - it bounds the hang, it does not stop periods failing to prepare.
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) armBufferingWatchdog()
+        // Not USER_REQUEST: that is also the settle's own pause, delivered after it returns, and a real user pause clears through
+        // the session callback. A noisy event at ENDED changes only the reason here, and that still fires (ExoPlayerImpl:2423, 1.11.1).
+        if (playWhenReady || reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) LateAppendResume.clear()
         // Resume BEFORE the early return below, and immediately rather than on the next tick: a
         // focus-driven pause carries the sidecar with it, so the resume has to carry it back.
         if (playWhenReady) crossfade()?.onResumed()
@@ -624,6 +635,7 @@ class PlayerEventListener(
         // needs to know so it can un-mute. Seeks and errors already reach it through onSeek /
         // onPlayerError - STATE_IDLE is the one that does not.
         if (playbackState == Player.STATE_IDLE) {
+            LateAppendResume.clear()
             crossfade()?.onPlayerIdle()
             armIdleSettle()
         }
@@ -713,6 +725,9 @@ class PlayerEventListener(
         //     exact symptom nobody was able to explain. The June fix set the constant to NEVER and
         //     an August re-check verified it intact, so this is NOT the surviving cause - but it IS
         //     why the stepping stone is closed.
+        //     [CORRECTED 2026-11-06] "Nobody was able to explain" is out of date. The cold-start autoplay that survived the June fix
+        //     was our own restored play/pause checkbox, see PlayerFragment.configurePlayerControls. The stepping stone stays closed:
+        //     the `2` did post that PLAY button, whatever else was also starting music.
         //     ⚠️ REVISITING THIS BLOCKER MADE IT STRONGER, NOT WEAKER. Worth knowing as a
         //     counter-case to the house rule on stale blockers: re-reading one is how you find a free
         //     win, and equally how you avoid taking a recorded next step that has since been refuted.
@@ -740,6 +755,10 @@ class PlayerEventListener(
         // converts a phantom play request
         // into audible playback of a finished track. Pausing does not remove ENDED, so that interaction is
         // UNCHANGED — it is only the five playWhenReady consumers above that are fixed.
+        // [CORRECTED 2026-11-06] "Never explained" is out of date: the phantom play was our own restored play/pause checkbox, see
+        // PlayerFragment.configurePlayerControls. That a play at ENDED seeks to the start still stands.
+        // [CORRECTED 2026-11-06, the same day] Only with nothing after the ended song. With songs after it, a play moves to the next
+        // one, see ShufflePlayer.leaveEnded.
         //
         // hasNextMediaItem() rather than a bare ENDED test: ENDED with a next item is a state the radio
         // append path can transiently produce, and pausing there would fight the append.
@@ -773,6 +792,10 @@ class PlayerEventListener(
         // the corrected one — but a fix that does not need to ask the question cannot be wrong about it.
         if (playbackState == Player.STATE_ENDED && !player.hasNextMediaItem()) {
             Log.d("GladixPlayback", "STATE_ENDED with no next item: settling playWhenReady")
+            // Read before the pause below, which is what tells a song that ran out from a user pause; see LateAppendResume.
+            if (player.playWhenReady && !sleepTimerRunning() && !CastState.isCasting && !context.isTv()) {
+                LateAppendResume.arm(player)
+            }
             player.pause()
         }
         if (playbackState == Player.STATE_READY) {
@@ -827,7 +850,10 @@ class PlayerEventListener(
                 && (seek.epoch == null || seek.epoch == player.queueEpochOrZero)
                 && player.currentMediaItem?.mediaId == seek.mediaId
                 && posBefore < RESTORE_SEEK_BELT_MS
-            ) player.seekTo(seek.positionMs)
+            ) {
+                restoreSeekInFlight = true
+                try { player.seekTo(seek.positionMs) } finally { restoreSeekInFlight = false }
+            }
         }
     }
 
@@ -1254,7 +1280,10 @@ class PlayerEventListener(
         if (reason == Player.DISCONTINUITY_REASON_SEEK && !internalSeekInFlight) consumeRestoreSeek()
         // Re-evaluates the arm window. A seek that lands INSIDE or PAST the arm point never crosses
         // the pending PlayerMessage position, so without this the window is simply missed.
-        if (reason == Player.DISCONTINUITY_REASON_SEEK) crossfade()?.onSeek()
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) LateAppendResume.clear()
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) crossfade()?.onSeek(
+            internal = internalSeekInFlight || involuntarySkipInFlight || restoreSeekInFlight
+        )
         saveCurrentPosGated()
     }
 
@@ -1389,6 +1418,8 @@ class PlayerEventListener(
         // so: 4 attempts x the 10s HEAD fuse, plus 0 + 1 + 2s of backoff = ~43s before the
         // error ever reaches onPlayerError. 50s covers that with margin for the resolve that precedes
         // the first open and for scheduling.
+        // [CORRECTED 2026-11-06] The fuse is now normally on the GET's headers, the HEAD being a fallback
+        // (AudioStreamProvider.openStreamWithTotal). Same okhttp readTimeout, so the arithmetic stands.
         // ⚠️ THE 10s FUSE IS OKHTTP's readTimeout, NOT getContentLength's withTimeout, since
         // 2026-10-03 - and the distinction matters to this arithmetic even though the NUMBER is the
         // same 10s either way. Ours is now a 30s backstop sitting deliberately ABOVE okhttp's, so that

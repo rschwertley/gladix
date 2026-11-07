@@ -728,15 +728,33 @@ class ShufflePlayer(
     override fun play() {
         if (CastState.isCasting) return
         if (player.playbackState == STATE_IDLE) player.prepare()
-        if (player.playbackState == STATE_ENDED) player.seekTo(0, 0)
+        if (player.playbackState == STATE_ENDED) leaveEnded()
         super.play()
     }
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
         if (CastState.isCasting && playWhenReady) return
         if (playWhenReady && player.playbackState == STATE_IDLE) player.prepare()
-        if (playWhenReady && player.playbackState == STATE_ENDED) player.seekTo(0, 0)
+        if (playWhenReady && player.playbackState == STATE_ENDED) leaveEnded()
         super.setPlayWhenReady(playWhenReady)
+    }
+
+    // A play at ENDED (2026-11-06). Songs appended after the ended one are what the press means, and media3 stays at ENDED through an
+    // append. Seeking to 0 replayed the finished song, since the queue is trimmed behind current. Nothing new still restarts from 0.
+    private fun leaveEnded() {
+        if (endedWithSongsAfter()) seekToNextMediaItem() else player.seekTo(0, 0)
+    }
+
+    // Position above 0 because ENDED alone does not mean the current song is the one that finished. Removing it while ENDED (an Android
+    // Auto queue tap through jumpForwardTo, a queue edit) makes the next song current at 0, still ENDED, and that song is the one to play.
+    private fun endedWithSongsAfter() =
+        player.playbackState == STATE_ENDED && hasNextMediaItem() && player.currentPosition > 0
+
+    // The other route to a play at ENDED: a session play (notification, lock screen, Bluetooth) runs Util.handlePlayButtonAction,
+    // which calls this BEFORE play(), so play() no longer sees ENDED (Util.java:4249, media3 1.11.1). The in-app button does not come
+    // this way: PlayerViewModel.setPlaying writes playWhenReady.
+    override fun seekToDefaultPosition() {
+        if (endedWithSongsAfter()) seekToNextMediaItem() else super.seekToDefaultPosition()
     }
 
     // Prevent Media3 session initialization from re-enabling AudioFocusManager.
@@ -757,6 +775,8 @@ class ShufflePlayer(
     // of the phone's seekToFullIndex, trimmed the same way. seekTo(int, long) is deliberately NOT
     // overridden: resume and shuffle-changeCurrent use it and must never trim. The no-arg
     // seekToDefaultPosition() (used by handlePrevious via the inner player) is also untouched.
+    // [CORRECTED 2026-11-06] Untouched by the jump, but overridden above for a play at ENDED. handlePrevious is unaffected: it calls
+    // the inner player directly.
     override fun seekToDefaultPosition(mediaItemIndex: Int) {
         jumpForwardTo(mediaItemIndex, play = true)
     }

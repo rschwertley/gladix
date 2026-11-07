@@ -157,6 +157,8 @@ class CastSessionController(
      * FormatUtils.toAudioDetails - and that is the better test anyway: the receiver cares what
      * it is being handed, not what we requested, so this also covers any other extension that
      * ever serves high-res.
+     * [CORRECTED 2026-11-06] The pill no longer goes through toAudioDetails (FormatUtils.getPillDetails), and it prints a sample rate
+     * only for lossless. The value tested here is still the one the quality sheet prints via toAudioDetails.
      * ⚠️ > 48 kHz, WHICH IS "ABOVE WHAT EVERY CAST RECEIVER TAKES"
      * RATHER THAN A MEASURED CLIFF. 44.1 and 48 are the universal rates; 88.2/96/176.4/192 are
      * the HiFi tier and the one measured failure sits at 96. Format.NO_VALUE (-1) and an

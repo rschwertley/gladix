@@ -190,6 +190,8 @@ object CrashKeys {
      * [CORRECTED 2026-10-29] NOT TEMPORARY ANY MORE, AND IT STAYS. The cold-start probe was deleted on
      * 2026-10-29 (see ShufflePlayer.play), but IdleStateProbe (the idle_process_ms key) and
      * StaleFocusProbe.processAge also read this, so "delete with" no longer applies.
+     * [CORRECTED 2026-11-06] The item that probe chased is closed too: our own restored play/pause checkbox, see
+     * PlayerFragment.configurePlayerControls. Nothing here is waiting on it.
      */
     fun processAgeMs(): Long {
         val start = processStartElapsedMs

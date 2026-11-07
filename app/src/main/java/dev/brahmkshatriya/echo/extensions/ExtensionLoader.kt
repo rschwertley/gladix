@@ -230,6 +230,8 @@ class ExtensionLoader(
                             val newCurr = users.getUser(metadata)
                             val user = newCurr?.let { db.getUser(it) }
                             setLoginUser(user)
+                            // Here because this is the delivery that hydrates a real session: see DeezerExtension.warmLiked.
+                            if (this is DeezerExtension) warmLiked()
                         }.onFailure { e ->
                             if (e is CancellationException) throw e
                             app.throwFlow.emit(e.toAppException(metadata))

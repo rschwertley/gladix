@@ -1096,6 +1096,7 @@ class PlayerRadio(
                 }
             player.addMediaItems(items)
             if (player.playbackState == Player.STATE_IDLE) player.prepare()
+            if (items.isNotEmpty()) LateAppendResume.onAppended(player, app.context)
             // ⚠⚠ PROMOTED TO PERMANENT 2026-09-12. THE MOST USEFUL DIAGNOSTIC IN THE APP - IT
             // HAS ANSWERED FOUR QUESTIONS IT WAS NOT BUILT FOR. Built for the three-copies duplicate hunt,
             // it then settled: whether an append was landing against a stale queue (the epoch work), how

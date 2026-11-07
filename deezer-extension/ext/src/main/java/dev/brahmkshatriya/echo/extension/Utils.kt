@@ -54,6 +54,9 @@ object Utils {
     }
 
     /**
+     * [CORRECTED 2026-11-06] Now only the fallback, when the GET does not state the total: AudioStreamProvider.openStreamWithTotal. On a
+     * normal open that GET is the first request, so okhttp's timeout fires on it, under its own copy of this ceiling
+     * (AudioStreamProvider.awaitHeaders). The derivation below applies to it unchanged.
      * Content-Length for a resolved stream URL, via a HEAD. Called from the InputProvider lambda in
      * DeezerTrackClient.loadStreamableMedia, i.e. inside RawDataSource.open's runBlocking - so this runs
      * ON MEDIA3's LOADER THREAD, once per upstream open.

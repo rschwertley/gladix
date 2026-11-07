@@ -76,6 +76,7 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
+import dev.brahmkshatriya.echo.playback.listener.LateAppendResume
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.futureCatching
@@ -135,6 +136,9 @@ class PlayerCallback(
      * probe was deleted on 2026-10-29 (see ShufflePlayer.play) and only its record line went with
      * it; this override STAYS. The dispatch facts above (MediaSessionStub / MediaSessionLegacyStub
      * -> onPlayerCommandRequestOnHandler, still dispatched despite @Deprecated) still hold.
+     * [CORRECTED 2026-11-06] "Needs the NAME of whoever asks" is closed, and a name could not have settled it: the requester was our own
+     * app, PlayerViewModel.setPlaying through its MediaController, from the restored play/pause checkbox. See
+     * PlayerFragment.configurePlayerControls.
      */
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onPlayerCommandRequest(
@@ -142,6 +146,8 @@ class PlayerCallback(
         controller: MediaSession.ControllerInfo,
         playerCommand: Int,
     ): Int {
+        // Anything a controller sends counts as the user acting. A wrong guess costs one button press.
+        LateAppendResume.clear()
         // ⚠⚠ A CONTROLLER STOP BECOMES A PAUSE, BECAUSE stop() LEAVES
         // STATE_IDLE WITH playWhenReady STILL TRUE. Field evidence (build 1144, SM-S918B,
         // Android 17): an external controller sent STOP, MediaSessionStub -> PlayerWrapper.stop
@@ -610,6 +616,7 @@ class PlayerCallback(
 
     private var timerJob: Job? = null
     private fun onSleepTimer(player: Player, ms: Long): ListenableFuture<SessionResult> {
+        LateAppendResume.clear()
         timerJob?.cancel()
         val time = when (ms) {
             0L -> {
@@ -921,7 +928,7 @@ class PlayerCallback(
 
         is Playlist -> extension.getAs<PlaylistClient, PagedData<Track>> {
             // [2026-11-04] Before loadPlaylist, so a hit waits for no request (the refresh runs behind it) - see Cached.storedPlaylistStart.
-            val joinedFirst = if (preferStored) Cached.joinPlaylistTracks(item) else null
+            val joinedFirst = if (preferStored) Cached.finishedPlaylistTracks(item) else null
             if (joinedFirst != null) StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
             val quick = joinedFirst
                 ?: if (preferStored) Cached.storedPlaylistStart(app, extension, item, loaded)
@@ -1709,6 +1716,8 @@ class PlayerCallback(
                 // play request is arriving and its source is unidentified" - it does not name the
                 // source, but it removes this function from the list of things that would have
                 // stopped it.
+                // [CORRECTED 2026-11-06] That item is no longer open and this function was not its source: the play came from our
+                // own restored play/pause checkbox, see PlayerFragment.configurePlayerControls. The failure arm above still plays.
                 if (state.activeLoadCount.get() > 0) {
                     Log.d("GladixPlayback", "onPlaybackResumption: skipping RESTORE (play still proceeds), activeLoadCount=${state.activeLoadCount.get()}")
                     withContext(Dispatchers.Main) { state.resumptionApplying = false }
