@@ -115,6 +115,12 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * ever revisited, that capture is the missing evidence.
      * [2026-10-27] The 1152 capture observed the REFUSAL CLASS for a stale saved token (unrecognised,
      * no URL - see the no_url branch), still not the string.
+     * [2026-11-07] The 1172 capture: right after Wi-Fi was turned off, the first two songs had in-date tokens (token=kept) and
+     * were refused at 128 (83837258, 70266756: 128:refused, 128:ok, tokenRefresh=1). Both were recovered by the 128 rung's own
+     * refresh (the decode branch or no_url; the probe cannot tell which), not by afterRung's last step. Later songs on the
+     * same network played on their first token. Nothing in our code changes on a network switch: no session renewal, the
+     * licence token unchanged, no cookie jar. Possibly Deezer ties a track token to the IP it was issued to (unverified).
+     * No change needed: the refresh costs about 0.5 s once per such token.
      * ⚠️ THE LICENCE BRANCH IS DELIBERATELY NOT A CALLER. Its string is
      * "License token has no sufficient rights" - a DIFFERENT credential from TRACK_TOKEN, which
      * api.track() does not refresh. Calling this from there would spend a request and change
@@ -318,6 +324,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                     //   flac 13 / 26 (8 / 16)   320 11 / 22 (6 / 12)   128 9 / 18 (4 / 8)
                     // 320: orig 320 twice, api.track, sub 320, orig 128, orig relay128, sub 128, sub relay128, refresh, orig 128,
                     // orig relay128. No FALLBACK_ID, relay calls only: flac 5 / 10, 320 4 / 8, 128 3 / 6.
+                    // [CORRECTED 2026-11-07] The 128 level is now orig 128, sub 128, orig relay128, sub relay128 (afterRung).
+                    // Same rungs in a new order, so every count above stands. The two sequences read: 320 at the ceiling, orig
+                    // 320, api.track, sub 320, orig 128, sub 128, orig relay128, sub relay128, refresh, orig 128, orig relay128;
+                    // every relay rung throwing, orig 320 twice, api.track, sub 320, orig 128, sub 128, orig relay128, sub
+                    // relay128, refresh, orig 128, orig relay128.
                     return afterRungTagged(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
                 }
 
@@ -512,6 +523,9 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      * history), and a 2026-11-04 capture spent ~0.7 s on two 128 rungs before a substitute that played at 320. It also
      * closes a hole: a bottom relay rung that THREW used to skip the substitute.
      * [levelOnly] is the substitute's walk through one level; it stops here instead of going lower.
+     * [CORRECTED 2026-11-07] The 128 level is now orig 128, sub 128, orig relay128, sub relay128, so 320 is orig 320, sub 320,
+     * orig 128, sub 128, orig relay128, sub relay128. The substitute's 128 and relay128 are two walks of one rung each, and a
+     * levelOnly 128 stops instead of going on to relay128. Why and what it costs: the note at the top of this function.
      */
     private suspend fun afterRung(
         track: Track,
@@ -526,14 +540,23 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
             // 668937892: its substitute was refused at 128 by the user's own account, and the relay serves
             // that substitute at MP3_128 (see DeezerMedia.getMediaUrl), so a 128 user skipped a song a 320
             // user plays.
-        if (quality == "128")
-            return descend(track, "relay128", retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
+            // [CORRECTED 2026-11-07] Not before any substitute now: the substitute's own-account 128 comes first, then the
+            // original's relay128, then the substitute's relay128. The medley still plays, at the last of those.
+            // ⚠️ WHY (GitHub #5): on the 1172 mobile capture the original's relay128 was refused 4 of 4, at 0.7-1.2 s each,
+            // and s128 then played every time in about 0.1 s. Nothing in the record shows an original served by relay128.
+            // ⚠️ THE KNOWN COST: a song whose original the relay would have served, and whose substitute plays at own-account
+            // 128, now plays the substitute release (same song, other album and art, the Alt version label). Never observed.
+            // The rungs are the same as before in a new order, and substituteTrack's per-attempt slot keeps the two walks
+            // at one api.track(FALLBACK_ID).
+        if (quality == "128") {
+            if (levelOnly) throw MediaUnavailableException("Track not available on server")
+            if (allowSubstitute) trySubstitute(track, "128")?.let { return it }
+            return descend(track, "relay128", retry, topQuality, allowSubstitute, allowRetoken)
+        }
         if (levelOnly) throw MediaUnavailableException("Track not available on server")
         // relay128 belongs to the 128 level, which the substitute enters at its own token rung.
-        if (allowSubstitute) {
-            val level = if (quality == "relay128") "128" else quality
-            trySubstitute(track, level)?.let { return it }
-        }
+        // [CORRECTED 2026-11-07] The substitute's 128 has run by here (above); at relay128 it walks relay128 alone.
+        if (allowSubstitute) trySubstitute(track, quality)?.let { return it }
         val next = when (quality) {
             "flac" -> "320"
             "320" -> "128"
@@ -581,6 +604,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
      */
     private suspend fun trySubstitute(track: Track, level: String): Streamable? {
         // [CORRECTED 2026-11-04] By here `quality` is "relay128" or "mp3", not "128" as the next line says.
+        // [CORRECTED 2026-11-07] Any level now, "128" and "relay128" as separate calls: see afterRung.
         // ⚠️ BOTTOM RUNG ONLY - by here `quality` is "128" or "mp3". That is
         // the right answer to WHEN to substitute and it was the wrong answer to AT WHAT
         // QUALITY.
