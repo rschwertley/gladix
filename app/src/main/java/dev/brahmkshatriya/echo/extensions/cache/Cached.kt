@@ -35,6 +35,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -94,8 +95,21 @@ data class CachedPlaylistTracks(
      * ⚠️ REJECTED, NOT DELETED. An entry nobody reads never refreshes its lastModified,
      * so CacheUtils.saveToCache's oldest-first eviction reclaims schema-0 files as new ones arrive.
      * No migration pass, and nothing to get wrong on a path that runs before playback.
+     * [CORRECTED 2026-11-07] Rejecting schema 0 fixed the slim dropping `extension_id`, and that was not the whole
+     * cause. The stores were also SHARED ACROSS EXTENSIONS by id: a list opened in Deezer wrote rows with no stamp
+     * (Deezer stamps nothing; only Unified's withExtensionId does), and the same list opened in Unified read them and
+     * played every row unstamped, until [extensionId]. Crashlytics 3b4ebfb6 on 1156; reproduced on device on 1171.
      */
     val schema: Int = 0,
+    /**
+     * The extension that wrote this entry (2026-11-07). Read only by the same extension: see Cached.readTracksEntry.
+     * NULL (written before this field) IS ACCEPTED BY EVERY READER BUT UNIFIED, by decision: rejecting it everywhere
+     * sent each list's first Play or Shuffle back to the live load (~3.8 s on a 1,810-song playlist, 1167) and left a
+     * list not reopened online unable to paint offline. Unified is the only reader that routes by the rows' stamps, so
+     * only it is refused them. A non-Unified reader of an entry Unified wrote gets rows stamped with that same extension
+     * (Unified keeps the sub-extension's ids), and no non-Unified path routes by the stamp. The next write sets the id.
+     */
+    val extensionId: String? = null,
 )
 
 object Cached {
@@ -114,6 +128,14 @@ object Cached {
     private const val MEMO_ALBUM_PREFIX = "album:"
     // The marks pass's memo entry (see launchMarksPass) - its own key, so it never joins or replaces the rows'.
     private const val MEMO_MARKS_PREFIX = "marks:"
+
+    // [2026-11-07] The 5-minute copy of a list's rows, per extension: the rows carry that extension's stamps (or none),
+    // which another extension cannot route - see CachedPlaylistTracks.extensionId. The marks pass's entry is not
+    // keyed this way: it is read only for its verdicts, which are keyed by list id and shared on purpose (knownMarks).
+    private fun memoKey(prefix: String, extensionId: String, id: String) = "$prefix$extensionId:${canonicalId(id)}"
+
+    // A list without its extension: the bust's re-check request (recheckLists), consumed by whichever fetch comes first.
+    private fun listKey(prefix: String, id: String) = prefix + canonicalId(id)
     // DeezerPlaylistClient's two availability extras, by literal: app code cannot see that module (the same
     // reason HistoryEntity names FALLBACK_ID by literal). Keep the strings in step with it.
     // On a row: its dead-song check is still running. On the Playlist handed to loadTracks: the marks pass.
@@ -250,12 +272,18 @@ object Cached {
      * The ONLY read of either tracks store. ⚠️ EVERY CALLER GOES THROUGH HERE so the
      * schema check cannot be forgotten at one of the four sites - which is the whole reason this is a
      * function and not an inline `?.takeIf` repeated four times.
+     * [2026-11-07] And so the extension check cannot be: only [extensionId]'s own entry is returned (see
+     * CachedPlaylistTracks.extensionId). One file per list still, so a list used under two extensions is
+     * overwritten by whichever wrote last, and the other's next open fetches cold.
      */
     private fun readTracksEntry(
-        app: App, itemId: String, folder: String,
+        app: App, itemId: String, folder: String, extensionId: String,
     ): CachedPlaylistTracks? =
         app.context.getFromCache<CachedPlaylistTracks>("$itemId-tracks", folder, durable = true)
-            ?.takeIf { it.schema == TRACKS_SCHEMA }
+            ?.takeIf {
+                it.schema == TRACKS_SCHEMA &&
+                    (it.extensionId == extensionId || it.extensionId == null && extensionId != UnifiedExtension.UNIFIED_ID)
+            }
 
     // Invalidate the durable playlist-tracks entry so the next loadTracks re-fetches (via the canonical
     // re-resolve path) instead of short-circuiting within TTL. Wired to pull-to-refresh + edit "reload".
@@ -285,14 +313,16 @@ object Cached {
         // canonicalId, because that is what the memo is keyed on - see the note at the
         // coalescedTracks call in loadPlaylistTracksCached. A raw-id removal would silently miss for
         // any extension that canonicalizes (YouTube Music's "VL" prefix).
-        inFlightTracks.remove(memoPrefix + canonicalId(id))
+        // [2026-11-07] Every extension's copy (memoKey): an edit or a refresh is about the list, whoever loaded it.
+        val suffix = ":" + canonicalId(id)
+        inFlightTracks.keys.removeIf { it.startsWith(memoPrefix) && it.endsWith(suffix) }
         // The marks pass's entry too (2026-11-02): it holds the pre-edit rows, and would re-emit their marks
         // without checking any song the edit added.
         inFlightTracks.remove(MEMO_MARKS_PREFIX + canonicalId(id))
         // And the extension's verdicts for this list (2026-11-02): the next fetch carries AVAILABILITY_RECHECK_EXTRA,
         // so Deezer forgets those rows' 30-minute verdicts and checks them again - a verdict must not outlive a
         // reload (Oct 25). Consumed by that fetch (recheckRequested).
-        recheckLists += memoPrefix + canonicalId(id)
+        recheckLists += listKey(memoPrefix, id)
         // The same rule for the app's copy of them (2026-11-04); see knownMarks.
         knownMarks.remove(canonicalId(id))
     }
@@ -322,7 +352,8 @@ object Cached {
      * here: an item carrying its own expiry is never stored durably. The memo is still seeded, since
      * it is bounded by MEMORY_TTL_MS anyway.
      */
-    fun writePlaylistTracksCache(app: App, playlist: Playlist, tracks: List<Track>) {
+    // [2026-11-07] extensionId: the editor's, so the edit lands in the copy of the extension it was made under.
+    fun writePlaylistTracksCache(app: App, extensionId: String, playlist: Playlist, tracks: List<Track>) {
         runCatching {
             if (!playlist.carriesExpiry()) app.context.saveToCache(
                 "${playlist.id}-tracks",
@@ -332,10 +363,11 @@ object Cached {
                     // The trust window: for TRUST_WINDOW_MS a revalidation may not replace this.
                     writtenByUsAtMs = System.currentTimeMillis(),
                     schema = TRACKS_SCHEMA,
+                    extensionId = extensionId,
                 ),
                 DURABLE_PLAYLIST_FOLDER, durable = true
             )
-            inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(playlist.id)] =
+            inFlightTracks[memoKey(MEMO_PLAYLIST_PREFIX, extensionId, playlist.id)] =
                 System.currentTimeMillis() to CompletableDeferred(tracks)
         }
     }
@@ -844,7 +876,7 @@ object Cached {
             else -> null
         }
         if (durableFolder != null) {
-            val cached = readTracksEntry(app, itemId, durableFolder)
+            val cached = readTracksEntry(app, itemId, durableFolder, extensionId)
             if (cached != null) return@runCatching cached.tracks.toFeed()
         }
         getFeed<Track>(app, extensionId, "$itemId-tracks") { it }
@@ -990,7 +1022,7 @@ object Cached {
         app: App, extension: Extension<*>, item: Playlist, loaded: Boolean,
     ): List<Track>? {
         if (item.carriesExpiry()) return null
-        val cached = withContext(Dispatchers.IO) { readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER) }
+        val cached = withContext(Dispatchers.IO) { readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER, extension.id) }
             ?: return null
         if (cached.tracks.isEmpty()) return null
         val count = item.trackCount
@@ -1003,11 +1035,11 @@ object Cached {
     // The memo half of revalidatePlaylistTracks, for storedPlaylistStart's unloaded item. Failures swallowed: a refresh
     // nobody is waiting for must not surface, and coalescedTracks evicts the failed entry.
     private fun refreshPlaylistMemo(app: App, extension: Extension<*>, item: Playlist) {
-        val key = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
+        val key = memoKey(MEMO_PLAYLIST_PREFIX, extension.id, item.id)
         app.scope.launch {
             runCatching {
                 val rows = coalescedTracks(app, key) {
-                    val asked = if (!recheckRequested(key)) item
+                    val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
                     else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
                         .getOrThrow().loadAll()
@@ -1023,8 +1055,8 @@ object Cached {
      * own load instead of starting a second getSongs. ⚠️ NEVER STARTS A LOAD: with no live entry the caller keeps
      * its own path, so a paged extension's first-page start and background fill (playItem) are unchanged.
      */
-    suspend fun joinPlaylistTracks(item: Playlist): List<Track>? =
-        inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
+    suspend fun joinPlaylistTracks(extensionId: String, item: Playlist): List<Track>? =
+        inFlightTracks[memoKey(MEMO_PLAYLIST_PREFIX, extensionId, item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
             ?.second?.await()?.withKnownMarks(item)
 
@@ -1035,8 +1067,8 @@ object Cached {
      * would also have thrown out of the join with a good stored copy available, hence the runCatching.
      * No second getSongs follows: storedPlaylistStart's refresh goes through coalescedTracks, which reuses the running job.
      */
-    suspend fun finishedPlaylistTracks(item: Playlist): List<Track>? =
-        inFlightTracks[MEMO_PLAYLIST_PREFIX + canonicalId(item.id)]
+    suspend fun finishedPlaylistTracks(extensionId: String, item: Playlist): List<Track>? =
+        inFlightTracks[memoKey(MEMO_PLAYLIST_PREFIX, extensionId, item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
             ?.second?.takeIf { it.isCompleted }
             ?.let { runCatching { it.await() }.getOrNull() }?.withKnownMarks(item)
@@ -1084,7 +1116,7 @@ object Cached {
         // falls through to the coalesced fetch every open and is never served from disk.
         val durable = !item.carriesExpiry()
         val cached = if (!durable) null
-        else readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER)
+        else readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER, extension.id)
         // ⚠⚠ PAINT FROM THE STORE AT ANY AGE, THEN REVALIDATE IN THE BACKGROUND.
         // This replaced the 24h short-circuit on 2026-10-15. The short-circuit meant no fetch at
         // all for a day, so a playlist edited elsewhere - or edited HERE through a path that did not
@@ -1122,9 +1154,8 @@ object Cached {
         // carries the loaded id, so it is self-consistent on the raw value. The memory entry is the one a
         // prefetch warm (unloaded id) and a user tap (loaded id) must BOTH hit, so it has to normalize or
         // every warm would silently miss and the feature would do nothing at all.
-        val memoKey = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
-        val result = coalescedTracks(app, memoKey) {
-            val asked = if (!recheckRequested(memoKey)) item
+        val result = coalescedTracks(app, memoKey(MEMO_PLAYLIST_PREFIX, extension.id, item.id)) {
+            val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
             else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
             val feed = extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }.getOrThrow()
             feed.loadAll()
@@ -1137,6 +1168,7 @@ object Cached {
                 savedAtMs = System.currentTimeMillis(),
                 tracks = result.tracks.map { it.toTracksCacheSlim() },
                 schema = TRACKS_SCHEMA,
+                extensionId = extension.id,
             ),
             DURABLE_PLAYLIST_FOLDER, durable = true
         )
@@ -1176,13 +1208,13 @@ object Cached {
     private fun revalidatePlaylistTracks(
         app: App, extension: Extension<*>, item: Playlist, cached: CachedPlaylistTracks,
     ) {
-        val key = MEMO_PLAYLIST_PREFIX + canonicalId(item.id)
+        val key = memoKey(MEMO_PLAYLIST_PREFIX, extension.id, item.id)
         app.scope.launch {
             runCatching {
                 val result = coalescedTracks(app, key) {
                     // A bust followed by a known-good write (a playlist save) paints from the store, so this is
                     // the fetch that carries the re-check - see bustTracksCache.
-                    val asked = if (!recheckRequested(key)) item
+                    val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
                     else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
                         .getOrThrow().loadAll()
@@ -1213,6 +1245,7 @@ object Cached {
                         savedAtMs = System.currentTimeMillis(),
                         tracks = fresh.map { it.toTracksCacheSlim() },
                         schema = TRACKS_SCHEMA,
+                        extensionId = extension.id,
                     ),
                     DURABLE_PLAYLIST_FOLDER, durable = true
                 )
@@ -1245,10 +1278,10 @@ object Cached {
         // Checked on the RAW id, because that is what the durable store is keyed on. For an extension that
         // canonicalizes (YouTube Music's "VL" prefix) this check can miss and warm unnecessarily, costing
         // one request; the result still lands correctly in the memory layer, which IS canonical-keyed.
-        val cached = readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER)
+        val cached = readTracksEntry(app, item.id, DURABLE_PLAYLIST_FOLDER, extension.id)
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS) return
         runCatching {
-            coalescedTracks(app, MEMO_PLAYLIST_PREFIX + canonicalId(item.id)) {
+            coalescedTracks(app, memoKey(MEMO_PLAYLIST_PREFIX, extension.id, item.id)) {
                 extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow().loadAll()
             }
         }
@@ -1272,17 +1305,16 @@ object Cached {
         // it is here so the rule is genuinely general and does not have to be rediscovered when one does.
         val durable = !item.carriesExpiry()
         val cached = if (!durable) null
-        else readTracksEntry(app, item.id, DURABLE_ALBUM_FOLDER)
+        else readTracksEntry(app, item.id, DURABLE_ALBUM_FOLDER, extension.id)
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS)
             return cached.tracks.toFeed()
 
         // "album:" prefix for the same reason the folders are separate: coalescedTracks is ONE map, and an
         // album and a playlist sharing an id string would otherwise share an in-flight entry and serve each
         // other's tracks. canonicalId for the same reason as the playlist path.
-        val memoKey = MEMO_ALBUM_PREFIX + canonicalId(item.id)
-        val result = coalescedTracks(app, memoKey) {
+        val result = coalescedTracks(app, memoKey(MEMO_ALBUM_PREFIX, extension.id, item.id)) {
             // See bustTracksCache: the first fetch after a bust re-checks the extension's verdicts.
-            val asked = if (!recheckRequested(memoKey)) item
+            val asked = if (!recheckRequested(listKey(MEMO_ALBUM_PREFIX, item.id))) item
             else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
             val feed = extension.getAs<AlbumClient, Feed<Track>?> { loadTracks(asked) }.getOrThrow()
                 ?: return@coalescedTracks emptyList()
@@ -1296,6 +1328,7 @@ object Cached {
                 savedAtMs = System.currentTimeMillis(),
                 tracks = result.tracks.map { it.toTracksCacheSlim() },
                 schema = TRACKS_SCHEMA,
+                extensionId = extension.id,
             ),
             DURABLE_ALBUM_FOLDER, durable = true
         )

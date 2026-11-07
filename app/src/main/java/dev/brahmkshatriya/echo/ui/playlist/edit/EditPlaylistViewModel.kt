@@ -275,7 +275,7 @@ class EditPlaylistViewModel(
             // ⚠️ ONLY `Move` IS PURELY LOCAL. Add and Remove re-read `tracks` from the
             // extension inside the loop, so for those this writes a server-sourced list and the fix
             // is only as current as that read; reorder - the reported case - is fully covered.
-            writePlaylistTracksCache(app, playlist, tracks)
+            writePlaylistTracksCache(app, extension.id, playlist, tracks)
             // .map { } drops the Any? result to Unit so the runCatching stays typed Result<Unit> for
             // SaveState.Saved; the call still runs and still throws on failure (no trailing Unit needed).
             extension.getIf<PlaylistEditorListenerClient, Any?> {

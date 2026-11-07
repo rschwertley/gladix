@@ -153,8 +153,12 @@ class DeezerLibraryClient(
             // libraries. A dead liked song played before it is dimmed still skips instantly once its verdict is known
             // (DeezerTrackClient.loadTrack's isKnownDead check). Library pull-to-refresh does not clear these
             // verdicts (no flag reaches here); they expire after DeezerApi's AVAIL_TTL_MS.
+            // [CORRECTED 2026-11-07] "Mark the next load" held only when the background check succeeded. The liked path had no
+            // second ask (a playlist's marks pass re-asks with markUnplayable), so a failed check left liked songs unmarked from 1166
+            // (c0a8b5a1, shipped with e6592bf0) until now: device, 1171, the dead Elvis songs greyed in the Favorite tracks tile and
+            // never on this tab until the tile had filled the shared verdicts. secondAsk is that re-ask, still off the load.
             val grafted = items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it) }
+                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it, secondAsk = true) }
                 .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
             deezerExtension.refreshLiked(grafted)
@@ -177,8 +181,9 @@ class DeezerLibraryClient(
             // ONE graft pass, used for the shelves and declared to the app - see loadLibraryFeed,
             // plus one batched availability pass - see DeezerApi.markUnplayable.
             // [CORRECTED 2026-11-02] Background check, as in allRow above; marks on the next load by design (see there).
+            // [CORRECTED 2026-11-07] With a second ask; see allRow.
             val liked = arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
-                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it) }
+                .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it, secondAsk = true) }
                 .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
             deezerExtension.refreshLiked(liked)

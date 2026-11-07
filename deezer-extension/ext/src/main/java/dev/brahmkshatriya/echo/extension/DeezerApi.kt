@@ -18,11 +18,14 @@ import dev.brahmkshatriya.echo.extension.api.DeezerShow
 import dev.brahmkshatriya.echo.extension.api.DeezerTrack
 import dev.brahmkshatriya.echo.extension.api.DeezerUtil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -258,6 +261,7 @@ class DeezerApi(private val session: DeezerSession) {
         // ⚠️ STATED COST: the phone Tracks tab goes from up to 128 scrollable rows to 30. Pipe
         // exposes pageInfo.endCursor for paging, but our per-tab lambda does a single loadPage(null), so
         // nothing consumes a cursor today - restoring depth means teaching that lambda to page.
+        // [CORRECTED 2026-11-07] Only for a query whose gateway Tracks section is empty; the rest keep the gateway's nb=128.
         private const val PIPE_SEARCH_TRACKS = 30
 
         /**
@@ -1312,6 +1316,7 @@ class DeezerApi(private val session: DeezerSession) {
      * the gateway's search index does not - the catalogue was re-issued under new ids (the acoustic single
      * is 3913168001 on pipe, 1987857917 in the gateway's own album listing) - while gateway ALBUM, ARTIST
      * and PLAYLIST were as good or better, which is why ONLY the TRACK section is replaced.
+     * [CORRECTED 2026-11-07] And only when the gateway's TRACK section is empty (DeezerSearchClient.withPipeTracks, GitHub #5).
      *
      * ⚠️ NO TRACK_TOKEN, DELIBERATELY, AND IT IS WHAT MAKES THESE PLAYABLE. Pipe carries no
      * TRACK_TOKEN / MD5_ORIGIN / FILESIZE_*, so DeezerTrackClient.loadTrack's empty-token self-heal fires,
@@ -1319,6 +1324,10 @@ class DeezerApi(private val session: DeezerSession) {
      * 2026-10-09 that deezer.pageTrack resolves the new ids WITH a token - without that this whole path
      * would render correctly and refuse to play. Same split as smartTracklistTrackIds: pipe for identity,
      * gateway for playback. DO NOT add a token field here.
+     * [CORRECTED 2026-11-07] Playability no longer depends on that refetch: the relay rungs send the id alone, and the
+     * 128/mp3 rung check (createStreamableForQualityUnprobed) fetches a missing token itself. The refetch stays for these
+     * rows, for the cover pipe may not carry: DeezerTrackClient.loadTrack skips it only for a row with a TRACK_TOKEN_EXPIRE,
+     * which these never have.
      *
      * ⚠️ NO `VERSION` KEY. Pipe's `title` already contains the version marker ("… (Acoustic)"), and
      * toTrack APPENDS VERSION to the title - setting both would double the suffix.
@@ -1499,6 +1508,7 @@ class DeezerApi(private val session: DeezerSession) {
         if (!force) pipeJwtCache?.let { (token, expiresAt, fp) ->
             if (fp == fingerprint && now < expiresAt) return token
         }
+        currentCoroutineContext()[AvailProbe]?.login = true // TEMPORARY GladixStart probe
         val request = Request.Builder()
             .url("https://auth.deezer.com/login/arl?jo=p&rto=c&i=c")
             .post(RequestBody.EMPTY)
@@ -1581,14 +1591,30 @@ class DeezerApi(private val session: DeezerSession) {
      * favorite_song.getList's records have no AVAILABLE_COUNTRIES at all and deezer.pageTrack's do
      * but only per track, which is why this goes through pipe instead of the records already in hand.
      */
-    suspend fun tracksAvailability(ids: List<String>): Map<String, Boolean> {
+    // probeKey / probeAsk: TEMPORARY GladixStart probe labels only, for the "GladixStart avail" line below.
+    suspend fun tracksAvailability(
+        ids: List<String>, probeKey: String = "inline", probeAsk: String = "first",
+    ): Map<String, Boolean> {
         val distinct = ids.filter { it.isNotBlank() }.distinct()
         if (distinct.isEmpty()) return emptyMap()
         val out = mutableMapOf<String, Boolean>()
         // Still one chunk at a time (Oct 26), but each one fails open after PIPE_AVAIL_TIMEOUT_MS: the request
         // is cancelled (ContinuationCallback.await cancels the call) and its ids stay unknown.
         distinct.chunked(PIPE_AVAIL_CHUNK).forEach { chunk ->
-            val verdicts = withTimeoutOrNull(PIPE_AVAIL_TIMEOUT_MS) { availabilityChunk(chunk) }.orEmpty()
+            // ⚠⚠ TEMPORARY GladixStart PROBE (2026-11-07, user-approved) - REMOVE WITH the app's StartProbe: AvailProbe, its
+            // writes in availabilityChunk and pipeJwt, and this println. One line per chunk, every outcome. key is the caller
+            // (inline = markUnplayable: playlist marks pass, album, artist), ask is first or the liked list's second ask,
+            // login=1 when pipeJwt fetched a token inside this chunk's 4 s. Ids are not printed.
+            val probe = AvailProbe()
+            val startedAt = System.currentTimeMillis()
+            val answered = withTimeoutOrNull(PIPE_AVAIL_TIMEOUT_MS) { withContext(probe) { availabilityChunk(chunk) } }
+            if (answered == null) probe.outcome = "timeout"
+            val verdicts = answered.orEmpty()
+            println(
+                "GladixStart avail key=$probeKey ask=$probeAsk size=${chunk.size} outcome=${probe.outcome} " +
+                    "true=${verdicts.count { it.value }} false=${verdicts.count { !it.value }} " +
+                    "ms=${System.currentTimeMillis() - startedAt} login=${if (probe.login) 1 else 0}"
+            )
             out += verdicts
             val now = System.currentTimeMillis()
             verdicts.forEach { (id, available) -> availability[id] = available to now }
@@ -1651,8 +1677,12 @@ class DeezerApi(private val session: DeezerSession) {
         }
         // Covers throw, non-200 (the body then fails to decode) and unparseable alike - all three are
         // the same answer here, which is "no verdict for this chunk".
-        val body = runCatching { pipeGraphQl(params) }.getOrNull() ?: return emptyMap()
-        val nodes = body["data"].objOrNull()?.get("tracksByIds").arrOrNull() ?: return emptyMap()
+        val probe = currentCoroutineContext()[AvailProbe] // TEMPORARY GladixStart probe (outcome writes below)
+        val body = runCatching { pipeGraphQl(params) }
+            .onFailure { probe?.outcome = "threw:${it.javaClass.simpleName}" }
+            .getOrNull() ?: return emptyMap()
+        val nodes = body["data"].objOrNull()?.get("tracksByIds").arrOrNull()
+            ?: return emptyMap<String, Boolean>().also { probe?.outcome = "no-data" }
         // A partial GraphQL error is normal on this host - searchTracksPipe's note records an HTTP 200
         // carrying BOTH good rows and a TrackMediaNotFoundException. So a per-node error excludes only
         // ITS index, while an error with no tracksByIds/<i> path is unscoped and discards the chunk:
@@ -1663,7 +1693,7 @@ class DeezerApi(private val session: DeezerSession) {
             val head = (path?.getOrNull(0) as? JsonPrimitive)?.contentOrNull
             val index = (path?.getOrNull(1) as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
             if (head == "tracksByIds" && index != null) failedIndices += index
-            else return emptyMap()
+            else return emptyMap<String, Boolean>().also { probe?.outcome = "unscoped-error" }
         }
         val verdicts = mutableMapOf<String, Boolean>()
         nodes.forEachIndexed { index, element ->
@@ -1821,4 +1851,15 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun encodeJson(raw: JsonObjectBuilder.() -> Unit = {}): String = withContext(Dispatchers.IO) {
         json.encodeToString(buildJsonObject(raw))
     }
+}
+
+// TEMPORARY GladixStart probe - REMOVE WITH the app's StartProbe. One chunk's outcome, see DeezerApi.tracksAvailability.
+private class AvailProbe : AbstractCoroutineContextElement(AvailProbe) {
+    companion object Key : CoroutineContext.Key<AvailProbe>
+
+    @Volatile
+    var outcome = "ok"
+
+    @Volatile
+    var login = false
 }

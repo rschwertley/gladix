@@ -26,6 +26,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 
 class DeezerTrackClient(private val deezerExtension: DeezerExtension, private val api: DeezerApi, private val parser: DeezerParser) {
@@ -381,7 +382,11 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 // ⚠️ NOT AT A RELAY RUNG (flac/320/relay128): getMediaUrl sends the id alone, so a refresh would
                 // repeat a byte-identical relay request against its shared daily ceiling. There
                 // refusedAtRung only steps down, and the 128 rung below it applies this rule.
-                else -> extractUrlFromJson(mediaJson) ?: run {
+                // [CORRECTED 2026-11-07] "Its shared daily ceiling" is unverified: no daily figure has a source or a measurement,
+                // and whether the relay is one account for all users is not known. It is a third-party service with unknown
+                // limits, which is reason enough not to repeat an identical request.
+                // TEMPORARY GladixStart probe: a rung that finds a URL returns it just below, so the last one recorded is the winner's.
+                else -> extractUrlFromJson(mediaJson)?.also { currentCoroutineContext()[StartRungs]?.sources(mediaJson) } ?: run {
                     if (allowRetoken && (quality == "128" || quality == "mp3"))
                         return refreshTokenAndRetry(track, topQuality, retry, allowSubstitute, atQuality = quality)
                     return afterRungTagged(track, quality, retry, topQuality, allowSubstitute, allowRetoken, levelOnly)
@@ -831,7 +836,7 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
                 }
             }
             } finally {
-                rungs.print(trackId, quality, attempts, resolved?.extras?.containsKey(ALT_VERSION_EXTRA))
+                rungs.print(trackId, quality, attempts, resolved?.extras?.containsKey(ALT_VERSION_EXTRA), resolved?.id)
             }
             // Typed for the same reason as the throw above; `lastError` still rides along as the
             // cause, which is what MediaUnavailableException's optional second parameter exists for.
@@ -1007,7 +1012,19 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
         // function, so this gate never sees that entry's token. The 1152 capture showed exactly that
         // token failing at 128. The check for it is at the top of createStreamableForQuality's try,
         // fed by TRACK_TOKEN_EXPIRE in the streamables built below.
-        val track = if (!original.hasUsableToken()) {
+        // ⚠️ [2026-11-07, GitHub #5] NOT FOR A ROW MISSING NOTHING BUT ITS TOKEN: a cover, FILESIZE_MP3_MISC and a
+        // TRACK_TOKEN_EXPIRE, as stored-playlist rows keep (Cached.toTracksCacheSlim drops only TRACK_TOKEN). The expiry is the
+        // part that tells them apart: DeezerParser.toTrack writes FILESIZE_MP3_MISC on every row (`?: "0"`), Pipe search rows
+        // included, while only a gateway record carries an expiry (DeezerApi.pipeNodeToSong sets none). Measured on the Nov 7 capture: this fetch was ~290 ms of
+        // every new song in such a queue, and at 320 and FLAC the first rungs are the relay's, which send the id alone. The
+        // token is fetched where it is sent, by the 128/mp3 rung check in createStreamableForQualityUnprobed.
+        // COSTS: no saving at 128 (mobile's default), whose first rung is that check, so the request only moves. The
+        // media-state entry is written without a token, so a later replay that reaches 128 pays one refresh. A rung refresh
+        // spends the ladder's one re-token, so afterRung's last-resort re-token (1151) cannot run after it: judged harmless,
+        // since the token was just fetched. Thin songs, Pipe search rows and rows stored with no expiry still fetch here.
+        val onlyTokenMissing = original.cover != null && original.extras.containsKey("FILESIZE_MP3_MISC") &&
+            !original.extras["TRACK_TOKEN_EXPIRE"].isNullOrBlank()
+        val track = if (!original.hasUsableToken() && !onlyTokenMissing) {
             val fresh = runCatching {
                 api.track(original.id)["results"].objOrNull()?.let { results ->
                     parser.run { results.toTrack() }
@@ -1280,6 +1297,8 @@ class DeezerTrackClient(private val deezerExtension: DeezerExtension, private va
  * which can arrive as an ordinary answer with no media, so a relay refusal cannot be told from an outage. The commit's
  * subject says only "retry loop with backoff"; the doc a80f1e28 added that day calls the shared server "inherently
  * unstable"; the no-media shape is the user's history, 2026-11-04, not something observed here.
+ * [CORRECTED 2026-11-07] "Shared" is a80f1e28's word, not a known fact: whether all users reach the relay through one
+ * account is not known. It is a third-party service with unknown limits; the retry's reasoning does not depend on more.
  * ⚠️ SINCE relay128, ONLY AN "mp3" (MP3_MISC) LADDER CAN SATISFY THIS: every other ladder reaches a relay rung.
  * ⚠️ unclassified IS THE DEFAULT-TO-RETRY HALF: a network error, a licence refusal and "Song not available" all arrive
  * at the rung's catch as something other than MediaUnavailableException.
@@ -1313,6 +1332,9 @@ private class AttemptSubstitutes : AbstractCoroutineContextElement(AttemptSubsti
  * sub=0|1 tokenRefresh=0|1 attempts=<n> ms=<total>". println, so logcat tag System.out (a JVM module has no
  * android.util.Log); `adb logcat | grep GladixStart` reads it beside the app's line. No tokens or URLs.
  * [2026-11-04] A substitute's rung prints as s<quality> (s320), so the two walks of afterRung's order can be told apart.
+ * [2026-11-07, user-approved] Plus hosts, never paths or queries: host= is the host of the returned streamable's id, which is the
+ * URL AudioStreamProvider.openStreamWithTotal GETs; srcHosts= is every get_url sources[] host of the rung that found the URL, as
+ * index:host. For deciding whether the CDN connection can be opened early.
  */
 private class StartRungs : AbstractCoroutineContextElement(StartRungs) {
     companion object Key : CoroutineContext.Key<StartRungs>
@@ -1328,6 +1350,17 @@ private class StartRungs : AbstractCoroutineContextElement(StartRungs) {
 
     @Volatile
     var tokenRefreshed = false
+
+    private var srcHosts = "-"
+
+    @Synchronized
+    fun sources(json: JsonObject) {
+        val list = json["data"]?.jsonArray?.firstOrNull()?.jsonObject?.get("media")?.jsonArray?.firstOrNull()?.jsonObject
+            ?.get("sources")?.jsonArray ?: return
+        srcHosts = list.mapIndexed { i, source ->
+            "$i:${runCatching { source.jsonObject["url"]?.jsonPrimitive?.contentOrNull?.toHttpUrlOrNull()?.host }.getOrNull() ?: "-"}"
+        }.joinToString(",").ifEmpty { "-" }
+    }
 
     @Synchronized
     fun begin(quality: String): Entry {
@@ -1353,12 +1386,13 @@ private class StartRungs : AbstractCoroutineContextElement(StartRungs) {
     }
 
     @Synchronized
-    fun print(trackId: String, quality: String, attempts: Int, substitute: Boolean?) {
+    fun print(trackId: String, quality: String, attempts: Int, substitute: Boolean?, url: String?) {
         val rungs = entries.joinToString(",") { "${it.quality}:${it.result ?: "open"}(${it.ms}ms)" }.ifEmpty { "-" }
         println(
             "GladixStart ext id=$trackId q=$quality rungs=$rungs sub=${if (substitute == true) 1 else 0} " +
                 "tokenRefresh=${if (tokenRefreshed) 1 else 0} attempts=$attempts " +
-                "ms=${System.currentTimeMillis() - started} result=${if (substitute != null) "ok" else "failed"}"
+                "ms=${System.currentTimeMillis() - started} result=${if (substitute != null) "ok" else "failed"} " +
+                "host=${url?.toHttpUrlOrNull()?.host ?: "-"} srcHosts=$srcHosts"
         )
     }
 }

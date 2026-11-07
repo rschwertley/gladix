@@ -1330,7 +1330,9 @@ abstract class AndroidAutoCallback(
          * NO network at all. Without it the car re-resolves every dead track in full first - the whole
          * createStreamableForQuality ladder, up to ~22 Deezer calls each - and a pulled album is a run
          * of ADJACENT dead likes, so one drive can spend hundreds of refused requests against a daily
-         * account ceiling. The usual objection does not apply because THIS FILE IS REGENERATED from a
+         * account ceiling. [CORRECTED 2026-11-07] That daily ceiling is unverified (no source, never measured); the relay is a
+         * third-party service with unknown limits, which still makes the saved requests worth having.
+         * The usual objection does not apply because THIS FILE IS REGENERATED from a
          * fresh availability pass on every browse, and isPlayable is in the signature below, so a
          * verdict cannot go stale here the way it could in the queue file. Full argument at
          * toSlimKeepingRoutingKeys' keepPlayable.

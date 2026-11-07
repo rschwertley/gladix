@@ -132,6 +132,8 @@ private fun Track.resetPlayable(): Track =
  * full DeezerTrackClient.createStreamableForQuality ladder first - up to ~22 Deezer calls each -
  * and a run of ADJACENT dead likes (a pulled album is exactly that shape) turns one browse-and-play
  * into hundreds of refused requests against an account with a daily ceiling.
+ * [CORRECTED 2026-11-07] "A daily ceiling" is unverified: no daily figure has a source or a measurement. What is known is
+ * that the ladder reaches a third-party relay with unknown limits, so hundreds of refused requests are still worth avoiding.
  * ⚠️ [CORRECTED 2026-10-27] "ZERO REQUESTS" IS TRUE ONLY ON A media-state CACHE HIT. loadServer's
  * verdict check runs AFTER StreamableLoader.loadTrack, and on a MISS that is Cached.loadMedia ->
  * loadItem -> DeezerTrackClient.loadTrack first: these stored Tracks carry no TRACK_TOKEN (slimmed),

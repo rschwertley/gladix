@@ -1508,6 +1508,8 @@ class PlayerEventListener(
      * would have removed the only stop for the case the July 18 breaker was built for: a queue
      * where EVERY track answers "not available" - the relay account hitting its daily cap, say -
      * would skip up to QUEUE_CAP_UPCOMING tracks at up to ~22 Deezer requests each, silently.
+     * [CORRECTED 2026-11-07] "Its daily cap" is an example, not a known limit: no daily figure for the relay has a source or
+     * a measurement. Any outage or refusal that makes every track answer "not available" is the case this covers.
      * ⚠⚠ A FIXED LIMIT COULD NOT TELL THOSE TWO APART, AND THAT IS WHY IT
      * WAS REPLACED. Whatever number is chosen, a user whose favourites contain a longer run of
      * removed tracks than the limit gets stopped mid-library for no reason - and 100 adjacent dead

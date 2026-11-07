@@ -144,6 +144,9 @@ class StreamableLoader(
      * throws). The 320 relay is shared and has a ~1,000/day threshold, so an unmarked dead run - a
      * restored queue, where the verdict is reset - must not double its relay cost without limit.
      * With the cap a dead run adds at most +18..36 relay calls.
+     * [CORRECTED 2026-11-07] "Shared and has a ~1,000/day threshold" is unverified: no source, never measured or published.
+     * What is known: the relay is a third-party service with unknown limits, and whether every Gladix user goes through
+     * one account there is not known either. That is still the reason to keep relay calls lean, and this cap stands.
      * [CORRECTED 2026-11-04] Those counts predate Deezer's relay128 rung. Per resolve at the worst, relay calls are now
      * 6 for a 128 user (it was 0), 12 for a 320 user and 18 for FLAC (3 passes x relay rungs x 2 attempts), doubled when
      * the relay throws. Three failed nets add +18..36 / +36..72 / +54..108. Atomic: loads run concurrently

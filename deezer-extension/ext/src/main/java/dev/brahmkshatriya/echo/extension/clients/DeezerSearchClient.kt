@@ -138,6 +138,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             // results["TRACK"] (see withPipeTracks), so a fallback that called api.search directly would
             // hand back GATEWAY-ONLY results: the Tracks tab would quietly lose its pipe rows on any cache
             // miss, which is the defect this whole path exists to fix, re-created by its own fallback.
+            // [CORRECTED 2026-11-07] Pipe rows now appear only where the gateway's Tracks section was empty (withPipeTracks);
+            // the rule is unchanged, since that one splice still decides it.
             // ⚠️ THE NAMED-TAB BRANCH HAD EXACTLY THAT BUG - it read
             // `?: api.search(query)["results"]` - so it is fixed here too, not only the All branch.
             // ⚠️ CALLING loadSearchFeedTabs REBUILDS THE TABS AND THROWS THEM AWAY, and that cost is
@@ -319,6 +321,8 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
 
     /**
      * pageSearch's `results` with the TRACK section's `data` replaced by pipe GraphQL's track results.
+     * [CORRECTED 2026-11-07] Only when that `data` is empty; a non-empty gateway section is returned as it is (see the
+     * GitHub #5 note in the body).
      *
      * ⚠⚠ EVERY FAILURE PATH RETURNS `results` UNCHANGED, WHICH IS THE WHOLE CONTRACT: search must
      * never get WORSE than it is today. JWT exchange down, pipe refusing, GraphQL `errors`, a node we
@@ -343,6 +347,17 @@ class DeezerSearchClient(private val deezerExtension: DeezerExtension, private v
             ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             ?: return results
         if (order.none { it.equals("TRACK", ignoreCase = true) }) return results
+        // ⚠⚠ [2026-11-07, GitHub #5] ONLY AN EMPTY TRACKS SECTION IS FILLED FROM PIPE. Combine searches us for every song it
+        // plays, and replacing every section put a sequential pipe search behind each pageSearch, then a deezer.pageTrack
+        // refetch on the matched row (a pipe row has no TRACK_TOKEN_EXPIRE, see DeezerTrackClient.loadTrack): roughly
+        // 0.6-0.8 s per song against upstream, which makes neither (inferred, not measured end to end). Gateway rows carry
+        // their token, so a match from them needs no refetch. KEPT: what 1117 (5206015f) was for, the gateway index missing
+        // re-issued ids (the acoustic "Other Worlds": gateway 1987857917, pipe 3902343691 / 3913168001); every failure
+        // measured then was an empty section (the ORDER note above), and nothing in the record shows a partial one.
+        // KNOWN RISK: a query where the gateway lists some tracks but misses a re-issued one now shows only the gateway's
+        // rows, in the Search tab as well as Combine, which cannot be told apart (one-argument loadSearchFeed).
+        val gatewayRows = ((results["TRACK"] as? JsonObject)?.get("data") as? JsonArray).orEmpty()
+        if (gatewayRows.isNotEmpty()) return results
         val data = runCatching { api.searchTracksPipe(query) }
             .getOrElse { if (it is CancellationException) throw it else null }
             ?: return results

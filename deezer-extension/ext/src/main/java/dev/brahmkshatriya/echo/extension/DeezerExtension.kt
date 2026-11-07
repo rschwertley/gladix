@@ -1351,11 +1351,15 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
      * and an awaiting [awaitAvailability] never rethrows. A failed or timed-out chunk just leaves its ids unknown,
      * which is the fail-open answer markUnplayable always gave.
      */
-    fun checkAvailabilityLater(key: String, tracks: List<Track>): Boolean {
+    // [2026-11-07] secondAsk: once the check finishes, ask once more for the ids still unknown - the second ask the playlist
+    // marks pass makes with markUnplayable. For the liked list, which has no marks pass (DeezerLibraryClient.allRow's note).
+    // Inside the same job, so a joining call adds no ask and nothing ever waits on it but awaitAvailability.
+    fun checkAvailabilityLater(key: String, tracks: List<Track>, secondAsk: Boolean = false): Boolean {
         if (api.unknownIds(tracks).isEmpty()) return false
         val job = availabilityChecks.compute(key) { _, running ->
             running?.takeIf { it.isActive } ?: extensionScope.async {
-                runCatching { api.tracksAvailability(api.unknownIds(tracks)) }
+                runCatching { api.tracksAvailability(api.unknownIds(tracks), key, "first") }
+                if (secondAsk) runCatching { api.tracksAvailability(api.unknownIds(tracks), key, "second") }
             }
         }!!
         job.invokeOnCompletion { availabilityChecks.remove(key, job) }
