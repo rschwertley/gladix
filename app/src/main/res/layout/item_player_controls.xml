@@ -62,60 +62,12 @@
             android:contentDescription="@string/like"
             app:buttonTint="@color/button_player_heart" />
 
-        <!-- Overflow, moved down from the toolbar's menu (more_menu / menu_more) so it sits beside the
-             heart rather than in the top right, which the extension icon now occupies. It is a plain
-             view with a click listener, NOT a menu item, so PlayerToolbarStyle no longer sets `menu`.
-             Whichever control is LAST owns the end margin. trackHeart is gone entirely when the
-             extension has no LikeClient (isVisible is gated on isTrackClient in PlayerFragment), so
-             this must not depend on the heart being present - it is a sibling of the row, not of
-             the heart.
-
-             [CORRECTED 2026-09-14] THIS COMMENT SAID "the row has 24dp horizontal padding". IT IS
-             16dp, AND THAT DISCREPANCY IS THE WHOLE STORY OF A REGRESSION. The -20dp end margin was
-             calibrated against 24dp; `git log -S` puts the 24dp -> 16dp change in 554164ce ("Fix the
-             player's icon sizes and spacing"), while the -20dp predates it (ea3c5f7c / b4b63389, the
-             original player UI). Nobody revisited the margin, so the glyph moved 8dp closer to the
-             screen edge - from 14dp to 6dp - and the row started reading as cramped with nothing
-             visibly broken. The stale number is kept above rather than deleted because it is the
-             evidence: a margin whose stated basis no longer matches the file is the thing to check.
-
-             THE ARITHMETIC, so the next person does not re-derive it. Distance from the row's right
-             edge to the glyph is rowPaddingRight + marginEnd + buttonPaddingRight. The button's
-             10dp padding is Material's own m3_btn_icon_only_default_padding (Widget.Material3
-             .Button.IconButton, read from the 1.14.0 AAR) and is NOT overridden here; 10 + 28 + 10 =
-             48 exactly, so the glyph position is forced by arithmetic and does not depend on whether
-             MaterialButton centres or start-aligns an icon with no text.
-                 -20dp gave 16 - 20 + 10 = 6dp
-                 -10dp gives 16 - 10 + 10 = 16dp   <- matches PlayerTrackCoverContainer's 16dp
-                                                      marginEnd (the album art's right edge) and the
-                                                      row's own 16dp paddingLeft (the title's left
-                                                      edge). That grid is the target; the transport
-                                                      row below sits at 22dp and is the outlier.
-
-             AND -20dp PUT 4dp OF THIS BUTTON OUTSIDE ITS PARENT. The view's right edge landed 4dp
-             past the row's right edge, so the row (clipChildren defaults true) clipped it and ~4dp
-             of the 48dp touch target lay outside the row, where touches are not dispatched. It
-             LOOKED fine only because Widget.Material3.Button.IconButton also sets android:insetLeft
-             /insetRight = m3_btn_inset = 4dp, which shrinks the drawn background by exactly the
-             amount being clipped - so the ripple stopped precisely at the row edge. THAT WAS A
-             COINCIDENCE OF TWO UNRELATED 4dp VALUES, NOT A DESIGN. -10dp removes the overhang
-             entirely. If anyone re-introduces a margin more negative than -16dp here, the button
-             leaves the parent again and the coincidence will not necessarily cover it. -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/trackMore"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="center_vertical"
-            android:layout_marginEnd="-10dp"
-            android:contentDescription="@string/more"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_more_vert"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp"
-            app:iconSize="28dp"
-            app:iconTint="@color/button_player" />
+        <!-- [2026-11-07] trackMore, the overflow, moved back up to the top bar (fragment_player.xml's playerMore, in
+             both orientations). Salvaged from its note here: the glyph's place is set by arithmetic (row padding +
+             margin + button padding) on the 16dp grid of the album art's right edge and the title's left edge, and a
+             2026-09-14 regression came from a margin calibrated against a padding that had since changed (554164ce).
+             The heart is now the row's last control and owns the end; with no LikeClient it is gone and the text
+             block runs to the padding. -->
 
     </LinearLayout>
 

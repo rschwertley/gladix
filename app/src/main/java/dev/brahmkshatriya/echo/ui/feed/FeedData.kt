@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.common.models.Playlist
@@ -439,11 +440,17 @@ data class FeedData(
                     // FeedSort.sortedMissingLast) so rows with no value stay last in both directions.
                     // With no sort field there is nothing missing, and the whole list is reversed here.
                     val feedSort = sortState.feedSort
-                    shelves = when {
-                        feedSort != null -> feedSort.sorter.invoke(app.context, shelves, sortState.reversed)
-                        sortState.reversed -> shelves.reversed()
-                        else -> shelves
+                    fun List<Shelf>.applySort(sort: FeedSort?) = when {
+                        sort != null -> sort.sorter.invoke(app.context, this, sortState.reversed)
+                        sortState.reversed -> reversed()
+                        else -> this
                     }
+                    // [2026-11-08] GROUPED FOR MARKED FOLDER ROWS (isMarkedFolder): folders first, sorted by title; the
+                    // rest by the chosen sort; Reversed applies within each group, never across them. With no
+                    // marked row the split finds nothing and the list is sorted exactly as before.
+                    val (folders, rest) = shelves.partition { it.isMarkedFolder() }
+                    shelves = if (folders.isEmpty()) shelves.applySort(feedSort)
+                    else folders.applySort(feedSort?.let { FeedSort.Title }) + rest.applySort(feedSort)
                     // ⚠️ NO PERSISTENCE HERE. Until 2026-09-06 this block ended with
                     //     if (sortState.save) app.context.saveToCache("$extensionId-$feedId-$tabId", …)
                     // which fired on every render pass and paired a fresh tabId with a stale sortState.
@@ -464,6 +471,10 @@ data class FeedData(
                         listOf(it.value.title)
                     }.map { it.second }
                     shelves = (if (keepOrder) hits.sortedBy { it.index } else hits).map { it.value }
+                    // [2026-11-08] Marked folders first in a plain search too, by relevance within each group (a stable
+                    // partition). With a sort active the sort above has already grouped them; with no marked row the
+                    // partition leaves the order as it was.
+                    if (!keepOrder) shelves = shelves.partition { it.isMarkedFolder() }.let { (folders, rest) -> folders + rest }
                 }
                 // Truncated (would-OOM aggregate / huge playlist): tell the user up front that sort/search
                 // only covered the first N. LEADING so it's seen on load, not after scrolling 15k items.
@@ -517,6 +528,12 @@ data class FeedData(
     }
 
     private companion object {
+        // The marks pass's extras (see playableMarks), by literal: app code cannot see the Deezer module. Keep the strings in
+        // step with DeezerPlaylistClient's MARKS_TAB_EXTRA, AVAILABILITY_AWAIT_EXTRA and AVAILABILITY_RECHECK_EXTRA.
+        const val MARKS_TAB_EXTRA = "gladix_marks_tab"
+        const val AVAILABILITY_AWAIT_EXTRA = "gladix_availability_await"
+        const val AVAILABILITY_RECHECK_EXTRA = "gladix_availability_recheck"
+
         // See warmTracks. Process-wide by construction: a companion val outlives every FeedData instance.
         const val MAX_WARMS_PER_PROCESS = 20
         val warmsIssued = AtomicInteger(0)
@@ -597,17 +614,77 @@ data class FeedData(
 
     fun refresh() = scope.launch { refreshFlow.emit(Unit) }
 
+    /**
+     * ⚠⚠ DEAD-SONG MARKS FOR A TAB THAT ASKS FOR THEM (2026-11-07), applied in place by FeedAdapter.playableMarks - the
+     * playlist page's marks pass (Cached.launchMarksPass) for a tabbed feed. OPT-IN BY THE TAB: only a tab carrying
+     * [MARKS_TAB_EXTRA] runs it (today Deezer's Library All and Tracks), so no other extension or feed gets a request. The
+     * extra names the tab whose rows are the list; that tab is asked again with [AVAILABILITY_AWAIT_EXTRA], which waits for
+     * the extension's background check and returns the same rows marked (DeezerLibraryClient.likedMarksPass).
+     * Runs after each load of such a tab and on every visit (LibraryFragment), never in front of the page: the rows show as
+     * loaded and the marks land when the answer does. The answer goes through the loaded feed, so Cached.savingFeed keeps it
+     * as that tab's rows and the next open paints them marked.
+     * Why: on 1172/1173 dead liked songs showed as playable across visits and pulls - a bottom-nav return does not reload,
+     * and the liked list applied verdicts only at load time, so the screen never updated after the check.
+     */
+    val playableMarks = MutableStateFlow<Map<String, Track.Playable>>(emptyMap())
+    private val marksPassSeq = AtomicInteger()
+
+    @Volatile
+    private var recheckOnNextPass = false
+
+    // A pull-to-refresh: the next marks pass asks the extension to re-check every row, whatever its verdict's age.
+    fun requestRecheck() {
+        recheckOnNextPass = true
+    }
+
+    fun runMarksPass() {
+        val state = loadedState.value?.getOrNull() ?: return
+        val askId = selectedTabFlow.value?.extras?.get(MARKS_TAB_EXTRA) ?: return
+        val askTab = state.feed.tabs.find { it.id == askId } ?: return
+        val recheck = recheckOnNextPass
+        recheckOnNextPass = false
+        val seq = marksPassSeq.incrementAndGet()
+        val extras = askTab.extras + (AVAILABILITY_AWAIT_EXTRA to "1") +
+            (if (recheck) mapOf(AVAILABILITY_RECHECK_EXTRA to "1") else emptyMap())
+        scope.launch(Dispatchers.IO) {
+            // Failures swallowed: a missed pass costs only the dimming, and a dead song still skips at play.
+            runCatching {
+                val tracks = state.feed.getPagedData(askTab.copy(extras = extras)).pagedData.loadAll()
+                    .flatMap { shelf ->
+                        when (shelf) {
+                            is Shelf.Item -> listOfNotNull(shelf.media as? Track)
+                            is Shelf.Lists.Items -> shelf.list.filterIsInstance<Track>()
+                            is Shelf.Lists.Tracks -> shelf.list
+                            else -> emptyList<Track>()
+                        }
+                    }
+                Cached.rememberMarks(app, state.extensionId, tracks)
+                // The latest pass wins: an older one finishing late must not put back marks a newer one dropped.
+                if (marksPassSeq.get() == seq) playableMarks.value = tracks
+                    .filter { it.isPlayable != Track.Playable.Yes }.associate { it.id to it.isPlayable }
+            }
+        }
+    }
+
     init {
         scope.launch(Dispatchers.IO) {
             listOfNotNull(current, refreshFlow, usersFlow, extraLoadFlow)
                 .merge().debounce(100L).collectLatest {
                     cachedState.value = null
                     loadedState.value = null
+                    // A reload brings rows with the extension's stored verdicts already on them (DeezerApi.markKnown), and
+                    // its own marks pass follows; marks from another extension or account must not carry over.
+                    playableMarks.value = emptyMap()
                     extensionLoader.current.value ?: return@collectLatest
                     CrashKeys.onFeedLoad()   // feed_load_count (debounced 100ms + collectLatest — not hot)
                     cachedState.value = runCatching { cached(extensionLoader) }
                     loadedState.value = runCatching { load(extensionLoader) }
                 }
+        }
+        // The marks pass after each load of a tab that asks for one (see playableMarks). The tab's loader has returned by
+        // now (getData calls getPagedData), so the extension's background check is already running and the pass joins it.
+        scope.launch {
+            loadedDataFlow.collect { if (it?.getOrNull() != null) runMarksPass() }
         }
         scope.launch {
             stateFlow.collect { result ->

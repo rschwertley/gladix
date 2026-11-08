@@ -108,6 +108,24 @@ object MediaItemUtils {
         extras = mapOf(LABEL_ONLY_RADIO to "true"),
     )
 
+    // [2026-11-07] Marks the label feedPageLabel builds. It also carries LABEL_ONLY_RADIO, so PlayerRadio.loadPlaylistLocked
+    // strips it and the end-of-queue radio is built from no context, as before. The second marker is for the one place that
+    // must tell it apart from trackRadioPlaceholder: PlayerRadio.tvDriveRadio, where a Radio context means "a station is
+    // playing, top it up early". A folder or "see all" page is not a station, so with auto-radio off nothing may follow it.
+    const val FEED_PAGE_LABEL = "feed_page_label"
+
+    // [2026-11-07] "Playing from <page title>" for songs played from a feed page (FeedFragment: an extension's folder, Offline's
+    // folders, "see all"), which had no context and so a blank bar. A Radio rather than a stand-in Playlist ON PURPOSE: a
+    // Playlist would be reloaded from the extension by a History tap (HistoryFragment, isReplayableContext) and by Android
+    // Auto, handed to extension.radio() as a playlist, and offered as History's "Go to", all for an id the extension does not
+    // know. A Radio is none of those, and toSlimContext keeps a Radio's extras, so the markers survive the saved queue and
+    // History. The id is never loaded.
+    fun feedPageLabel(feedId: String?, title: String): Radio = Radio(
+        id = "feed_page:${feedId.orEmpty()}",
+        title = title,
+        extras = mapOf(LABEL_ONLY_RADIO to "true", FEED_PAGE_LABEL to "true"),
+    )
+
     fun build(
         app: App,
         downloads: List<Downloader.Info>,

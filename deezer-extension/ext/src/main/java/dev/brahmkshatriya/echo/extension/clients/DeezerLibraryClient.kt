@@ -30,11 +30,14 @@ class DeezerLibraryClient(
     private val cpuDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
 
+    // [2026-11-07] All and Tracks both show the liked list, so both name the Tracks tab for the app's marks pass
+    // (MARKS_TAB_EXTRA, see likedMarksPass).
+    private val marksTab = mapOf(DeezerPlaylistClient.MARKS_TAB_EXTRA to TabId.TRACKS.id)
     private val tabs: List<Tab> = listOf(
-        Tab(TabId.ALL.id, "All"),
+        Tab(TabId.ALL.id, "All", extras = marksTab),
         Tab(TabId.PLAYLISTS.id, "Playlists"),
         Tab(TabId.ALBUMS.id, "Albums"),
-        Tab(TabId.TRACKS.id, "Tracks"),
+        Tab(TabId.TRACKS.id, "Tracks", extras = marksTab),
         Tab(TabId.ARTISTS.id, "Artists"),
         // Restored 2026-11-02; removed by a401b5e1 (2026-05-08) when the tab came back empty. Its row on All and the
         // Podcasts folder in Android Auto's Library come back with it (loadAll iterates every config).
@@ -91,8 +94,11 @@ class DeezerLibraryClient(
         deezerExtension.handleArlExpiration()
         return Feed(tabs) { tab ->
             val id = tab?.id
-            val (data, liked) = when (id) {
-                TabId.ALL.id -> loadAll()
+            val (data, liked) = when {
+                tab?.extras?.get(DeezerPlaylistClient.AVAILABILITY_AWAIT_EXTRA) == "1" ->
+                    likedMarksPass(tab?.extras?.get(DeezerPlaylistClient.AVAILABILITY_RECHECK_EXTRA) == "1")
+                        .let { marked -> marked.map { it.toShelf() } to marked }
+                id == TabId.ALL.id -> loadAll()
                 else -> loadSingle(id)
             }
             val buttons = Feed.Buttons(
@@ -102,6 +108,30 @@ class DeezerLibraryClient(
             data.toFeedData(buttons)
         }
     }
+
+    /**
+     * ⚠⚠ THE LIKED LIST'S MARKS PASS (2026-11-07), the playlist page's (DeezerPlaylistClient.loadTracks with
+     * AVAILABILITY_AWAIT_EXTRA) for the library feed. The app's FeedData.runMarksPass asks the Tracks tab again with that
+     * extra after a load and on every visit; this waits for the running check, asks once more for the ids still due
+     * (markUnplayable) and returns the same rows marked - no second getTracks. The shape is the Tracks tab's own, so the
+     * app's feed cache, which saves this answer under that tab, holds marked rows. [recheck] (a pull-to-refresh) marks
+     * every row due first, so all of them are asked again whatever their age.
+     * With no rows kept (no liked load yet in this process) it throws rather than answer empty: an empty answer would be
+     * saved as the tab's rows. The app swallows it; the next load keeps rows.
+     * Why it exists: on 1172/1173 dead liked songs showed as playable across visits and pulls, because verdicts were applied
+     * only at load time and the screen never updated after the check, while the Favorite tracks tile (the playlist path)
+     * greyed them.
+     */
+    private suspend fun likedMarksPass(recheck: Boolean): List<Track> {
+        val rows = keptLiked ?: throw IllegalStateException("No liked rows to mark yet")
+        if (recheck) api.markForRecheck(rows)
+        deezerExtension.awaitAvailability(LIKED_AVAILABILITY_KEY)
+        return api.markUnplayable(rows)
+    }
+
+    // The grafted liked rows of the last load (either tab), for likedMarksPass. Rows only; verdicts are applied on read.
+    @Volatile
+    private var keptLiked: List<Track>? = null
 
     /** Shelves for the All tab, plus the grafted favorites so [loadLibraryFeed] can declare them. */
     private suspend fun loadAll(): Pair<List<Shelf>, List<Track>?> = supervisorScope {
@@ -157,7 +187,16 @@ class DeezerLibraryClient(
             // second ask (a playlist's marks pass re-asks with markUnplayable), so a failed check left liked songs unmarked from 1166
             // (c0a8b5a1, shipped with e6592bf0) until now: device, 1171, the dead Elvis songs greyed in the Favorite tracks tile and
             // never on this tab until the tile had filled the shared verdicts. secondAsk is that re-ask, still off the load.
+            // [CORRECTED 2026-11-07] The Nov 2 "next load by design" decision is reversed. On 1172/1173 dead liked songs showed as
+            // playable across visits and pulls: a bottom-nav return does not reload, a pull shows the saved rows first and a
+            // second pull cancels the first, and the 30-minute verdicts expired between loads - so the screen never updated
+            // after the check, while the Favorite tracks tile, on the playlist path, marked in place. Now the same visit is
+            // marked: the app asks again with the await flag after the load and on every visit (likedMarksPass, the channel
+            // is MARKS_TAB_EXTRA on the tab), and applies the marks in place on Tracks and in All's carousel. Verdicts are
+            // kept on disk and re-checked after 24 h (DeezerApi.dueIds), and a Library pull now re-checks every row
+            // (likedMarksPass's recheck). Still never waited for here.
             val grafted = items.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                .also { keptLiked = it }
                 .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it, secondAsk = true) }
                 .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
@@ -182,7 +221,9 @@ class DeezerLibraryClient(
             // plus one batched availability pass - see DeezerApi.markUnplayable.
             // [CORRECTED 2026-11-02] Background check, as in allRow above; marks on the next load by design (see there).
             // [CORRECTED 2026-11-07] With a second ask; see allRow.
+            // [CORRECTED 2026-11-07] Not "on the next load by design" any more: marked on the same visit; see allRow.
             val liked = arr.mapNotNull { el -> (el as? JsonObject)?.let { graftFavTrack(it) } }
+                .also { keptLiked = it }
                 .also { deezerExtension.checkAvailabilityLater(LIKED_AVAILABILITY_KEY, it, secondAsk = true) }
                 .let(api::markKnown)
             // The artist page's liked index, refreshed from this list at no cost.
@@ -211,17 +252,9 @@ class DeezerLibraryClient(
      * id from Home "Recently played", which getUserData makes unnecessary.
      */
     private suspend fun withFavoriteTracks(items: List<EchoMediaItem>): List<EchoMediaItem> {
-        // ⚠⚠ TEMPORARY PROBE (2026-10-30) - REMOVE BOTH GladixFav LINES (this one and AndroidAutoCallback's
-        // probeFav) AFTER ONE CAPTURE of the car's Library -> Playlists and Playlists shortcut. Prints on
-        // every path. memo is the state BEFORE the lookup: unset = first lookup this session, empty = a
-        // remembered failure or "none", id = cached. added=no-id / present / yes is which return ran.
-        val memo = deezerExtension.lovedTracksMemoState
-        fun probe(added: String) = println(
-            "GladixFav DEEZER hasUserId=${api.hasUserId} memo=$memo added=$added items=${items.size}"
-        )
-        val id = deezerExtension.lovedTracksIdOrNull() ?: return items.also { probe("no-id") }
-        if (items.any { it is Playlist && it.id == id }) return items.also { probe("present") }
-        probe("yes")
+        // On 1173 (2026-11-07) the tile shows in Android Auto under both Library -> Playlists and the Playlists shortcut.
+        val id = deezerExtension.lovedTracksIdOrNull() ?: return items
+        if (items.any { it is Playlist && it.id == id }) return items
         // isSaveable = false as in loadPlaylist, so the long-press sheet's pre-load placeholder offers no Save.
         return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false, isSaveable = false)) + items
     }

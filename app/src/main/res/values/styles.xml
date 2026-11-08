@@ -329,7 +329,11 @@
         <!-- No `menu` here on purpose: the overflow moved out of the toolbar and down beside the
              heart in item_player_controls.xml (trackMore), as a plain view with a click listener. The
              top-right slot it vacated now holds the playing extension's icon. more_menu.xml is still
-             referenced elsewhere - do not delete it. -->
+             referenced elsewhere - do not delete it.
+             [CORRECTED 2026-11-07] The phone's overflow is back in the top right (fragment_player.xml's playerMore), as a
+             child view of the toolbar, not a menu, with the extension icon to its left. Still no `menu` here, and it must
+             stay that way: the TV toolbar shares this style and inflates its own menu (PlayerTvFragment.configureBack), so
+             a menu here would give the TV two overflow buttons. -->
         <item name="navigationIcon">@drawable/ic_expand_more</item>
         <item name="navigationIconTint">@color/amoled_fg</item>
         <item name="navigationContentDescription">@string/close</item>

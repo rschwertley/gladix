@@ -154,8 +154,8 @@ class DeezerAlbumClient(private val deezerExtension: DeezerExtension, private va
             // leaves alone, correctly. The result would be one wasted request per show open and not
             // one row marked. If episode availability is ever wanted it needs that other field and
             // its own mapping, not this call moved up a branch.
-            // [2026-11-02] A reload the user asked for re-checks every row - see DeezerApi.forgetVerdicts.
-            if (album.extras[DeezerPlaylistClient.AVAILABILITY_RECHECK_EXTRA] == "1") api.forgetVerdicts(baseTracks)
+            // [2026-11-02] A reload the user asked for re-checks every row - see DeezerApi.markForRecheck.
+            if (album.extras[DeezerPlaylistClient.AVAILABILITY_RECHECK_EXTRA] == "1") api.markForRecheck(baseTracks)
             api.markUnplayable(baseTracks)
         }
     }.toFeed()

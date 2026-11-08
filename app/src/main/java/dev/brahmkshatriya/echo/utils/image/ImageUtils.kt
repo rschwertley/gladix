@@ -92,6 +92,17 @@ object ImageUtils {
         imageView.enqueue(request)
     }
 
+    // [2026-11-08] A feed cover in its square box: see FitSquareCoverTransformation. Used by MediaViewHolder.applyCover only.
+    fun ImageHolder?.loadFittedInto(
+        imageView: ImageView, placeholder: Int?, radiusPx: Float
+    ) = tryWith {
+        val request = createRequest(
+            imageView.context, placeholder, null, FitSquareCoverTransformation(radiusPx)
+        )
+        request.target(imageView)
+        imageView.enqueue(request)
+    }
+
     fun ImageHolder.getCachedDrawable(context: Context): Drawable? {
         val key = diskId ?: return null
         return context.imageLoader.diskCache?.openSnapshot(key)?.use {

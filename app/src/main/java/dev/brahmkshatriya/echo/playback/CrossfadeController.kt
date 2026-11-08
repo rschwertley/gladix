@@ -253,6 +253,8 @@ class CrossfadeController(
     private var handoffAtMs = 0L
     private var rampStartedAtMs = 0L
     private var rampMs = 0L
+    // [2026-11-08] The rampOutMs field of the CROSSFADE-FEEL line, set by [startRamps]; null when no fade-out was armed.
+    private var rampOutLog: String? = null
 
     /** Fresh per crossfade; the main processor republishes it from the audio thread. */
     private var overlapToken: Any? = null
@@ -1978,17 +1980,47 @@ class CrossfadeController(
      * ⚠️ A TAIL THAT ALREADY ENDED still gets no fade-out - there is nothing left to
      * fade - and keeps the MIN_RAMP_MS floor for the fade-in rather than the full fade: a silent
      * hand-off followed by ten seconds of near-silence would be worse than either.
+     * [CORRECTED 2026-11-08] The outgoing leg no longer keeps the full timeline: it fades with cos over the tail's REAL
+     * remaining audio and reaches 0 when that audio ends ([outgoingRampMs]). On the full timeline it stopped still at -3 to
+     * -10 dB, heard as the old song not fading, or fading late (1173: overlapMs 4585-8739 of a 10 s fade). Symfonium's
+     * documented behaviour is both fades ending together. The incoming leg is unchanged: sin over the full effective fade,
+     * after main's first post-seek audio, and [complete] still waits for it ([rampMs]). The sum is no longer exactly unity:
+     * a dip of about -0.6 dB for an 8.7 s tail and -1 dB for 8 s, at mid-overlap. The reference's "feel" above was a tail
+     * cut off partway down, which is what this replaces, by the user's decision. A tail fade that finishes early holds at
+     * 0 rather than returning to full gain (AudioEffectsProcessor.fadeOutDone).
      */
     private fun startRamps() {
         val ended = sidecar.playbackState == Player.STATE_ENDED
-        val tailRemaining = runCatching {
-            val d = sidecar.duration
-            if (d == C.TIME_UNSET) 0L else (d - sidecar.currentPosition).coerceAtLeast(0L)
-        }.getOrDefault(0L)
+        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         rampMs = if (ended) MIN_RAMP_MS else max(effectiveFadeMs, MIN_RAMP_MS)
         rampStartedAtMs = System.currentTimeMillis()
-        if (!ended) sidecarProcessor.startFadeOut(rampMs)
+        if (!ended) {
+            val queuedMs = sidecarQueuedMs()
+            val (outMs, full) = outgoingRampMs(speed, queuedMs)
+            sidecarProcessor.startFadeOut(outMs)
+            // As heard, from the switch: the wait to here, the sidecar's queue, then the ramp at the playback rate.
+            val heardEndMs = (rampStartedAtMs - overlapStartAtMs) + queuedMs.coerceAtLeast(0L) + (outMs / speed).toLong()
+            rampOutLog = (if (full) "full:" else "") + heardEndMs
+        }
         mainProcessor.startFadeIn(rampMs)
+    }
+
+    /**
+     * The tail's fade-out length in MEDIA ms, and whether it fell back to the full timeline (2026-11-08). What is left for the
+     * sidecar's PROCESSOR, which applies the ramp about one queue ahead of what is heard: the media time left to the end
+     * (`sidecar.duration - currentPosition`, both media time) minus the queued audio, which [sidecarQueuedMs] gives in WALL ms
+     * and so is multiplied by speed. currentPosition already includes both pre-roll trims: RenderersFactory's chain reports
+     * them as skipped frames, which DefaultAudioSink adds to the position, and both reach the mixer before the switch
+     * ([measureAlignment] and [secondTrim]'s `queue` reject). Falls back to [rampMs], today's behaviour, when the duration
+     * or the queue is unknown, or when the tail has at least the full fade left. Floored at [MIN_RAMP_MS], as the fade-in is.
+     */
+    private fun outgoingRampMs(speed: Float, queuedMs: Long): Pair<Long, Boolean> {
+        val duration = runCatching { sidecar.duration }.getOrDefault(C.TIME_UNSET)
+        if (duration == C.TIME_UNSET || queuedMs < 0L) return rampMs to true
+        val position = runCatching { sidecar.currentPosition }.getOrNull() ?: return rampMs to true
+        val leftMs = duration - position - (queuedMs * speed).toLong()
+        if (leftMs >= rampMs) return rampMs to true
+        return max(leftMs, MIN_RAMP_MS) to false
     }
 
     /**
@@ -2056,6 +2088,12 @@ class CrossfadeController(
      * `<N`: nothing above -60 reached the processor after the switch, so the tail went quiet within the N ms already queued.
      * `-`: no switch, or a format the processor does not count. The first ~queuedMs after the switch is not in tailDb: that audio
      * had already passed through the processor.
+     * [ADDED 2026-11-08, USER-APPROVED] `rampOutMs` is when the tail's fade-out reaches 0 as heard, ms from the switch: the wait
+     * to [startRamps], the sidecar's queue then, and the ramp ([outgoingRampMs]) at the playback rate. `full:` marks the fallback
+     * to the full timeline (unknown duration or queue, or a tail with the whole fade left); `-` means no fade-out was armed (the
+     * tail had ended, or the ramps never started). Stated before the build: within ~150 ms of overlapMs on a song that is loud to
+     * its end. Well above overlapMs: the song went quiet before its end (trailing silence), which the fade still counts. Below
+     * overlapMs by more than ~150 ms: the ramp finished early and the tail was held silent for the difference.
      * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
      * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
@@ -2071,7 +2109,8 @@ class CrossfadeController(
                 " fmt=" + (switchFmt ?: "-") + " tsPreMs=" + (tsPreMs?.toString() ?: "-") +
                 " trim2Ms=" + (trim2Ms?.toString() ?: "-") + " tsSwitchMs=" + (tsSwitchMs?.toString() ?: "-") +
                 " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-") +
-                " overlapMs=" + overlapField() + " tailDb=" + sidecarProcessor.tailDb()
+                " overlapMs=" + overlapField() + " rampOutMs=" + (rampOutLog ?: "-") +
+                " tailDb=" + sidecarProcessor.tailDb()
         )
     }
 
@@ -2130,6 +2169,7 @@ class CrossfadeController(
         tailUnderruns = 0
         switchFmt = null
         overlapStartAtMs = 0L
+        rampOutLog = null
     }
 
     /**

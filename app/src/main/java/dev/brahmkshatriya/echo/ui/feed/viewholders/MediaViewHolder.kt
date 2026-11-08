@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.feed.viewholders
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.setTvRowButtons
 import android.content.Context
 import android.graphics.drawable.Animatable
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +24,7 @@ import dev.brahmkshatriya.echo.playback.PlayerState.Current.Companion.isPlaying
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
+import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadFittedInto
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
 
@@ -130,6 +132,15 @@ class MediaViewHolder(
                 is Radio -> R.drawable.ic_sensors
             }
 
+        private val VIDEO_TYPES = setOf(Track.Type.Video, Track.Type.HorizontalVideo, Track.Type.VideoSong)
+
+        // ?itemCorner (8dp phone, 12dp TV), the radius of the box's own background, rounded_rectangle_cover.
+        private fun View.itemCornerPx(): Float {
+            val typedValue = TypedValue()
+            context.theme.resolveAttribute(R.attr.itemCorner, typedValue, true)
+            return TypedValue.complexToDimension(typedValue.data, resources.displayMetrics)
+        }
+
         fun applyCover(
             item: EchoMediaItem,
             cover: ImageView,
@@ -149,10 +160,18 @@ class MediaViewHolder(
             val bgVisible = item is EchoMediaItem.Lists
             listBg1.isVisible = bgVisible
             listBg2.isVisible = bgVisible
+            // [2026-11-08] EVERY NON-VIDEO COVER IN A SQUARE BOX. Until now only artists were square and everything else took
+            // the image's shape (adjustViewBounds in the cover layouts), so a tall cover pushed its text down past the
+            // carousel row, whose height assumes a square cover (HorizontalListViewHolder.fixedRowHeightPx). Non-square
+            // covers are fitted inside with rounded corners (FitSquareCoverTransformation); square ones look as before.
+            // Videos keep their real shape and the plain load: in a carousel a video thumbnail comes through here too.
+            // Artists keep the plain load and the round crop of their background.
+            val isVideo = item is Track && item.type in VIDEO_TYPES
             cover.updateLayoutParams {
-                height = if (item is Artist) width else WRAP_CONTENT
+                height = if (isVideo) WRAP_CONTENT else width
             }
-            item.cover.loadInto(cover, item.placeHolder)
+            if (item is Artist || isVideo) item.cover.loadInto(cover, item.placeHolder)
+            else item.cover.loadFittedInto(cover, item.placeHolder, cover.itemCornerPx())
         }
 
         // showNotPlayable = false keeps the artist line on a Playable.No track (2026-10-30): the rows that

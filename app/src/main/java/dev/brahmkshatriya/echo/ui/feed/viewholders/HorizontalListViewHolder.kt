@@ -202,14 +202,54 @@ class HorizontalListViewHolder(
 
         override fun getItemCount() = items.size
         override fun getItemViewType(position: Int) = items[position].type.ordinal
+        /**
+         * [2026-11-07] Dead-song marks by track id, from FeedAdapter.playableMarks - its in-place marks for a carousel's
+         * cards (Library -> All's Tracks row). Only a Yes track takes a mark; a track's own verdict stands. Applied at bind
+         * and to [tracks] for the ThreeTracks tap gate. A change rebinds the cards with [PLAYABLE_MARKS], which skips the
+         * scroll animation: a full bind would start one from the last scroll delta on cards already on screen.
+         */
+        var playableMarks: Map<String, Track.Playable> = emptyMap()
+            set(value) {
+                if (field == value) return
+                field = value
+                notifyItemRangeChanged(0, itemCount, PLAYABLE_MARKS)
+            }
+
+        private fun Track.marked(): Track =
+            if (isPlayable != Track.Playable.Yes) this
+            else playableMarks[id]?.let { copy(isPlayable = it) } ?: this
+
+        private fun ShelfType.marked(): ShelfType = when (this) {
+            is ShelfType.Media -> (this.media as? Track)?.marked()?.takeIf { it !== this.media }
+                ?.let { ShelfType.Media(extensionId, context, tabId, it) } ?: this
+
+            is ShelfType.ThreeTracks -> {
+                val (a, b, c) = this.tracks
+                val marked = Triple(a.marked(), b?.marked(), c?.marked())
+                if (marked.first === a && marked.second === b && marked.third === c) this
+                else ShelfType.ThreeTracks(extensionId, context, tabId, number, marked)
+            }
+
+            else -> this
+        }
+
+        private fun shownItems() = if (playableMarks.isEmpty()) items else items.map { it.marked() }
+
         override fun onCreateViewHolder(
             parent: ViewGroup, viewType: Int
         ) = when (ShelfType.Enum.entries[viewType]) {
             ShelfType.Enum.Category -> ShelfViewHolder.Category(parent, listener)
             ShelfType.Enum.Media -> ShelfViewHolder.Media(parent, listener)
             ShelfType.Enum.ThreeTracks -> ShelfViewHolder.ThreeTracks(
-                parent, listener, { tracks }
+                parent, listener, { if (playableMarks.isEmpty()) tracks else tracks.map { it.marked() } }
             )
+        }
+
+        override fun onBindViewHolder(
+            holder: ShelfViewHolder<*>, position: Int, payloads: MutableList<Any>
+        ) {
+            if (payloads.isNotEmpty() && payloads.all { it === PLAYABLE_MARKS }) bindContent(holder, position)
+            else super.onBindViewHolder(holder, position, payloads)
         }
 
         override fun onBindViewHolder(
@@ -217,6 +257,11 @@ class HorizontalListViewHolder(
         ) {
             holder.itemView.applyTranslationAndScaleAnimation(scrollAmountX)
             holder.scrollX = scrollAmountX
+            bindContent(holder, position)
+        }
+
+        private fun bindContent(holder: ShelfViewHolder<*>, position: Int) {
+            val items = shownItems()
             when (holder) {
                 is ShelfViewHolder.Category -> holder.bind(
                     position,
@@ -282,6 +327,10 @@ class HorizontalListViewHolder(
         fun onCurrentChanged(current: PlayerState.Current?) {
             this.current = current
             onEachViewHolder { onCurrentChanged(current) }
+        }
+
+        private companion object {
+            val PLAYABLE_MARKS = Any()
         }
     }
 }

@@ -92,7 +92,35 @@
 
                 <com.google.android.material.appbar.MaterialToolbar
                     android:id="@+id/expanded_toolbar"
+                    android:layout_marginEnd="6dp"
+                    app:contentInsetEnd="0dp"
                     style="@style/PlayerToolbarStyle" >
+                    <!-- [2026-11-07] THE OVERFLOW IS BACK IN THE TOP BAR, as its rightmost item: down arrow, "Playing from",
+                         extension icon, more. A CHILD VIEW, NOT A MENU ITEM, ON PURPOSE: PlayerToolbarStyle is shared with the TV player
+                         (fragment_player_tv.xml's tvToolbar), and bc25f358 (2026-08-28) broke the TV overflow by editing that style.
+                         The TV now inflates its own menu (PlayerTvFragment.configureBack), so a `menu` in the style would give it two.
+                         Nothing here touches the style.
+                         ORDER: Toolbar lays out END-gravity children from the right edge inward in XML order (appcompat 1.8.0
+                         Toolbar.java:2140-2145, addCustomViewsWithGravity at :2266), so playerMore, first, is rightmost.
+                         SIZES: both are 48dp touch targets with 10dp padding, so both glyphs are 28dp (the more glyph's iconSize beside
+                         the heart, the Aug 29 spacing fix), on one line, with a borderless ripple. contentInsetEnd 0 and marginEnd 6dp
+                         on the toolbar (overriding the style here only) put the more glyph 6 + 10 = 16dp from the edge (plus any
+                         system-bar padding applyInsets adds), the 16dp grid of the cover and the controls row.
+                         THE TITLE: MaterialToolbar (1.14.0) narrows a centred title or subtitle symmetrically until it clears every
+                         visible child (calculateTitleBoundLimits / layoutTitleCenteredHorizontally), and Toolbar makes both single-line
+                         with an end ellipsis (Toolbar.java:834-835, 889-890), so a long name ellipsizes rather than reaching the icons.
+                         The rest of the bar keeps the "Playing from" tap: both buttons consume only their own 48dp. -->
+                    <ImageButton
+                        android:id="@+id/playerMore"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="end|center_vertical"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/more"
+                        android:padding="10dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_more_vert"
+                        app:tint="@color/button_player" />
                     <!-- Playing extension's icon, in the top right where the overflow menu used to sit (the
                          overflow moved down beside the heart). Driven from applyCurrent, i.e. from the PLAYING
                          extension on the current MediaItem - deliberately NOT from extensionLoader.current, which
@@ -111,18 +139,22 @@
                          extension is not something you switch mid-playback, and the selector is reachable
                          elsewhere. importantForAccessibility=no for the same reason: TalkBack should describe the
                          toolbar's action, not announce a second element inside it. No contentDescription for the
-                         same reason - one would imply it is actionable. -->
-                    <com.google.android.material.imageview.ShapeableImageView
+                         same reason - one would imply it is actionable.
+                         [CORRECTED 2026-11-07] Decision changed by the user: the icon is now tappable and opens the settings page
+                         (ExtensionInfoFragment) of the extension the song plays from - the Unified stamp, else the item's own
+                         extension, and the icon is loaded from that same id (PlayerViewModel.getPlayingExtension). The near-miss
+                         trade-off above (a tap just beside it opens the playlist) is accepted. It now has a content description,
+                         "<name> settings", set in PlayerFragment.applyCurrent, and a 48dp target with a borderless ripple. It sits
+                         just left of the overflow, which is back in the top bar (playerMore above). -->
+                    <ImageButton
                         android:id="@+id/extensionIcon"
-                        android:clickable="false"
-                        android:focusable="false"
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
                         android:layout_gravity="end|center_vertical"
-                        android:layout_marginEnd="4dp"
-                                android:importantForAccessibility="no"
-                                android:src="@drawable/ic_extension_32dp"
-                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Full" />
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:padding="10dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_extension_32dp" />
                     </com.google.android.material.appbar.MaterialToolbar>
 
                 <include

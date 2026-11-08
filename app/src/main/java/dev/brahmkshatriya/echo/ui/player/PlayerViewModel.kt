@@ -21,11 +21,12 @@ import androidx.media3.session.SessionResult
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.clients.LikeClient
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.common.MusicExtension
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
@@ -390,9 +391,15 @@ class PlayerViewModel(
     // (from the current MediaItem) rather than reading extensionLoader.current, which is the BROWSING
     // extension and would change while a track from a different extension kept playing.
     // Null when the id is unknown or the extension ships no icon; the view keeps its ic_extension_32dp.
-    suspend fun getExtensionIcon(extensionId: String?): ImageHolder? = withContext(Dispatchers.IO) {
-        extensionId ?: return@withContext null
-        extensions.music.getExtension(extensionId)?.metadata?.icon
+    // [2026-11-07] The extension a playing item plays from, for the player's top-bar icon and its settings tap (was
+    // getExtensionIcon, which took the item's own id): a Unified item's stamped sub-extension (UnifiedExtension
+    // .EXTENSION_ID), else the item's own extension. Null when it is not installed.
+    suspend fun getPlayingExtension(extensionId: String?, track: Track): MusicExtension? = withContext(Dispatchers.IO) {
+        val id = if (extensionId == UnifiedExtension.UNIFIED_ID)
+            track.extras[UnifiedExtension.EXTENSION_ID] ?: extensionId
+        else extensionId
+        id ?: return@withContext null
+        extensions.music.getExtension(id)
     }
 
     suspend fun isLikeClient(extensionId: String): Boolean = withContext(Dispatchers.IO) {
@@ -709,9 +716,10 @@ class PlayerViewModel(
         }
     }
 
+    // [2026-11-08] fallback: the saved song, played alone if the context rebuilds to nothing (PlayerCallback.backfillQueue).
     fun backfillQueue(
         extensionId: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String,
-        respectShuffle: Boolean = false,
+        respectShuffle: Boolean = false, fallback: Track? = null,
     ) = viewModelScope.launch {
         withBrowser {
             it.sendCustomCommand(backfillCommand, Bundle().apply {
@@ -720,6 +728,7 @@ class PlayerViewModel(
                 putBoolean("loaded", loaded)
                 putString("startTrackId", startTrackId)
                 putBoolean("respect", respectShuffle)
+                if (fallback != null) putSerialized<Track>("fallback", fallback)
             })
         }
     }
@@ -848,7 +857,12 @@ class PlayerViewModel(
     }
 
 
-    fun addToQueue(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
+    // [2026-11-08] `tracks`: the list to add, already resolved by the caller, so the service does not ask the extension for
+    // `item`'s tracks (PlayerCallback.listTracks). Only FolderMoreBottomSheet passes it, with the folder's "Playing from"
+    // label as `item`. Null everywhere else, which is the old path unchanged.
+    fun addToQueue(
+        id: String, item: EchoMediaItem, loaded: Boolean, tracks: List<Track>? = null,
+    ) = viewModelScope.launch {
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_queue, item.title))
         )
@@ -857,14 +871,16 @@ class PlayerViewModel(
                 putString("extId", id)
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
+                if (tracks != null) putSerialized("tracks", tracks)
             })
         }
     }
 
     // `undo` (the track-row swipe only): the service sends the message itself, AFTER the insert and with
     // an Undo action - see PlayerCallback.addToNext. The long-press menu keeps this immediate message.
+    // `tracks`: as for addToQueue.
     fun addToNext(
-        id: String, item: EchoMediaItem, loaded: Boolean, undo: Boolean = false,
+        id: String, item: EchoMediaItem, loaded: Boolean, undo: Boolean = false, tracks: List<Track>? = null,
     ) = viewModelScope.launch {
         if (!undo && !(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_next, item.title))
@@ -875,6 +891,7 @@ class PlayerViewModel(
                 putSerialized("item", item)
                 putBoolean("loaded", loaded)
                 putBoolean("undo", undo)
+                if (tracks != null) putSerialized("tracks", tracks)
             })
         }
     }

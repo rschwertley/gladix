@@ -116,12 +116,9 @@ class PlayerService : MediaLibraryService() {
 
     private val extensionLoader by inject<ExtensionLoader>()
     private val extensions by lazy { extensionLoader }
-    // Explicit type: with the probe's .also below, inferring it recursed (release build, 2026-11-02). Keep it after removal.
-    private val exoPlayer: ExoPlayer by lazy {
-        createExoplayer(this.audioEffectsProcessor)
-            // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Main player only; the sidecar keeps no listeners.
-            .also { it.addAnalyticsListener(StartProbe.listener(app)) }
-    }
+    // ⚠️ KEEP THE EXPLICIT TYPE. With a start-timing probe's `.also { addAnalyticsListener(...) }` here, inferring it recursed
+    // (release build, 2026-11-02), and removing that listener without the type is what broke 1165. The probe is gone (2026-11-07).
+    private val exoPlayer: ExoPlayer by lazy { createExoplayer(this.audioEffectsProcessor) }
 
     private var mediaSession: MediaLibrarySession? = null
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
@@ -1473,6 +1470,7 @@ class PlayerService : MediaLibraryService() {
             quality: (E) -> Int,
             // "lowest" at the app level: the May 17 decision (810dc984), restored 2026-11-03. Mirrored at
             // SettingsPlayerFragment's Mobile row and StartProbe. The extension call passes "off".
+            // [CORRECTED 2026-11-07] StartProbe is removed; SettingsPlayerFragment's row is the only mirror.
             default: String = streamQualities[2],
         ): E? {
             if (app.isUnmetered) {

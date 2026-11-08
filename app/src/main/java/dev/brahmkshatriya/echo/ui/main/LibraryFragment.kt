@@ -66,6 +66,9 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (hidden) swipeRefresh?.isRefreshing = false
+        // [2026-11-07] Every visit re-marks the liked list (FeedData.runMarksPass): a bottom-nav return does not reload,
+        // and before this a list shown unmarked stayed unmarked until something did (1172/1173).
+        else feedData.runMarksPass()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -105,9 +108,14 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
             requireActivity().findViewById(R.id.navRailContainer)
         swipeRefresh = binding.swipeRefresh
         binding.swipeRefresh.run {
-            setOnRefreshListener { feedData.refresh() }
+            // [2026-11-07] A pull also re-checks the liked list's songs, whatever their verdicts' age (FeedData.requestRecheck).
+            setOnRefreshListener { feedData.requestRecheck(); feedData.refresh() }
         }
         observeUserRefresh(binding.swipeRefresh, feedData.isRefreshingFlow)
+        // [2026-11-07] The liked list's dead-song marks, applied in place (FeedData.playableMarks). A recreated view is a
+        // visit too, so the pass runs here as well; it does nothing until a load has finished.
+        observe(feedData.playableMarks) { feedAdapter.playableMarks = it }
+        feedData.runMarksPass()
 
         parent.parentFragmentManager.setFragmentResultListener("createPlaylist", this) { _, data ->
             val extensionId = data.getString("extensionId")

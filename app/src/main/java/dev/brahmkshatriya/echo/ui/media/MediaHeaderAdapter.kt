@@ -42,7 +42,6 @@ import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
 import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
-import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.utils.ui.SimpleItemSpan
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
@@ -533,7 +532,6 @@ class MediaHeaderAdapter(
             override fun onPlayClicked(view: View) {
                 val (extensionId, item, loaded) = viewModel.getItem() ?: return
                 val vm by activityViewModels<PlayerViewModel>()
-                StartProbe.arm(StartProbe.srcOf(item, "track"), "n/a") // TEMPORARY GladixStart probe
                 vm.play(extensionId, item, loaded)
             }
 

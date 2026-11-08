@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.ItemShelfCategoryBinding
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
+import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isNightMode
@@ -40,6 +41,12 @@ class CategoryViewHolder(
                 feed?.shelf?.subtitle,
                 feed?.shelf?.feed
             )
+        }
+        // [2026-11-08] Marked folder rows only (FeedSort's isMarkedFolder): the folder menu. Any other row returns
+        // false, so the press is not consumed and nothing changes for it.
+        binding.root.setOnLongClickListener {
+            val category = feed?.shelf?.takeIf { it.isMarkedFolder() } ?: return@setOnLongClickListener false
+            listener.onCategoryLongClicked(it, feed?.extensionId, category)
         }
     }
 

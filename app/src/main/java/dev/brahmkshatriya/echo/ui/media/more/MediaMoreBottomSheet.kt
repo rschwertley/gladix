@@ -14,7 +14,6 @@ import androidx.paging.LoadState
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.R
-import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
 import dev.brahmkshatriya.echo.common.clients.FollowClient
 import dev.brahmkshatriya.echo.common.clients.HideClient
@@ -325,16 +324,11 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         client: ExtensionClient?, item: EchoMediaItem, loaded: Boolean
     ) = if (client is TrackClient) listOfNotNull(
         button("play", R.string.play, R.drawable.ic_play) {
-            // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. The sheet's Play/Shuffle had no arm,
-            // the likeliest reason a 2026-11-03 playlist capture showed ext lines only. Same labels as
-            // FeedClickListener.onPlayClicked's item branch; PlayerCallback.listTracks turns rows into "joined".
-            StartProbe.arm(StartProbe.srcOf(item, "track"), "fresh")
             playerViewModel.play(extensionId, item, loaded)
         },
         if (item is EchoMediaItem.Lists) button(
             "shuffle_play", R.string.shuffle, R.drawable.ic_shuffle
         ) {
-            StartProbe.arm(StartProbe.srcOf(item, "track"), "fresh", true) // TEMPORARY GladixStart probe
             playerViewModel.shuffle(extensionId, item, loaded)
         } else null,
         if (playerViewModel.queue.isNotEmpty())

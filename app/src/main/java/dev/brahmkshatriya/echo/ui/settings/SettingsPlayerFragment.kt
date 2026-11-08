@@ -79,6 +79,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     // read default had simply never followed it. This commit silently reversed that
                     // decision. Restored 2026-11-03 by moving BOTH sides to [2] ("lowest"): this row,
                     // PlayerService.select's `default` and StartProbe's mirror. Change all three together.
+                    // [CORRECTED 2026-11-07] Two now: StartProbe is removed.
                     setDefaultValue(streamQualities[2])
                     addPreference(this)
                 }
@@ -102,6 +103,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     // "off" is not evidence the user chose Auto. Restored to [1] ("medium") here, in
                     // PlayerService.select's app-level read default and in StartProbe; the stored "off"
                     // values are handled by PlayerService.migrateWifiQualityDefault.
+                    // [CORRECTED 2026-11-07] StartProbe is removed; the other side is PlayerService.select alone.
                     setDefaultValue(streamQualities[1])
                     addPreference(this)
                 }

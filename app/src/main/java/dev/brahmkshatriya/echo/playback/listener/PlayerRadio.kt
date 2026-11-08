@@ -1996,7 +1996,10 @@ class PlayerRadio(
             } ?: return
             val (ctx, remaining, repeating) = info
             if (repeating) return
-            val runningLow = ctx is Radio && remaining <= RADIO_PREFETCH_THRESHOLD
+            // [2026-11-07] Not for the feed-page label: it is a Radio only so it can label the bar (MediaItemUtils.feedPageLabel),
+            // and a folder is not a station, so only startAtEnd, which honours autoStartRadio, may add a radio after it.
+            val runningLow = ctx is Radio && ctx.extras[MediaItemUtils.FEED_PAGE_LABEL] != "true" &&
+                remaining <= RADIO_PREFETCH_THRESHOLD
             val startAtEnd = (atEnd || remaining <= 0) && autoStartRadio
             if (!runningLow && !startAtEnd) return
             loadPlaylist()

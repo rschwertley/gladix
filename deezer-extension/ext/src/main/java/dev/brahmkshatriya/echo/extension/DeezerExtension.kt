@@ -88,10 +88,6 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // [CORRECTED 2026-11-06] likedTrackIds no longer remembers a failure (fetchLiked). This id still does.
     private var lovedTracksId: String? = null
 
-    // TEMPORARY - REMOVE WITH THE GladixFav PROBE in DeezerLibraryClient.withFavoriteTracks.
-    internal val lovedTracksMemoState: String
-        get() = when (lovedTracksId) { null -> "unset"; "" -> "empty"; else -> "id" }
-
     /**
      * The Loved Tracks playlist id, fetched at most once per session, or null.
      * ⚠⚠ LAZY, FROM TWO ORDINARY LOADS ONLY - DeezerLibraryClient's playlist loads (the tile) and
@@ -1354,12 +1350,15 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // [2026-11-07] secondAsk: once the check finishes, ask once more for the ids still unknown - the second ask the playlist
     // marks pass makes with markUnplayable. For the liked list, which has no marks pass (DeezerLibraryClient.allRow's note).
     // Inside the same job, so a joining call adds no ask and nothing ever waits on it but awaitAvailability.
+    // [CORRECTED 2026-11-07] The liked list now has a marks pass on the phone (DeezerLibraryClient.likedMarksPass), whose
+    // markUnplayable asks only for ids still due after this job. secondAsk stays for Android Auto's liked list, which has none.
+    // "Unknown" is now "due" (DeezerApi.dueIds): no verdict, or one older than DeezerApi's AVAIL_RECHECK_MS.
     fun checkAvailabilityLater(key: String, tracks: List<Track>, secondAsk: Boolean = false): Boolean {
-        if (api.unknownIds(tracks).isEmpty()) return false
+        if (api.dueIds(tracks).isEmpty()) return false
         val job = availabilityChecks.compute(key) { _, running ->
             running?.takeIf { it.isActive } ?: extensionScope.async {
-                runCatching { api.tracksAvailability(api.unknownIds(tracks), key, "first") }
-                if (secondAsk) runCatching { api.tracksAvailability(api.unknownIds(tracks), key, "second") }
+                runCatching { api.tracksAvailability(api.dueIds(tracks)) }
+                if (secondAsk) runCatching { api.tracksAvailability(api.dueIds(tracks)) }
             }
         }!!
         job.invokeOnCompletion { availabilityChecks.remove(key, job) }

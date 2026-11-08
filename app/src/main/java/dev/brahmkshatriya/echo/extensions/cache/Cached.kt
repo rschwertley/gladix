@@ -42,7 +42,6 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.history.db.toSlim
-import dev.brahmkshatriya.echo.playback.StartProbe
 import dev.brahmkshatriya.echo.utils.CacheUtils
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
@@ -61,6 +60,14 @@ import kotlinx.serialization.Serializable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
+
+// [2026-11-07] Cached.storedMarks on disk: one file per extension, the dead-song marks last returned for its songs, by track
+// id. Playable.No only (its reason), with when a list last showed it. Defaulted, per CachedPlaylistTracks' note.
+@Serializable
+data class StoredMarks(val marks: Map<String, StoredMark> = emptyMap())
+
+@Serializable
+data class StoredMark(val reason: String, val seenAt: Long = 0L)
 
 /**
  * ⚠⚠ NEW FIELDS MUST BE DEFAULTED, BECAUSE OLD ENTRIES ON DISK MUST STILL DECODE.
@@ -132,6 +139,9 @@ object Cached {
     // [2026-11-07] The 5-minute copy of a list's rows, per extension: the rows carry that extension's stamps (or none),
     // which another extension cannot route - see CachedPlaylistTracks.extensionId. The marks pass's entry is not
     // keyed this way: it is read only for its verdicts, which are keyed by list id and shared on purpose (knownMarks).
+    // [CORRECTED 2026-11-07] knownMarks is gone; the verdicts now go to storedMarks, by track id under the extension that ran
+    // the pass. A list opened in two extensions inside 5 minutes can therefore record one's rows under the other's id;
+    // inferred harmless (a mark only applies to a row with the same track id), and left as it is.
     private fun memoKey(prefix: String, extensionId: String, id: String) = "$prefix$extensionId:${canonicalId(id)}"
 
     // A list without its extension: the bust's re-check request (recheckLists), consumed by whichever fetch comes first.
@@ -256,6 +266,10 @@ object Cached {
     // saved queue and History but not here, and the page paints this store at any age while the background
     // refresh only swaps it on an id change (revalidatePlaylistTracks) - so a dimmed row stayed dimmed across
     // reloads. Marks now come only from this session's check, through launchMarksPass.
+    // [CORRECTED 2026-11-07] The store still holds no verdict, but marks are no longer this session's only: the app's copy
+    // of the extension's verdicts is on disk by track id (storedMarks) and is applied when rows are painted from here
+    // (withStoredMarks), so the Oct 25 rule no longer holds for these verdicts. A row here stays Yes so that copy, which
+    // the extension re-checks daily, is the one place a verdict lives.
     private fun Track.toTracksCacheSlim(): Track =
         toSlim().copy(
             extras = extras - "TRACK_TOKEN" - AVAILABILITY_PENDING_EXTRA,
@@ -322,9 +336,13 @@ object Cached {
         // And the extension's verdicts for this list (2026-11-02): the next fetch carries AVAILABILITY_RECHECK_EXTRA,
         // so Deezer forgets those rows' 30-minute verdicts and checks them again - a verdict must not outlive a
         // reload (Oct 25). Consumed by that fetch (recheckRequested).
+        // [CORRECTED 2026-11-07] For these verdicts the Oct 25 rule is replaced: Deezer keeps them on disk and re-asks every
+        // row of the list whatever its age; an answer replaces each verdict, a failed one leaves it. The daily re-check
+        // (DeezerApi.dueIds) is what keeps a stored one honest. Why: see DeezerApi's availability note (1172/1173).
         recheckLists += listKey(memoPrefix, id)
-        // The same rule for the app's copy of them (2026-11-04); see knownMarks.
-        knownMarks.remove(canonicalId(id))
+        // The same rule for the app's copy of them (2026-11-04); see storedMarks.
+        // [CORRECTED 2026-11-07] The verdicts are no longer forgotten on a reload: the extension keeps them and re-checks the
+        // list (DeezerApi.markForRecheck), and the app's copy (storedMarks) is rewritten by that answer, not cleared here.
     }
 
     private val recheckLists: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -653,10 +671,7 @@ object Cached {
                 ?.takeUnless {
                     (it.item as? Track)?.servers?.isEmpty() == true || it.probesDegraded
                 }
-                ?.let {
-                    StartProbe.cacheHit(state.item.id) // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
-                    return@runCatching withCallerVerdict(state.item, it)
-                }
+                ?.let { return@runCatching withCallerVerdict(state.item, it) }
             val result = runCatching {
                 val new = loadItem(extension, state.item).getOrThrow()
                 // Deleted/unavailable content: some extensions (e.g. Deezer) return a BLANK item (empty id)
@@ -877,7 +892,8 @@ object Cached {
         }
         if (durableFolder != null) {
             val cached = readTracksEntry(app, itemId, durableFolder, extensionId)
-            if (cached != null) return@runCatching cached.tracks.toFeed()
+            // [2026-11-07] With the stored marks: this is the page's first paint, and the store's rows hold no verdicts.
+            if (cached != null) return@runCatching cached.tracks.withStoredMarks(app, extensionId).toFeed()
         }
         getFeed<Track>(app, extensionId, "$itemId-tracks") { it }
     }
@@ -977,7 +993,7 @@ object Cached {
                 }.tracks
                 val marks = marked.filter { it.isPlayable != Track.Playable.Yes }
                     .associate { it.id to it.isPlayable }
-                knownMarks[canonicalId(item.id)] = System.currentTimeMillis() to marks
+                rememberMarks(app, extension.id, marked)
                 if (marks.isNotEmpty()) tracksMarked.emit(item.id to marks)
             }
         }
@@ -989,18 +1005,65 @@ object Cached {
      * reload: the store holds no verdicts (toTracksCacheSlim), and a bust clears this too (bustTracksCache).
      * KNOWN_MARKS_TTL_MS mirrors DeezerApi.AVAIL_TTL_MS, the lifetime of the verdicts behind these. It counts from the
      * pass, and rows can carry a verdict up to that old already, so a mark can reach about twice that at worst.
+     * [CORRECTED 2026-11-07] Now ON DISK, BY TRACK ID per extension (MARKS_FOLDER), not per playlist in memory: the app's
+     * copy of the extension's verdicts, so every route that paints rows before the extension answers - the playlist page
+     * from its store, an album page inside its 24 h, the stored-copy start and the joins - shows a known dead song on the
+     * first frame. The Oct 25 rule no longer holds for these verdicts: the extension re-checks one older than 24 h, and
+     * every answer it returns rewrites this copy (rememberMarks: a No is kept, a Yes removes the mark). A bust no longer
+     * clears it. Why: on 1172/1173 dead liked songs showed as playable because the screen never updated after the check.
+     * Marks for songs no list has shown for MARKS_UNSEEN_DROP_MS are dropped. Playable.No only; nothing else is stored.
      */
-    private val knownMarks = ConcurrentHashMap<String, Pair<Long, Map<String, Track.Playable>>>()
-    private const val KNOWN_MARKS_TTL_MS = 30L * 60 * 1000
+    private const val MARKS_FOLDER = "playable-marks"
+    private const val MARKS_UNSEEN_DROP_MS = 30L * 24 * 60 * 60 * 1000
+    // A kept mark's seenAt moves at most this often, so a pass does not rewrite the file every time.
+    private const val MARKS_SEEN_STEP_MS = 24L * 60 * 60 * 1000
+    private val storedMarks = ConcurrentHashMap<String, ConcurrentHashMap<String, StoredMark>>()
+
+    // [extensionId]'s marks, read from disk the first time.
+    private suspend fun marksOf(app: App, extensionId: String): ConcurrentHashMap<String, StoredMark> =
+        storedMarks[extensionId] ?: withContext(Dispatchers.IO) {
+            storedMarks.computeIfAbsent(extensionId) {
+                val now = System.currentTimeMillis()
+                val stored = app.context.getFromCache<StoredMarks>(extensionId, MARKS_FOLDER, durable = true)
+                ConcurrentHashMap(stored?.marks.orEmpty().filterValues { now - it.seenAt <= MARKS_UNSEEN_DROP_MS })
+            }
+        }
+
+    /**
+     * Records the verdicts on rows an extension just returned: a No is kept, a Yes removes the mark (the extension holds
+     * no dead verdict for it). ⚠️ ONLY ROWS FROM THE EXTENSION: rows painted from a store carry Yes for "no opinion", and
+     * passing them would erase every mark. Callers: launchMarksPass, loadAlbumTracksCached's fetch, FeedData.runMarksPass.
+     */
+    suspend fun rememberMarks(app: App, extensionId: String, tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val marks = marksOf(app, extensionId)
+        val now = System.currentTimeMillis()
+        var changed = false
+        tracks.forEach { track ->
+            val verdict = track.isPlayable
+            if (verdict is Track.Playable.No) {
+                val old = marks[track.id]
+                if (old == null || old.reason != verdict.reason || now - old.seenAt >= MARKS_SEEN_STEP_MS) {
+                    marks[track.id] = StoredMark(verdict.reason, now)
+                    changed = true
+                }
+            } else if (verdict == Track.Playable.Yes && marks.remove(track.id) != null) changed = true
+        }
+        if (!changed) return
+        withContext(Dispatchers.IO) {
+            marks.entries.removeIf { now - it.value.seenAt > MARKS_UNSEEN_DROP_MS }
+            app.context.saveToCache(extensionId, StoredMarks(HashMap(marks)), MARKS_FOLDER, durable = true)
+        }
+    }
 
     // As FeedAdapter.marked: only a Yes row takes a mark, and a row's own verdict stands.
-    private fun List<Track>.withKnownMarks(item: Playlist): List<Track> {
-        val marks = knownMarks[canonicalId(item.id)]
-            ?.takeIf { System.currentTimeMillis() - it.first < KNOWN_MARKS_TTL_MS }?.second
-        if (marks.isNullOrEmpty()) return this
+    // [CORRECTED 2026-11-07] Was withKnownMarks(item), the list's marks from memory; now the extension's marks by track id.
+    private suspend fun List<Track>.withStoredMarks(app: App, extensionId: String): List<Track> {
+        val marks = marksOf(app, extensionId)
+        if (marks.isEmpty()) return this
         return map { track ->
             if (track.isPlayable != Track.Playable.Yes) track
-            else marks[track.id]?.let { track.copy(isPlayable = it) } ?: track
+            else marks[track.id]?.let { track.copy(isPlayable = Track.Playable.No(it.reason)) } ?: track
         }
     }
 
@@ -1029,7 +1092,7 @@ object Cached {
         if (loaded && count != null && count != cached.tracks.size.toLong()) return null
         if (loaded) revalidatePlaylistTracks(app, extension, item, cached)
         else refreshPlaylistMemo(app, extension, item)
-        return cached.tracks.withKnownMarks(item)
+        return cached.tracks.withStoredMarks(app, extension.id)
     }
 
     // The memo half of revalidatePlaylistTracks, for storedPlaylistStart's unloaded item. Failures swallowed: a refresh
@@ -1055,10 +1118,10 @@ object Cached {
      * own load instead of starting a second getSongs. ⚠️ NEVER STARTS A LOAD: with no live entry the caller keeps
      * its own path, so a paged extension's first-page start and background fill (playItem) are unchanged.
      */
-    suspend fun joinPlaylistTracks(extensionId: String, item: Playlist): List<Track>? =
+    suspend fun joinPlaylistTracks(app: App, extensionId: String, item: Playlist): List<Track>? =
         inFlightTracks[memoKey(MEMO_PLAYLIST_PREFIX, extensionId, item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
-            ?.second?.await()?.withKnownMarks(item)
+            ?.second?.await()?.withStoredMarks(app, extensionId)
 
     /**
      * [joinPlaylistTracks] for a start that has stored rows to fall back on: the memo only if it has already finished, else null.
@@ -1067,11 +1130,11 @@ object Cached {
      * would also have thrown out of the join with a good stored copy available, hence the runCatching.
      * No second getSongs follows: storedPlaylistStart's refresh goes through coalescedTracks, which reuses the running job.
      */
-    suspend fun finishedPlaylistTracks(extensionId: String, item: Playlist): List<Track>? =
+    suspend fun finishedPlaylistTracks(app: App, extensionId: String, item: Playlist): List<Track>? =
         inFlightTracks[memoKey(MEMO_PLAYLIST_PREFIX, extensionId, item.id)]
             ?.takeIf { System.currentTimeMillis() - it.first <= MEMORY_TTL_MS }
             ?.second?.takeIf { it.isCompleted }
-            ?.let { runCatching { it.await() }.getOrNull() }?.withKnownMarks(item)
+            ?.let { runCatching { it.await() }.getOrNull() }?.withStoredMarks(app, extensionId)
 
 
     /**
@@ -1144,7 +1207,8 @@ object Cached {
         //      A usable marker needs the raw string in Playlist.extras - an extension change.
         if (cached != null) {
             revalidatePlaylistTracks(app, extension, item, cached)
-            return cached.tracks.toFeed()
+            // [2026-11-07] With the stored marks, so a known dead song is dimmed on the first frame (see storedMarks).
+            return cached.tracks.withStoredMarks(app, extension.id).toFeed()
         }
 
         // canonicalId for the MEMORY key, raw item.id for the DURABLE key, and the difference is
@@ -1306,8 +1370,9 @@ object Cached {
         val durable = !item.carriesExpiry()
         val cached = if (!durable) null
         else readTracksEntry(app, item.id, DURABLE_ALBUM_FOLDER, extension.id)
+        // [2026-11-07] With the stored marks: inside its 24 h an album page paints only from here, whose rows hold no verdicts.
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS)
-            return cached.tracks.toFeed()
+            return cached.tracks.withStoredMarks(app, extension.id).toFeed()
 
         // "album:" prefix for the same reason the folders are separate: coalescedTracks is ONE map, and an
         // album and a playlist sharing an id string would otherwise share an in-flight entry and serve each
@@ -1321,6 +1386,8 @@ object Cached {
             feed.loadAll()
         }
         if (result.tracks.isEmpty()) return null
+        // The extension's verdicts on these rows (markUnplayable), for the store paint above (2026-11-07).
+        rememberMarks(app, extension.id, result.tracks)
         // Same rule as the playlist path above: a memo hit never renews the lease.
         if (durable && result.fetched) app.context.saveToCache(
             "${item.id}-tracks",

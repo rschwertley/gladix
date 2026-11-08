@@ -928,11 +928,9 @@ class PlayerCallback(
 
         is Playlist -> extension.getAs<PlaylistClient, PagedData<Track>> {
             // [2026-11-04] Before loadPlaylist, so a hit waits for no request (the refresh runs behind it) - see Cached.storedPlaylistStart.
-            val joinedFirst = if (preferStored) Cached.finishedPlaylistTracks(extension.id, item) else null
-            if (joinedFirst != null) StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
+            val joinedFirst = if (preferStored) Cached.finishedPlaylistTracks(app, extension.id, item) else null
             val quick = joinedFirst
                 ?: if (preferStored) Cached.storedPlaylistStart(app, extension, item, loaded)
-                    ?.also { StartProbe.rows("stored") } // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
                 else null
             if (quick != null) PagedData.Single { quick }
             else {
@@ -940,10 +938,8 @@ class PlayerCallback(
                 // [2026-11-02] Joins the page's own load when there is one (running, or done within Cached's
                 // MEMORY_TTL_MS) instead of starting a second getSongs; the whole list, so no background fill follows.
                 // With none, unchanged: the extension's first page now, the rest after the queue starts.
-                Cached.joinPlaylistTracks(extension.id, playlist)?.let { joined ->
-                    StartProbe.rows("joined") // TEMPORARY GladixStart probe - REMOVE WITH StartProbe
-                    PagedData.Single { joined }
-                } ?: loadTracks(playlist).pagedDataOfFirst()
+                Cached.joinPlaylistTracks(app, extension.id, playlist)?.let { joined -> PagedData.Single { joined } }
+                    ?: loadTracks(playlist).pagedDataOfFirst()
             }
         }
 
@@ -965,17 +961,17 @@ class PlayerCallback(
     // dropped for the current+upcoming model). Nothing from a stored track is replayed — only its id
     // is used to locate the fresh version, so a frozen/stale streamable token can never fail the tap.
     override suspend fun freshContextUpcoming(
-        extId: String, context: EchoMediaItem, tappedTrackId: String
+        extId: String, context: EchoMediaItem, tappedTrackId: String, reportErrors: Boolean,
     ): List<MediaItem> {
         val extension = extensions.music.getExtension(extId) ?: return emptyList()
         val tracks = listTracks(extension, context, false).getOrElse {
             if (it is CancellationException) throw it
-            throwableFlow.emit(it)
+            if (reportErrors) throwableFlow.emit(it)
             return emptyList()
         }
         val (list, _) = extension.get { tracks.loadPage(null) }.getOrElse {
             if (it is CancellationException) throw it
-            throwableFlow.emit(it)
+            if (reportErrors) throwableFlow.emit(it)
             return emptyList()
         }
         // A miss means the freshly loaded context no longer contains the tapped track. Starting at the top
@@ -1304,22 +1300,39 @@ class PlayerCallback(
         val startTrackId = args.getString("startTrackId")
             ?: return@future bug("backfill", "missing startTrackId")
         val respectShuffle = args.getBoolean("respect", false)
+        // [2026-11-08] The saved song, from PlayerViewModel.backfillQueue's `fallback` (History taps).
+        val fallbackArg = args.getSerialized<Track>("fallback")
+        val fallback = fallbackArg?.getOrElse {
+            return@future bug("backfill", "fallback undeserializable", it)
+        }
         // ⚠⚠ THE ONLY ASYNC PATH THAT *REPLACES* THE QUEUE RATHER THAN APPENDING TO IT, WHICH
         // MAKES A STALE ONE DESTRUCTIVE, NOT MERELY UNTIDY: freshContextUpcoming is a network fetch, and if
         // the user starts something else while it runs, this setMediaItems WIPES the queue they are now
         // listening to and replaces it with the History item they tapped earlier. Every other site here
         // pollutes; this one destroys.
         val epoch = player.queueEpochOrZero
-        val upcoming = freshContextUpcoming(extId, item, startTrackId)
-        if (upcoming.isEmpty()) {
+        val rebuilt = freshContextUpcoming(extId, item, startTrackId, reportErrors = fallback == null)
+        if (rebuilt.isEmpty()) {
             // POST-NETWORK, so the snackbar can be lost if the user backgrounded the app while
             // freshContextUpcoming was running - hence the log as well. A History tap that rebuilds to
             // nothing is otherwise a completely dead tap, which is the shape this whole pass is about.
             Log.d("GladixQueue", "backfill: rebuilt context empty ext=$extId")
-            app.messageFlow.emit(
-                Message(app.context.getString(R.string.could_not_load_x, item.title))
-            )
-            return@future error
+            // [2026-11-08] With no fallback, the old dead tap. With one, no message: the saved song plays below.
+            if (fallback == null) {
+                app.messageFlow.emit(
+                    Message(app.context.getString(R.string.could_not_load_x, item.title))
+                )
+                return@future error
+            }
+        }
+        // [2026-11-08] THE FALLBACK: the saved song alone under trackRadioPlaceholder, the queue HistoryFragment's seed path
+        // sets, then the existing path below. NEVER `item` as its context: it is the list that just failed to load, and the
+        // radio after the song would hand it straight back to the extension. Rows that rebuild are unchanged.
+        val upcoming = rebuilt.ifEmpty {
+            listOf(MediaItemUtils.build(
+                app, downloadFlow.value, MediaState.Unloaded(extId, fallback!!),
+                MediaItemUtils.trackRadioPlaceholder(fallback)
+            ))
         }
         withContext(Dispatchers.Main) {
             if (player.queueEpochOrZero != epoch) {
@@ -1361,7 +1374,12 @@ class PlayerCallback(
         // user has since replaced that queue outright, the later action supersedes this one. An ordinary
         // track advance does NOT bump the epoch, so this can only drop after a real replacement.
         val epoch = player.queueEpochOrZero
-        val tracks = listTracks(extension, item, loaded).getOrElse {
+        // [2026-11-08] A list the caller already resolved (PlayerViewModel.addToQueue's `tracks`, from FolderMoreBottomSheet)
+        // is used as it is: `item` is then the folder's display-only label, and listTracks would ask the extension for it.
+        val givenTracks = args.getSerialized<List<Track>>("tracks")
+        val tracks = givenTracks?.getOrElse {
+            return@future bug("add_to_queue", "tracks undeserializable", it)
+        } ?: listTracks(extension, item, loaded).getOrElse {
             if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error
@@ -1446,7 +1464,11 @@ class PlayerCallback(
         // LIVE queue (after the current song and the marked run behind it), so a stale insert lands at an
         // index that means nothing in the queue it arrives in.
         val epoch = player.queueEpochOrZero
-        val tracks = listTracks(extension, item, loaded).getOrElse {
+        // [2026-11-08] As in addToQueue: a caller-resolved list skips listTracks.
+        val givenTracks = args.getSerialized<List<Track>>("tracks")
+        val tracks = givenTracks?.getOrElse {
+            return@future bug("add_to_next", "tracks undeserializable", it)
+        } ?: listTracks(extension, item, loaded).getOrElse {
             if (it is CancellationException) throw it
             throwableFlow.emit(it)
             return@future error

@@ -740,7 +740,6 @@ abstract class AndroidAutoCallback(
             SHELF -> extension.getList<ExtensionClient>(context, browseThrowFlow) {
                 val id = parentId.substringAfter("$SHELF/").substringBefore("/")
                 getShelfItems(context, id, extId, page)
-                    .also { if (favProbeKeys[id] == true) probeFav("library", page, it) }
             }
 
             HOME -> extension.getFeed<HomeFeedClient>(
@@ -780,7 +779,6 @@ abstract class AndroidAutoCallback(
                 } ?: libFeed.notSortTabs.firstOrNull()
                 Feed(listOf()) { libFeed.getPagedData(playlistTab) }
                     .toMediaItems(parentId, context, extId, page)
-                    .also { probeFav("shortcut", page, it) }
             }
 
             HISTORY -> {
@@ -832,8 +830,10 @@ abstract class AndroidAutoCallback(
     // items — the tapped track (fresh, live token) first, then the tracks after it. Overridden by
     // PlayerCallback (which owns the track-loading); base default is empty. Used to play History taps
     // and browse-cache-miss taps WITHOUT replaying a stored track's stale resolution state.
+    // [2026-11-08] reportErrors = false: a load failure is not sent to throwFlow, for callers that play a fallback instead
+    // (the saved song alone), so the tap shows no error. Empty is still returned either way.
     protected open suspend fun freshContextUpcoming(
-        extId: String, context: EchoMediaItem, tappedTrackId: String
+        extId: String, context: EchoMediaItem, tappedTrackId: String, reportErrors: Boolean = true,
     ): List<MediaItem> = emptyList()
 
     @OptIn(UnstableApi::class)
@@ -1008,9 +1008,6 @@ abstract class AndroidAutoCallback(
         startIndex: Int,
         startPositionMs: Long
     ) = scope.future {
-        // TEMPORARY GladixStart probe - REMOVE WITH StartProbe. Every controller's setMediaItems lands here, the
-        // phone UI's too (its own taps arm in FeedClickListener / HistoryFragment), so only another package arms.
-        if (controller.packageName != app.context.packageName) StartProbe.arm("aa", "n/a")
         userQueueSet.set(true)
         val shuffleItem = mediaItems.singleOrNull()
             ?.takeIf { it.mediaId.startsWith("$SHUFFLE_PREFIX/") }
@@ -1162,13 +1159,21 @@ abstract class AndroidAutoCallback(
                         // or an evicted album. Load it FRESH and play current+upcoming from the tapped
                         // track, so the cached STALE track is never replayed. Fixes the History-tap skip;
                         // empty result (context load failed) falls through to the stored-track path below.
-                        val upcoming = freshContextUpcoming(extId, con, track.id)
-                        if (upcoming.isNotEmpty()) {
-                            mediaSession.primeTapShuffle(tapShuffled)
-                            return@future super.onSetMediaItems(
-                                mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
-                            ).await(context)
-                        }
+                        // [CORRECTED 2026-11-08] An empty result no longer falls through: the stored-track path labelled
+                        // the song with the context that just failed, so the radio after it handed that context back to
+                        // the extension. The saved song now plays alone under trackRadioPlaceholder, the same fallback as
+                        // a History tap (PlayerCallback.backfillQueue), and the failure shows no error.
+                        val upcoming = freshContextUpcoming(extId, con, track.id, reportErrors = false)
+                            .ifEmpty {
+                                listOf(MediaItemUtils.build(
+                                    app, downloadFlow.value, MediaState.Unloaded(extId, track),
+                                    MediaItemUtils.trackRadioPlaceholder(track)
+                                ))
+                            }
+                        mediaSession.primeTapShuffle(tapShuffled)
+                        return@future super.onSetMediaItems(
+                            mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
+                        ).await(context)
                     }
                 }
             } else if (auto?.e != null) {
@@ -1178,13 +1183,20 @@ abstract class AndroidAutoCallback(
                 // the load returns nothing, fall through to the generic branch's thin-keep (#3).
                 val thinContext = auto.toThinContext()
                 if (thinContext != null) {
-                    val upcoming = freshContextUpcoming(auto.e, thinContext, auto.t)
-                    if (upcoming.isNotEmpty()) {
-                        mediaSession.primeTapShuffle(tapShuffled)
-                        return@future super.onSetMediaItems(
-                            mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
-                        ).await(context)
-                    }
+                    // [2026-11-08] Empty: the tapped song alone under trackRadioPlaceholder, never the thin context that
+                    // just failed, and no error shown (see the cached branch above).
+                    val upcoming = freshContextUpcoming(auto.e, thinContext, auto.t, reportErrors = false)
+                        .ifEmpty {
+                            val thinTrack = mediaItems[0].toThinTrack(auto.t)
+                            listOf(MediaItemUtils.build(
+                                app, downloadFlow.value, MediaState.Unloaded(auto.e, thinTrack),
+                                MediaItemUtils.trackRadioPlaceholder(thinTrack)
+                            ))
+                        }
+                    mediaSession.primeTapShuffle(tapShuffled)
+                    return@future super.onSetMediaItems(
+                        mediaSession, controller, upcoming.toMutableList(), 0, startPositionMs
+                    ).await(context)
                 }
             }
         }
@@ -1666,18 +1678,6 @@ abstract class AndroidAutoCallback(
         }
 
 
-        // ⚠⚠ TEMPORARY PROBE (2026-10-30) - REMOVE probeFav, favProbeKeys and their three call sites (the
-        // PLAYLISTS and SHELF branches of onGetChildren, the tab loop in toMediaItems) together with
-        // DeezerLibraryClient.withFavoriteTracks' GladixFav line, AFTER ONE CAPTURE of the car's
-        // Library -> Playlists and Playlists shortcut. One line per page the car is served, on both
-        // routes, with the rows exactly as handed to Android Auto. println, not Log, so it lands on the
-        // same tag (System.out) as the extension's line.
-        private val favProbeKeys = boundedMap<String, Boolean>()
-        private fun probeFav(route: String, page: Int, rows: List<MediaItem>) = println(
-            "GladixFav AA route=$route page=$page rows=${rows.size} " +
-                "first=${rows.take(2).map { it.mediaMetadata.title }}"
-        )
-
         // THIS PROBABLY BREAKS GOING BACK TBH, NEED TO TEST
         private val shelvesMap = boundedMap<String, PagedData<Shelf>>()
         private val continuations = boundedMap<Pair<String, Int>, String?>()
@@ -1702,8 +1702,6 @@ abstract class AndroidAutoCallback(
             if (notSortTabs.isNotEmpty()) {
                 return notSortTabs.map { tab ->
                     val shelfKey = "${feedKey}_${tab.id.hashCode()}"
-                    // TEMPORARY - REMOVE WITH probeFav. Marks a Library tab whose id names playlists.
-                    if (tab.id.contains("playlist", ignoreCase = true)) favProbeKeys[shelfKey] = true
                     // The declared list is captured INSIDE the lazy loader, because that is the first
                     // point the tab's Feed.Data exists — this branch only builds browsable nodes.
                     // It therefore lands before getShelfItems reads declaredListKeys for the same key,

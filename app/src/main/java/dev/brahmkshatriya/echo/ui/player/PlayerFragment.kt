@@ -62,8 +62,10 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
+import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerBinding
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.background
@@ -81,6 +83,7 @@ import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.isFinalState
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.setupPlayerMoreBehavior
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
+import dev.brahmkshatriya.echo.ui.extensions.ExtensionInfoFragment
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.defaultPlayerColors
 import dev.brahmkshatriya.echo.ui.player.PlayerColors.Companion.getColorsFrom
@@ -1464,8 +1467,13 @@ class PlayerFragment : Fragment() {
             val itemContext = item.context
             title = if (itemContext != null) context.getString(R.string.playing_from) else null
             subtitle = itemContext?.title
+            // [CORRECTED 2026-11-07] Was `is EchoMediaItem.Lists, is Artist` since a14a8bc7 (2026-05-11), which made a Radio
+            // context tappable too, because Radio is an EchoMediaItem.Lists: "Playing from <song> Radio"
+            // (MediaItemUtils.trackRadioPlaceholder) opened a radio page for an id that is a track's. Now album, playlist and
+            // artist only, never Radio or Track, so the feed-page label (MediaItemUtils.feedPageLabel) is a label only as well.
+            // Same Lists-captures-Radio trap as isReplayableContext.
             val navigableContext = when (itemContext) {
-                is EchoMediaItem.Lists, is Artist -> itemContext
+                is Album, is Playlist, is Artist -> itemContext
                 else -> null
             }
             setOnClickListener(if (navigableContext != null) View.OnClickListener {
@@ -1474,14 +1482,30 @@ class PlayerFragment : Fragment() {
         }
         // Overflow moved out of the toolbar menu (PlayerToolbarStyle no longer sets `menu`) and down
         // beside the heart, so it is a plain click listener now rather than setOnMenuItemClickListener.
-        playerControls.trackMore.setOnClickListener { onMoreClicked(item) }
+        // [CORRECTED 2026-11-07] Back in the top bar, rightmost (playerMore, a child view of the toolbar - still not a
+        // menu, see the note in fragment_player.xml); same action.
+        playerMore.setOnClickListener { onMoreClicked(item) }
         // Playing extension's icon, top right. Resolved from the item's extensionId - the PLAYING
         // extension - not from extensionLoader.current, which is the BROWSING one and would swap the
         // icon mid-track when the user changes tabs. loadAsCircle keeps ic_extension_32dp when the
         // extension has none, so the slot never goes empty.
+        // [2026-11-07] Now from the extension the song plays from (a Unified song's stamped sub-extension, see
+        // PlayerViewModel.getPlayingExtension), and tappable: it opens that extension's settings page, the one Settings ->
+        // Extensions opens; openFragment collapses the player first. Until the lookup returns, and when the extension
+        // is not installed, the tap does nothing. The tag drops a lookup that finishes after the next song's.
+        extensionIcon.setOnClickListener(null)
+        extensionIcon.contentDescription = null
+        extensionIcon.tag = item.mediaId
         lifecycleScope.launch {
-            val icon = viewModel.getExtensionIcon(extId)
-            icon.loadAsCircle(extensionIcon, R.drawable.ic_extension_32dp) {
+            val extension = viewModel.getPlayingExtension(extId, track)
+            if (extensionIcon.tag != item.mediaId) return@launch
+            extensionIcon.contentDescription = extension?.let { getString(R.string.x_settings, it.name) }
+            extensionIcon.setOnClickListener(extension?.let { ext ->
+                View.OnClickListener {
+                    requireActivity().openFragment<ExtensionInfoFragment>(null, ExtensionInfoFragment.getBundle(ext))
+                }
+            })
+            extension?.metadata?.icon.loadAsCircle(extensionIcon, R.drawable.ic_extension_32dp) {
                 // Only overwrite on a real image: a null delivery must leave the XML fallback in place
                 // rather than blanking the slot.
                 if (it != null) extensionIcon.setImageDrawable(it)

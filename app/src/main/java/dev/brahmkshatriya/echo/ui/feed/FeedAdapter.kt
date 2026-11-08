@@ -158,12 +158,14 @@ class FeedAdapter(
      * carousel holding only the start of the list, so the rest follows in the extension's order. On
      * Library -> Tracks every song is its own row and nothing is appended.
      */
+    // [2026-11-07] The declared list takes the marks too (Source and Reversed's tail), as getAllTracks' rows do: Library ->
+    // Tracks queues this list, and a song dimmed in place after the load must be dropped from the queue it builds.
     private fun inDisplayOrder(declared: List<Track>): List<Track> = when (viewModel.displayOrder) {
-        FeedData.DisplayOrder.Source -> declared
+        FeedData.DisplayOrder.Source -> declared.map { it.marked() }
         FeedData.DisplayOrder.Rebuilt -> getAllTracks()
         FeedData.DisplayOrder.Reversed -> getAllTracks().let { shown ->
             val ids = shown.mapTo(HashSet()) { it.id }
-            shown + declared.filter { it.id !in ids }
+            shown + declared.filter { it.id !in ids }.map { it.marked() }
         }
     }
 
@@ -201,6 +203,9 @@ class FeedAdapter(
             if (holder is MediaViewHolder || holder is MediaGridViewHolder ||
                 holder is VideoViewHolder || holder is VideoHorizontalViewHolder
             ) bindRow(holder, position)
+            // [2026-11-07] A carousel takes the marks into its own adapter instead (Library -> All's Tracks row), which
+            // rebinds its cards in place, with no bind of the row and so no scroll reset.
+            if (holder is HorizontalListViewHolder) holder.adapter.playableMarks = playableMarks
             return
         }
         super.onBindViewHolder(holder, position, payloads)
@@ -214,6 +219,8 @@ class FeedAdapter(
      * are covered too and the RecyclerView keeps its position. Only a Yes row takes a mark; a row's own non-Yes
      * verdict stands. Read by the bind below, by both getAllTracks (Play, Shuffle and row taps queue what is
      * dimmed) and so by every viewholder's unplayable-tap gate, which reads the bound item.
+     * [2026-11-07] Also set from FeedData.playableMarks (LibraryFragment, the liked list), and handed on to carousels
+     * (HorizontalListViewHolder.Adapter.playableMarks) and to the declared list (inDisplayOrder).
      */
     var playableMarks: Map<String, Track.Playable> = emptyMap()
         set(value) {
@@ -253,6 +260,7 @@ class FeedAdapter(
             is VideoViewHolder -> holder.bind(feed as FeedType.Video)
             is VideoHorizontalViewHolder -> holder.bind(feed as FeedType.Video)
             is HorizontalListViewHolder -> {
+                holder.adapter.playableMarks = playableMarks
                 holder.bind(feed as FeedType.HorizontalList)
                 viewModel.visibleScrollableViews[position] = WeakReference(holder)
                 holder.layoutManager.apply {

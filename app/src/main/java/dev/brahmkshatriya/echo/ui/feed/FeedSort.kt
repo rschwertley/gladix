@@ -16,6 +16,14 @@ fun getSorts(data: List<Shelf>): List<FeedSort> {
     return entries.filter { it.shouldBeVisible(data) != null }
 }
 
+// [2026-11-08] The opt-in marker for a folder row: a Shelf.Category whose extras carry GLADIX_FOLDER = "1". Set by
+// OpenGonic's folder rows and Offline's (Convertors' FileNode.toShelf). Marked rows, and only those, get the long-press
+// menu (CategoryViewHolder, FolderMoreBottomSheet) and are kept first when a sort is on (FeedData.getFeedSourceData).
+// Unmarked categories (Deezer's artist page, Home and Search browse grids) are unaffected by both.
+const val GLADIX_FOLDER = "gladix_folder"
+
+fun Shelf.isMarkedFolder() = this is Shelf.Category && feed != null && extras[GLADIX_FOLDER] == "1"
+
 private fun Shelf.title() = when (this) {
     is Shelf.Category -> this.title
     is Shelf.Item -> this.media.title

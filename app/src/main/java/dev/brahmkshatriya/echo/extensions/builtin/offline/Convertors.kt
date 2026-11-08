@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_FOLDER
 
 fun MediaStoreUtils.MAlbum.toAlbum() = Album(
     id.toString(),
@@ -79,7 +80,9 @@ fun MediaStoreUtils.FileNode.toShelf(
         context.resources.runCatching {
             getQuantityString(R.plurals.number_items, itemSize, itemSize)
         }.getOrNull() ?: context.getString(R.string.n_items, itemSize),
-        image = songList.firstOrNull()?.cover ?: R.drawable.ic_offline_files.toResourceImageHolder()
+        image = songList.firstOrNull()?.cover ?: R.drawable.ic_offline_files.toResourceImageHolder(),
+        // [2026-11-08] Marks the row as a folder: grouped sort and the long-press menu (see FeedSort's GLADIX_FOLDER).
+        extras = mapOf(GLADIX_FOLDER to "1"),
     )
 }
 

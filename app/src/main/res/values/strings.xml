@@ -104,6 +104,8 @@
     <string name="loading">Loading…</string>
 
     <string name="settings">Settings</string>
+    <!-- [2026-11-07] The full-screen player's extension icon (PlayerFragment.applyCurrent): it opens that extension's settings. -->
+    <string name="x_settings">%1$s settings</string>
     <string name="value">Value</string>
     <string name="value_not_set">Not Set</string>
 

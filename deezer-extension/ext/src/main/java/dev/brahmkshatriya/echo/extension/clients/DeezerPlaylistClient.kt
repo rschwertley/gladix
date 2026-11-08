@@ -93,8 +93,8 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // could start (1148 to 1164). Rows still unchecked carry AVAILABILITY_PENDING_EXTRA, which is what
         // tells Cached to run the marks pass for the open page.
         val rows = playlistRows(playlist)
-        // A reload the user asked for re-checks every row - see DeezerApi.forgetVerdicts.
-        if (playlist.extras[AVAILABILITY_RECHECK_EXTRA] == "1") api.forgetVerdicts(rows)
+        // A reload the user asked for re-checks every row - see DeezerApi.markForRecheck.
+        if (playlist.extras[AVAILABILITY_RECHECK_EXTRA] == "1") api.markForRecheck(rows)
         keptRows[playlist.id] = System.currentTimeMillis() to rows
         val pending = deezerExtension.checkAvailabilityLater(key, rows)
         api.markKnown(rows).let { marked ->
@@ -283,7 +283,13 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         const val AVAILABILITY_AWAIT_EXTRA = "gladix_availability_await"
         // On the Playlist or Album passed to loadTracks: the app busted its cache (pull-to-refresh, an edit), so
         // forget this list's verdicts and check again. Cached.AVAILABILITY_RECHECK_EXTRA, same string.
+        // [CORRECTED 2026-11-07] Not forgotten any more: the verdicts are kept and re-checked (DeezerApi.markForRecheck).
+        // Also on the library Tab passed with AVAILABILITY_AWAIT_EXTRA (DeezerLibraryClient.likedMarksPass): the app's
+        // FeedData sends both after a Library pull-to-refresh.
         const val AVAILABILITY_RECHECK_EXTRA = "gladix_availability_recheck"
+        // [2026-11-07] On a library Tab: the id of the tab whose rows are the liked list, which the app asks again with
+        // AVAILABILITY_AWAIT_EXTRA for the marks (FeedData.runMarksPass). FeedData.MARKS_TAB_EXTRA, same string.
+        const val MARKS_TAB_EXTRA = "gladix_marks_tab"
         private const val AVAILABILITY_KEY_PREFIX = "playlist:"
         // keptRows lifetime; matches Cached's MEMORY_TTL_MS, the window its marks pass runs in.
         private const val ROWS_TTL_MS = 5L * 60 * 1000

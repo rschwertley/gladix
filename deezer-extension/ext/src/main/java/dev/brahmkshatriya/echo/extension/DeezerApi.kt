@@ -18,14 +18,11 @@ import dev.brahmkshatriya.echo.extension.api.DeezerShow
 import dev.brahmkshatriya.echo.extension.api.DeezerTrack
 import dev.brahmkshatriya.echo.extension.api.DeezerUtil
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.AbstractCoroutineContextElement
-import kotlin.coroutines.CoroutineContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -285,7 +282,20 @@ class DeezerApi(private val session: DeezerSession) {
         private const val PIPE_AVAIL_TIMEOUT_MS = 4_000L
 
         // How long a verdict in [availability] is reused before the id is checked again (2026-11-02).
-        private const val AVAIL_TTL_MS = 30L * 60 * 1000
+        // [CORRECTED 2026-11-07] The 30-minute AVAIL_TTL_MS is gone: verdicts are kept on disk and never expire on their
+        // own. AVAIL_RECHECK_MS is how old one may get before a load re-checks it in the background; it applies until
+        // the answer arrives.
+        private const val AVAIL_RECHECK_MS = 24L * 60 * 60 * 1000
+
+        // A verdict for an id no list has shown for this long is dropped, which bounds the store (2026-11-07).
+        private const val AVAIL_UNSEEN_DROP_MS = 30L * 24 * 60 * 60 * 1000
+
+        // A verdict's seenAt moves at most this often, so a list load does not rewrite the store every time.
+        private const val AVAIL_SEEN_STEP_MS = 24L * 60 * 60 * 1000
+
+        // The extension setting that holds [availability] on disk (2026-11-07). One string, "id,1|0,checkedAt,seenAt" per
+        // entry, joined by ';'. A new key if the format ever changes; an unreadable entry is skipped, never guessed.
+        private const val AVAIL_STORE_KEY = "availability_verdicts_v1"
 
         // DeezerParser.toTrack writes this key unconditionally; a grafted row has it non-blank.
         // Named here rather than shared because app code cannot see the extension's strings and the
@@ -1325,7 +1335,7 @@ class DeezerApi(private val session: DeezerSession) {
      * would render correctly and refuse to play. Same split as smartTracklistTrackIds: pipe for identity,
      * gateway for playback. DO NOT add a token field here.
      * [CORRECTED 2026-11-07] Playability no longer depends on that refetch: the relay rungs send the id alone, and the
-     * 128/mp3 rung check (createStreamableForQualityUnprobed) fetches a missing token itself. The refetch stays for these
+     * 128/mp3 rung check (createStreamableForQuality) fetches a missing token itself. The refetch stays for these
      * rows, for the cover pipe may not carry: DeezerTrackClient.loadTrack skips it only for a row with a TRACK_TOKEN_EXPIRE,
      * which these never have.
      *
@@ -1508,7 +1518,6 @@ class DeezerApi(private val session: DeezerSession) {
         if (!force) pipeJwtCache?.let { (token, expiresAt, fp) ->
             if (fp == fingerprint && now < expiresAt) return token
         }
-        currentCoroutineContext()[AvailProbe]?.login = true // TEMPORARY GladixStart probe
         val request = Request.Builder()
             .url("https://auth.deezer.com/login/arl?jo=p&rto=c&i=c")
             .post(RequestBody.EMPTY)
@@ -1591,34 +1600,21 @@ class DeezerApi(private val session: DeezerSession) {
      * favorite_song.getList's records have no AVAILABLE_COUNTRIES at all and deezer.pageTrack's do
      * but only per track, which is why this goes through pipe instead of the records already in hand.
      */
-    // probeKey / probeAsk: TEMPORARY GladixStart probe labels only, for the "GladixStart avail" line below.
-    suspend fun tracksAvailability(
-        ids: List<String>, probeKey: String = "inline", probeAsk: String = "first",
-    ): Map<String, Boolean> {
+    suspend fun tracksAvailability(ids: List<String>): Map<String, Boolean> {
         val distinct = ids.filter { it.isNotBlank() }.distinct()
         if (distinct.isEmpty()) return emptyMap()
         val out = mutableMapOf<String, Boolean>()
         // Still one chunk at a time (Oct 26), but each one fails open after PIPE_AVAIL_TIMEOUT_MS: the request
         // is cancelled (ContinuationCallback.await cancels the call) and its ids stay unknown.
+        val store = availabilityStore()
         distinct.chunked(PIPE_AVAIL_CHUNK).forEach { chunk ->
-            // ⚠⚠ TEMPORARY GladixStart PROBE (2026-11-07, user-approved) - REMOVE WITH the app's StartProbe: AvailProbe, its
-            // writes in availabilityChunk and pipeJwt, and this println. One line per chunk, every outcome. key is the caller
-            // (inline = markUnplayable: playlist marks pass, album, artist), ask is first or the liked list's second ask,
-            // login=1 when pipeJwt fetched a token inside this chunk's 4 s. Ids are not printed.
-            val probe = AvailProbe()
-            val startedAt = System.currentTimeMillis()
-            val answered = withTimeoutOrNull(PIPE_AVAIL_TIMEOUT_MS) { withContext(probe) { availabilityChunk(chunk) } }
-            if (answered == null) probe.outcome = "timeout"
-            val verdicts = answered.orEmpty()
-            println(
-                "GladixStart avail key=$probeKey ask=$probeAsk size=${chunk.size} outcome=${probe.outcome} " +
-                    "true=${verdicts.count { it.value }} false=${verdicts.count { !it.value }} " +
-                    "ms=${System.currentTimeMillis() - startedAt} login=${if (probe.login) 1 else 0}"
-            )
+            val verdicts = withTimeoutOrNull(PIPE_AVAIL_TIMEOUT_MS) { availabilityChunk(chunk) }.orEmpty()
             out += verdicts
             val now = System.currentTimeMillis()
-            verdicts.forEach { (id, available) -> availability[id] = available to now }
+            verdicts.forEach { (id, available) -> store[id] = Verdict(available, now, now) }
         }
+        // Only answers are written: an id with no answer keeps whatever verdict it had (2026-11-07).
+        if (out.isNotEmpty()) saveAvailability()
         return out
     }
 
@@ -1629,15 +1625,70 @@ class DeezerApi(private val session: DeezerSession) {
      * [isKnownDead] so a song found dead after it was queued still skips at zero ladder requests.
      * Process memory only - nothing here is persisted, so the Oct 25 rule (a stored verdict must not outlive a
      * list reload) is not touched; an id older than the TTL is simply checked again.
+     * [CORRECTED 2026-11-07] Now kept on disk (AVAIL_STORE_KEY in the extension's settings), by track id with the time
+     * each was checked, and applied by every list route before any request. The Oct 25 rule no longer holds for these
+     * verdicts: what keeps a stored one honest is the re-check, in the background, once it is older than
+     * AVAIL_RECHECK_MS ([dueIds]), and on any reload the user asks for ([markForRecheck]). An answer replaces it either
+     * way; a failed or missing answer leaves it as it was. Why: on 1172/1173 dead liked songs showed as playable, because
+     * the liked list applied verdicts only at load time and the screen never updated after the check, while the
+     * Favorite tracks tile (the playlist path, which marks in place) greyed them. Verdicts for ids no list has shown
+     * for AVAIL_UNSEEN_DROP_MS are dropped.
      */
-    private val availability = ConcurrentHashMap<String, Pair<Boolean, Long>>()
+    private class Verdict(val available: Boolean, val checkedAt: Long, val seenAt: Long)
 
-    private fun knownVerdict(id: String): Boolean? = availability[id]
-        ?.takeIf { System.currentTimeMillis() - it.second < AVAIL_TTL_MS }?.first
+    private val availability = ConcurrentHashMap<String, Verdict>()
 
-    // The ids of [tracks] with no verdict in [availability] (never checked, or older than the TTL).
-    fun unknownIds(tracks: List<Track>): List<String> =
-        tracks.map { it.id }.filter { it.isNotBlank() && knownVerdict(it) == null }.distinct()
+    @Volatile
+    private var availabilityLoaded = false
+
+    // [availability], read from disk the first time settings exist. An answer already in memory wins over the disk copy.
+    private fun availabilityStore(): ConcurrentHashMap<String, Verdict> {
+        if (availabilityLoaded) return availability
+        synchronized(availability) {
+            if (availabilityLoaded) return availability
+            val settings = session.settings ?: return availability
+            val now = System.currentTimeMillis()
+            settings.getString(AVAIL_STORE_KEY)?.split(';')?.forEach { entry ->
+                val fields = entry.split(',')
+                if (fields.size != 4 || fields[0].isBlank()) return@forEach
+                val checkedAt = fields[2].toLongOrNull() ?: return@forEach
+                val seenAt = fields[3].toLongOrNull() ?: return@forEach
+                if (now - seenAt > AVAIL_UNSEEN_DROP_MS) return@forEach
+                availability.putIfAbsent(fields[0], Verdict(fields[1] == "1", checkedAt, seenAt))
+            }
+            availabilityLoaded = true
+        }
+        return availability
+    }
+
+    // Writes [availability] back, dropping ids unseen for AVAIL_UNSEEN_DROP_MS. Not before it was read, so a partial
+    // memory copy never overwrites the disk one.
+    private fun saveAvailability() {
+        val settings = session.settings ?: return
+        if (!availabilityLoaded) return
+        val now = System.currentTimeMillis()
+        synchronized(availability) {
+            availability.entries.removeIf { now - it.value.seenAt > AVAIL_UNSEEN_DROP_MS }
+            settings.putString(
+                AVAIL_STORE_KEY,
+                availability.entries.filter { ',' !in it.key && ';' !in it.key }.joinToString(";") { (id, v) ->
+                    "$id,${if (v.available) 1 else 0},${v.checkedAt},${v.seenAt}"
+                }
+            )
+        }
+    }
+
+    private fun knownVerdict(id: String): Boolean? = availabilityStore()[id]?.available
+
+    // [CORRECTED 2026-11-07] Was unknownIds ("no verdict, or older than the TTL"). Now the ids of [tracks] due a check:
+    // no verdict, or one checked AVAIL_RECHECK_MS ago or more (or flagged by [markForRecheck]).
+    fun dueIds(tracks: List<Track>): List<String> {
+        val store = availabilityStore()
+        val now = System.currentTimeMillis()
+        return tracks.map { it.id }.filter { id ->
+            id.isNotBlank() && store[id].let { it == null || now - it.checkedAt >= AVAIL_RECHECK_MS }
+        }.distinct()
+    }
 
     // FALLBACK belt as in markUnplayable: a grafted row plays through its substitute and is never dead here.
     fun isKnownDead(id: String, fallbackId: String?): Boolean =
@@ -1646,15 +1697,41 @@ class DeezerApi(private val session: DeezerSession) {
     // Drops these rows' verdicts so the next check asks again (2026-11-02). For an explicit reload - pull-to-refresh
     // or any app-side cache bust, which pass AVAILABILITY_RECHECK_EXTRA - so a verdict never outlives a reload the
     // user asked for (the Oct 25 rule). A plain open still reuses them for AVAIL_TTL_MS.
-    fun forgetVerdicts(tracks: List<Track>) {
-        tracks.forEach { availability.remove(it.id) }
+    // [CORRECTED 2026-11-07] Was forgetVerdicts. It no longer drops anything: each row's verdict is kept and marked due
+    // (checkedAt = 0), so it still applies and the next check asks again regardless of age. A failed answer leaves it due.
+    fun markForRecheck(tracks: List<Track>) {
+        val store = availabilityStore()
+        var changed = false
+        tracks.forEach { track ->
+            val v = store[track.id] ?: return@forEach
+            if (v.checkedAt != 0L) {
+                store[track.id] = Verdict(v.available, 0L, v.seenAt)
+                changed = true
+            }
+        }
+        if (changed) saveAvailability()
     }
 
     // Applies the verdicts already known, with no request. Every other row is left byte-identical.
-    fun markKnown(tracks: List<Track>): List<Track> = tracks.map { track ->
-        if (isKnownDead(track.id, track.extras[FALLBACK_ID_EXTRA]))
-            track.copy(isPlayable = Track.Playable.No(NOT_AVAILABLE_REASON))
-        else track
+    // [2026-11-07] Also moves each known id's seenAt (at most once per AVAIL_SEEN_STEP_MS), which is what keeps a
+    // verdict for a song still in some list from being dropped.
+    fun markKnown(tracks: List<Track>): List<Track> {
+        val store = availabilityStore()
+        val now = System.currentTimeMillis()
+        var touched = false
+        val marked = tracks.map { track ->
+            store[track.id]?.let { v ->
+                if (now - v.seenAt >= AVAIL_SEEN_STEP_MS) {
+                    store[track.id] = Verdict(v.available, v.checkedAt, now)
+                    touched = true
+                }
+            }
+            if (isKnownDead(track.id, track.extras[FALLBACK_ID_EXTRA]))
+                track.copy(isPlayable = Track.Playable.No(NOT_AVAILABLE_REASON))
+            else track
+        }
+        if (touched) saveAvailability()
+        return marked
     }
 
     /**
@@ -1677,12 +1754,10 @@ class DeezerApi(private val session: DeezerSession) {
         }
         // Covers throw, non-200 (the body then fails to decode) and unparseable alike - all three are
         // the same answer here, which is "no verdict for this chunk".
-        val probe = currentCoroutineContext()[AvailProbe] // TEMPORARY GladixStart probe (outcome writes below)
         val body = runCatching { pipeGraphQl(params) }
-            .onFailure { probe?.outcome = "threw:${it.javaClass.simpleName}" }
             .getOrNull() ?: return emptyMap()
         val nodes = body["data"].objOrNull()?.get("tracksByIds").arrOrNull()
-            ?: return emptyMap<String, Boolean>().also { probe?.outcome = "no-data" }
+            ?: return emptyMap()
         // A partial GraphQL error is normal on this host - searchTracksPipe's note records an HTTP 200
         // carrying BOTH good rows and a TrackMediaNotFoundException. So a per-node error excludes only
         // ITS index, while an error with no tracksByIds/<i> path is unscoped and discards the chunk:
@@ -1693,7 +1768,7 @@ class DeezerApi(private val session: DeezerSession) {
             val head = (path?.getOrNull(0) as? JsonPrimitive)?.contentOrNull
             val index = (path?.getOrNull(1) as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
             if (head == "tracksByIds" && index != null) failedIndices += index
-            else return emptyMap<String, Boolean>().also { probe?.outcome = "unscoped-error" }
+            else return emptyMap()
         }
         val verdicts = mutableMapOf<String, Boolean>()
         nodes.forEachIndexed { index, element ->
@@ -1747,9 +1822,10 @@ class DeezerApi(private val session: DeezerSession) {
      */
     // [2026-11-02] Asks only for the ids with no fresh verdict, then applies every known one - same result as
     // before for a cold list, and no request at all for one checked within AVAIL_TTL_MS.
+    // [CORRECTED 2026-11-07] Within AVAIL_RECHECK_MS (24 h) now, and the verdicts it applies may be older: see dueIds.
     suspend fun markUnplayable(tracks: List<Track>): List<Track> {
         if (tracks.isEmpty()) return tracks
-        tracksAvailability(unknownIds(tracks))
+        tracksAvailability(dueIds(tracks))
         return markKnown(tracks)
     }
 
@@ -1851,15 +1927,4 @@ class DeezerApi(private val session: DeezerSession) {
     suspend fun encodeJson(raw: JsonObjectBuilder.() -> Unit = {}): String = withContext(Dispatchers.IO) {
         json.encodeToString(buildJsonObject(raw))
     }
-}
-
-// TEMPORARY GladixStart probe - REMOVE WITH the app's StartProbe. One chunk's outcome, see DeezerApi.tracksAvailability.
-private class AvailProbe : AbstractCoroutineContextElement(AvailProbe) {
-    companion object Key : CoroutineContext.Key<AvailProbe>
-
-    @Volatile
-    var outcome = "ok"
-
-    @Volatile
-    var login = false
 }

@@ -8,6 +8,7 @@ import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
@@ -64,7 +65,21 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     private val fadeOutFramesRemaining = AtomicLong(0)
     // Frames the CURRENT ramp was armed with. Both legs of one crossfade are armed with the same
     // number in the same main-thread task, which is what makes the equal-power identity hold.
+    // [CORRECTED 2026-11-08] No longer the same number: the outgoing leg is armed with the tail's real remaining audio
+    // (CrossfadeController.outgoingRampMs), the incoming with the full fade. Each processor keeps its own total, so each
+    // leg's curve still runs 0 -> 1 over its own length; the sum dips about -0.6 to -1 dB mid-overlap instead of unity.
     private val rampTotalFrames = AtomicLong(0)
+
+    // [2026-11-08] HOLD AT 0 ONCE A FADE-OUT HAS FINISHED. queueInput applies the fade only while a counter is above 0
+    // and is back at full gain after it, so a fade-out shortened to the tail's remaining audio would play any audio left
+    // past an early finish at FULL level. Set only by queueInput, in the buffer where a fade-out counter reaches 0, so
+    // it can only affect a leg that was armed with startFadeOut: the incoming leg's fade-out counter is always 0
+    // (startFadeIn and armIncoming zero it). Cleared by startFadeOut, startFadeIn, armIncoming, clearRamps, onFlush and
+    // onReset. A stop of the sidecar (CrossfadeController.resetSidecar) disables its renderer, whose onDisabled flushes
+    // the sink (MediaCodecAudioRenderer.java:798, media3 1.11.1) and so this processor (DefaultAudioSink.java:855), on
+    // the same thread as queueInput, so no late write from a buffer in flight can survive into the next crossfade.
+    // An atomic like the counters above, for the same reason: written from the app looper and the audio thread.
+    private val fadeOutDone = AtomicBoolean(false)
 
     // ⚠⚠ MUTE AND TOKEN: THE INCOMING-LEG HANDSHAKE, AND onFlush MUST NOT CLEAR THEM.
     // At hand-off the MAIN player is the INCOMING leg: it is muted, then seeked to the next item,
@@ -411,6 +426,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val frames = framesFor(mediaMs)
         rampTotalFrames.set(frames)
         fadeInFramesRemaining.set(0)
+        fadeOutDone.set(false)
         fadeOutFramesRemaining.set(frames)
     }
 
@@ -422,6 +438,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val frames = framesFor(mediaMs)
         rampTotalFrames.set(frames)
         fadeOutFramesRemaining.set(0)
+        fadeOutDone.set(false)
         fadeInFramesRemaining.set(frames)
         muted = false
     }
@@ -444,6 +461,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         publishedToken.set(null)
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
+        fadeOutDone.set(false)
         muted = true
     }
 
@@ -573,6 +591,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     fun clearRamps() {
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
+        fadeOutDone.set(false)
         rampTotalFrames.set(0)
         // The PENDING discard goes, because it is gain-side state that must not survive an
         // abort. The CUMULATIVE counts deliberately do NOT: they are what the sink has
@@ -642,6 +661,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     override fun onFlush(streamMetadata: StreamMetadata) {
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
+        fadeOutDone.set(false)
         rampTotalFrames.set(0)
         // ⚠️ THE DISCARD STATE GOES, INCLUDING THE CUMULATIVE COUNT, AND THE MUTE
         // STILL DOES NOT. A flush restarts the stream, so frames dropped from the old one are no
@@ -662,6 +682,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     }
 
     override fun onReset() {
+        fadeOutDone.set(false)
         clearPreRollState()
     }
 
@@ -758,6 +779,8 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         val total = rampTotalFrames.get()
         val channelCount = fmt.channelCount
         val applyFade = total > 0
+        val wasDone = fadeOutDone.get()
+        var holdSilent = wasDone
         val meter = tailMeter
         var meterFrames = meter?.frames ?: 0L
         var meterSquares = meter?.squares ?: 0.0
@@ -767,7 +790,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         while (inputBuffer.remaining() >= channelCount * 2) {
             // Cosine² fade envelope — computed once per frame, applied to all channels
             var fadeGain: Float
-            if (applyFade && (currentFi > 0 || currentFo > 0)) {
+            if (holdSilent) {
+                fadeGain = 0f
+            } else if (applyFade && (currentFi > 0 || currentFo > 0)) {
                 // Equal power: progress p runs 0 -> 1 across the ramp, in = sin(p*pi/2),
                 // out = cos(p*pi/2), so in² + out² = 1. NOT squared — squaring is the single-leg
                 // Track Fade curve and puts a 3 dB hole in the middle of an overlap.
@@ -780,7 +805,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
                     cos(p * (PI / 2).toFloat())
                 } else 1f
                 if (currentFi > 0) currentFi--
-                if (currentFo > 0) currentFo--
+                if (currentFo > 0) {
+                    currentFo--
+                    if (currentFo == 0L) holdSilent = true
+                }
                 fadeGain = fadeInGain * fadeOutGain * OVERLAP_PEDESTAL
             } else {
                 fadeGain = 1f
@@ -838,6 +866,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         }
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
+        if (holdSilent && !wasDone) fadeOutDone.set(true)
         countEmitted(output.position())
         output.flip()
     }
