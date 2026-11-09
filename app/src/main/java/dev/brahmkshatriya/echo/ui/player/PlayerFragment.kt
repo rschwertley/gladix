@@ -1548,6 +1548,16 @@ class PlayerFragment : Fragment() {
                     )
                 }
             })
+            // [2026-11-09] Not reloaded when the extension shown is the same one (every play/pause re-runs this). Coil
+            // delivers the 32dp placeholder before the image (coil 3.6.3 RealImageLoader.execute, onStart before the
+            // chain), so a reload swapped the drawable's size twice, and ImageView.setImageDrawable requests a layout on a
+            // size change. That re-measured the toolbar, which re-measures the centred "Playing from" subtitle at two widths
+            // (MaterialToolbar 1.14.0 layoutTitleCenteredHorizontally) and restarted its marquee. Keyed on the resolved
+            // extension, so a Unified stamp or a song from another extension still reloads; a view tag, so a recreated
+            // view starts empty. The placeholder stays: it is what resets the slot for an extension with no icon.
+            val shownKey = extension?.id ?: ""
+            if (extensionIcon.getTag(R.id.extensionIcon) == shownKey) return@launch
+            extensionIcon.setTag(R.id.extensionIcon, shownKey)
             extension?.metadata?.icon.loadAsCircle(extensionIcon, R.drawable.ic_extension_32dp) {
                 // Only overwrite on a real image: a null delivery must leave the XML fallback in place
                 // rather than blanking the slot.

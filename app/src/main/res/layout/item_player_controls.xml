@@ -8,9 +8,15 @@
     android:clipToPadding="false"
     android:orientation="vertical">
 
+    <!-- [2026-11-09] baselineAligned="false" KEEPS THE TITLE'S MARQUEE THROUGH PLAY/PAUSE. With baseline alignment on, any
+         re-measure of this row (the artist line is re-set on every PlayerFragment.applyCurrent) first measured the weighted
+         text column at UNSPECIFIED width (android-34 LinearLayout.measureHorizontal, "Baseline alignment requires to measure
+         widgets"), then at its share: two widths, two TextView.makeNewLayout calls, and the marquee restarts from 0. Nothing
+         here uses the baseline: the row is gravity="center", and layoutHorizontal ignores baselines for centred children. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:baselineAligned="false"
         android:clipToPadding="false"
         android:gravity="center"
         android:paddingHorizontal="16dp"

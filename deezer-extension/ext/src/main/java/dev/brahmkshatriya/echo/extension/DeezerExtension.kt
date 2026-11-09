@@ -494,7 +494,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     private suspend fun isTrackLoved(track: Track): Boolean {
         if (!api.hasUserId) return false
         ensureLiked()
-        val liked = likedTrackIds ?: throw Exception("Deezer's liked list could not be fetched")
+        // [2026-11-09] With the last failed fetch's cause, scrubbed (fetchLiked), so the report says why. Inside the cooldown it is the
+        // failure that started it: that throw can be the only report (warmLiked's own failure is never reported, and
+        // CapabilityProbeFailure reports once per process). An account switch mid-fetch throws with none, as nothing failed.
+        val liked = likedTrackIds ?: throw Exception("Deezer's liked list could not be fetched", likedFailure)
         return track.id in liked
     }
 
@@ -509,6 +512,10 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // A login, logout or switch clears it (setLoginUser): the next account has not failed.
     @Volatile
     private var likedFailedAtMs = 0L
+
+    // [2026-11-09] Why the last fetch failed, scrubbed (scrubbedForReport), for isTrackLoved's throw. Set and cleared with likedFailedAtMs.
+    @Volatile
+    private var likedFailure: Throwable? = null
 
     // A backward clock jump ends the cooldown early rather than stretching it.
     private fun likedCoolingDown() =
@@ -557,21 +564,26 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     // playback starts) was declined at Cached.loadMedia's checks - see the note there.
     private suspend fun fetchLiked() {
         val askedFor = session.credentials.userId
+        var failure: Throwable? = null
         val dataArray = try {
             api.getTracks()["results"]?.jsonObject?.get("data")?.jsonArray
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
+            failure = e
             null
         }
         // warmLiked makes this reachable: a user switch while it runs must not leave this account's list, or its failure, on the next one.
         if (session.credentials.userId != askedFor) return
         val records = dataArray?.filterIsInstance<JsonObject>()
         if (records == null) {
+            likedFailure = failure?.scrubbedForReport()
+                ?: IllegalStateException("favorite_song.getList answered without results.data")
             likedFailedAtMs = System.currentTimeMillis()
             return
         }
         likedFailedAtMs = 0L
+        likedFailure = null
         likedTrackIds = records.mapNotNull {
             runCatching { it["SNG_ID"]?.jsonPrimitive?.content }.getOrNull()
         }.toHashSet()
@@ -1198,6 +1210,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         if (account != deliveredAccount) {
             deliveredAccount = account
             likedFailedAtMs = 0L
+            likedFailure = null
             likedTrackIds = null
             // Plain assignment, no fetch (the 1108 rule): the next isTrackLoved / likedByArtist refetches.
             likedIndex = null
@@ -1408,4 +1421,32 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         private const val DEFAULT_TYPE = "grid"
         private const val LIKED_RETRY_MS = 60_000L
     }
+}
+
+/**
+ * [2026-11-09] THE LIKED FETCH'S FAILURE AS IT MAY BE REPORTED: each exception's type, plus only an HTTP status or Deezer's error
+ * keys, with the original stack. Never the original exception, because Crashlytics records a cause chain unscrubbed and three of
+ * the messages that can reach fetchLiked's catch carry account data:
+ * - DeezerApi.getToken's "Unexpected code $response": OkHttp's Response.toString includes the URL, whose query holds the email,
+ *   the MD5 password and the hash. Reached through callApi's CSRF branch -> silent re-login -> onLogin -> getArlByEmail.
+ * - DeezerApi.requireJsonObject: the first 200 characters of a body that is not a JSON object.
+ * - kotlinx-serialization's JsonDecodingException: an excerpt of the JSON input in its message. A truncated getUserData or
+ *   user.getArl answer (USER_ID, checkForm, the ARL) decoded inside that re-login would carry it.
+ * DeezerGatewayException keeps its method and the error object's keys (REQUEST_ERROR, ...), not their values.
+ */
+private class LikedFetchFailed(summary: String) : Exception(summary)
+
+private val HTTP_STATUS = Regex("""(?:status |HTTP |code=)(\d{3})""")
+private val GATEWAY_ERROR_KEY = Regex("""(?:^|, )([A-Z_]+)=""")
+
+private fun Throwable.scrubbedForReport(): Throwable = LikedFetchFailed(
+    generateSequence(this) { it.cause }.take(5).joinToString(" <- ") { it.reportLabel() }
+).also { it.stackTrace = stackTrace }
+
+private fun Throwable.reportLabel(): String = when (this) {
+    is DeezerGatewayException ->
+        "DeezerGatewayException(method=$method, error=" +
+            GATEWAY_ERROR_KEY.findAll(errorText).joinToString("+") { it.groupValues[1] } + ")"
+    is ClientException.LoginRequired -> "LoginRequired"
+    else -> javaClass.name + (HTTP_STATUS.find(message.orEmpty())?.let { "(HTTP ${it.groupValues[1]})" } ?: "")
 }

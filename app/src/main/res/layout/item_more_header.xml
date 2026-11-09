@@ -49,6 +49,7 @@
                 android:maxLines="2"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="?attr/colorOnSurface"
+                android:textSize="18sp"
                 android:textStyle="bold"
                 tools:text="@tools:sample/full_names" />
 

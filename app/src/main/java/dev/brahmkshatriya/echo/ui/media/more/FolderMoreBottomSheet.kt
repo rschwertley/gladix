@@ -125,6 +125,10 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         // Playlist arm), tinted from the theme. Set here because the header's default follows the item, and this item is a Radio
         // label, whose arm is a radio icon. A folder with a cover still shows it. Phone and TV alike, as the default now is.
         headerAdapter.placeholder = R.drawable.art_library_music
+        // [2026-11-09] "Folder", plus the row's own subtitle when it has one (Offline's "N items"; OpenGonic's rows have
+        // none). Nothing is fetched for a count: OpenGonic's songs exist only once its folder page loads.
+        val folder = getString(R.string.folder)
+        headerAdapter.subtitle = category.subtitle?.takeIf { it.isNotBlank() }?.let { "$folder · $it" } ?: folder
         headerAdapter.item = label.copy(cover = category.image)
         configureGridLayout(binding.root, GridAdapter.Concat(headerAdapter, actionAdapter))
         submitButtons()

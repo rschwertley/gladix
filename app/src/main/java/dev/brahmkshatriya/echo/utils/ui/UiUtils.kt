@@ -270,6 +270,12 @@ object UiUtils {
      *   android-34 TextView.java:10537), and PlayerState.Current is re-emitted on every play/pause and load, with the same
      *   text. marquee()'s maxLines = 1 also requests a layout every time, which re-measures a toolbar subtitle and restarts it.
      * - "Remove animations" (animator scale 0) gives a plain end ellipsis: the platform marquee does not check it.
+     * [CORRECTED 2026-11-09] This said the setText guard was enough to keep the scroll through play/pause. It was not (1175,
+     * on device): any re-measure at a different width also rebuilds the layout and restarts the marquee, and sibling
+     * relayouts did that to both titles. The song title: the artist line, re-set in the same title row, re-measured it at
+     * two widths through baseline alignment (fixed by baselineAligned="false" on that row, item_player_controls.xml). The
+     * subtitle: the extension icon's placeholder-then-image swap re-measured the toolbar (fixed by skipping an unchanged
+     * icon in PlayerFragment.applyCurrent). This guard is still needed; a sibling that requests a layout can still undo it.
      */
     fun TextView.setMarqueeText(value: CharSequence?) {
         if (text?.toString() != value?.toString()) text = value

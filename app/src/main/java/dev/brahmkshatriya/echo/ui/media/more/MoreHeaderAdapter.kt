@@ -45,11 +45,15 @@ class MoreHeaderAdapter(
     // because its item is a Radio label and the mapping's Radio arm is a radio icon.
     var placeholder: Int? = null
 
+    // [2026-11-09] The second line, when the sheet knows better than the item's type. Null = the type line bind builds.
+    // FolderMoreBottomSheet sets it, because its item is a Radio label, whose line is empty.
+    var subtitle: String? = null
+
     private var viewHolder: ViewHolder? = null
     override fun onBindViewHolder(holder: ViewHolder, position: Int) = with(holder.binding) {
         viewHolder = holder
         val item = item
-        holder.bind(item, placeholder)
+        holder.bind(item, placeholder, subtitle)
         holder.onCurrentChanged(item, current)
     }
 
@@ -60,11 +64,11 @@ class MoreHeaderAdapter(
         )
     ) : ScrollAnimViewHolder(binding.root) {
 
-        fun bind(item: EchoMediaItem?, placeholder: Int? = null) = with(binding) {
+        fun bind(item: EchoMediaItem?, placeholder: Int? = null, subtitle: String? = null) = with(binding) {
             if (item == null) return@with
             title.text = item.title
             val ctx = root.context
-            type.text = when (item) {
+            type.text = subtitle ?: when (item) {
                 is Artist -> "Artist"
                 is Track -> {
                     val artist = item.artists.firstOrNull()?.name
@@ -83,6 +87,9 @@ class MoreHeaderAdapter(
                 }
                 is Radio -> ""
             }
+            // [2026-11-09] An empty line still takes a line's height, so a lone title sat above the cover's centre. Gone
+            // instead, the text block is just the title and center_vertical centres it against the cover.
+            type.isVisible = type.text.isNotEmpty()
             val fallback = placeholder ?: item.placeHolder
             item.cover.loadInto(cover, fallback, fallback)
         }
