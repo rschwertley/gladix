@@ -21,7 +21,9 @@ import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.ui.media.more.FolderMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
+import dev.brahmkshatriya.echo.ui.main.LibraryFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.ui.playlist.edit.search.EditPlaylistSearchClickListener
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
@@ -195,10 +197,19 @@ open class FeedClickListener(
     // anywhere else, so Home, Library and album or playlist pages are unchanged (they pass their own context, or none). The
     // listener's fragment is the FeedFragment itself: FeedFragment.Actual builds it from requireParentFragment().
     // See MediaItemUtils.feedPageLabel for why it is a Radio.
-    private fun feedPageLabel(): Radio? {
-        val args = (fragment as? FeedFragment)?.arguments ?: return null
+    // [2026-11-08] Built only where the queue is set from it, because it also makes this page the live one a "Playing from"
+    // tap reopens (FeedPageSlot). The extension id is the page's own, resolved as FeedFragment resolves it.
+    // [2026-11-08] And Library's "Library - <tab>" label (LibraryFragment.libraryLabel), phone only: the TV player is unchanged.
+    // [2026-11-08] rowId / rowTitle: the row a tapped card sat in (onTracksClicked). Read only in the Library arm; every other
+    // screen ignores them, so its label is exactly what it was.
+    private fun feedPageLabel(rowId: String? = null, rowTitle: String? = null): Radio? {
+        (fragment as? LibraryFragment)?.let { library ->
+            return if (library.requireContext().isTv()) null else library.libraryLabel(rowId, rowTitle)
+        }
+        val page = fragment as? FeedFragment ?: return null
+        val args = page.arguments ?: return null
         val title = args.getString("title")?.takeIf { it.isNotBlank() } ?: return null
-        return MediaItemUtils.feedPageLabel(args.getString("feedId"), title)
+        return FeedPageSlot.label(page.pageExtensionId, args.getString("feedId"), title, page.pageFeed)
     }
 
     open fun openFeed(
@@ -320,7 +331,11 @@ open class FeedClickListener(
         extensionId: String?,
         context: EchoMediaItem?,
         tracks: List<Track>?,
-        pos: Int
+        pos: Int,
+        // [2026-11-08] The row the tapped card sat in, from ShelfViewHolder's Media and ThreeTracks cards; null from every other
+        // caller. Used only for the label of a queue set below (feedPageLabel's Library arm); the radio branch never reads it.
+        rowId: String? = null,
+        rowTitle: String? = null,
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
         if (tracks.isNullOrEmpty()) return notFoundSnack(R.string.tracks)
@@ -418,7 +433,12 @@ open class FeedClickListener(
             // Nothing playable from here on: say so rather than setting an empty queue, which would
             // read as a dead tap.
             if (upcoming.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
-            vm.setQueue(extensionId, upcoming, 0, feedPageLabel(), respectShuffle = true)
+            // [2026-11-08] An album or playlist page's own item when it declares its list, as the run path below gets it. No
+            // extension in the tree declares one on those pages today (Deezer, Offline, Unified), so this changes nothing yet.
+            vm.setQueue(
+                extensionId, upcoming, 0, context.takeIf { isOrderedCollection(it) } ?: feedPageLabel(rowId, rowTitle),
+                respectShuffle = true
+            )
             vm.setPlaying(true)
             return true
         }
@@ -442,7 +462,7 @@ open class FeedClickListener(
         val droppedBefore = tracks.take(pos).count { it.isPlayable != Track.Playable.Yes }
         val runPos = (pos - droppedBefore).coerceIn(0, maxOf(playableRun.size - 1, 0))
         if (playableRun.isEmpty()) return onUnplayableClicked(tracks.getOrNull(pos))
-        vm.setQueue(extensionId, playableRun, runPos, context ?: feedPageLabel(), respectShuffle = true)
+        vm.setQueue(extensionId, playableRun, runPos, context ?: feedPageLabel(rowId, rowTitle), respectShuffle = true)
         vm.setPlaying(true)
         return true
     }

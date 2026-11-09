@@ -4,6 +4,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.ContentMetadata
@@ -92,17 +93,24 @@ class CacheOnlyTailSource(
      * not a condition any more (see CrossfadeController.evaluateGate). Progressive-only is now the
      * ONLY thing keeping a manifest source out of the sidecar, so do not wire dash/hls here casually.
      */
-    val factory: MediaSource.Factory by lazy {
-        DefaultMediaSourceFactory(
-            ResolvingDataSource.Factory(
-                CacheDataSource.Factory()
-                    .setCache(cache)
-                    // Upstream for holes; NO write sink. Only the second omission is load-bearing
-                    // now - see the two class notes.
-                    .setUpstreamDataSourceFactory(upstream)
-                    .setCacheWriteDataSinkFactory(null),
-                resolver
-            )
+    val factory: MediaSource.Factory by lazy { DefaultMediaSourceFactory(dataSourceFactory) }
+
+    /**
+     * [2026-11-08] The tail's own byte path, shared with the crossfade's end look-ahead (AudibleEndAnalyzer), so that reads
+     * exactly what the tail will play: the resolver, then the cache, then this class's upstream for holes. A Deezer track
+     * comes out decrypted (RawDataSource sits below the cache, so the cache holds what it produced), a download is read from
+     * its file:// source as a permanent cache miss (the 2026-10-18 note at [gate]), and an Http source (YouTube Music, and
+     * any other extension's) from the cache or its URL. Never a write sink, for the same reason as the tail's.
+     */
+    val dataSourceFactory: DataSource.Factory by lazy {
+        ResolvingDataSource.Factory(
+            CacheDataSource.Factory()
+                .setCache(cache)
+                // Upstream for holes; NO write sink. Only the second omission is load-bearing
+                // now - see the two class notes.
+                .setUpstreamDataSourceFactory(upstream)
+                .setCacheWriteDataSinkFactory(null),
+            resolver
         )
     }
 

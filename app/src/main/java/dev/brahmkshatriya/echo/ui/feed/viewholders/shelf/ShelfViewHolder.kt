@@ -78,7 +78,8 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                         if (item.isPlayable != Track.Playable.Yes) {
                             listener.onUnplayableClicked(item)
                         } else listener.onTracksClicked(
-                            it, shelf?.extensionId, shelf?.context, listOf(item), 0
+                            it, shelf?.extensionId, shelf?.context, listOf(item), 0,
+                            rowId = shelf?.rowId, rowTitle = shelf?.rowTitle,
                         )
                     }
 
@@ -151,7 +152,8 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
                     val track = tracks.getOrNull(pos)
                     if (track?.isPlayable != Track.Playable.Yes) listener.onUnplayableClicked(track)
                     else listener.onTracksClicked(
-                        view, shelf?.extensionId, shelf?.context, tracks, pos
+                        view, shelf?.extensionId, shelf?.context, tracks, pos,
+                        rowId = shelf?.rowId, rowTitle = shelf?.rowTitle,
                     )
                 }
                 binding.root.setOnLongClickListener {

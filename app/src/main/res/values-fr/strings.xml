@@ -211,6 +211,7 @@
     <string name="blacklist_folders_summary">Dossiers à exclure de la bibliothèque</string>
     <string name="repeat_off">Ne Pas Répéter</string>
     <string name="library">Bibliothèque</string>
+    <string name="library_tab_label">Bibliothèque - %1$s</string>
     <string name="playlist_liked">Aimés</string>
     <string name="extensions">Extensions</string>
     <string name="home">Accueil</string>

@@ -136,15 +136,25 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                     addPreference(this)
                 }
 
-                SwitchPreferenceCompat(context).apply {
+                // [2026-11-08] Not applied while crossfade is on (PlayerService.effectiveSkipSilence), so it says so then; the
+                // switch itself keeps the user's choice. Follows the slider below, as Skip fade on albums does.
+                val skipSilence = SwitchPreferenceCompat(context).apply {
                     key = SKIP_SILENCE
                     title = getString(R.string.skip_silence)
-                    summary = getString(R.string.skip_silence_summary)
                     layoutResource = R.layout.preference_switch
                     isIconSpaceReserved = false
                     setDefaultValue(true)
                     addPreference(this)
                 }
+                fun skipSilenceSummary(crossfadeOn: Boolean) {
+                    skipSilence.summary = if (crossfadeOn) getString(
+                        R.string.skip_silence_summary_with_note,
+                        getString(R.string.skip_silence_summary), getString(R.string.skip_silence_crossfade_note)
+                    ) else getString(R.string.skip_silence_summary)
+                }
+                skipSilenceSummary(
+                    (preferenceManager.sharedPreferences?.getInt(TRUE_CROSSFADE_SECONDS, 0) ?: 0) > 0
+                )
 
                 val skipFadeOnAlbums = SwitchPreferenceCompat(context).apply {
                     key = SKIP_FADE_ON_ALBUMS
@@ -178,6 +188,7 @@ class SettingsPlayerFragment : BaseSettingsFragment() {
                         // The album switch belongs to whichever fade is live, so it follows this
                         // slider now rather than the deleted Track Fade switch. > 0 = crossfade on.
                         skipFadeOnAlbums.isVisible = (newValue as? Int ?: 0) > 0
+                        skipSilenceSummary((newValue as? Int ?: 0) > 0)
                         true
                     }
                     addPreference(this)

@@ -42,6 +42,7 @@
     <string name="home">主页</string>
     <string name="search">搜索</string>
     <string name="library">媒体库</string>
+    <string name="library_tab_label">媒体库 - %1$s</string>
     <string name="more">更多</string>
     <string name="downloading_x">正在下载 %1$s</string>
     <string name="cancel_all">取消全部</string>

@@ -170,6 +170,7 @@
     <string name="home">गृहम्</string>
     <string name="search">अन्वेषणम्</string>
     <string name="library">पुस्तकालयः</string>
+    <string name="library_tab_label">पुस्तकालयः - %1$s</string>
     <string name="more">अधिक</string>
     <string name="extension">प्रत्यासक्तिः</string>
     <string name="downloading_x">%1$s डाउनलोड् करणम्</string>

@@ -8,7 +8,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import androidx.core.net.toUri
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
@@ -34,6 +37,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.toSettings
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.STREAM_QUALITY
 import dev.brahmkshatriya.echo.playback.PlayerService.Companion.streamQualities
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
+import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.settings.BaseSettingsFragment
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.PermsUtils.registerActivityResultLauncher
@@ -82,6 +86,10 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
         fun getBundle(extension: Extension<*>) =
             getBundle(extension.name, extension.id, extension.type, extension.metadata.icon)
 
+        // [2026-11-08] Set only by the player's extension icon (PlayerFragment.applyCurrent): Back and the toolbar arrow return
+        // to the expanded player instead of the page under this one (returnToPlayer). Settings -> Extensions never sets it.
+        const val RETURN_TO_PLAYER = "returnToPlayer"
+
         // ⚠️ SAYS SO WHEN NOTHING CAN OPEN THE LINK (2026-10-31). It used to swallow the failure, so on a TV with no
         // browser - the usual case - Guide, GitHub, the credits, an extension's repo and its author link did
         // nothing at all when pressed. Every caller passes requireActivity(), hence FragmentActivity for
@@ -93,8 +101,45 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
         }
     }
 
+    private val returnsToPlayer by lazy { args.getBoolean(RETURN_TO_PLAYER, false) }
+    private val uiViewModel by activityViewModel<UiViewModel>()
+    private var playerBack: OnBackPressedCallback? = null
+
+    /**
+     * [2026-11-08] Opened from the player's icon: leave this page and expand the player again. openFragment collapsed it on
+     * the way in. Not when the queue was cleared meanwhile (the player is hidden): then only the pop, as before. Reached from
+     * the Back gesture (playerBack) and the toolbar arrow (onNavigateUp), never from a nav-tab tap, which pops the whole
+     * stack itself (UiViewModel's nav item listener), nor from Uninstall, which pops directly.
+     */
+    private fun returnToPlayer() {
+        parentFragmentManager.popBackStack()
+        if (uiViewModel.playerSheetState.value != STATE_HIDDEN) uiViewModel.changePlayerState(STATE_EXPANDED)
+    }
+
+    override fun onNavigateUp() {
+        if (returnsToPlayer) returnToPlayer() else super.onNavigateUp()
+    }
+
+    // Off while the player is expanded (BaseSettingsFragment's own callback collapses it, as on every page) and while a page
+    // opened from here covers this one, so its Back is unchanged.
+    private fun updatePlayerBack() {
+        playerBack?.isEnabled = !isHidden && uiViewModel.playerSheetState.value != STATE_EXPANDED
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        updatePlayerBack()
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        if (returnsToPlayer) {
+            // Added after super's callback, so it is asked first; the dispatcher calls the newest enabled one.
+            playerBack = object : OnBackPressedCallback(false) {
+                override fun handleOnBackPressed() = returnToPlayer()
+            }.also { requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it) }
+            observe(uiViewModel.playerSheetState) { updatePlayerBack() }
+        }
         observe(viewModel.stateFlow) { state ->
             val extension = state?.extension ?: return@observe
             val metadata = extension.metadata

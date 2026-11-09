@@ -52,6 +52,7 @@
     <string name="home">בית</string>
     <string name="search">חיפוש</string>
     <string name="library">ספרייה</string>
+    <string name="library_tab_label">ספרייה - %1$s</string>
     <string name="more">עוד</string>
     <string name="extension">תוספים</string>
     <string name="downloading_x">בהורדה %1$s</string>

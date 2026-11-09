@@ -62,12 +62,25 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
 import dev.brahmkshatriya.echo.R
-import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.Playlist
+import dev.brahmkshatriya.echo.common.models.Radio
+import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
+import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.extensions.cache.Cached
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
+import dev.brahmkshatriya.echo.ui.feed.FeedFragment
+import dev.brahmkshatriya.echo.ui.feed.FeedPageSlot
+import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.FragmentManager
+import dev.brahmkshatriya.echo.ui.main.LibraryFragment
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import dev.brahmkshatriya.echo.databinding.FragmentPlayerBinding
+import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.background
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
@@ -106,7 +119,9 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.hideSystemUi
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isLandscape
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
-import dev.brahmkshatriya.echo.utils.ui.UiUtils.marquee
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.setMarqueeText
+import android.widget.TextView
+import androidx.core.view.children
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.toTimeString
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.onFirstPageBackSwipe
 import dev.brahmkshatriya.echo.utils.ui.ViewPager2Utils.registerOnUserPageChangeCallback
@@ -1465,20 +1480,46 @@ class PlayerFragment : Fragment() {
         val extId = item.extensionId
         expandedToolbar.run {
             val itemContext = item.context
-            title = if (itemContext != null) context.getString(R.string.playing_from) else null
-            subtitle = itemContext?.title
+            // [2026-11-08] Both set only when they change, and the subtitle scrolls like the song title (setMarqueeText). Toolbar's
+            // setTitle and setSubtitle call setText every time (appcompat 1.8.0, decoded), and any re-measure of this toolbar
+            // re-measures a centred subtitle at the narrowed width (MaterialToolbar 1.14.0 layoutTitleCenteredHorizontally), which
+            // restarts its scroll. Toolbar keeps one subtitle view for good (removed from the bar while empty, re-added after), so
+            // its settings survive a context with no title; it is found as the child showing the subtitle, as Material's
+            // internal ToolbarUtils does. The last match, since Toolbar adds the title view first.
+            val newTitle = if (itemContext != null) context.getString(R.string.playing_from) else null
+            if (title?.toString() != newTitle) title = newTitle
+            val newSubtitle = itemContext?.title
+            if (subtitle?.toString() != newSubtitle) subtitle = newSubtitle
+            if (newSubtitle != null) children.filterIsInstance<TextView>()
+                .lastOrNull { it.text?.toString() == newSubtitle }?.setMarqueeText(newSubtitle)
             // [CORRECTED 2026-11-07] Was `is EchoMediaItem.Lists, is Artist` since a14a8bc7 (2026-05-11), which made a Radio
             // context tappable too, because Radio is an EchoMediaItem.Lists: "Playing from <song> Radio"
             // (MediaItemUtils.trackRadioPlaceholder) opened a radio page for an id that is a track's. Now album, playlist and
             // artist only, never Radio or Track, so the feed-page label (MediaItemUtils.feedPageLabel) is a label only as well.
             // Same Lists-captures-Radio trap as isReplayableContext.
+            // [CORRECTED 2026-11-08] The correction above was a mistake and is reverted: Radio taps are a working feature
+            // since May 13 (a14a8bc7). The first-song case was solved Jun 21 (radio=track on the SearchFragment placeholder) and
+            // silently undone Jul 8 (542b094f), when MediaItemUtils.trackRadioPlaceholder replaced it without that extra; restored
+            // 2026-11-08. 1174 removed Radio taps on the claude.ai assistant's Nov 7 recommendation (citing the May 13 intent,
+            // not a device finding). Every Radio context taps as in 1173 again, real stations, the "<song> Radio" placeholder
+            // and History-restored ones alike. The one exception is the feed-page label (MediaItemUtils.feedPageLabel), excluded
+            // by its FEED_PAGE_LABEL marker: its id is "feed_page:<feedId>", which no extension can load as a radio.
             val navigableContext = when (itemContext) {
-                is Album, is Playlist, is Artist -> itemContext
+                is EchoMediaItem.Lists, is Artist -> itemContext.takeUnless {
+                    it.extras[MediaItemUtils.FEED_PAGE_LABEL] == "true"
+                }
                 else -> null
             }
-            setOnClickListener(if (navigableContext != null) View.OnClickListener {
-                openItem(extId, navigableContext)
-            } else null)
+            // [2026-11-08] The feed-page label is tappable now too: it reopens its folder or "see all" page (openFeedPage).
+            setOnClickListener(when {
+                navigableContext != null -> View.OnClickListener { openItem(extId, navigableContext) }
+                // [2026-11-08] Before the feed-page arm: the Library label carries FEED_PAGE_LABEL too (MediaItemUtils.libraryTabLabel).
+                itemContext is Radio && itemContext.extras[MediaItemUtils.LIBRARY_TAB] != null ->
+                    View.OnClickListener { openLibraryTab(itemContext) }
+                itemContext is Radio && itemContext.extras[MediaItemUtils.FEED_PAGE_LABEL] == "true" ->
+                    View.OnClickListener { openFeedPage(extId, itemContext, track.id) }
+                else -> null
+            })
         }
         // Overflow moved out of the toolbar menu (PlayerToolbarStyle no longer sets `menu`) and down
         // beside the heart, so it is a plain click listener now rather than setOnMenuItemClickListener.
@@ -1502,7 +1543,9 @@ class PlayerFragment : Fragment() {
             extensionIcon.contentDescription = extension?.let { getString(R.string.x_settings, it.name) }
             extensionIcon.setOnClickListener(extension?.let { ext ->
                 View.OnClickListener {
-                    requireActivity().openFragment<ExtensionInfoFragment>(null, ExtensionInfoFragment.getBundle(ext))
+                    requireActivity().openFragment<ExtensionInfoFragment>(
+                        null, ExtensionInfoFragment.getBundle(ext).apply { putBoolean(ExtensionInfoFragment.RETURN_TO_PLAYER, true) }
+                    )
                 }
             })
             extension?.metadata?.icon.loadAsCircle(extensionIcon, R.drawable.ic_extension_32dp) {
@@ -1523,8 +1566,9 @@ class PlayerFragment : Fragment() {
             }
         }
         playerControls.run {
-            trackTitle.text = track.title
-            trackTitle.marquee()
+            // [2026-11-08] setMarqueeText, not text + marquee(): this runs on every play/pause and load, and re-setting the same
+            // title restarted its scroll each time.
+            trackTitle.setMarqueeText(track.title)
             val artists = track.artists
             val artistNames = artists.joinToString(", ") { it.name }
             val span = SpannableString(artistNames)
@@ -1560,6 +1604,78 @@ class PlayerFragment : Fragment() {
         requireActivity().openFragment<MediaFragment>(
             null, MediaFragment.getBundle(extension, item, false)
         )
+    }
+
+    /**
+     * [2026-11-08] "Playing from Library - <tab>": the Library screen on that tab, the way a bottom-nav tap reaches it (close
+     * any page on top, then switch the nav). Nothing is loaded here, so it never ends in "Couldn't load". The tab goes as a
+     * fragment result that LibraryFragment applies (FeedData.selectTabById); a Library not yet created gets it once it is.
+     */
+    private fun openLibraryTab(label: Radio) {
+        uiViewModel.collapsePlayer()
+        val manager = requireActivity().supportFragmentManager
+        if (!uiViewModel.isMainFragment.value)
+            manager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        uiViewModel.navigation.value = uiViewModel.navIds.indexOf(R.id.libraryFragment)
+        val tabId = label.extras[MediaItemUtils.LIBRARY_TAB]?.takeIf { it.isNotEmpty() } ?: return
+        manager.setFragmentResult(LibraryFragment.LIBRARY_TAB_RESULT, Bundle().apply {
+            putString("tabId", tabId)
+            putString("extensionId", label.extras[MediaItemUtils.FEED_PAGE_EXTENSION])
+        })
+    }
+
+    private var feedPageOpen: Job? = null
+
+    /**
+     * [2026-11-08] "Playing from <page>": reopen that folder or "see all" page. In order:
+     * 1. The live page, when the label's slot key matches FeedPageSlot's (the queue was set from that page in this process).
+     * 2. Otherwise the cached copy, ONLY IF IT HOLDS THE PLAYING SONG ([cachedPageHolds]): feed ids are not unique (see
+     *    FeedPageSlot), so the cache entry under this id can be another page of the same id.
+     * 3. Otherwise "Couldn't load <page>", rather than a page whose Retry cannot work (FeedFragment's loader note).
+     * The opener always sets all three of FeedFragment.VM's fields. FeedFragment.feedData copies vm.feed, which otherwise holds
+     * whatever page openFeed opened last, and its loader would save that page under this feed id (Cached.savingFeed). With
+     * null the loader throws Cached.NotFound before saving, and the cached copy renders, the process-death path FeedArgs
+     * describes. The ids also go in the arguments, which win (FeedArgs.resolveFeedIds), and are the same values.
+     */
+    private fun openFeedPage(itemExtId: String, label: Radio, trackId: String) {
+        if (feedPageOpen?.isActive == true) return
+        val feedId = label.id.removePrefix(MediaItemUtils.FEED_PAGE_ID_PREFIX)
+        val extId = label.extras[MediaItemUtils.FEED_PAGE_EXTENSION] ?: itemExtId
+        val live = label.extras[MediaItemUtils.FEED_PAGE_SLOT]?.let { FeedPageSlot.get(it, extId, feedId) }
+        feedPageOpen = lifecycleScope.launch {
+            val found = feedId.isNotEmpty() &&
+                (live != null || withContext(Dispatchers.IO) { cachedPageHolds(extId, feedId, trackId) })
+            if (!found) {
+                createSnack(getString(R.string.could_not_load_x, label.title))
+                return@launch
+            }
+            val feedVm by activityViewModels<FeedFragment.VM>()
+            feedVm.extensionId = extId
+            feedVm.feedId = feedId
+            feedVm.feed = live
+            requireActivity().openFragment<FeedFragment>(
+                null, FeedFragment.getBundle(label.title, null, extId, feedId)
+            )
+        }
+    }
+
+    // The first tab's declared list when the page has one (Offline's folders, OpenGonic's), otherwise its first cached page.
+    // A song further down a page with no declared list reads as absent, which gives the message, never a wrong page.
+    private suspend fun cachedPageHolds(extId: String, feedId: String, trackId: String): Boolean = runCatching {
+        val feed = Cached.getFeedShelf(viewModel.app, extId, feedId).getOrThrow()
+        val data = feed.getPagedData(feed.notSortTabs.firstOrNull())
+        data.buttons?.customTrackList?.let { list -> return@runCatching list.any { it.id == trackId } }
+        data.pagedData.loadPage(null).data.any { shelf ->
+            when (shelf) {
+                is Shelf.Item -> shelf.media.id == trackId && shelf.media is Track
+                is Shelf.Lists.Tracks -> shelf.list.any { it.id == trackId }
+                is Shelf.Lists.Items -> shelf.list.any { it is Track && it.id == trackId }
+                else -> false
+            }
+        }
+    }.getOrElse {
+        if (it is CancellationException) throw it
+        false
     }
 
     private fun onMoreClicked(item: MediaItem) {

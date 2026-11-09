@@ -151,6 +151,11 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         }
     }
 
+    // [2026-11-08] For the "Playing from" label of a queue set on this page (FeedClickListener.feedPageLabel, FeedPageSlot):
+    // the resolved extension id, and the live page, which is null on a page restored from the cache.
+    val pageExtensionId: String? get() = feedData.let { vm.extensionId }
+    val pageFeed: Feed<Shelf>? get() = feedData.let { vm.feed }
+
     private val title by lazy { arguments?.getString("title")!! }
     private val subtitle by lazy { arguments?.getString("subtitle") }
 

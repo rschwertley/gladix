@@ -45,6 +45,7 @@
     <string name="download_progress">Unduhan berlangsung</string>
     <string name="downloads">Unduhan</string>
     <string name="library">Perpustakaan</string>
+    <string name="library_tab_label">Perpustakaan - %1$s</string>
     <string name="downloaded_x">Terunduh %1$s</string>
     <string name="login">Masuk</string>
     <string name="extension_out_of_date">Kadaluarsa</string>

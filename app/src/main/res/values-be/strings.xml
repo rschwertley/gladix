@@ -54,6 +54,7 @@
     <string name="home">Галоўная</string>
     <string name="search">Пошук</string>
     <string name="library">Бібліятэка</string>
+    <string name="library_tab_label">Бібліятэка - %1$s</string>
     <string name="more">Больш</string>
     <string name="extension">Пашырэнне</string>
     <string name="downloading_x">Спампаванне %1$s</string>

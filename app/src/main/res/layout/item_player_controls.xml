@@ -53,10 +53,19 @@
                 tools:text="@tools:sample/lorem/random" />
         </LinearLayout>
 
+        <!-- [2026-11-08] FLUSH WITH THE COVER'S RIGHT EDGE (the Sep 23 line), by arithmetic, as the old ⋮ was. MaterialCheckBox
+             centres the button when there is no text (MaterialCheckBox.onDraw, centerIfNoTextEnabled, Material 1.14.0 decoded), so
+             the 36dp drawable sits (56 - 36) / 2 = 10dp in from the box's end, and the heart artwork's own inset is 3.4 of its 40
+             viewport units = 3dp: 13dp in all. marginEnd -13dp moves the box into the row's 16dp padding by exactly that, so
+             the glyph ends on the content edge, which is the cover's edge (16dp in, the cover's own margin). The box still ends
+             3dp inside the row, so nothing overhangs it (the Sep 14 regression). 56dp wide, not 64: at 64 the same alignment
+             needed -17dp and ran 1dp past the row. Height stays 64dp, so the controls' measured height is unchanged.
+             Was 64dp with no margin, which left the glyph 17dp short of the cover's edge. Phone only: the TV player has its own. -->
         <com.google.android.material.checkbox.MaterialCheckBox
             android:id="@+id/trackHeart"
-            android:layout_width="64dp"
+            android:layout_width="56dp"
             android:layout_height="64dp"
+            android:layout_marginEnd="-13dp"
             android:background="@drawable/ripple_60dp"
             android:button="@drawable/anim_heart_36dp"
             android:contentDescription="@string/like"

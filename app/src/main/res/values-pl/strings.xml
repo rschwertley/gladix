@@ -65,6 +65,7 @@
     <string name="home">Główna</string>
     <string name="search">Wyszukaj</string>
     <string name="library">Biblioteka</string>
+    <string name="library_tab_label">Biblioteka - %1$s</string>
     <string name="more">Więcej</string>
     <string name="extension">Rozszerzenie</string>
     <string name="downloading_x">Pobieranie %1$s</string>

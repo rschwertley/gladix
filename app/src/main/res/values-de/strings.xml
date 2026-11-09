@@ -32,6 +32,7 @@
     <string name="home">Startseite</string>
     <string name="search">Suchen</string>
     <string name="library">Bibliothek</string>
+    <string name="library_tab_label">Bibliothek - %1$s</string>
     <string name="more">Mehr</string>
     <string name="downloading_x">%1$s herunterladen</string>
     <string name="cancel_all">Alle abbrechen</string>

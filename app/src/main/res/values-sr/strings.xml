@@ -47,6 +47,7 @@
     <string name="home">Početna</string>
     <string name="search">Pretraga</string>
     <string name="library">Biblioteka</string>
+    <string name="library_tab_label">Biblioteka - %1$s</string>
     <string name="more">Više</string>
     <string name="extension">Ekstenzija</string>
     <string name="downloading_x">Preuzimanje %1$s</string>

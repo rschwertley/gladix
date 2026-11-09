@@ -52,6 +52,7 @@
     <string name="home">නිවස</string>
     <string name="search">සොයන්න</string>
     <string name="library">පුස්තකාලය</string>
+    <string name="library_tab_label">පුස්තකාලය - %1$s</string>
     <string name="more">තව</string>
     <string name="extension">දිගුව</string>
     <string name="downloading_x">%1$s බාගත වෙමින්</string>

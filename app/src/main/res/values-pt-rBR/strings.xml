@@ -201,6 +201,7 @@
     <string name="download_complete">Download concluído</string>
     <string name="x_was_not_granted">%1$s não foi concedido</string>
     <string name="library">Biblioteca</string>
+    <string name="library_tab_label">Biblioteca - %1$s</string>
     <string name="unlike">Descurtir</string>
     <string name="like">Curtir</string>
     <string name="repeat_one">Repetir uma</string>

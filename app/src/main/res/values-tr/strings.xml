@@ -137,6 +137,7 @@
     <string name="home">Ana Sayfa</string>
     <string name="search">Ara</string>
     <string name="library">Kütüphane</string>
+    <string name="library_tab_label">Kütüphane - %1$s</string>
     <string name="more">Daha Fazla</string>
     <string name="extension">Eklenti</string>
     <string name="cancel_all">Tümünü İptal Et</string>

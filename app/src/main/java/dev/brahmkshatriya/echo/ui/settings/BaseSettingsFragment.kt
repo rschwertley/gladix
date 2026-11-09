@@ -28,6 +28,12 @@ abstract class BaseSettingsFragment : Fragment() {
     abstract val icon: ImageHolder?
     abstract val creator: () -> Fragment
 
+    // [2026-11-08] The toolbar's back arrow. It pops this page directly, not through the Back dispatcher, so a page that
+    // returns somewhere else on Back overrides this as well (ExtensionInfoFragment, opened from the player).
+    open fun onNavigateUp() {
+        parentFragmentManager.popBackStack()
+    }
+
     var binding: FragmentGenericCollapsableBinding by autoCleared()
 
     final override fun onCreateView(
@@ -48,9 +54,7 @@ abstract class BaseSettingsFragment : Fragment() {
             binding.extensionIcon.alpha = 1 - offset
         }
         applyAppBarRailInset(binding.appBarLayout)
-        binding.toolBar.setNavigationOnClickListener {
-            parentFragmentManager.popBackStack()
-        }
+        binding.toolBar.setNavigationOnClickListener { onNavigateUp() }
 
         binding.toolBar.title = title
         icon.loadAsCircle(binding.extensionIcon, R.drawable.ic_extension_32dp) {

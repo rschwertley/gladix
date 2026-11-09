@@ -612,6 +612,29 @@ data class FeedData(
         }
     }
 
+    // [2026-11-08] For Library's "Playing from Library - <tab>" label (LibraryFragment.libraryLabel): the tab on screen and
+    // the extension whose feed it is.
+    val selectedTab: Tab? get() = selectedTabFlow.value
+    val shownExtensionId: String?
+        get() = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }?.extensionId
+    val shownTabs: List<Tab>
+        get() = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }?.feed?.notSortTabs.orEmpty()
+
+    // [2026-11-08] A tap on that label (PlayerFragment.openLibraryTab) shows the tab again. Before the feed has loaded (Library
+    // never opened in this process) the id becomes the choice the load picks up, as a tap's would (chosenTabId). A tab
+    // that is gone, or another extension's feed, leaves the selection as it is.
+    fun selectTabById(extensionId: String?, tabId: String) {
+        val state = stateFlow.value.run { second?.getOrNull() ?: first?.getOrNull() }
+        if (state == null) {
+            chosenTabId = tabId
+            return
+        }
+        // selectTab sets the selection to null for another extension's feed, so that case never reaches it.
+        if (state.extensionId != extensionId) return
+        val pos = state.feed.tabs.indexOfFirst { it.id == tabId }
+        if (pos >= 0) selectTab(extensionId, pos)
+    }
+
     fun refresh() = scope.launch { refreshFlow.emit(Unit) }
 
     /**

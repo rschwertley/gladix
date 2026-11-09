@@ -54,6 +54,7 @@
     <string name="home">হোম</string>
     <string name="search">অনুসন্ধান</string>
     <string name="library">লাইব্রেরি</string>
+    <string name="library_tab_label">লাইব্রেরি - %1$s</string>
     <string name="more">আরও</string>
     <string name="extension">এক্সটেনশন</string>
     <string name="downloading_x">%1$s ডাউনলোড হচ্ছে</string>

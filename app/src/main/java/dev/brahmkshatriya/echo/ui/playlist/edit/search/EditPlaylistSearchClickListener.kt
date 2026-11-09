@@ -20,7 +20,8 @@ class EditPlaylistSearchClickListener(fragment: Fragment) : FeedClickListener(
     }
 
     override fun onTracksClicked(
-        view: View?, extensionId: String?, context: EchoMediaItem?, tracks: List<Track>?, pos: Int
+        view: View?, extensionId: String?, context: EchoMediaItem?, tracks: List<Track>?, pos: Int,
+        rowId: String?, rowTitle: String?,
     ): Boolean {
         val track = tracks?.getOrNull(pos) ?: return notFoundSnack(R.string.track)
         viewModel.addTrack(track)

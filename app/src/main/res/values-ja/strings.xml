@@ -94,6 +94,7 @@
     <string name="repeat_off">リピート解除</string>
     <string name="repeat_all">全てリピート</string>
     <string name="library">ライブラリ</string>
+    <string name="library_tab_label">ライブラリ - %1$s</string>
     <string name="extension">拡張</string>
     <string name="download_progress">ダウンロード進捗</string>
     <string name="downloaded_x">%1$s件をダウンロードしました</string>

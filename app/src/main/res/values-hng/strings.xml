@@ -52,6 +52,7 @@
     <string name="home">Home</string>
     <string name="search">Khoj</string>
     <string name="library">Library</string>
+    <string name="library_tab_label">Library - %1$s</string>
     <string name="more">Aur</string>
     <string name="extension">Extension</string>
     <string name="downloading_x">%1$s Download Ho Raha Hai</string>

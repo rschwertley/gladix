@@ -9,6 +9,7 @@
     <string name="home">Domov</string>
     <string name="search">Hľadať</string>
     <string name="library">Knižnica</string>
+    <string name="library_tab_label">Knižnica - %1$s</string>
     <string name="more">Viac</string>
     <string name="extension">Rozšírenie</string>
     <string name="downloading_x">Sťahuje sa %1$s</string>

@@ -190,6 +190,7 @@
     <string name="more_by_x">Більше від %1$s</string>
     <string name="x_radio">Радіо %1$s</string>
     <string name="library">Бібліотека</string>
+    <string name="library_tab_label">Бібліотека - %1$s</string>
     <string name="refresh_library_on_reload">Оновлювати бібліотеку при перезавантаженні</string>
     <string name="refresh_library_on_reload_summary">Сканувати пристрій щоразу під час завантаження стрічки</string>
     <string name="blacklist_folders_summary">Теки для вилучення з бібліотеки</string>

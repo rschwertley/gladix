@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
+import android.provider.Settings
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -259,6 +260,32 @@ object UiUtils {
         maxLines = 1
         marqueeRepeatLimit = -1
         setHorizontallyScrolling(true)
+    }
+
+    /**
+     * [2026-11-08] marquee() for a title that is re-set on every player update (the phone player's song title and its
+     * "Playing from" subtitle, PlayerFragment.applyCurrent), so both scroll the same way and neither restarts each time.
+     * Two differences from marquee(), which stays as it is for the mini player and the TV:
+     * - Nothing is set that already holds. Any setText rebuilds the layout and stops the scroll (TextView.makeNewLayout,
+     *   android-34 TextView.java:10537), and PlayerState.Current is re-emitted on every play/pause and load, with the same
+     *   text. marquee()'s maxLines = 1 also requests a layout every time, which re-measures a toolbar subtitle and restarts it.
+     * - "Remove animations" (animator scale 0) gives a plain end ellipsis: the platform marquee does not check it.
+     */
+    fun TextView.setMarqueeText(value: CharSequence?) {
+        if (text?.toString() != value?.toString()) text = value
+        if (maxLines != 1) maxLines = 1
+        val animationsOff = Settings.Global.getFloat(
+            context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+        ) == 0f
+        if (animationsOff) {
+            if (isSelected) isSelected = false
+            if (ellipsize != TextUtils.TruncateAt.END) ellipsize = TextUtils.TruncateAt.END
+            return
+        }
+        if (marqueeRepeatLimit != -1) marqueeRepeatLimit = -1
+        if (ellipsize != TextUtils.TruncateAt.MARQUEE) ellipsize = TextUtils.TruncateAt.MARQUEE
+        setHorizontallyScrolling(true)
+        if (!isSelected) isSelected = true
     }
 
     fun BottomSheetDialogFragment.configureBottomBar(bar: View) {

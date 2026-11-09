@@ -146,6 +146,7 @@
     <string name="home">Trang chủ</string>
     <string name="search">Tìm kiếm</string>
     <string name="library">Thư viện</string>
+    <string name="library_tab_label">Thư viện - %1$s</string>
     <string name="more">Nhiều hơn</string>
     <string name="downloading_x">Đang tải %1$s</string>
     <string name="cancel_all">Hủy tất cả</string>

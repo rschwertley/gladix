@@ -2,6 +2,15 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <!-- [2026-11-08] Phone only, and only while the bar shows a query (SearchBarAdapter.bind): clears it and returns
+         Search to its browse page. Hidden by default, so the TV bar keeps the mic alone. -->
+    <item
+        android:id="@+id/menu_clear_query"
+        android:icon="@drawable/ic_close"
+        android:title="@string/clear"
+        android:visible="false"
+        app:showAsAction="always" />
+
     <item
         android:id="@+id/menu_voice_search"
         android:icon="@drawable/ic_mic"

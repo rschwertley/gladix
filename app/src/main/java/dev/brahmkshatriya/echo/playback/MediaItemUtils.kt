@@ -101,11 +101,17 @@ object MediaItemUtils {
     // A stand-in Radio context whose title matches what the real track-radio shows one track later
     // (Deezer's asTrackRadio uses "<title> Radio"). Cover mirrors the seed track. Marked LABEL_ONLY_RADIO
     // so it only ever labels the header and never alters which radio is generated.
+    // [2026-11-08] "radio" to "track" is for the "Playing from" tap only (PlayerFragment.applyCurrent), which opens this Radio's
+    // page: it makes Deezer's DeezerRadioClient.kind() read it as a track radio, the same station asTrackRadio opens from the
+    // second song on. Without it kind() fell through to FLOW and asked for a Flow with a track's id, since 542b094f (Jul 8)
+    // replaced the Jun 21 SearchFragment placeholder, which had it. Generation is unchanged: PlayerRadio.loadPlaylistLocked
+    // strips this context by LABEL_ONLY_RADIO alone, before anything reads "radio". Saved queues and History rows from before
+    // this have no "radio" key and still open as FLOW on a tap.
     fun trackRadioPlaceholder(track: Track): Radio = Radio(
         id = track.id,
         title = "${track.title} Radio",
         cover = track.cover,
-        extras = mapOf(LABEL_ONLY_RADIO to "true"),
+        extras = mapOf(LABEL_ONLY_RADIO to "true", "radio" to "track"),
     )
 
     // [2026-11-07] Marks the label feedPageLabel builds. It also carries LABEL_ONLY_RADIO, so PlayerRadio.loadPlaylistLocked
@@ -120,11 +126,42 @@ object MediaItemUtils {
     // Auto, handed to extension.radio() as a playlist, and offered as History's "Go to", all for an id the extension does not
     // know. A Radio is none of those, and toSlimContext keeps a Radio's extras, so the markers survive the saved queue and
     // History. The id is never loaded.
-    fun feedPageLabel(feedId: String?, title: String): Radio = Radio(
-        id = "feed_page:${feedId.orEmpty()}",
+    // [2026-11-08] The id is never loaded as a radio. A "Playing from" tap now reopens the page (PlayerFragment.openFeedPage),
+    // from the two extras below when the label has them: FEED_PAGE_SLOT, the key of the live page held by FeedPageSlot, and
+    // FEED_PAGE_EXTENSION, the page's own extension id (a Unified page's rows can carry another one). Labels from before this
+    // have neither and reopen from the cache only.
+    fun feedPageLabel(
+        feedId: String?, title: String, extensionId: String? = null, slotKey: String? = null,
+    ): Radio = Radio(
+        id = FEED_PAGE_ID_PREFIX + feedId.orEmpty(),
         title = title,
-        extras = mapOf(LABEL_ONLY_RADIO to "true", FEED_PAGE_LABEL to "true"),
+        extras = buildMap {
+            put(LABEL_ONLY_RADIO, "true")
+            put(FEED_PAGE_LABEL, "true")
+            if (extensionId != null) put(FEED_PAGE_EXTENSION, extensionId)
+            if (slotKey != null) put(FEED_PAGE_SLOT, slotKey)
+        },
     )
+
+    // [2026-11-08] "Playing from Library - <tab>" (LibraryFragment.libraryLabel). The same two markers as feedPageLabel, so
+    // generation and tvDriveRadio treat it exactly as the null context Library queues had before: PlayerRadio.loadPlaylistLocked
+    // strips it by LABEL_ONLY_RADIO, and FEED_PAGE_LABEL keeps tvDriveRadio from reading it as a station. LIBRARY_TAB routes a
+    // tap (PlayerFragment.openLibraryTab) to the Library tab instead of the folder path; it is checked before
+    // FEED_PAGE_LABEL there. The tab id is empty for a feed with no tabs.
+    fun libraryTabLabel(extensionId: String, tabId: String?, title: String): Radio = Radio(
+        id = LIBRARY_TAB_ID_PREFIX + tabId.orEmpty(),
+        title = title,
+        extras = mapOf(
+            LABEL_ONLY_RADIO to "true", FEED_PAGE_LABEL to "true",
+            LIBRARY_TAB to tabId.orEmpty(), FEED_PAGE_EXTENSION to extensionId,
+        ),
+    )
+
+    const val LIBRARY_TAB_ID_PREFIX = "library_tab:"
+    const val LIBRARY_TAB = "library_tab"
+    const val FEED_PAGE_ID_PREFIX = "feed_page:"
+    const val FEED_PAGE_EXTENSION = "feed_page_extension"
+    const val FEED_PAGE_SLOT = "feed_page_slot"
 
     fun build(
         app: App,

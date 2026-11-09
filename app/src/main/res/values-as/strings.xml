@@ -70,6 +70,7 @@
     <string name="home">হোম</string>
     <string name="search">চাৰ্চ</string>
     <string name="library">লাইব্ৰেৰী</string>
+    <string name="library_tab_label">লাইব্ৰেৰী - %1$s</string>
     <string name="more">অধিক</string>
     <string name="extension">এক্সটেনশ্যন</string>
     <string name="downloading_x">%1$s ডাউনলোড হৈ আছে</string>

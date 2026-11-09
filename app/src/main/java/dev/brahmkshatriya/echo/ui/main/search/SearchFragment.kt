@@ -217,9 +217,17 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 else -> false
             }
         }
-        val searchAdapter = SearchBarAdapter(searchViewModel, binding.quickSearchView) {
-            launchVoiceSearch()
-        }
+        // [2026-11-08] The X: back to the browse page, without the overlay or the keyboard. Only the query is reset; the
+        // queryFlow observer below rebinds the bar and empties the overlay's field, and the new query reloads the feed
+        // (FeedData's load collector restarts on it, dropping the old search). The search history is not touched.
+        val searchAdapter = SearchBarAdapter(
+            searchViewModel, binding.quickSearchView,
+            onMicClick = { launchVoiceSearch() },
+            onClearClick = {
+                searchViewModel.queryFlow.value = ""
+                recyclerView.scrollToPosition(0)
+            },
+        )
         observe(searchViewModel.queryFlow) {
             searchAdapter.notifyItemChanged(0)
             binding.quickSearchView.setText(it)

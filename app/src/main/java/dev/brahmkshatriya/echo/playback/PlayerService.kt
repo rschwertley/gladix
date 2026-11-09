@@ -389,11 +389,14 @@ class PlayerService : MediaLibraryService() {
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (key) {
             SKIP_SILENCE -> prefs.getBoolean(key, true).let {
-                exoPlayer.skipSilenceEnabled = it
+                exoPlayer.skipSilenceEnabled = effectiveSkipSilence()
                 // Mirrored so the tail trims silence the same way the head does.
                 crossfade?.onSkipSilenceChanged(it)
             }
-            TRUE_CROSSFADE_SECONDS -> syncCrossfade()
+            TRUE_CROSSFADE_SECONDS -> {
+                syncCrossfade()
+                exoPlayer.skipSilenceEnabled = effectiveSkipSilence()
+            }
             LOUDNESS_NORMALIZATION -> {
                 audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
                 effects.updateNormalizationSettings()
@@ -1353,9 +1356,20 @@ class PlayerService : MediaLibraryService() {
                     .buildUpon()
                     .setAudioOffloadPreferences(audioOffloadPreferences)
                     .build()
-                it.skipSilenceEnabled = app.settings.getBoolean(SKIP_SILENCE, true)
+                it.skipSilenceEnabled = effectiveSkipSilence()
             }
     }
+
+    /**
+     * [2026-11-08] SKIP SILENCE IS NOT APPLIED WHILE CROSSFADE IS ON (slider > 0), the user's decision (A2). The preference is
+     * untouched and its switch shows "Not applied while crossfade is on" (SettingsPlayerFragment); only what the main player
+     * is given changes. Why: AudioEffectsProcessor runs before SilenceSkippingAudioProcessor (RenderersFactory), so the next
+     * song's leading silence used up part of the incoming fade-in unheard. The crossfade tail has had it off since H8
+     * (CrossfadeController.maybePrepareSidecar). The three writers of exoPlayer.skipSilenceEnabled all go through this: the
+     * player's creation, and both preference keys in [listener].
+     */
+    private fun effectiveSkipSilence(): Boolean =
+        app.settings.getBoolean(SKIP_SILENCE, true) && app.settings.getInt(TRUE_CROSSFADE_SECONDS, 0) <= 0
 
 
     private val clearQueueReceiver = object : BroadcastReceiver() {

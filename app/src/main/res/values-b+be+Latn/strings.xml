@@ -54,6 +54,7 @@
     <string name="home">Hałoŭnaja</string>
     <string name="search">Pošuk</string>
     <string name="library">Biblijateka</string>
+    <string name="library_tab_label">Biblijateka - %1$s</string>
     <string name="more">Bolš</string>
     <string name="extension">Pašyrennie</string>
     <string name="downloading_x">Spampavannie %1$s</string>

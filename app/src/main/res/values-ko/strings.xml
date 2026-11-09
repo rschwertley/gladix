@@ -38,6 +38,7 @@
     <string name="playlist_liked_desc">내가 좋아하는 트랙</string>
     <string name="no_internet">인터넷 없음</string>
     <string name="library">보관함</string>
+    <string name="library_tab_label">보관함 - %1$s</string>
     <string name="extension_x_not_found">확장 프로그램 %1$s을 찾을 수 없습니다</string>
     <string name="x_is_not_supported_in_x">%1$s는 %2$s에서 지원되지 않습니다</string>
     <string name="cancel_all">전체 취소</string>

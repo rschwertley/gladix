@@ -12,6 +12,7 @@
     <string name="home">Principale</string>
     <string name="search">Cerca</string>
     <string name="library">Libreria</string>
+    <string name="library_tab_label">Libreria - %1$s</string>
     <string name="extension_x_not_found">Estensione %1$s non trovata</string>
     <string name="install">Installa</string>
     <string name="theme">Tema</string>

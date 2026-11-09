@@ -167,7 +167,7 @@ class HorizontalListViewHolder(
     fun Shelf.Lists<*>.toShelfType(
         extensionId: String, context: EchoMediaItem?, tabId: String?
     ) = when (this) {
-        is Shelf.Lists.Items -> list.map { ShelfType.Media(extensionId, context, tabId, it) }
+        is Shelf.Lists.Items -> list.map { ShelfType.Media(extensionId, context, tabId, it, id, title) }
         is Shelf.Lists.Categories -> list.map {
             ShelfType.Category(extensionId, context, tabId, it)
         }
@@ -179,7 +179,8 @@ class HorizontalListViewHolder(
                     it[0],
                     it.getOrNull(1),
                     it.getOrNull(2)
-                )
+                ),
+                id, title,
             )
         }
     }
@@ -221,13 +222,13 @@ class HorizontalListViewHolder(
 
         private fun ShelfType.marked(): ShelfType = when (this) {
             is ShelfType.Media -> (this.media as? Track)?.marked()?.takeIf { it !== this.media }
-                ?.let { ShelfType.Media(extensionId, context, tabId, it) } ?: this
+                ?.let { ShelfType.Media(extensionId, context, tabId, it, rowId, rowTitle) } ?: this
 
             is ShelfType.ThreeTracks -> {
                 val (a, b, c) = this.tracks
                 val marked = Triple(a.marked(), b?.marked(), c?.marked())
                 if (marked.first === a && marked.second === b && marked.third === c) this
-                else ShelfType.ThreeTracks(extensionId, context, tabId, number, marked)
+                else ShelfType.ThreeTracks(extensionId, context, tabId, number, marked, rowId, rowTitle)
             }
 
             else -> this

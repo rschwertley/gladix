@@ -28,6 +28,7 @@
     <string name="home">首頁</string>
     <string name="search">搜尋</string>
     <string name="library">媒體庫</string>
+    <string name="library_tab_label">媒體庫 - %1$s</string>
     <string name="more">更多</string>
     <string name="extension">擴充功能</string>
     <string name="downloading_x">正在下載 %1$s</string>

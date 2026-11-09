@@ -19,12 +19,14 @@ class SearchBarAdapter(
     val viewModel: SearchViewModel,
     val searchView: SearchView,
     val onMicClick: () -> Unit,
+    // [2026-11-08] The bar's X (phone only, shown while a query is remembered).
+    val onClearClick: () -> Unit,
 ) : ScrollAnimRecyclerAdapter<SearchBarAdapter.ViewHolder>(), GridAdapter {
     override val adapter = this
     override fun getSpanSize(position: Int, width: Int, count: Int) = count
     override fun getItemCount() = 1
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-        ViewHolder(parent, viewModel, searchView, onMicClick)
+        ViewHolder(parent, viewModel, searchView, onMicClick, onClearClick)
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         super.onBindViewHolder(holder, position)
@@ -36,18 +38,24 @@ class SearchBarAdapter(
         val viewModel: SearchViewModel,
         val searchView: SearchView,
         val onMicClick: () -> Unit,
+        val onClearClick: () -> Unit,
         private val binding: ItemSearchBarBinding = ItemSearchBarBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
         )
     ) : ScrollAnimViewHolder(binding.root) {
         fun bind() {
             searchView.setupWithSearchBar(binding.root)
-            binding.root.setText(viewModel.queryFlow.value.takeIf { it.isNotBlank() })
+            val query = viewModel.queryFlow.value.takeIf { it.isNotBlank() }
+            binding.root.setText(query)
+            // [2026-11-08] Rebound on every query change (SearchFragment's queryFlow observer), so the X follows the query.
+            binding.root.menu.findItem(R.id.menu_clear_query)?.isVisible =
+                query != null && !binding.root.context.isTv()
             binding.root.setOnMenuItemClickListener { item ->
-                if (item.itemId == R.id.menu_voice_search) {
-                    onMicClick()
-                    true
-                } else false
+                when (item.itemId) {
+                    R.id.menu_voice_search -> { onMicClick(); true }
+                    R.id.menu_clear_query -> { onClearClick(); true }
+                    else -> false
+                }
             }
             // TV (2026-11-02): Right from the bar to the mic, Left from the mic BACK TO THE BAR. Left used to reach the
             // rail: TvAwareRecyclerView's in-item Left search starts at the row's root, which IS this full-width bar,

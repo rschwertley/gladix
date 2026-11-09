@@ -53,6 +53,7 @@
     <string name="home">Inici</string>
     <string name="search">Cerca</string>
     <string name="library">Biblioteca</string>
+    <string name="library_tab_label">Biblioteca - %1$s</string>
     <string name="more">Més</string>
     <string name="extension">Extensió</string>
     <string name="downloading_x">Descarregant %1$s</string>

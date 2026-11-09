@@ -48,6 +48,7 @@
     <string name="home">வீடு</string>
     <string name="search">தேடல்</string>
     <string name="library">நூலகம்</string>
+    <string name="library_tab_label">நூலகம் - %1$s</string>
     <string name="more">மேலும்</string>
     <string name="extension">நீட்டிப்பு</string>
     <string name="downloading_x">%1$s ஐ பதிவிறக்குகிறது</string>

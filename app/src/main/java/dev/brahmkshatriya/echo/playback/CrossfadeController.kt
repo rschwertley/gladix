@@ -17,6 +17,13 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import dev.brahmkshatriya.echo.playback.source.CacheOnlyTailSource
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -220,6 +227,34 @@ class CrossfadeController(
     private var phase = Phase.IDLE
     private var armedMediaId: String? = null
     private var armedTailStartMs = 0L
+
+    /**
+     * [2026-11-08] THE END LOOK-AHEAD (AudibleEndAnalyzer). One result per media id, for the song playing, kept across seeks
+     * because it describes the file, not the playthrough. Started from [tickIdle] once the whole file is buffered and before
+     * the arm point ([maybeStartEndAnalysis]); read at [arm], which cancels a run still going, so the analysis decoder never
+     * runs beside the sidecar's (the sidecar prepares only once ARMED, [maybePrepareSidecar]). A cancelled run clears the id
+     * so a later eligible tick (after a seek back) runs it again; a run that finished undecided keeps it, so a failure is
+     * not retried every tick. [endAudibleMs] null = no result, which keeps today's window (the end of the file).
+     */
+    private val endAnalysisScope = CoroutineScope(
+        // Nothing reaches this handler: AudibleEndAnalyzer catches everything but cancellation. It is here so a future
+        // throw cannot crash the service from a background scope.
+        SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, _ -> }
+    )
+    private var endAnalysisJob: Job? = null
+    private var endAnalysisMediaId: String? = null
+    private var endAudibleMs: Long? = null
+
+    /**
+     * [2026-11-08] How far before the end of the file this arm's window ends: duration minus the audible end, 0 when there is
+     * nothing to move (under [MIN_END_MOVE_MS]) or no result, at most [MAX_END_MOVE_MS] (the user's cap). Set at [arm]; the
+     * gate ([tickArmed], [tickPreroll]) and the fade-out length ([outgoingRampMs]) measure to `duration - armedEndMoveMs`.
+     * LATE_ABORT_MS still measures to the real end, so a gate that misses gets the plain transition at the true end.
+     */
+    private var armedEndMoveMs = 0L
+
+    // The CROSSFADE-FEEL line's endMoveMs (user-approved 2026-11-08): the move as set at arm, or "-" with no result.
+    private var endMoveLog: String? = null
 
     /**
      * Where the sidecar is PARKED, which since the pre-roll is no longer where the switch
@@ -509,6 +544,8 @@ class CrossfadeController(
         gateAttempts = 0
         gateAttemptsForMediaId = null
         declinedMediaId = null
+        // A new song: the old one's look-ahead, if still running, has nothing left to answer.
+        cancelEndAnalysis()
         abort(Abort.TRACK_CHANGE)
         startTick()
     }
@@ -758,6 +795,7 @@ class CrossfadeController(
         if (mainProcessor.onFlushed === onMainFlushed) mainProcessor.onFlushed = null
         abort(Abort.SETTING_OFF)
         stopTick()
+        endAnalysisScope.cancel()
         runCatching { sidecar.release() }
     }
 
@@ -1071,7 +1109,39 @@ class CrossfadeController(
         // The string is now documentation only - see [armRefusal]. Non-null means "do not arm".
         if (armRefusal() != null) return
         val duration = exoPlayer.duration
+        maybeStartEndAnalysis(duration)
         if (exoPlayer.currentPosition >= duration - armLeadMs()) arm()
+    }
+
+    /**
+     * [2026-11-08] Starts the end look-ahead for the song playing (see [endAnalysisScope]): once the main player has the whole
+     * file (the same test as [maybePrepareSidecar]), and only before the arm point, so it has until arm to finish and never
+     * overlaps the sidecar. Only reached for a transition that could crossfade ([tickIdle] runs after [armRefusal]), so an
+     * album boundary, repeat-one or the end of the queue never pays for it.
+     */
+    private fun maybeStartEndAnalysis(duration: Long) {
+        val item = exoPlayer.currentMediaItem ?: return
+        if (endAnalysisMediaId == item.mediaId) return
+        if (duration == C.TIME_UNSET) return
+        if (exoPlayer.bufferedPosition < duration - BUFFERED_EPSILON_MS) return
+        if (exoPlayer.currentPosition >= duration - armLeadMs()) return
+        val uri = item.localConfiguration?.uri ?: return
+        endAnalysisJob?.cancel()
+        val mediaId = item.mediaId
+        endAnalysisMediaId = mediaId
+        endAudibleMs = null
+        endAnalysisJob = endAnalysisScope.launch {
+            val end = AudibleEndAnalyzer.audibleEndMs(tail.dataSourceFactory, uri, duration)
+            if (endAnalysisMediaId == mediaId) endAudibleMs = end
+        }
+    }
+
+    private fun cancelEndAnalysis() {
+        if (endAnalysisJob?.isActive == true) {
+            endAnalysisJob?.cancel()
+            endAnalysisMediaId = null
+        }
+        endAnalysisJob = null
     }
 
     /**
@@ -1103,8 +1173,10 @@ class CrossfadeController(
         // rather than stranding it. effectiveFade is wall-clock intent, hence the speed factor.
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         val remaining = duration - position
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, remaining.toFloat()).toLong()
-        if (position >= duration - effectiveFadeMs) {
+        // [2026-11-08] The window ends at the audible end found at arm ([armedEndMoveMs]); LATE_ABORT_MS still to the real end.
+        val windowLeft = (duration - armedEndMoveMs - position).coerceAtLeast(0L)
+        effectiveFadeMs = min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong()
+        if (position >= duration - armedEndMoveMs - effectiveFadeMs) {
             if (remaining <= LATE_ABORT_MS) return abort(Abort.NOT_READY)
             evaluateGate(item, position, duration)
             return
@@ -1119,7 +1191,7 @@ class CrossfadeController(
         // (2026-10-22). Its only consumer was that line's `cache=` field, so it had become
         // content-index I/O - under the SimpleCache monitor - feeding a log and nothing else.
         // CacheOnlyTailSource.gate now has no callers again; left in place as its own note says.
-        if (remaining <= effectiveFadeMs + (PREROLL_MS * speed).toLong())
+        if (windowLeft <= effectiveFadeMs + (PREROLL_MS * speed).toLong())
             startPreRoll(position, duration)
     }
 
@@ -1298,8 +1370,10 @@ class CrossfadeController(
         val position = exoPlayer.currentPosition
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         val remaining = duration - position
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, remaining.toFloat()).toLong()
-        if (position >= duration - effectiveFadeMs) {
+        // [2026-11-08] Same window as [tickArmed]: to the audible end, LATE_ABORT_MS to the real end.
+        val windowLeft = (duration - armedEndMoveMs - position).coerceAtLeast(0L)
+        effectiveFadeMs = min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong()
+        if (position >= duration - armedEndMoveMs - effectiveFadeMs) {
             if (remaining <= LATE_ABORT_MS) return abort(Abort.NOT_READY)
             evaluateGate(item, position, duration)
         }
@@ -1490,12 +1564,20 @@ class CrossfadeController(
         val position = exoPlayer.currentPosition
         val remaining = duration - position
         if (remaining < MIN_REMAINING_MS) return
+        // [2026-11-08] The end look-ahead's answer for this song, taken now or not at all: the park below is fixed at arm, so a
+        // result arriving later is not used for this playthrough. A run still going is cancelled (see [endAnalysisScope]).
+        cancelEndAnalysis()
+        val audibleEnd = endAudibleMs.takeIf { endAnalysisMediaId == item.mediaId }
+        armedEndMoveMs = audibleEnd?.let { end ->
+            (duration - end).let { if (it < MIN_END_MOVE_MS) 0L else min(it, MAX_END_MOVE_MS) }
+        } ?: 0L
+        endMoveLog = if (audibleEnd == null) "-" else armedEndMoveMs.toString()
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, remaining.toFloat()).toLong()
+        effectiveFadeMs = min(fadeSeconds * 1000L * speed, (remaining - armedEndMoveMs).toFloat()).toLong()
         phase = Phase.ARMED
         armedMediaId = item.mediaId
         sidecarRePrepares = 0
-        armedTailStartMs = duration - effectiveFadeMs
+        armedTailStartMs = duration - armedEndMoveMs - effectiveFadeMs
         // ⚠⚠ THE TAIL'S EQ IS RE-SEEDED HERE, AND AT ARM SPECIFICALLY BECAUSE
         // THE PREPARE HAS NOT HAPPENED YET. [onBassBoostChanged] refuses to retune a PLAYING
         // tail, which is right - but it left the sidecar holding whatever the last applied value
@@ -2018,7 +2100,9 @@ class CrossfadeController(
         val duration = runCatching { sidecar.duration }.getOrDefault(C.TIME_UNSET)
         if (duration == C.TIME_UNSET || queuedMs < 0L) return rampMs to true
         val position = runCatching { sidecar.currentPosition }.getOrNull() ?: return rampMs to true
-        val leftMs = duration - position - (queuedMs * speed).toLong()
+        // [2026-11-08] To the audible end found at arm ([armedEndMoveMs]), not the end of the file: the fade reaches silence where
+        // the music does, and fadeOutDone holds the rest of the file silent.
+        val leftMs = duration - armedEndMoveMs - position - (queuedMs * speed).toLong()
         if (leftMs >= rampMs) return rampMs to true
         return max(leftMs, MIN_RAMP_MS) to false
     }
@@ -2110,6 +2194,7 @@ class CrossfadeController(
                 " trim2Ms=" + (trim2Ms?.toString() ?: "-") + " tsSwitchMs=" + (tsSwitchMs?.toString() ?: "-") +
                 " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-") +
                 " overlapMs=" + overlapField() + " rampOutMs=" + (rampOutLog ?: "-") +
+                " endMoveMs=" + (endMoveLog ?: "-") +
                 " tailDb=" + sidecarProcessor.tailDb()
         )
     }
@@ -2170,6 +2255,8 @@ class CrossfadeController(
         switchFmt = null
         overlapStartAtMs = 0L
         rampOutLog = null
+        endMoveLog = null
+        armedEndMoveMs = 0L
     }
 
     /**
@@ -2324,6 +2411,12 @@ class CrossfadeController(
         private const val ARM_LEAD_BASE_MS = 25_000L
         private const val ARM_LEAD_FLOOR_MS = 30_000L
         private const val MIN_REMAINING_MS = 1_500L
+
+        // [2026-11-08] The end look-ahead's move (see [armedEndMoveMs]): nothing under a second (a breath or a short pause
+        // before a last chord is not an ending), and never more than 10 s before the end of the file (the user's cap), so a
+        // long quiet coda keeps most of its music.
+        private const val MIN_END_MOVE_MS = 1_000L
+        private const val MAX_END_MOVE_MS = 10_000L
         private const val MIN_TRACK_HEADROOM_MS = 5_000L
 
         /** The reference polls at 200 ms; so do we, and it is the only clock this class has. */

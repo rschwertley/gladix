@@ -24,6 +24,7 @@ import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.ui.common.GridAdapter
+import dev.brahmkshatriya.echo.ui.feed.FeedPageSlot
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.media.MediaDetailsViewModel
 import dev.brahmkshatriya.echo.ui.media.more.MoreButton.Companion.button
@@ -86,6 +87,11 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
 
     private val label by lazy { MediaItemUtils.feedPageLabel(category.id, category.title) }
 
+    // [2026-11-08] The label each action puts on the queue: it also makes this folder the live page a "Playing from" tap
+    // reopens (FeedPageSlot), so it is built per action and never for the header, which opening the sheet alone shows.
+    // extensionId is the row's, the same one CategoryViewHolder opens the folder's page with.
+    private fun queueLabel() = FeedPageSlot.label(extensionId, category.id, category.title, category.feed)
+
     // What LikeClient is given: the folder as an Album, carrying the row's extras so the extension can tell it is a folder.
     private val folderAlbum by lazy {
         Album(
@@ -115,6 +121,10 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         if (!::category.isInitialized) return
         val binding = DialogMediaMoreBinding.bind(view)
         // The label as the header: a Radio shows no type line ("Album" would be wrong for a folder).
+        // [2026-11-08] With no cover (or one that fails), the feed's own placeholder for a list (MediaViewHolder.placeHolder's
+        // Playlist arm), tinted from the theme. Set here because the header's default follows the item, and this item is a Radio
+        // label, whose arm is a radio icon. A folder with a cover still shows it. Phone and TV alike, as the default now is.
+        headerAdapter.placeholder = R.drawable.art_library_music
         headerAdapter.item = label.copy(cover = category.image)
         configureGridLayout(binding.root, GridAdapter.Concat(headerAdapter, actionAdapter))
         submitButtons()
@@ -142,12 +152,12 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         button("shuffle_play", R.string.shuffle, R.drawable.ic_shuffle) { play(true) },
         if (playerViewModel.queue.isNotEmpty())
             button("next", R.string.add_to_next, R.drawable.ic_playlist_play) {
-                withTracks { playerViewModel.addToNext(extensionId, label, true, tracks = it) }
+                withTracks { playerViewModel.addToNext(extensionId, queueLabel(), true, tracks = it) }
             }
         else null,
         if (playerViewModel.queue.size > 1)
             button("queue", R.string.add_to_queue, R.drawable.ic_playlist_add) {
-                withTracks { playerViewModel.addToQueue(extensionId, label, true, tracks = it) }
+                withTracks { playerViewModel.addToQueue(extensionId, queueLabel(), true, tracks = it) }
             }
         else null,
         when (val row = likeRow) {
@@ -175,7 +185,7 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
                 app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
                 return@withTracks
             }
-            playerViewModel.setQueue(extensionId, playable, 0, label, shuffleList = shuffle)
+            playerViewModel.setQueue(extensionId, playable, 0, queueLabel(), shuffleList = shuffle)
             if (!shuffle) playerViewModel.setShuffle(false, true)
             playerViewModel.setPlaying(true)
         }

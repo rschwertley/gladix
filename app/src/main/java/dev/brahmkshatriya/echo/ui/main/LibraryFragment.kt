@@ -13,11 +13,13 @@ import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Playlist
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.FragmentLibraryBinding
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.cache.Cached
+import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayout
 import dev.brahmkshatriya.echo.ui.common.TvAwareRecyclerView
@@ -42,6 +44,10 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 class LibraryFragment : Fragment(R.layout.fragment_library) {
+    companion object {
+        const val LIBRARY_TAB_RESULT = "libraryTab"
+    }
+
     private val feedData by lazy {
         val vm by viewModel<FeedViewModel>()
         val id = "library"
@@ -57,6 +63,28 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
             )
             FeedData.State(curr.id, null, feed)
         }
+    }
+
+    /**
+     * [2026-11-08] "Playing from Library - <tab>" for a queue set on this screen (FeedClickListener.feedPageLabel): Play,
+     * Shuffle and declared-list row taps here had no context, so a blank bar. The tab's own title, so another extension's
+     * library list reads as what it is. Phone only. A tap on it shows this tab again (PlayerFragment.openLibraryTab, via the
+     * LIBRARY_TAB_RESULT listener below), never the folder path.
+     */
+    // [2026-11-08] A song tapped in a row (rowId / rowTitle, e.g. the All tab's "Tracks" row) is labelled after that row and
+    // reopens the one tab whose title or id matches the row's, ignoring case, so All's Tracks row reads and behaves like the
+    // Tracks tab (GitHub #4, "the All tab must behave the same"). No match, or several: the tab on screen. A matching rule,
+    // not a declared link, since Shelf carries no tab; no extension is named here.
+    fun libraryLabel(rowId: String? = null, rowTitle: String? = null): Radio? {
+        val extensionId = feedData.shownExtensionId ?: return null
+        val rowKeys = listOfNotNull(rowId, rowTitle).filter { it.isNotBlank() }
+        val rowTab = if (rowKeys.isEmpty()) null else feedData.shownTabs.filter { tab ->
+            rowKeys.any { it.equals(tab.title, ignoreCase = true) || it.equals(tab.id, ignoreCase = true) }
+        }.singleOrNull()
+        val tab = rowTab ?: feedData.selectedTab
+        val name = rowTitle?.takeIf { it.isNotBlank() } ?: tab?.title?.takeIf { it.isNotBlank() }
+        val title = name?.let { getString(R.string.library_tab_label, it) } ?: getString(R.string.library)
+        return MediaItemUtils.libraryTabLabel(extensionId, tab?.id, title)
     }
 
     private val listener by lazy { getFeedListener(requireParentFragment()) }
@@ -137,6 +165,13 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
 
         parent.parentFragmentManager.setFragmentResultListener("reloadLibrary", this) { _, _ ->
             feedData.refresh()
+        }
+
+        // [2026-11-08] From a "Playing from Library - <tab>" tap. A result set before this listener exists (Library not yet
+        // opened) is kept by the FragmentManager and delivered once this view is started.
+        parent.parentFragmentManager.setFragmentResultListener(LIBRARY_TAB_RESULT, this) { _, data ->
+            val tabId = data.getString("tabId") ?: return@setFragmentResultListener
+            feedData.selectTabById(data.getString("extensionId"), tabId)
         }
     }
 }

@@ -28,6 +28,7 @@
     <string name="repeat_all">Повторять всё</string>
     <string name="search">Поиск</string>
     <string name="library">Библиотека</string>
+    <string name="library_tab_label">Библиотека - %1$s</string>
     <string name="more">Больше</string>
     <string name="extension">Расширение</string>
     <string name="downloading_x">Скачивается %1$s</string>

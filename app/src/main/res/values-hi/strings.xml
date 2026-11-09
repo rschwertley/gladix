@@ -26,6 +26,7 @@
     <string name="home">होम</string>
     <string name="search">खोजें</string>
     <string name="library">लाइब्रेरी</string>
+    <string name="library_tab_label">लाइब्रेरी - %1$s</string>
     <string name="more">अधिक</string>
     <string name="extension">एक्सटेंशन</string>
     <string name="downloading_x">%1$s डाउनलोड हो रहा है</string>

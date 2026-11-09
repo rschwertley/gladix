@@ -61,6 +61,8 @@
     <string name="search">Search</string>
     <string name="aa_browse">Browse</string>
     <string name="library">Library</string>
+    <!-- [2026-11-08] "Playing from" label for a queue started in Library: %1$s is the Library tab's own title (e.g. Tracks). -->
+    <string name="library_tab_label">Library - %1$s</string>
     <string name="more">More</string>
     <string name="extension">Extension</string>
     <string name="downloading_x">Downloading %1$s</string>
@@ -154,6 +156,10 @@
 
     <string name="skip_silence">Skip Silence</string>
     <string name="skip_silence_summary">Skip silent part in the song, to provide gapless playback.</string>
+    <!-- [2026-11-08] Shown under Skip silence while crossfade is on (PlayerService.effectiveSkipSilence). -->
+    <string name="skip_silence_crossfade_note">Not applied while crossfade is on.</string>
+    <!-- The summary, then the note on its own line. -->
+    <string name="skip_silence_summary_with_note">%1$s\n%2$s</string>
 
     <string name="loudness_normalization">Loudness Normalization</string>
     <string name="loudness_normalization_summary">Normalize volume levels between tracks</string>

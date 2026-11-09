@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.placeHolder
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -38,11 +39,17 @@ class MoreHeaderAdapter(
             notifyItemChanged(0)
         }
 
+    // [2026-11-08] What shows with no cover, or when it fails to load. Null = the item's own placeholder, the feed's mapping
+    // (MediaViewHolder.placeHolder: art_music, art_album, art_library_music, ...), all tinted ?attr/colorControlNormal. Until
+    // now every sheet showed ic_music, an untinted black vector, dark on a dark sheet. FolderMoreBottomSheet sets its own,
+    // because its item is a Radio label and the mapping's Radio arm is a radio icon.
+    var placeholder: Int? = null
+
     private var viewHolder: ViewHolder? = null
     override fun onBindViewHolder(holder: ViewHolder, position: Int) = with(holder.binding) {
         viewHolder = holder
         val item = item
-        holder.bind(item)
+        holder.bind(item, placeholder)
         holder.onCurrentChanged(item, current)
     }
 
@@ -53,7 +60,7 @@ class MoreHeaderAdapter(
         )
     ) : ScrollAnimViewHolder(binding.root) {
 
-        fun bind(item: EchoMediaItem?) = with(binding) {
+        fun bind(item: EchoMediaItem?, placeholder: Int? = null) = with(binding) {
             if (item == null) return@with
             title.text = item.title
             val ctx = root.context
@@ -76,7 +83,8 @@ class MoreHeaderAdapter(
                 }
                 is Radio -> ""
             }
-            item.cover.loadInto(cover, R.drawable.ic_music)
+            val fallback = placeholder ?: item.placeHolder
+            item.cover.loadInto(cover, fallback, fallback)
         }
 
         fun onCurrentChanged(item: EchoMediaItem?, current: PlayerState.Current?) {

@@ -258,6 +258,7 @@
     <string name="okay">Está bem</string>
     <string name="back">Voltar</string>
     <string name="library">Biblioteca</string>
+    <string name="library_tab_label">Biblioteca - %1$s</string>
     <string name="look_and_feel">Olhar e Sentir</string>
     <string name="removed_x_from_library">%1$s removido da biblioteca</string>
     <string name="download_progress">Download Progresso</string>
