@@ -235,6 +235,11 @@ class CrossfadeController(
      * runs beside the sidecar's (the sidecar prepares only once ARMED, [maybePrepareSidecar]). A cancelled run clears the id
      * so a later eligible tick (after a seek back) runs it again; a run that finished undecided keeps it, so a failure is
      * not retried every tick. [endAudibleMs] null = no result, which keeps today's window (the end of the file).
+     * [CORRECTED 2026-11-10] "Never runs beside the sidecar's" is true of the END look-ahead only. The start look-ahead
+     * ([StartShape]) uses this scope too and may run while ARMED, beside the prepared sidecar, because the next song's head
+     * commits after arm for lossy formats. It never runs at the same time as the end look-ahead. What keeps that safe is
+     * not timing but the decoder: both look-aheads decode in software only (AudibleEndAnalyzer.openSoftwareDecoder,
+     * 2026-11-11), and the start look-ahead waits for the sidecar to be READY ([tickArmed]).
      */
     private val endAnalysisScope = CoroutineScope(
         // Nothing reaches this handler: AudibleEndAnalyzer catches everything but cancellation. It is here so a future
@@ -255,6 +260,38 @@ class CrossfadeController(
 
     // The CROSSFADE-FEEL line's endMoveMs (user-approved 2026-11-08): the move as set at arm, or "-" with no result.
     private var endMoveLog: String? = null
+
+    /**
+     * [2026-11-10] THE START LOOK-AHEAD (AudibleEndAnalyzer.startShape): where the NEXT song's music starts and how soon it is
+     * near its level, from its first [AudibleEndAnalyzer.HEAD_SCAN_MS], read only from what the main player has already
+     * committed to the cache (CacheOnlyTailSource.head), never the network. Used at [startRamps]: the incoming ramp starts at
+     * the onset, and a loud start gets a shorter fade-in ([incomingFadeMs]). Started from [tickIdle] and [tickArmed]
+     * ([maybeStartStartAnalysis]) once the end look-ahead is not running, so one analysis decoder at a time. It does run
+     * while ARMED, beside the prepared sidecar: the head of an MP3 128 song commits only ~18 s before the switch, after arm.
+     * [2026-11-11] There it starts only once the sidecar is READY (its decoder already started), it is cancelled at the
+     * hand-off ([handoffSeek]), and its decoder is software only (AudibleEndAnalyzer.openSoftwareDecoder), so it cannot take
+     * a hardware decoder slot from main or the sidecar.
+     * A short head (fewer than 5 s committed) is tried again only when more has been committed since. Results are kept for
+     * the last [START_SHAPES_KEPT] songs for the service's lifetime, keyed by media id and checked against the source uri,
+     * so a skip back or a repeat does not decode again and a different file (another quality) does. What is kept is the
+     * measurement (onset, rise, level), not the fade-in it gave, because the fade-in also depends on the effective fade.
+     */
+    private class StartShape(val sourceUri: String, val shape: AudibleEndAnalyzer.Start?)
+
+    private val startShapes = object : LinkedHashMap<String, StartShape>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, StartShape>?) = size > START_SHAPES_KEPT
+    }
+    private var startAnalysisJob: Job? = null
+    private var startAttemptMediaId: String? = null
+    private var startAttemptBytes = 0L
+
+    // The CROSSFADE-FEEL line's inOnsetMs and inFadeMs (user-approved 2026-11-10); see [logTransition].
+    private var inOnsetLog: String? = null
+    private var inFadeLog: String? = null
+
+    // [2026-11-10] When the overlap ends, ms after [startRamps]: the full fade as before, or with a shorter or delayed fade-in
+    // the later of its end and the outgoing leg's heard end, so a short fade-in cannot cut the old song off ([tickActive]).
+    private var completeAfterMs = 0L
 
     /**
      * Where the sidecar is PARKED, which since the pre-roll is no longer where the switch
@@ -1110,7 +1147,47 @@ class CrossfadeController(
         if (armRefusal() != null) return
         val duration = exoPlayer.duration
         maybeStartEndAnalysis(duration)
+        maybeStartStartAnalysis()
         if (exoPlayer.currentPosition >= duration - armLeadMs()) arm()
+    }
+
+    /**
+     * [2026-11-10] Starts the start look-ahead for the next song (see [StartShape]) when nothing is analysing, the slider is at
+     * least [MIN_SHAPED_FADE_MS], the next song's head can be read without the network, and it has not been measured, or
+     * more of it has been committed since a try that came back undecided.
+     */
+    private fun maybeStartStartAnalysis() {
+        if (fadeSeconds * 1000L < MIN_SHAPED_FADE_MS) return
+        if (endAnalysisJob?.isActive == true || startAnalysisJob?.isActive == true) return
+        if (!sessionPlayer.hasNextMediaItem()) return
+        val next = runCatching { sessionPlayer.getMediaItemAt(sessionPlayer.nextMediaItemIndex) }.getOrNull() ?: return
+        val mediaId = next.mediaId
+        val head = tail.head(next) ?: return
+        val known = startShapes[mediaId]
+        if (known != null && known.sourceUri == head.sourceUri && known.shape != null) return
+        if (startAttemptMediaId == mediaId && head.length <= startAttemptBytes) return
+        startAttemptMediaId = mediaId
+        startAttemptBytes = head.length
+        startAnalysisJob = endAnalysisScope.launch {
+            val shape = AudibleEndAnalyzer.startShape(head.factory, head.uri, head.length)
+            startShapes[mediaId] = StartShape(head.sourceUri, shape)
+        }
+    }
+
+    /**
+     * [2026-11-10] The incoming fade-in for a measured start, in media ms, from the full fade [fullMs]: rise up to
+     * [LOUD_RISE_MS] gets [LOUD_FADE_IN_MS], [FULL_RISE_MS] or more the full fade, graded linearly between. Not "loud" with no
+     * rise, or when the window's level is below [LOUD_FLOOR_DB] (a quiet start has nothing to protect).
+     */
+    private fun incomingFadeMs(shape: AudibleEndAnalyzer.Start, fullMs: Long): Long {
+        val rise = shape.riseMs ?: return fullMs
+        if (shape.referenceDb < LOUD_FLOOR_DB) return fullMs
+        val short = min(fullMs, LOUD_FADE_IN_MS)
+        return when {
+            rise <= LOUD_RISE_MS -> short
+            rise >= FULL_RISE_MS -> fullMs
+            else -> short + (fullMs - short) * (rise - LOUD_RISE_MS) / (FULL_RISE_MS - LOUD_RISE_MS)
+        }
     }
 
     /**
@@ -1168,6 +1245,10 @@ class CrossfadeController(
             runCatching { sidecar.playbackState }.getOrNull() == Player.STATE_ENDED
         ) recoverEndedSidecar()
         if (!sidecarPrepared) maybePrepareSidecar()
+        // [2026-11-11] While ARMED only once the sidecar is READY, its decoder already started, so the analysis never starts a
+        // decoder while the sidecar is getting one (a prepare, or a re-prepare after [recoverEndedSidecar]).
+        if (sidecarPrepared && runCatching { sidecar.playbackState }.getOrNull() == Player.STATE_READY)
+            maybeStartStartAnalysis()
         // Gate point, re-derived every tick from the CURRENT duration and speed, so a duration that
         // changes under us (ProgressiveMediaPeriod back-fills it at load completion) moves the gate
         // rather than stranding it. effectiveFade is wall-clock intent, hence the speed factor.
@@ -1417,7 +1498,7 @@ class CrossfadeController(
             return
         }
         // 4. Ramp running.
-        if (System.currentTimeMillis() - rampStartedAtMs >= rampMs) complete()
+        if (System.currentTimeMillis() - rampStartedAtMs >= completeAfterMs) complete()
     }
 
     // ── Arm / prepare / gate ────────────────────────────────────────────────────────────────────
@@ -2011,6 +2092,13 @@ class CrossfadeController(
      */
     private fun handoffSeek() {
         if (phase != Phase.HANDOFF) return
+        // [2026-11-11] A start look-ahead still running cannot be used for this switch ([startRamps] reads only a finished
+        // result), so it stops here rather than decode while main changes songs. Cleared so the song can be measured again.
+        if (startAnalysisJob?.isActive == true) {
+            startAnalysisJob?.cancel()
+            startAttemptMediaId = null
+        }
+        startAnalysisJob = null
         val token = Any()
         overlapToken = token
         mainProcessor.armIncoming(token)
@@ -2070,21 +2158,59 @@ class CrossfadeController(
      * a dip of about -0.6 dB for an 8.7 s tail and -1 dB for 8 s, at mid-overlap. The reference's "feel" above was a tail
      * cut off partway down, which is what this replaces, by the user's decision. A tail fade that finishes early holds at
      * 0 rather than returning to full gain (AudioEffectsProcessor.fadeOutDone).
+     * [CORRECTED 2026-11-10] The incoming leg is no longer always the full fade from main's first frame. With a start
+     * look-ahead result ([StartShape]) it starts at the next song's onset, and a loud start gets a shorter fade-in
+     * ([incomingFadeMs], 2.5 s at a rise under 500 ms); the outgoing leg is unchanged. Both legs then trim to hold the sum's
+     * power at 1 (AudioEffectsProcessor.overlapTrim), and [complete] waits for the later of the fade-in's end and the
+     * outgoing leg's heard end ([completeAfterMs]), not for [rampMs]. [rampMs] is still the full fade, the length
+     * [outgoingRampMs] measures against. Without a result, or under a 3 s fade, everything here is as before.
      */
     private fun startRamps() {
         val ended = sidecar.playbackState == Player.STATE_ENDED
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
         rampMs = if (ended) MIN_RAMP_MS else max(effectiveFadeMs, MIN_RAMP_MS)
         rampStartedAtMs = System.currentTimeMillis()
+        // [2026-11-10] The start look-ahead's answer for the song arriving ([StartShape]): where its ramp starts (the onset, as
+        // a frame position of main's stream, which restarted at the hand-off seek) and how long it is. Unshaped, the
+        // incoming leg is as before: from main's first frame, over the full fade.
+        var onsetMs = 0L
+        var inMs = rampMs
+        if (ended || effectiveFadeMs < MIN_SHAPED_FADE_MS) {
+            inOnsetLog = "-"
+        } else {
+            val incoming = exoPlayer.currentMediaItem
+            val entry = incoming?.let { startShapes[it.mediaId] }
+                ?.takeIf { it.sourceUri == tail.sourceUriOf(incoming) }
+            val shape = entry?.shape
+            when {
+                entry == null -> inOnsetLog = "-late"
+                shape == null -> inOnsetLog = "-fail"
+                else -> {
+                    // The onset is a position in the song; only meaningful while main is at its start.
+                    if (exoPlayer.currentPosition <= NEAR_START_MS) onsetMs = shape.onsetMs ?: 0L
+                    if (shape.onsetMs != null) inMs = incomingFadeMs(shape, rampMs)
+                    inOnsetLog = onsetMs.toString()
+                }
+            }
+        }
+        // How long main holds before its ramp starts, from here, for the outgoing leg's trim and for [complete].
+        val processedMs = mainProcessor.emittedOutputMs()
+        val delayMs = if (onsetMs > 0L && processedMs >= 0L) (onsetMs - processedMs).coerceAtLeast(0L) else 0L
+        completeAfterMs = rampMs
+        var outMs = 0L
         if (!ended) {
             val queuedMs = sidecarQueuedMs()
-            val (outMs, full) = outgoingRampMs(speed, queuedMs)
-            sidecarProcessor.startFadeOut(outMs)
+            val (rampOutMs, full) = outgoingRampMs(speed, queuedMs)
+            outMs = rampOutMs
+            sidecarProcessor.startFadeOut(outMs, partnerInMs = inMs, partnerDelayMs = delayMs)
             // As heard, from the switch: the wait to here, the sidecar's queue, then the ramp at the playback rate.
             val heardEndMs = (rampStartedAtMs - overlapStartAtMs) + queuedMs.coerceAtLeast(0L) + (outMs / speed).toLong()
             rampOutLog = (if (full) "full:" else "") + heardEndMs
+            if (inMs < rampMs || delayMs > 0L)
+                completeAfterMs = max(delayMs + inMs, queuedMs.coerceAtLeast(0L) + (outMs / speed).toLong())
         }
-        mainProcessor.startFadeIn(rampMs)
+        mainProcessor.startFadeIn(inMs, onsetMs = onsetMs, partnerOutMs = outMs)
+        inFadeLog = inMs.toString()
     }
 
     /**
@@ -2178,6 +2304,13 @@ class CrossfadeController(
      * tail had ended, or the ramps never started). Stated before the build: within ~150 ms of overlapMs on a song that is loud to
      * its end. Well above overlapMs: the song went quiet before its end (trailing silence), which the fade still counts. Below
      * overlapMs by more than ~150 ms: the ramp finished early and the tail was held silent for the difference.
+     * [ADDED 2026-11-10, USER-APPROVED] `inOnsetMs` is the next song's onset the incoming ramp started at, media ms ([StartShape]):
+     * `0` = a result with no delay (no onset in the window, or main not at its start), `-late` = no result for this file yet
+     * (still running, or its head not committed in time), `-fail` = the analysis was undecided, `-` = not used (no ramps, a
+     * fade under 3 s, or the tail had ended). `inFadeMs` is the fade-in actually used, media ms. Stated before the build: a song
+     * that starts straight in (Penny Lane) gives inOnsetMs under 100 and inFadeMs 2500; one with a slow intro gives the full
+     * fade. inFadeMs at the full fade on a song that plainly starts loud means the rise detection is wrong; `-late` on most
+     * switches means the head is not committed in time (read the format against LengthSizedCacheDataSink's note).
      * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
      * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
@@ -2195,6 +2328,7 @@ class CrossfadeController(
                 " tsMs=" + tsAgeMs + " skipMs=" + (skipMs?.toString() ?: "-") +
                 " overlapMs=" + overlapField() + " rampOutMs=" + (rampOutLog ?: "-") +
                 " endMoveMs=" + (endMoveLog ?: "-") +
+                " inOnsetMs=" + (inOnsetLog ?: "-") + " inFadeMs=" + (inFadeLog ?: "-") +
                 " tailDb=" + sidecarProcessor.tailDb()
         )
     }
@@ -2257,6 +2391,9 @@ class CrossfadeController(
         rampOutLog = null
         endMoveLog = null
         armedEndMoveMs = 0L
+        inOnsetLog = null
+        inFadeLog = null
+        completeAfterMs = 0L
     }
 
     /**
@@ -2448,6 +2585,18 @@ class CrossfadeController(
 
         /** Shortest overlap worth running; also the length used when the tail already ended. */
         private const val MIN_RAMP_MS = 1_000L
+
+        // [2026-11-10] The start look-ahead ([StartShape], [incomingFadeMs]), the user's decisions of 2026-11-10: not run or
+        // used below a 3 s fade; a rise to near level within 500 ms is a loud start and gets a 2.5 s fade-in, graded up to
+        // the full fade at 2 s; never "loud" below -30 dBFS RMS; the onset is used only while main is within 500 ms of its
+        // start; results for the last 4 songs.
+        private const val MIN_SHAPED_FADE_MS = 3_000L
+        private const val LOUD_FADE_IN_MS = 2_500L
+        private const val LOUD_RISE_MS = 500L
+        private const val FULL_RISE_MS = 2_000L
+        private const val LOUD_FLOOR_DB = -30.0
+        private const val NEAR_START_MS = 500L
+        private const val START_SHAPES_KEPT = 4
 
         /**
          * How long the sidecar plays MUTED before the switch, so its AudioTrack activation and

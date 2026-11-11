@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.playback.source
 
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -114,6 +115,54 @@ class CacheOnlyTailSource(
         )
     }
 
+    /**
+     * [2026-11-10] The start look-ahead's byte path: the same resolver and cache, with NO upstream and no write sink, so it
+     * can never reach the network. CacheDataSource with no upstream factory uses PlaceholderDataSource, whose open throws
+     * (CacheDataSource.java:558, 1.11.0); [head] bounds every read to the committed span, so that is never reached.
+     */
+    private val cacheOnlyFactory: DataSource.Factory by lazy {
+        ResolvingDataSource.Factory(
+            CacheDataSource.Factory()
+                .setCache(cache)
+                .setCacheWriteDataSinkFactory(null),
+            resolver
+        )
+    }
+
+    /** What the start look-ahead may read of a song's head: [length] bytes from 0 through [factory], or to the end of a local file. */
+    class Head(val factory: DataSource.Factory, val uri: Uri, val length: Long, val sourceUri: String)
+
+    /**
+     * [2026-11-10] The head of [item] that can be read without the network, or null when there is none yet: its source not
+     * resolved, or nothing of it committed. A streamed song gives the committed run from byte 0
+     * (SimpleCache.getCachedLength), read cache-only ([cacheOnlyFactory]); it grows as the main player loads the song, a
+     * piece at a time (LengthSizedCacheDataSink). A local file (a download, file:// or content://) is read whole through
+     * [dataSourceFactory], which for it is a file read, not a network one. Looked up the way [gate] is, through the uri's
+     * Key, so the cache key is the main player's own.
+     */
+    fun head(item: MediaItem): Head? {
+        val keyUri = item.localConfiguration?.uri ?: return null
+        val source = resolvedSource(item) ?: return null
+        val sourceUri = source.uri
+        if (source is Streamable.Source.Http && sourceUri.scheme in LOCAL_SCHEMES)
+            return Head(dataSourceFactory, keyUri, C.LENGTH_UNSET.toLong(), sourceUri.toString())
+        val committed = runCatching {
+            cache.getCachedLength(sourceUri.toString(), 0, Long.MAX_VALUE)
+        }.getOrDefault(0L)
+        if (committed <= 0) return null
+        return Head(cacheOnlyFactory, keyUri, committed, sourceUri.toString())
+    }
+
+    /** [2026-11-10] The resolved source uri [item] plays from (its cache key), or null when it is not resolved. */
+    fun sourceUriOf(item: MediaItem): String? = resolvedSource(item)?.uri?.toString()
+
+    private fun resolvedSource(item: MediaItem): Streamable.Source? {
+        val key = item.localConfiguration?.uri?.toString()?.toKey()?.getOrNull() ?: return null
+        return runCatching {
+            servers[key.trackId]?.getOrNull()?.sources?.getOrNull(key.sourceIndex)
+        }.getOrNull()
+    }
+
     /** What the gate decided, with the two numbers it decided on. */
     data class Gate(
         val ready: Boolean,
@@ -136,6 +185,8 @@ class CacheOnlyTailSource(
      * when the DataSource closes, and the close happens at LOAD completion
      * (ProgressiveMediaPeriod.ExtractingLoadable.load's finally, :1356) - which for a track with less
      * than 50 s left is well before playback reaches the end.
+     * [CORRECTED 2026-11-10] Not 5 MB any more: the main player writes pieces of 512 KB-4 MB by file length
+     * (LengthSizedCacheDataSink). Everything else here holds; the whole-resource sum is the same at any piece size.
      * ⚠⚠ [CORRECTED 2026-10-15] THAT LAST CLAUSE ASSUMED A 50 s BUFFER, AND THE BUFFER
      * HAD NOT BEEN 50 s SINCE 2026-06-06. "A track with less than 50 s left" is only the moment
      * of load completion if the loader keeps ~50 s buffered - which is media3's STREAMING
@@ -202,5 +253,9 @@ class CacheOnlyTailSource(
         val cached = cache.getCachedBytes(cacheKey, 0, length)
         return if (cached == length) Gate(true, "committed", cached, length)
         else Gate(false, "incomplete", cached, length)
+    }
+
+    private companion object {
+        val LOCAL_SCHEMES = setOf("file", "content")
     }
 }

@@ -261,7 +261,10 @@ class StreamableMediaSource(
 
         private val cacheDataSource = ResolvingDataSource.Factory(
             CacheDataSource.Factory().setCache(cache)
-                .setUpstreamDataSourceFactory(dataSourceFactory),
+                .setUpstreamDataSourceFactory(dataSourceFactory)
+                // [2026-11-10] Pieces sized by length, not media3's 5 MB, so a song's head is readable before it ends
+                // (LengthSizedCacheDataSink, for the crossfade's start look-ahead).
+                .setCacheWriteDataSinkFactory(LengthSizedCacheDataSink.Factory(cache)),
             streamableResolver
         )
 

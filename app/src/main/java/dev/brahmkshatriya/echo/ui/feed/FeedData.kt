@@ -538,6 +538,7 @@ data class FeedData(
         const val MAX_WARMS_PER_PROCESS = 20
         val warmsIssued = AtomicInteger(0)
 
+        // [CORRECTED 2026-11-09] PagedSource's maxSize = 100 is gone (see the note there); this bound stands on its own.
         // Sort/search materialization bound — the non-paged analog of PagedSource maxSize=100. Bounds the
         // sources×shelves×items explosion (Combine can reach 100k–400k+ items → ~1 GB → OOM). Set well above
         // any legit feed (large playlists/libraries top out ~10–15k), so it only bites on would-OOM feeds;

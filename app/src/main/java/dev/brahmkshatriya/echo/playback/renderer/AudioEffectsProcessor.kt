@@ -81,6 +81,24 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
     // An atomic like the counters above, for the same reason: written from the app looper and the audio thread.
     private val fadeOutDone = AtomicBoolean(false)
 
+    // [2026-11-10] THE START LOOK-AHEAD'S TWO ADDITIONS (CrossfadeController.startRamps), both set with the ramp and cleared
+    // wherever the counters are (armIncoming, clearRamps, onFlush):
+    // - The incoming leg holds at gain 0 until the stream reaches [fadeInStartFrame], the next song's measured onset, and only
+    //   then starts its ramp. Counted against [emittedFrames], which restarts at the hand-off seek's flush, so it is the
+    //   song's own frame position from 0 (the controller passes 0 unless main is near the start).
+    // - THE OVERLAP TRIM, which replaced "no headroom guard". A loud start gets a fade-in shorter than the fade-out, and the two
+    //   then sum above unity: +2.7 dB of power and up to 1.92 in amplitude (+5.7 dB) at a 2.5 s fade-in under a 10 s
+    //   fade-out. Each leg works out the OTHER leg's curve on its own clock ([partnerTotalFrames], [partnerDelayFrames],
+    //   [rampElapsedFrames]) and scales itself by g = min(1, 1/sqrt(in^2 + out^2)): the sum's power is held at 1 and its
+    //   peak at 1.41, as before. It never boosts, and it is inert (g = 1) whenever the fade-in is at least as long as the
+    //   fade-out, which was every crossfade before this: then in^2 + out^2 <= 1 on one clock. The legs are mixed by the
+    //   platform (two AudioTracks), so no processor sees the sum and this per-leg trim is the only place a guard can sit.
+    private val fadeInStartFrame = AtomicLong(0)
+    private val partnerTotalFrames = AtomicLong(0)
+    private val partnerDelayFrames = AtomicLong(0)
+    private val rampElapsedFrames = AtomicLong(0)
+    private val rampIsIncoming = AtomicBoolean(false)
+
     // ⚠⚠ MUTE AND TOKEN: THE INCOMING-LEG HANDSHAKE, AND onFlush MUST NOT CLEAR THEM.
     // At hand-off the MAIN player is the INCOMING leg: it is muted, then seeked to the next item,
     // and the seek FLUSHES this processor. A fade-in armed before the seek would be wiped by that
@@ -422,20 +440,38 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * Outgoing leg (the sidecar's tail). Armed while the sidecar is still silent, so there is no
      * gain step when it starts playing.
      */
-    fun startFadeOut(mediaMs: Long) {
+    fun startFadeOut(mediaMs: Long, partnerInMs: Long = 0L, partnerDelayMs: Long = 0L) {
         val frames = framesFor(mediaMs)
+        setPartner(incoming = false, partnerMs = partnerInMs, partnerDelayMs = partnerDelayMs)
         rampTotalFrames.set(frames)
         fadeInFramesRemaining.set(0)
         fadeOutDone.set(false)
         fadeOutFramesRemaining.set(frames)
     }
 
+    /** [2026-11-10] The other leg's curve for the overlap trim (see [rampElapsedFrames]); 0 ms = no trim. */
+    private fun setPartner(incoming: Boolean, partnerMs: Long, partnerDelayMs: Long) {
+        rampIsIncoming.set(incoming)
+        partnerTotalFrames.set(framesFor(partnerMs))
+        partnerDelayFrames.set(framesFor(partnerDelayMs))
+        rampElapsedFrames.set(0)
+    }
+
+    private fun clearLookAhead() {
+        fadeInStartFrame.set(0)
+        partnerTotalFrames.set(0)
+        partnerDelayFrames.set(0)
+        rampElapsedFrames.set(0)
+    }
+
     /**
      * Incoming leg (the main player after the hand-off seek). Clears the mute set by
      * [armIncoming]: the first audible sample is therefore the first sample of the ramp, at gain 0.
      */
-    fun startFadeIn(mediaMs: Long) {
+    fun startFadeIn(mediaMs: Long, onsetMs: Long = 0L, partnerOutMs: Long = 0L) {
         val frames = framesFor(mediaMs)
+        setPartner(incoming = true, partnerMs = partnerOutMs, partnerDelayMs = 0L)
+        fadeInStartFrame.set(framesFor(onsetMs))
         rampTotalFrames.set(frames)
         fadeOutFramesRemaining.set(0)
         fadeOutDone.set(false)
@@ -462,6 +498,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeInFramesRemaining.set(0)
         fadeOutFramesRemaining.set(0)
         fadeOutDone.set(false)
+        clearLookAhead()
         muted = true
     }
 
@@ -593,6 +630,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeOutFramesRemaining.set(0)
         fadeOutDone.set(false)
         rampTotalFrames.set(0)
+        clearLookAhead()
         // The PENDING discard goes, because it is gain-side state that must not survive an
         // abort. The CUMULATIVE counts deliberately do NOT: they are what the sink has
         // been told about the stream it may still be draining, so its lifetime is the stream's -
@@ -663,6 +701,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         fadeOutFramesRemaining.set(0)
         fadeOutDone.set(false)
         rampTotalFrames.set(0)
+        clearLookAhead()
         // ⚠️ THE DISCARD STATE GOES, INCLUDING THE CUMULATIVE COUNT, AND THE MUTE
         // STILL DOES NOT. A flush restarts the stream, so frames dropped from the old one are no
         // longer part of what the sink is measuring - leaving the count behind would offset the
@@ -786,13 +825,23 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         var meterSquares = meter?.squares ?: 0.0
         var meterLoudFrames = meter?.loudFrames ?: 0L
         var meterLoudSquares = meter?.loudSquares ?: 0.0
+        // [2026-11-10] The start look-ahead's hold and trim; see the field note at [fadeInStartFrame].
+        var elapsed = rampElapsedFrames.get()
+        var streamFrame = emittedFrames.get()
+        val startFrame = fadeInStartFrame.get()
+        val partnerTotal = partnerTotalFrames.get()
+        val partnerDelay = partnerDelayFrames.get()
+        val incoming = rampIsIncoming.get()
 
         while (inputBuffer.remaining() >= channelCount * 2) {
             // Cosine² fade envelope — computed once per frame, applied to all channels
             var fadeGain: Float
             if (holdSilent) {
                 fadeGain = 0f
-            } else if (applyFade && (currentFi > 0 || currentFo > 0)) {
+            } else if (applyFade && currentFi > 0 && streamFrame < startFrame) {
+                // [2026-11-10] Before the next song's onset: held at 0, and its ramp has not started.
+                fadeGain = 0f
+            } else if (applyFade && (currentFi > 0 || currentFo > 0 || (incoming && elapsed < partnerTotal))) {
                 // Equal power: progress p runs 0 -> 1 across the ramp, in = sin(p*pi/2),
                 // out = cos(p*pi/2), so in² + out² = 1. NOT squared — squaring is the single-leg
                 // Track Fade curve and puts a 3 dB hole in the middle of an overlap.
@@ -809,10 +858,15 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
                     currentFo--
                     if (currentFo == 0L) holdSilent = true
                 }
-                fadeGain = fadeInGain * fadeOutGain * OVERLAP_PEDESTAL
+                val trim = overlapTrim(
+                    if (incoming) fadeInGain else fadeOutGain, incoming, elapsed, partnerTotal, partnerDelay
+                )
+                fadeGain = fadeInGain * fadeOutGain * OVERLAP_PEDESTAL * trim
             } else {
                 fadeGain = 1f
             }
+            if (applyFade) elapsed++
+            streamFrame++
             var frameLoud = false
             for (ch in 0 until channelCount) {
                 val raw = inputBuffer.short.toInt()
@@ -866,9 +920,31 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         }
         fadeInFramesRemaining.set(currentFi)
         fadeOutFramesRemaining.set(currentFo)
+        rampElapsedFrames.set(elapsed)
         if (holdSilent && !wasDone) fadeOutDone.set(true)
         countEmitted(output.position())
         output.flip()
+    }
+
+    /**
+     * [2026-11-10] The overlap trim g = min(1, 1/sqrt(own^2 + partner^2)), where partner is the other leg's gain [elapsed]
+     * frames into the shared ramp: for the incoming leg the outgoing's cos over [partnerTotal], then 0; for the outgoing leg the
+     * incoming's 0 for [partnerDelay], sin over [partnerTotal], then 1. 1 when there is no partner. See [fadeInStartFrame].
+     */
+    private fun overlapTrim(own: Float, incoming: Boolean, elapsed: Long, partnerTotal: Long, partnerDelay: Long): Float {
+        if (partnerTotal <= 0L) return 1f
+        val partner = if (incoming) {
+            if (elapsed >= partnerTotal) 0f else cos(elapsed.toFloat() / partnerTotal * (PI / 2).toFloat())
+        } else {
+            val t = elapsed - partnerDelay
+            when {
+                t <= 0L -> 0f
+                t >= partnerTotal -> 1f
+                else -> sin(t.toFloat() / partnerTotal * (PI / 2).toFloat())
+            }
+        }
+        val power = own * own + partner * partner
+        return if (power <= 1f) 1f else 1f / sqrt(power)
     }
 
     /**
@@ -1043,6 +1119,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         //     flat. Stays 1.0 (user-settled 2026-10-15) unless a listening pass hears grit.
         // ⚠️ STILL OPEN IF NORMALIZATION IS EVER RE-ENABLED: the sidecar still gets no setTrackGain,
         // so the tail would play ungained against a gained main leg.
+        // [CORRECTED 2026-11-10] "No guard" now holds only for overlaps whose fade-in is at least as long as the fade-out. A
+        // loud start's shorter fade-in (CrossfadeController.incomingFadeMs) would sum to 1.92 (+5.7 dB) correlated, so each
+        // leg now applies the overlap trim (overlapTrim, see the note at fadeInStartFrame), which keeps the 1.41 bound above;
+        // it is inert on every other overlap. This constant is unchanged and still 1.0.
         const val OVERLAP_PEDESTAL = 1.0f
 
         /** -60 dBFS: below this a sample counts as silence for [TailMeter]. Chosen, not measured. */

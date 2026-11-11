@@ -2,8 +2,11 @@ package dev.brahmkshatriya.echo.playback
 
 import android.media.AudioFormat
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.DataReader
@@ -55,13 +58,24 @@ import kotlin.math.max
  *
  * Returns null, meaning "keep today's window", for anything undecided: no seek map, a format the platform cannot decode, a
  * read or decoder error, a decode that stops well short of the duration, or no block above the threshold at all.
+ *
+ * [2026-11-10] ALSO THE START LOOK-AHEAD ([startShape]): the same decode from byte 0 over the first [HEAD_SCAN_MS] of the
+ * NEXT song, to find where its music starts and how soon it is near its level (CrossfadeController.startRamps). Read only
+ * from what is already committed to the cache (CacheOnlyTailSource.head), never the network. Same blocks and threshold
+ * rule; no seek, so no seek map is needed.
  */
 @OptIn(UnstableApi::class)
 object AudibleEndAnalyzer {
     const val SCAN_MS = 15_000L
+
+    /** [2026-11-10] The start look-ahead's window (the user's decision): fewer than this decodable gives null. */
+    const val HEAD_SCAN_MS = 5_000L
     private const val BLOCK_MS = 50L
     private const val RELATIVE_DB = 40.0
     private const val FLOOR_DB = -60.0
+
+    // [2026-11-10] "Near its level": the first block within this of the window's 95th percentile ends the rise.
+    private const val NEAR_LEVEL_DB = 6.0
 
     // A decoder's first output after a seek can be pre-roll (Opus) or partial; not counted.
     private const val SKIP_HEAD_MS = 200L
@@ -82,51 +96,108 @@ object AudibleEndAnalyzer {
             }
         }
 
+    /**
+     * [2026-11-10] Where the music starts in the first [HEAD_SCAN_MS] of a song, and how soon after that it is near its level.
+     * [onsetMs] null = nothing above the threshold in the window; [riseMs] null = never near its level after the onset.
+     * [referenceDb] is the window's 95th-percentile block, RMS dBFS.
+     */
+    class Start(val onsetMs: Long?, val riseMs: Long?, val referenceDb: Double)
+
+    /**
+     * The start of the song at [uri], or null when undecided: fewer than [HEAD_SCAN_MS] decodable from the first
+     * [boundLength] bytes ([C.LENGTH_UNSET] = to the end), a format the platform cannot decode, or no audio at all. Runs on
+     * IO; cancellable between reads.
+     */
+    suspend fun startShape(dataSourceFactory: DataSource.Factory, uri: Uri, boundLength: Long): Start? =
+        withContext(Dispatchers.IO) {
+            runCatching { measureStart(dataSourceFactory, uri, boundLength) }.getOrElse {
+                if (it is CancellationException) throw it
+                null
+            }
+        }
+
     private suspend fun measure(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): Long? {
         if (durationMs <= SCAN_MS) return null
-        val startMs = durationMs - SCAN_MS
-        val blocks = Blocks(startMs)
+        val blocks = Blocks(durationMs - SCAN_MS, SCAN_MS, SKIP_HEAD_MS)
+        decode(dataSourceFactory, uri, blocks, head = false, boundLength = C.LENGTH_UNSET.toLong()) ?: return null
+        if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
+        return blocks.audibleEndMs()
+    }
+
+    private suspend fun measureStart(dataSourceFactory: DataSource.Factory, uri: Uri, boundLength: Long): Start? {
+        val blocks = Blocks(0L, HEAD_SCAN_MS, 0L)
+        val format = decode(dataSourceFactory, uri, blocks, head = true, boundLength = boundLength) ?: return null
+        if (blocks.lastFrameEndMs < HEAD_SCAN_MS) return null
+        // The decoder's output starts with the encoder's priming frames, which the player's sink trims; ours does not.
+        val delayMs = if (format.encoderDelay > 0 && format.sampleRate > 0)
+            format.encoderDelay * 1000L / format.sampleRate else 0L
+        return blocks.start(delayMs)
+    }
+
+    /**
+     * The shared decode loop, filling [blocks]. Returns the format the decoder was configured with, or null when undecided.
+     * Tail (head = false): seeks to [Blocks.startMs] with the seek map and decodes to the end of the file. Head: decodes from
+     * byte 0 with no seek and stops once [Blocks.endMs] is decoded; the extractor is not told the length, so one that looks
+     * for the end of the file first (Ogg) does not; a read past [boundLength], or an error, ends the input there (the end
+     * of what is committed can cut a frame). A head whose extractor must seek past the bound (an MP4 with its index at the
+     * end) gets nothing and is undecided.
+     */
+    private suspend fun decode(
+        dataSourceFactory: DataSource.Factory, uri: Uri, blocks: Blocks, head: Boolean, boundLength: Long,
+    ): Format? {
         val output = Output()
+        if (head) output.startCollecting()
         val adapter = BundledExtractorsAdapter(DefaultExtractorsFactory())
         val source = dataSourceFactory.createDataSource()
+        val bounded = boundLength != C.LENGTH_UNSET.toLong()
         var codec: MediaCodec? = null
+        var codecFormat: Format? = null
         try {
-            fun openAt(position: Long) {
+            fun openAt(position: Long): Boolean {
                 runCatching { source.close() }
-                val length = source.open(DataSpec.Builder().setUri(uri).setPosition(position).build())
-                val end = if (length == C.LENGTH_UNSET.toLong()) C.LENGTH_UNSET.toLong() else position + length
+                if (bounded && position >= boundLength) return false
+                val spec = DataSpec.Builder().setUri(uri).setPosition(position)
+                if (bounded) spec.setLength(boundLength - position)
+                val length = source.open(spec.build())
+                val end = if (head || length == C.LENGTH_UNSET.toLong()) C.LENGTH_UNSET.toLong() else position + length
                 adapter.init(source, uri, source.responseHeaders, position, end, output)
+                return true
             }
-            openAt(0)
+            if (!openAt(0)) return null
             val holder = PositionHolder()
-            var seeked = false
             var inputDone = false
             val info = MediaCodec.BufferInfo()
             var pcm = Pcm()
             var endWaits = 0
             while (true) {
                 coroutineContext.ensureActive()
-                if (!seeked) {
+                if (codec == null) {
                     val seekMap = output.seekMap
                     val format = output.format
-                    if (seekMap != null && format != null) {
-                        if (!seekMap.isSeekable) return null
+                    if (format != null && (head || seekMap != null)) {
+                        if (!head && seekMap?.isSeekable != true) return null
                         val mime = format.sampleMimeType ?: return null
                         if (!MimeTypes.isAudio(mime)) return null
-                        codec = MediaCodec.createDecoderByType(mime).also {
-                            it.configure(MediaFormatUtil.createMediaFormatFromFormat(format), null, null, 0)
-                            it.start()
+                        codec = openSoftwareDecoder(format, mime) ?: return null
+                        codecFormat = format
+                        if (!head && seekMap != null) {
+                            val startUs = blocks.startMs * 1000
+                            val point = seekMap.getSeekPoints(startUs).first
+                            openAt(point.position)
+                            adapter.seek(point.position, startUs)
+                            output.startCollecting()
                         }
-                        val point = seekMap.getSeekPoints(startMs * 1000).first
-                        openAt(point.position)
-                        adapter.seek(point.position, startMs * 1000)
-                        output.startCollecting()
-                        seeked = true
                     }
                 }
                 if (!inputDone) {
-                    when (adapter.read(holder)) {
-                        Extractor.RESULT_SEEK -> openAt(holder.position)
+                    val result = try {
+                        adapter.read(holder)
+                    } catch (e: Exception) {
+                        if (!head) throw e
+                        Extractor.RESULT_END_OF_INPUT
+                    }
+                    when (result) {
+                        Extractor.RESULT_SEEK -> if (!openAt(holder.position)) inputDone = true
                         Extractor.RESULT_END_OF_INPUT -> inputDone = true
                     }
                 }
@@ -177,6 +248,7 @@ object AudibleEndAnalyzer {
                     }
                 }
                 if (ended) break
+                if (head && blocks.lastFrameEndMs >= blocks.endMs) break
             }
         } finally {
             runCatching { codec?.stop() }
@@ -184,9 +256,45 @@ object AudibleEndAnalyzer {
             runCatching { adapter.release() }
             runCatching { source.close() }
         }
-        if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
-        return blocks.audibleEndMs()
+        return codecFormat
     }
+
+    /**
+     * [2026-11-11] THE ANALYSIS DECODER IS SOFTWARE ONLY, the user's decision, for both look-aheads. Many phones decode MP3
+     * and AAC in hardware with a small instance limit, and when it is reached the newest instance fails to start
+     * (CodecException, ERROR_INSUFFICIENT_RESOURCE). The start look-ahead can run beside main's decoder and the sidecar's,
+     * so a hardware analysis decoder could be the one that takes the last slot, or stop the sidecar from getting one. So:
+     * the first decoder for [mime] that is software only (MediaCodecInfo.isSoftwareOnly from API 29; by name, c2.android.*
+     * or OMX.google.*, below it) and accepts this rate and channel count, created by name. None, or any failure to create,
+     * configure or start it, gives null, so the caller keeps today's fade or window. Never a hardware fallback. Released
+     * here on failure, and by [decode]'s finally otherwise.
+     */
+    private fun openSoftwareDecoder(format: Format, mime: String): MediaCodec? {
+        val probe = MediaFormat.createAudioFormat(mime, format.sampleRate, format.channelCount)
+        val info = runCatching {
+            MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.firstOrNull { info ->
+                !info.isEncoder && isSoftwareOnly(info) &&
+                    info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                    (format.sampleRate <= 0 || format.channelCount <= 0 ||
+                        info.getCapabilitiesForType(mime).isFormatSupported(probe))
+            }
+        }.getOrNull() ?: return null
+        var codec: MediaCodec? = null
+        return try {
+            codec = MediaCodec.createByCodecName(info.name)
+            codec.configure(MediaFormatUtil.createMediaFormatFromFormat(format), null, null, 0)
+            codec.start()
+            codec
+        } catch (e: Exception) {
+            // CodecException (an IllegalStateException), IllegalArgumentException, IllegalStateException, IOException.
+            runCatching { codec?.release() }
+            null
+        }
+    }
+
+    private fun isSoftwareOnly(info: MediaCodecInfo): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.isSoftwareOnly
+        else info.name.startsWith("OMX.google.") || info.name.startsWith("c2.android.")
 
     private class Pcm(format: MediaFormat? = null) {
         val rate = format?.getInteger(MediaFormat.KEY_SAMPLE_RATE) ?: 0
@@ -195,9 +303,13 @@ object AudibleEndAnalyzer {
             ?.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
     }
 
-    /** Mean square per [BLOCK_MS] block of the scanned window, from the decoder's output timestamps. */
-    private class Blocks(private val startMs: Long) {
-        private val count = ((SCAN_MS + BLOCK_MS - 1) / BLOCK_MS).toInt() + 1
+    /**
+     * Mean square per [BLOCK_MS] block of the scanned window ([startMs] for [windowMs]), from the decoder's output timestamps.
+     * Frames before [skipHeadMs] into the window are not counted (the tail's post-seek pre-roll; 0 for the head).
+     */
+    private class Blocks(val startMs: Long, windowMs: Long, private val skipHeadMs: Long) {
+        val endMs = startMs + windowMs
+        private val count = ((windowMs + BLOCK_MS - 1) / BLOCK_MS).toInt() + 1
         private val squares = DoubleArray(count)
         private val samples = LongArray(count)
         var lastFrameEndMs = 0L
@@ -210,7 +322,7 @@ object AudibleEndAnalyzer {
             for (frame in 0 until frames) {
                 val tMs = timeUs / 1000 + frame * 1000L / pcm.rate
                 val block = ((tMs - startMs) / BLOCK_MS).toInt()
-                val use = tMs >= startMs + SKIP_HEAD_MS && block in 0 until count
+                val use = tMs >= startMs + skipHeadMs && block in 0 until count
                 for (ch in 0 until pcm.channels) {
                     val v = if (pcm.float) buffer.float.toDouble() else buffer.short / 32768.0
                     if (use) {
@@ -222,16 +334,42 @@ object AudibleEndAnalyzer {
             lastFrameEndMs = max(lastFrameEndMs, timeUs / 1000 + frames * 1000L / pcm.rate)
         }
 
-        fun audibleEndMs(): Long? {
-            val levels = (0 until count).filter { samples[it] > 0 }.map {
-                it to 10 * log10(max(squares[it] / samples[it], 1e-12))
-            }
-            if (levels.isEmpty()) return null
+        private fun levels() = (0 until count).filter { samples[it] > 0 }.map {
+            it to 10 * log10(max(squares[it] / samples[it], 1e-12))
+        }
+
+        private fun referenceOf(levels: List<Pair<Int, Double>>): Double {
             val sorted = levels.map { it.second }.sorted()
-            val reference = sorted[((sorted.size - 1) * 0.95).toInt()]
-            val threshold = max(reference - RELATIVE_DB, FLOOR_DB)
+            return sorted[((sorted.size - 1) * 0.95).toInt()]
+        }
+
+        fun audibleEndMs(): Long? {
+            val levels = levels()
+            if (levels.isEmpty()) return null
+            val threshold = max(referenceOf(levels) - RELATIVE_DB, FLOOR_DB)
             val last = levels.lastOrNull { it.second >= threshold }?.first ?: return null
             return startMs + (last + 1) * BLOCK_MS
+        }
+
+        /**
+         * [2026-11-10] The onset: the first block at or above the same threshold as the end's whose next block is too (so a
+         * click alone is not one). The rise: from the onset to the first block within [NEAR_LEVEL_DB] of the reference.
+         */
+        fun start(encoderDelayMs: Long): Start? {
+            val levels = levels()
+            if (levels.isEmpty()) return null
+            val reference = referenceOf(levels)
+            val threshold = max(reference - RELATIVE_DB, FLOOR_DB)
+            val byBlock = levels.toMap()
+            val onset = levels.firstOrNull { (block, db) ->
+                db >= threshold && (byBlock[block + 1] ?: Double.NEGATIVE_INFINITY) >= threshold
+            }?.first ?: return Start(null, null, reference)
+            val near = levels.firstOrNull { (block, db) -> block >= onset && db >= reference - NEAR_LEVEL_DB }?.first
+            return Start(
+                onsetMs = (startMs + onset * BLOCK_MS - encoderDelayMs).coerceAtLeast(0L),
+                riseMs = near?.let { (it - onset) * BLOCK_MS },
+                referenceDb = reference,
+            )
         }
     }
 

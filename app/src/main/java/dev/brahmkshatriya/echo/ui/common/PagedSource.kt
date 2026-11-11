@@ -40,15 +40,17 @@ class PagedSource<T : Any>(
             // maps to FULL WIDTH. Every unloaded row would render as a full-width header, silently.
             enablePlaceholders = false,
             prefetchDistance = 20,
-            // Enable Paging3 page-dropping to bound deep-scroll growth (was unbounded → OOM contributor).
-            // Must be >= pageSize + 2*prefetchDistance = 10 + 40 = 50; 100 keeps ~10 pages so the active
-            // window + generous buffer never drops during normal browsing. Only far-offscreen pages drop, and
-            // scrolling back re-fetches instantly from the extension PagedData.itemMap (already cached, no
-            // network) — bounded memory, no correctness change.
-            maxSize = 100
+            // [CORRECTED 2026-11-09] maxSize = 100 stood here, added by 4b665eb5 (build 996, 2026-07-17) as an OOM fix for
+            // deep-scrolling Combine, on the claim that dropped pages bound memory and reload from PagedData's itemMap. The reload
+            // half was right; the memory half was not: PagedData.Continuous's itemMap (and the extension's own Continuous) keeps
+            // every page for the source's life, so a drop freed only the list's references. With f6f35c18's own-key prevKey it
+            // also broke lists: past ~100 items a dropped top page was reloaded with the first remaining page's own key, which
+            // returned that page again, forever (found 2026-11-09 on OpenGonic). Pages are never dropped now, and prevKey is
+            // null (load). The July OOM relief most likely came from Coil maxSizePercent 0.25 -> 0.15 (unmeasured).
         )
     ) { this }.flow.flowOn(Dispatchers.IO)
 
+    // Kept true: false makes Paging's key check throw on a looping extension. The guard in load is what stops loops.
     override val keyReuseSupported = true
     override fun getRefreshKey(state: PagingState<String, T>): String? {
         val pos = state.anchorPosition ?: return null
@@ -96,14 +98,19 @@ class PagedSource<T : Any>(
             val key = params.key
             runCatching {
                 val page = loaded?.getOrThrow()?.loadPage(key) ?: throw LoadingException()
-                LoadResult.Page(page.data, key, page.continuation)
+                LoadResult.Page(page.data, null, nextKey(key, page.continuation))
             }.getOrElse { error ->
                 val cachedPage = cached?.mapCatching { it.loadPage(key) }?.getOrNull()
                 if (cachedPage == null || cachedPage.data.isEmpty())
                     LoadResult.Error(transform(error))
-                else LoadResult.Page(cachedPage.data, key, cachedPage.continuation)
+                else LoadResult.Page(cachedPage.data, null, nextKey(key, cachedPage.continuation))
             }
         }
+
+    // [2026-11-09] prevKey is null on every page (upstream's behaviour before f6f35c18): pages are never dropped, so nothing above
+    // the first page is ever loaded. A continuation equal to the key it was loaded with ends the list: keyReuseSupported is true,
+    // so Paging would otherwise append that same page forever.
+    private fun nextKey(key: String?, continuation: String?) = continuation.takeUnless { it == key }
 
     /**
      * ⚠⚠ THE ONLY EXTENSION CALL PATH IN THE APP THAT DID NOT APPLY toAppException, AND THE
