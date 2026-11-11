@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
@@ -156,6 +157,11 @@ open class FeedClickListener(
         return true
     }
 
+    // [2026-11-11] True on the page of a tracks-on-tap row (FeedFragment.tracksOnTap): Play and Shuffle show there whatever the
+    // extension's Feed.Buttons say (ButtonsAdapter.bind), because they load the row's whole list (onPlayClicked) even when the
+    // folder has no songs of its own, which is when OpenGonic hides them. False on every other page.
+    val forcesPlayAndShuffle: Boolean get() = (fragment as? FeedFragment)?.tracksOnTap() != null
+
     open fun onPlayClicked(
         view: View?,
         extensionId: String?,
@@ -165,6 +171,30 @@ open class FeedClickListener(
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
         val vm by fragment.activityViewModels<PlayerViewModel>()
+        // [2026-11-11] THE PAGE OF A TRACKS-ON-TAP ROW (TracksOnTap): Play and Shuffle load the row's whole list (OpenGonic: every
+        // song under the folder) instead of the rows on screen, which are only this folder's own songs and subfolders. The page
+        // knows its row from FeedFragment's "tracksOnTap" argument, set by CategoryViewHolder when it was opened, and the row's
+        // id is the page's feedId. Song taps on the page do not come here (onTracksClicked) and keep the page's own list.
+        (fragment as? FeedFragment)?.tracksOnTap()?.let { row ->
+            val args = fragment.arguments
+            val id = args?.getString("feedId") ?: return notFoundSnack(R.string.item)
+            val title = args.getString("title").orEmpty()
+            val app = vm.app
+            // Built now, while the page is alive (it reads the page's FeedData); the load may finish after it is gone.
+            val label = feedPageLabel()
+            val extensions = vm.extensions
+            vm.loadThenQueue(title, { loadTracksOnTap(extensions, extensionId, id, title, row) }) { loaded ->
+                val playable = loaded.droppingUnplayable()
+                if (playable.isEmpty()) {
+                    app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
+                    return@loadThenQueue
+                }
+                vm.setQueue(extensionId, playable, 0, label, shuffleList = shuffle)
+                if (!shuffle) vm.setShuffle(false, true)
+                vm.setPlaying(true)
+            }
+            return true
+        }
         if (tracks != null) {
             if (tracks.isEmpty()) return notFoundSnack(R.string.tracks)
             // Play/Shuffle over a declared or loaded list - see MediaItemUtils.droppingUnplayable.
@@ -218,7 +248,9 @@ open class FeedClickListener(
         feedId: String?,
         title: String?,
         subtitle: String?,
-        feed: Feed<Shelf>?
+        feed: Feed<Shelf>?,
+        // [2026-11-11] The extras of a tracks-on-tap row (TracksOnTap), from CategoryViewHolder only; null everywhere else.
+        tracksOnTap: Map<String, String>? = null,
     ): Boolean {
         val fragment = fragmentManager.findFragmentById(containerId)
             ?: return notFoundSnack(R.string.view)
@@ -233,7 +265,7 @@ open class FeedClickListener(
         // 27eac710, UPL.
         fragment.openFragment<FeedFragment>(
             view,
-            FeedFragment.getBundle(title.orEmpty(), subtitle, vm.extensionId, vm.feedId)
+            FeedFragment.getBundle(title.orEmpty(), subtitle, vm.extensionId, vm.feedId, tracksOnTap)
         )
         afterOpen()
         return true

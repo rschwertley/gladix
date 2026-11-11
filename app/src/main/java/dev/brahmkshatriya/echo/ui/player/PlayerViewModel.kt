@@ -56,7 +56,14 @@ import dev.brahmkshatriya.echo.utils.ContextUtils.listenFuture
 import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
 import kotlin.math.max
 import kotlin.math.roundToInt
+import com.google.android.material.snackbar.Snackbar
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.showFor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -76,6 +83,7 @@ class PlayerViewModel(
     val historyRepository: HistoryRepository,
     downloader: Downloader,
     fullQueueFlow: MutableStateFlow<List<MediaItem>>,
+    private val snackBarHandler: SnackBarHandler,
 ) : ViewModel() {
     private val downloadFlow = downloader.flow
 
@@ -304,6 +312,7 @@ class PlayerViewModel(
     // still the right route (ShufflePlayer.jumpForwardTo does the forward-jump trim and the stale-index
     // no-op), but do not reason about a window from this note.
     fun play(position: Int) {
+        cancelPendingQueueLoad()
         withBrowser {
             it.sendCustomCommand(seekToFullCommand, Bundle().apply {
                 putInt("index", position)
@@ -659,6 +668,7 @@ class PlayerViewModel(
          */
         shuffleList: Boolean = false,
     ) {
+        cancelPendingQueueLoad()
         withBrowser { controller ->
             if (list.isEmpty()) return@withBrowser
             // P2 — current+upcoming: start at the tapped track (index 0) and drop the tracks before it,
@@ -792,6 +802,7 @@ class PlayerViewModel(
     // MediaState.Unloaded and lets the normal resolution pipeline load it, which is what the already-shipped
     // tile path (FeedClickListener -> playTrackRadio) does with unloaded feed tracks.
     fun radio(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
+        cancelPendingQueueLoad()
         if (item is Track) {
             // No snackbar on this path: the seed starts playing immediately, so "Loading radio for X"
             // followed by instant audio reads as a stutter. The message below exists because the non-seed
@@ -815,6 +826,7 @@ class PlayerViewModel(
     // generated radio — service-side (PlayerCallback.trackRadio) so it works on TV without relying on
     // auto-radio. No loading snackbar (the seed plays immediately), matching the old setQueue path.
     fun playTrackRadio(id: String, track: Track) = viewModelScope.launch {
+        cancelPendingQueueLoad()
         withBrowser {
             it.sendCustomCommand(trackRadioCommand, Bundle().apply {
                 putString("extId", id)
@@ -828,6 +840,7 @@ class PlayerViewModel(
     }
 
     fun play(id: String, item: EchoMediaItem, loaded: Boolean, startTrackId: String? = null) = viewModelScope.launch {
+        cancelPendingQueueLoad()
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.playing_x, item.title))
         )
@@ -843,6 +856,7 @@ class PlayerViewModel(
     }
 
     fun shuffle(id: String, item: EchoMediaItem, loaded: Boolean) = viewModelScope.launch {
+        cancelPendingQueueLoad()
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.shuffling_x, item.title))
         )
@@ -863,6 +877,7 @@ class PlayerViewModel(
     fun addToQueue(
         id: String, item: EchoMediaItem, loaded: Boolean, tracks: List<Track>? = null,
     ) = viewModelScope.launch {
+        cancelPendingQueueLoad()
         if (item !is Track) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_queue, item.title))
         )
@@ -882,7 +897,8 @@ class PlayerViewModel(
     fun addToNext(
         id: String, item: EchoMediaItem, loaded: Boolean, undo: Boolean = false, tracks: List<Track>? = null,
     ) = viewModelScope.launch {
-        if (!undo && !(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
+        cancelPendingQueueLoad()
+        if (!undo &&!(browser.value?.mediaItemCount == 0 && item is Track)) app.messageFlow.emit(
             Message(app.context.getString(R.string.adding_x_to_next, item.title))
         )
         withBrowser {
@@ -894,6 +910,58 @@ class PlayerViewModel(
                 if (tracks != null) putSerialized("tracks", tracks)
             })
         }
+    }
+
+    /**
+     * ⚠⚠ ONE PENDING QUEUE LOAD, AND ANY NEW PLAY OR QUEUE ACTION CANCELS IT (2026-11-11). A load that queues its result when it
+     * lands (FolderMoreBottomSheet, a tracks-on-tap folder page's Play and Shuffle) used to land whenever it finished, so a slow
+     * folder could replace a queue the user had chosen since. Now [loadThenQueue] cancels the previous one, and every play or
+     * queue action here (setQueue, both play, shuffle, radio, playTrackRadio, addToQueue, addToNext) calls
+     * [cancelPendingQueueLoad] first. Queue edits (remove, move) do not: they keep the queue the user chose.
+     * ⚠️ NOT COVERED: actions that do not go through this ViewModel (Android Auto, the notification, a widget).
+     * Main thread only: every caller is, and the load resumes here before [onLoaded] runs, so the clear and the queue action
+     * cannot interleave with another tap. [onLoaded]'s own queue action finds nothing pending, as the job clears itself first.
+     */
+    private var pendingQueueLoad: Job? = null
+
+    fun cancelPendingQueueLoad() {
+        pendingQueueLoad?.cancel()
+        pendingQueueLoad = null
+    }
+
+    // After LOADING_NOTICE_MS a "Loading <title>…" message with Cancel shows, and is taken down when the load ends either way.
+    // A load error goes to throwFlow, as any feed load error does.
+    fun loadThenQueue(title: String, load: suspend () -> List<Track>, onLoaded: suspend (List<Track>) -> Unit) {
+        cancelPendingQueueLoad()
+        lateinit var job: Job
+        job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val loading = Message(
+                app.context.getString(R.string.loading_songs_x, title),
+                Message.Action(app.context.getString(R.string.cancel)) {
+                    if (pendingQueueLoad === job) cancelPendingQueueLoad()
+                }
+            ).showFor(Snackbar.LENGTH_INDEFINITE)
+            val notice = launch {
+                delay(LOADING_NOTICE_MS)
+                app.messageFlow.emit(loading)
+            }
+            val tracks = try {
+                withContext(Dispatchers.IO) { load() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                app.throwFlow.emit(e)
+                null
+            } finally {
+                notice.cancel()
+                snackBarHandler.dismiss(loading)
+            }
+            if (pendingQueueLoad !== job) return@launch
+            pendingQueueLoad = null
+            if (tracks != null) onLoaded(tracks)
+        }
+        pendingQueueLoad = job
+        job.start()
     }
 
     val progress = MutableStateFlow(0L to 0L)
@@ -1071,5 +1139,8 @@ class PlayerViewModel(
 
     companion object {
         const val KEEP_QUEUE = "keep_queue"
+
+        // How long a queue load runs before its "Loading…" message shows (loadThenQueue).
+        private const val LOADING_NOTICE_MS = 1_000L
     }
 }

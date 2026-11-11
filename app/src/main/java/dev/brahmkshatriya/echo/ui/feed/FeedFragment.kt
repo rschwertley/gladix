@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.ui.feed
 
 import android.os.Bundle
+import dev.brahmkshatriya.echo.utils.Serializer.getSerialized
+import dev.brahmkshatriya.echo.utils.Serializer.putSerialized
 import android.view.View
 import androidx.core.view.isVisible
 import androidx.core.view.updatePaddingRelative
@@ -67,11 +69,14 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             subtitle: String?,
             extensionId: String? = null,
             feedId: String? = null,
+            // [2026-11-11] The row's extras when it is a tracks-on-tap row (TracksOnTap); read back by tracksOnTap().
+            tracksOnTap: Map<String, String>? = null,
         ) = Bundle().apply {
             putString("title", title)
             putString("subtitle", subtitle)
             putString("extensionId", extensionId)
             putString("feedId", feedId)
+            if (tracksOnTap != null) putSerialized("tracksOnTap", tracksOnTap)
         }
     }
 
@@ -155,6 +160,15 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
     // the resolved extension id, and the live page, which is null on a page restored from the cache.
     val pageExtensionId: String? get() = feedData.let { vm.extensionId }
     val pageFeed: Feed<Shelf>? get() = feedData.let { vm.feed }
+
+    // [2026-11-11] The extras of the tracks-on-tap row this page was opened from, or null for any other page
+    // (FeedClickListener.onPlayClicked). From the arguments, so a page restored after a process kill still has them.
+    fun tracksOnTap(): Map<String, String>? = tracksOnTapRow
+
+    // Decoded once: ButtonsAdapter asks on every bind (FeedClickListener.forcesPlayAndShuffle).
+    private val tracksOnTapRow by lazy {
+        arguments?.getSerialized<Map<String, String>>("tracksOnTap")?.getOrNull()
+    }
 
     private val title by lazy { arguments?.getString("title")!! }
     private val subtitle by lazy { arguments?.getString("subtitle") }

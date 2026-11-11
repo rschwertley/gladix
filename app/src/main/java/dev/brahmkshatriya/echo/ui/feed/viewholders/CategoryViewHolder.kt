@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.ItemShelfCategoryBinding
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
+import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
 import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
@@ -39,13 +40,18 @@ class CategoryViewHolder(
                 feed?.id,
                 feed?.shelf?.title,
                 feed?.shelf?.subtitle,
-                feed?.shelf?.feed
+                feed?.shelf?.feed,
+                // [2026-11-11] A tracks-on-tap row's extras go to its page, whose Play and Shuffle then load its whole list
+                // (FeedClickListener.onPlayClicked). Null for every other row, which opens exactly as before.
+                feed?.shelf?.takeIf { it.hasTracksOnTap() }?.extras
             )
         }
         // [2026-11-08] Marked folder rows only (FeedSort's isMarkedFolder): the folder menu. Any other row returns
         // false, so the press is not consumed and nothing changes for it.
         binding.root.setOnLongClickListener {
-            val category = feed?.shelf?.takeIf { it.isMarkedFolder() } ?: return@setOnLongClickListener false
+            // [2026-11-11] And tracks-on-tap rows (TracksOnTap), e.g. OpenGonic's "All songs", which is not a folder.
+            val category = feed?.shelf?.takeIf { it.isMarkedFolder() || it.hasTracksOnTap() }
+                ?: return@setOnLongClickListener false
             listener.onCategoryLongClicked(it, feed?.extensionId, category)
         }
     }

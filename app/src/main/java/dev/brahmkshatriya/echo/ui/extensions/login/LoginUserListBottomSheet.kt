@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.databinding.ItemExtensionButtonBinding
 import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
 import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabel
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadAsCircle
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.autoCleared
@@ -71,7 +72,7 @@ class LoginUserListBottomSheet : BottomSheetDialogFragment() {
                 val button = ItemExtensionButtonBinding.inflate(
                     layoutInflater, binding.accountListToggleGroup, false
                 ).root
-                button.text = user.name
+                button.text = user.accountLabel(ext.id)
                 binding.accountListToggleGroup.addView(button)
                 button.isChecked = selected
                 user.cover.loadAsCircle(button) {

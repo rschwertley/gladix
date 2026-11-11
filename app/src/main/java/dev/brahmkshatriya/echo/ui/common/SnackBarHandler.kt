@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Collections
@@ -144,6 +145,24 @@ class SnackBarHandler(
     // queue behind it.
     suspend fun create(message: Message) = messageFlow.emit(message)
 
+    /**
+     * [2026-11-11] Takes [message] down: out of the queue if it is waiting, off the screen if it shows, and never shown if it is
+     * on its way (createSnackBar checks [isDismissed]). For a message that outlives its reason, today only
+     * PlayerViewModel.loadThenQueue's "Loading…", which has no timeout of its own (LENGTH_INDEFINITE). Any thread, never suspends,
+     * so it can run in a cancelled coroutine's finally.
+     */
+    fun dismiss(message: Message) {
+        dismissed.add(message)
+        synchronized(messages) { messages.removeAll { it.message === message } }
+        dismissFlow.tryEmit(message)
+    }
+
+    fun isDismissed(message: Message) = message in dismissed
+
+    // Weak, so a dismissed message is forgotten with the message.
+    private val dismissed: MutableSet<Message> = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
+    val dismissFlow = MutableSharedFlow<Message>(extraBufferCapacity = 8)
+
     suspend fun remove(message: Message, dismissed: Boolean) {
         val next = synchronized(messages) {
             if (dismissed) messages.removeAll { it.message === message }
@@ -187,6 +206,11 @@ class SnackBarHandler(
                 }
             }
             fun createSnackBar(message: Message) {
+                // Taken down before it got here (SnackBarHandler.dismiss): drop it and move on to the next.
+                if (handler.isDismissed(message)) {
+                    lifecycleScope.launch { handler.remove(message, true) }
+                    return
+                }
                 val snackBar = Snackbar.make(root, message.message, Snackbar.LENGTH_LONG)
                 durations[message]?.let { snackBar.duration = it }
                 snackBar.animationMode = Snackbar.ANIMATION_MODE_SLIDE
@@ -235,6 +259,12 @@ class SnackBarHandler(
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
                     if (snackBars.isEmpty()) handler.pending()?.let { createSnackBar(it) }
                 }
+            }
+            // [2026-11-11] UNGATED ON PURPOSE (see the rule at the top of this class): taking a snackbar down is a state update,
+            // not a presentation. Gated, a dismissal sent while the app is stopped would be lost and an indefinite "Loading…"
+            // would still be up on return.
+            lifecycleScope.launch {
+                handler.dismissFlow.collect { snackBars[it.hashCode()]?.dismiss() }
             }
             observe(uiViewModel.combined) { _ ->
                 snackBars.values.forEach { updateInsets(it) }

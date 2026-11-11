@@ -29,7 +29,10 @@ import dev.brahmkshatriya.echo.ui.common.GridAdapter.Companion.configureGridLayo
 import dev.brahmkshatriya.echo.ui.media.MediaDetailsViewModel
 import dev.brahmkshatriya.echo.ui.media.more.MoreButton.Companion.button
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
-import kotlinx.coroutines.CancellationException
+import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
+import dev.brahmkshatriya.echo.ui.feed.loadTracksOnTap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,17 +41,21 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
 /**
  * [2026-11-08] The long-press menu of a marked folder row (FeedSort's isMarkedFolder): Play, Shuffle, Play next, Add to queue,
  * Like / Unlike.
+ * [2026-11-11] Also a row with only the tracks-on-tap marker (TracksOnTap, OpenGonic's "All songs"): the same menu without
+ * Like, and without the header's "Folder" word, as it is not a folder.
  *
  * ⚠️ NOT MediaMoreBottomSheet. That sheet builds a MediaViewModel, whose init runs Cached.loadMedia on its item, so a folder
  * would be loaded as an album by the extension and a MediaState cached under the folder's id. Nothing here goes near
  * MediaViewModel, MediaDetailsViewModel's instance side or Cached.
  *
- * TRACKS: the folder's declared customTrackList when it has one (Offline's is recursive; OpenGonic declares one), otherwise
- * every page of its first tab. No cap. Every action plays under the folder's "Playing from" label
- * (MediaItemUtils.feedPageLabel), as Play on the folder's own page does.
+ * TRACKS: for a tracks-on-tap row, the extension's whole list for it (loadTracksOnTap: every song under the folder). Otherwise
+ * the folder's declared customTrackList when it has one (Offline's is recursive), otherwise every page of its first tab. No
+ * cap. Every action plays under the folder's "Playing from" label (MediaItemUtils.feedPageLabel), as Play on the folder's own
+ * page does.
  *
  * The actions run in PlayerViewModel's scope, not the sheet's, because the sheet closes on the tap and the folder may
- * still be loading.
+ * still be loading. [2026-11-11] Through PlayerViewModel.loadThenQueue: a newer play or queue action cancels the load, so a
+ * slow folder can no longer replace a queue chosen since, and a load past a second shows "Loading…" with Cancel.
  */
 class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_more) {
 
@@ -66,7 +73,10 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
             }.show(manager, null)
         }
 
-        private suspend fun Shelf.Category.folderTracks(): List<Track> {
+        private suspend fun Shelf.Category.folderTracks(
+            extensions: ExtensionLoader, extensionId: String,
+        ): List<Track> {
+            if (hasTracksOnTap()) return loadTracksOnTap(extensions, extensionId, id, title, extras)
             val feed = feed ?: return listOf()
             val data = feed.getPagedData(feed.notSortTabs.firstOrNull())
             data.buttons?.customTrackList?.let { return it }
@@ -128,7 +138,9 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         // [2026-11-09] "Folder", plus the row's own subtitle when it has one (Offline's "N items"; OpenGonic's rows have
         // none). Nothing is fetched for a count: OpenGonic's songs exist only once its folder page loads.
         val folder = getString(R.string.folder)
-        headerAdapter.subtitle = category.subtitle?.takeIf { it.isNotBlank() }?.let { "$folder · $it" } ?: folder
+        val rowSubtitle = category.subtitle?.takeIf { it.isNotBlank() }
+        headerAdapter.subtitle = if (!category.isMarkedFolder()) rowSubtitle
+        else rowSubtitle?.let { "$folder · $it" } ?: folder
         headerAdapter.item = label.copy(cover = category.image)
         configureGridLayout(binding.root, GridAdapter.Concat(headerAdapter, actionAdapter))
         submitButtons()
@@ -139,6 +151,8 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
     // item's id as a MediaStore song id, so a folder named with digits would like an unrelated song). Otherwise the row
     // shows only when the extension is a LikeClient and isItemLiked answers; a failure hides it, with no error.
     private suspend fun checkLiked() {
+        // [2026-11-11] No Like for a tracks-on-tap row that is not a folder ("All songs"): there is nothing to like.
+        if (!category.isMarkedFolder()) return
         if (extensionId == UnifiedExtension.UNIFIED_ID || extensionId == OfflineExtension.metadata.id) return
         val extension = playerViewModel.extensions.music.getExtension(extensionId) ?: return
         if (!extension.isClient<LikeClient>()) return
@@ -195,19 +209,13 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         }
     }
 
-    // Loads the folder's tracks off the main thread, then runs [block] on it. A load error goes to throwFlow, as any
-    // feed load error does.
+    // Loads the folder's tracks off the main thread, then runs [block] on it (PlayerViewModel.loadThenQueue: a load error goes to
+    // throwFlow, as any feed load error does, and a newer play or queue action cancels it).
     private fun withTracks(block: suspend (List<Track>) -> Unit) {
-        val app = playerViewModel.app
+        val extensions = playerViewModel.extensions
+        val extensionId = extensionId
         val category = category
-        playerViewModel.viewModelScope.launch {
-            val tracks = runCatching { withContext(Dispatchers.IO) { category.folderTracks() } }.getOrElse {
-                if (it is CancellationException) throw it
-                app.throwFlow.emit(it)
-                return@launch
-            }
-            block(tracks)
-        }
+        playerViewModel.loadThenQueue(category.title, { category.folderTracks(extensions, extensionId) }, block)
     }
 
     private fun like(like: Boolean) {

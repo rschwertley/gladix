@@ -231,6 +231,8 @@ object Cached {
      * previously destroyed: `extension_id` and `cached` (UnifiedExtension routing), GAIN (loudness),
      * FALLBACK_ID and FILESIZE_MP3_MISC (Deezer's fallback and quality-ladder choice), plus every
      * third-party key we cannot enumerate.
+     * [2026-11-11] GAIN is still kept but no longer read: loudness normalization was removed (AudioEffectsProcessor's
+     * removal note). Deezer still writes it.
      *
      * ⚠⚠ TRACK_TOKEN IS THE ONE EXCLUSION, AND IT IS AN EXPIRY DECISION RATHER THAN A
      * SIZE ONE. Since paint-at-any-age these entries never expire, so a stored token can be WEEKS

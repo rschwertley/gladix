@@ -11,7 +11,6 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.Collections
-import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -30,8 +29,18 @@ data class PlayerState(
      */
     val sleepTimerEndsAt = MutableStateFlow<Long?>(null)
 
+    /**
+     * ⚠⚠ BOUNDED SINCE 2026-11-11 ([RecentServers]). It was one entry per song prepared, never pruned off Cast, for the life of the
+     * process: the "genuine slow leak over multi-hour sessions" recorded Aug 11 and found again in the 1166 OOM read.
+     * ⚠⚠ AN EVICTED ENTRY IS NOT ALWAYS A FRESH RESOLVE. StreamableMediaSource.prepareSourceInternal always resolves and writes
+     * again, so a song whose source is prepared again (Previous, a re-added item, a new queue) is unaffected. But
+     * StreamableResolver reads this map on EVERY open, and a source that is still prepared reopens without re-preparing: a seek,
+     * a retry after a network error, the crossfade sidecar's tail (CacheOnlyTailSource), the look-aheads, Cast (CastStreamStore,
+     * LocalMediaServer). For those a missing entry is "Server not found", a playback error. So nothing in use may be evicted:
+     * see [RecentServers] for how that is kept.
+     */
     val servers: MutableMap<String, Result<Streamable.Media.Server>> =
-        Collections.synchronizedMap(LinkedHashMap())
+        Collections.synchronizedMap(RecentServers())
     val serverChanged = MutableSharedFlow<Unit>(replay = 1)
 
     /**

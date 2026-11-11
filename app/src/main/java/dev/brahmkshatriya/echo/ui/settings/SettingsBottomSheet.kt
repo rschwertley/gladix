@@ -22,6 +22,10 @@ import dev.brahmkshatriya.echo.MainApplication.Companion.getCurrentLanguage
 import dev.brahmkshatriya.echo.MainApplication.Companion.languages
 import dev.brahmkshatriya.echo.MainApplication.Companion.setCurrentLanguage
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabelInline
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabel
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.databinding.DialogSettingsBinding
 import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
@@ -242,10 +246,12 @@ class SettingsBottomSheet : BottomSheetDialogFragment(R.layout.dialog_settings) 
             }
             binding.currentAccountName.run {
                 isVisible = isLoginClient
-                text = viewModel.currentUser.value?.name ?: getString(R.string.no_account)
+                text = viewModel.currentUser.value?.accountLabel(ext?.id) ?: getString(R.string.no_account)
                 setLoopedLongClick(all, { all.find { it.second } }) {
                     ext ?: return@setLoopedLongClick
                     viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
+                    if (AccountLabel.showsDetail(ext.id))
+                        createSnack(getString(R.string.switched_to_x, it.first.accountLabelInline()))
                 }
             }
             binding.accounts.loadBigIcon(
@@ -256,6 +262,8 @@ class SettingsBottomSheet : BottomSheetDialogFragment(R.layout.dialog_settings) 
                 setLoopedLongClick(all, { all.find { it.second } }) {
                     ext ?: return@setLoopedLongClick
                     viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
+                    if (AccountLabel.showsDetail(ext.id))
+                        createSnack(getString(R.string.switched_to_x, it.first.accountLabelInline()))
                 }
             }
         }

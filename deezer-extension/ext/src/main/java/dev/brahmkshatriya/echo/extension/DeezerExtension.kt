@@ -1046,7 +1046,7 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         val creds = session.credentials
         if (creds.email.isEmpty() || creds.pass.isEmpty() || session.credentialsRejected) return null
         val renewed = try {
-            onLogin("userPass", mapOf("email" to creds.email, "pass" to creds.pass)).firstOrNull()
+            passwordLogin(creds.email, creds.pass).firstOrNull()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -1089,7 +1089,16 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
             val mail = credJObj?.get("MAIL")?.jsonPrimitive?.contentOrNull.orEmpty()
             val pass = credJObj?.get("PASSWORD")?.jsonPrimitive?.contentOrNull.orEmpty()
             session.updateCredentials(email = mail, pass = pass)
-            return api.makeUser(mail, pass)
+            // [2026-11-11] Marked as a web login, before makeUser so the user it builds carries it (DeezerSession.loginSource):
+            // a refused silent re-login with this PASSWORD then renews from the ARL (DeezerApi.reloginWithStoredPassword).
+            val previousSource = session.loginSource
+            session.loginSource = DeezerSession.LOGIN_SOURCE_WEB
+            return try {
+                api.makeUser(mail, pass)
+            } catch (e: Throwable) {
+                session.loginSource = previousSource
+                throw e
+            }
         }
 
         override val initialUrl = "https://www.deezer.com/login?redirect_type=page&redirect_link=%2Faccount%2F".toGetRequest(
@@ -1157,46 +1166,63 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
     )
 
     override suspend fun onLogin(key: String, data: Map<String, String?>): List<User> {
-        if(data["email"] != null && data["pass"] != null) {
-            val email = data["email"]!!
-            val password = data["pass"]!!
-
-            session.updateCredentials(email = email, pass = password)
-
-            api.getArlByEmail(email, password, 3)
-            val userList = api.makeUser(email, password)
-            // ⚠⚠ CLEARED HERE AS WELL AS IN setLoginUser, AND THE DUPLICATION IS THE FIX.
-            // setLoginUser is the CANONICAL clear, but it is driven by the host's DB flow
-            // (ExtensionLoader combines db.currentUsersFlow), so on the USER-INITIATED login path it
-            // fires LATER: onLogin returns -> afterLogin writes Room -> the flow emits -> only then
-            // setLoginUser. In that window the latch is still set and handleArlExpiration would
-            // short-circuit on credentials that were JUST accepted - a spurious sign-in prompt, and a
-            // reachable one if AA rebuilds a browse root while someone re-logs in on the phone.
-            // Same asynchrony the May work hit, and the same remedy it used: a synchronous write in
-            // onLogin beside the existing updateCredentials.
-            // ⚠️ AFTER success, never at entry: a FAILED attempt must leave a still-valid latch
-            // alone. Nothing above this line can be reached if getArlByEmail threw.
-            // The silent re-login path needs none of this - callApi's CSRF branch calls setLoginUser
-            // directly and synchronously, and `session` is a singleton, so it clears immediately.
-            session.setCredentialsRejected(false)
-            return userList
-        } else {
-            session.updateCredentials(arl = data["arl"] ?: "")
-            api.getSid()
-            val userList = api.makeUser()
-            userList.firstOrNull()?.extras?.let { extras ->
-                session.updateCredentials(
-                    token = extras["token"] ?: "",
-                    userId = extras["user_id"] ?: "",
-                    licenseToken = extras["license_token"] ?: "",
-                    sid = extras["sid"] ?: ""
-                )
-            }
-            // Same reasoning as the email/pass branch above - a successful ARL login proves the
-            // stored credentials work, so the refusal latch must not outlive it.
-            session.setCredentialsRejected(false)
-            return userList
+        // [2026-11-11] A login the user made here, by form or ARL: not a web login (DeezerSession.loginSource). Cleared before the
+        // login so makeUser builds the user unmarked; put back if it fails, or the account still signed in would lose its mark
+        // and the next renewal would save it over the stored user without it.
+        val previousSource = session.loginSource
+        session.loginSource = ""
+        try {
+            return if (data["email"] != null && data["pass"] != null) passwordLogin(data["email"]!!, data["pass"]!!)
+            else arlLogin(data["arl"] ?: "")
+        } catch (e: Throwable) {
+            session.loginSource = previousSource
+            throw e
         }
+    }
+
+    /**
+     * [2026-11-11] The email/password login, split out of onLogin unchanged so the SILENT re-logins (DeezerApi.callApi's CSRF
+     * branch, DeezerApi.reloginWithStoredPassword, userForPairing) can run it without onLogin clearing the login's source:
+     * a web login re-logged in silently stays marked as one.
+     */
+    suspend fun passwordLogin(email: String, password: String): List<User> {
+        session.updateCredentials(email = email, pass = password)
+
+        api.getArlByEmail(email, password, 3)
+        val userList = api.makeUser(email, password)
+        // ⚠⚠ CLEARED HERE AS WELL AS IN setLoginUser, AND THE DUPLICATION IS THE FIX.
+        // setLoginUser is the CANONICAL clear, but it is driven by the host's DB flow
+        // (ExtensionLoader combines db.currentUsersFlow), so on the USER-INITIATED login path it
+        // fires LATER: onLogin returns -> afterLogin writes Room -> the flow emits -> only then
+        // setLoginUser. In that window the latch is still set and handleArlExpiration would
+        // short-circuit on credentials that were JUST accepted - a spurious sign-in prompt, and a
+        // reachable one if AA rebuilds a browse root while someone re-logs in on the phone.
+        // Same asynchrony the May work hit, and the same remedy it used: a synchronous write in
+        // onLogin beside the existing updateCredentials.
+        // ⚠️ AFTER success, never at entry: a FAILED attempt must leave a still-valid latch
+        // alone. Nothing above this line can be reached if getArlByEmail threw.
+        // The silent re-login path needs none of this - callApi's CSRF branch calls setLoginUser
+        // directly and synchronously, and `session` is a singleton, so it clears immediately.
+        session.setCredentialsRejected(false)
+        return userList
+    }
+
+    private suspend fun arlLogin(arl: String): List<User> {
+        session.updateCredentials(arl = arl)
+        api.getSid()
+        val userList = api.makeUser()
+        userList.firstOrNull()?.extras?.let { extras ->
+            session.updateCredentials(
+                token = extras["token"] ?: "",
+                userId = extras["user_id"] ?: "",
+                licenseToken = extras["license_token"] ?: "",
+                sid = extras["sid"] ?: ""
+            )
+        }
+        // Same reasoning as the email/pass branch above - a successful ARL login proves the
+        // stored credentials work, so the refusal latch must not outlive it.
+        session.setCredentialsRejected(false)
+        return userList
     }
 
     private var deliveredAccount: String? = null
@@ -1225,6 +1251,9 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
         // Chosen over onLogin because this is the chokepoint the host drives - it runs on login, on
         // logout, and on a user switch, whereas onLogin misses the last two.
         session.setCredentialsRejected(false)
+        // [2026-11-11] The delivered login's source (DeezerSession.loginSource): a web login stored with the marker stays one
+        // across cold starts and account switches; a logout or an unmarked login clears it.
+        session.loginSource = user?.extras?.get(DeezerSession.LOGIN_SOURCE_KEY).orEmpty()
         // The ARL latch too (2026-11-01): it was never cleared outside the email/password CSRF branch, so an ARL-only
         // session that latched (the TV) stayed "login required" after a fresh Link to device until the process died.
         session.isArlExpired(false)
@@ -1434,14 +1463,35 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
  *   user.getArl answer (USER_ID, checkForm, the ARL) decoded inside that re-login would carry it.
  * DeezerGatewayException keeps its method and the error object's keys (REQUEST_ERROR, ...), not their values.
  */
-private class LikedFetchFailed(summary: String) : Exception(summary)
+private class LikedFetchFailed(summary: String, cause: Throwable?) : Exception(summary, cause)
 
 private val HTTP_STATUS = Regex("""(?:status |HTTP |code=)(\d{3})""")
 private val GATEWAY_ERROR_KEY = Regex("""(?:^|, )([A-Z_]+)=""")
 
 private fun Throwable.scrubbedForReport(): Throwable = LikedFetchFailed(
-    generateSequence(this) { it.cause }.take(5).joinToString(" <- ") { it.reportLabel() }
+    generateSequence(this) { it.cause }.take(5).joinToString(" <- ") { it.reportLabel() },
+    plainNetworkCause()
 ).also { it.stackTrace = stackTrace }
+
+/**
+ * [2026-11-11] A NEW, MESSAGE-LESS EXCEPTION OF THE SAME TYPE when the failure was the connection, as LikedFetchFailed's cause, so the
+ * app's type check (CapabilityProbeFailure.isPlainNetworkFailure) can see it and not report it. Never the original: OkHttp's connect
+ * timeout message names the host and the device's local address. Null when a gateway error or LoginRequired comes first in the chain,
+ * so those keep reporting as before. The summary still names the original type either way.
+ */
+private fun Throwable.plainNetworkCause(): Throwable? =
+    generateSequence(this) { it.cause }.take(5).firstNotNullOfOrNull { node ->
+        when (node) {
+            is DeezerGatewayException, is ClientException.LoginRequired -> return null
+            is java.net.SocketTimeoutException -> java.net.SocketTimeoutException()
+            is java.io.InterruptedIOException -> java.io.InterruptedIOException()
+            is java.net.ConnectException -> java.net.ConnectException()
+            is java.net.NoRouteToHostException -> java.net.NoRouteToHostException()
+            is java.net.UnknownHostException -> java.net.UnknownHostException()
+            is javax.net.ssl.SSLHandshakeException -> javax.net.ssl.SSLHandshakeException("")
+            else -> null
+        }
+    }
 
 private fun Throwable.reportLabel(): String = when (this) {
     is DeezerGatewayException ->

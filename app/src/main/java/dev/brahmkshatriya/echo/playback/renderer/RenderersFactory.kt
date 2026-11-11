@@ -45,7 +45,7 @@ class RenderersFactory(
         // and a high-resolution PCM decode (shouldUseFloatOutput = `enableFloatOutput &&
         // isEncodingHighResolutionPcm`, :1733-1735) the sink adds toFloatPcmAudioProcessor INSTEAD
         // and this chain never runs - so AudioEffectsProcessor, the crossfade's hand-off mute, both
-        // ramps, the pre-roll discard, the EQ and the normalization LUT all disappear, on high-res
+        // ramps, the pre-roll discard and the EQ all disappear, on high-res
         // tracks only, with no error. Deezer's HiFi FLAC (24-bit / up to 192 kHz) is precisely such
         // a decode, which is why this is written here now.
         // ⚠️ THE VALUE IS DefaultRenderersFactory'S PARAMETER, WHICH IS FALSE

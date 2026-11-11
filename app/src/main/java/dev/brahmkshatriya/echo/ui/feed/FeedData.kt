@@ -448,9 +448,12 @@ data class FeedData(
                     // [2026-11-08] GROUPED FOR MARKED FOLDER ROWS (isMarkedFolder): folders first, sorted by title; the
                     // rest by the chosen sort; Reversed applies within each group, never across them. With no
                     // marked row the split finds nothing and the list is sorted exactly as before.
-                    val (folders, rest) = shelves.partition { it.isMarkedFolder() }
-                    shelves = if (folders.isEmpty()) shelves.applySort(feedSort)
-                    else folders.applySort(feedSort?.let { FeedSort.Title }) + rest.applySort(feedSort)
+                    // [2026-11-11] And a tracks-on-tap row that is not a folder (OpenGonic's "All songs") goes above the folders,
+                    // in the order it came (TracksOnTap.keptFirst). No such row: the same split as before.
+                    val (onTap, others) = shelves.partition { it.isTracksOnTapOnly() }
+                    val (folders, rest) = others.partition { it.isMarkedFolder() }
+                    shelves = if (onTap.isEmpty() && folders.isEmpty()) shelves.applySort(feedSort)
+                    else onTap + folders.applySort(feedSort?.let { FeedSort.Title }) + rest.applySort(feedSort)
                     // ⚠️ NO PERSISTENCE HERE. Until 2026-09-06 this block ended with
                     //     if (sortState.save) app.context.saveToCache("$extensionId-$feedId-$tabId", …)
                     // which fired on every render pass and paired a fresh tabId with a stale sortState.
@@ -474,7 +477,8 @@ data class FeedData(
                     // [2026-11-08] Marked folders first in a plain search too, by relevance within each group (a stable
                     // partition). With a sort active the sort above has already grouped them; with no marked row the
                     // partition leaves the order as it was.
-                    if (!keepOrder) shelves = shelves.partition { it.isMarkedFolder() }.let { (folders, rest) -> folders + rest }
+                    // [2026-11-11] A tracks-on-tap row that is not a folder ("All songs") above them, as under a sort.
+                    if (!keepOrder) shelves = shelves.keptFirst()
                 }
                 // Truncated (would-OOM aggregate / huge playlist): tell the user up front that sort/search
                 // only covered the first N. LEADING so it's seen on load, not after scrolling 15k items.

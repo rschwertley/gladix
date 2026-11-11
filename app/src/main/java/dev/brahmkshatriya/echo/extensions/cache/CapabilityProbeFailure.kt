@@ -2,7 +2,11 @@ package dev.brahmkshatriya.echo.extensions.cache
 
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dev.brahmkshatriya.echo.BuildConfig
+import dev.brahmkshatriya.echo.ui.common.ErrorCategory
+import dev.brahmkshatriya.echo.ui.common.classify
+import java.io.InterruptedIOException
 import java.util.concurrent.ConcurrentHashMap
+import javax.net.ssl.SSLHandshakeException
 
 /**
  * ⚠⚠ THE REPORT FOR A CAPABILITY PROBE THAT FAILED AND WAS DEGRADED TO "UNKNOWN".
@@ -36,6 +40,13 @@ object CapabilityProbeFailure {
     private val reported = ConcurrentHashMap.newKeySet<String>()
 
     fun record(extensionId: String, probe: String, throwable: Throwable) {
+        // [2026-11-11] A PLAIN NETWORK FAILURE IS NOT REPORTED (1177: SocketTimeoutException in the TLS handshake under Deezer's
+        // liked fetch). It is the user's connection, so there is nothing to act on; and every liked-list failure groups into one
+        // Crashlytics issue, so muting that issue to quiet these would also hide the real causes it exists to catch.
+        // Checked BEFORE the once-per-process slot is taken, so a dropped network failure does not use up the report a later
+        // real failure in the same process would make. The media state, probesDegraded and Deezer's 60 s cooldown are untouched:
+        // this only decides whether Crashlytics hears about it.
+        if (isPlainNetworkFailure(throwable)) return
         if (!reported.add(extensionId)) return
         if (!BuildConfig.HAS_FIREBASE) return
         runCatching {
@@ -48,6 +59,24 @@ object CapabilityProbeFailure {
             )
         }
     }
+
+    /**
+     * ErrorCategory.classify is the classifier: it is the shared one (AA tile, snackbar parity via ErrorCategoryTest), walks the
+     * whole cause chain through AppException, and its Network arm already holds the timeout, DNS, refused and no-route types.
+     * PlayerEventListener.skipFamilyOf groups the same transport types but is private and keyed on a PlaybackException.
+     * The two types added HERE ONLY: a TLS handshake that failed, and OkHttp's call-timeout InterruptedIOException. They are kept
+     * out of classify on purpose, since changing it would change the AA and snackbar wording, which must move with getTitle.
+     * LoginOrAuth found first keeps reporting, as classify returns at the first node it recognises.
+     * Deezer's LikedFetchFailed carries a message-less copy of its network cause so these type checks can see it (scrubbedForReport).
+     */
+    private fun isPlainNetworkFailure(throwable: Throwable): Boolean = when (classify(throwable)) {
+        ErrorCategory.Network -> true
+        ErrorCategory.LoginOrAuth -> false
+        ErrorCategory.Generic -> generateSequence(throwable) { it.cause }.take(MAX_CHAIN)
+            .any { it is SSLHandshakeException || it is InterruptedIOException }
+    }
+
+    private const val MAX_CHAIN = 8
 
     class CapabilityProbeFailed(message: String, cause: Throwable) : Exception(message, cause)
 }

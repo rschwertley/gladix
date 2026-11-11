@@ -12,7 +12,6 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.renderer.AudioEffectsProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -119,25 +118,11 @@ class EffectsListener(
     // same meaning).
     // ⚠️ DO NOT RE-ADD A FADE HOOK ON THE TRANSITION REASON. The crossfade hand-off is
     // a SEEK, so a reason-keyed fade here would fire in the middle of an overlap. The ramps are
-    // driven by the controller through the two processors; this class owns gain and session effects.
+    // driven by the controller through the two processors; this class owns the session effects.
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // [2026-11-11] The per-track GAIN (Deezer's extras["GAIN"]) is no longer read: loudness normalization was removed,
+        // see the removal note in AudioEffectsProcessor.
         applyCustomEffects()
-        applyGain(mediaItem)
-    }
-
-    private fun applyGain(mediaItem: MediaItem?) {
-        val gainDb = runCatching {
-            mediaItem?.track?.extras?.get("GAIN")?.toFloatOrNull()
-        }.getOrNull()
-        audioEffectsProcessor.setTrackGain(gainDb, mediaItem?.mediaId)
-    }
-
-    fun updateNormalizationSettings() {
-        if (!audioEffectsProcessor.normalizationEnabled) {
-            audioEffectsProcessor.resetGain()
-        } else {
-            applyGain(exoPlayer.currentMediaItem)
-        }
     }
 
     /**

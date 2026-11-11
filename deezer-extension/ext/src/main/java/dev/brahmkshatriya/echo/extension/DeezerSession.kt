@@ -124,7 +124,20 @@ class DeezerSession(
         runCatching { onUserRenewed?.invoke(user) }
     }
 
+    /**
+     * [2026-11-11] [LOGIN_SOURCE_WEB] when the current login came from the web sign-in page, "" otherwise (the email/password
+     * form, an ARL, or a web login saved before this existed). Set by webViewRequest.onStop and onLogin, re-read from the stored
+     * user by setLoginUser, and written into every user the extension builds (DeezerApi.makeUser, renewSessionFromArl), so a
+     * renewal saved over the stored user keeps it. Read by DeezerApi.reloginWithStoredPassword only. Never sent to a TV: the
+     * pairing payload takes arl, email and password alone (TvPairingFragment).
+     */
+    @Volatile
+    var loginSource: String = ""
+
     companion object {
+        const val LOGIN_SOURCE_KEY = "login_source"
+        const val LOGIN_SOURCE_WEB = "web"
+
         @Volatile
         private var instance: DeezerSession? = null
 

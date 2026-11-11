@@ -161,8 +161,6 @@
     <!-- The summary, then the note on its own line. -->
     <string name="skip_silence_summary_with_note">%1$s\n%2$s</string>
 
-    <string name="loudness_normalization">Loudness Normalization</string>
-    <string name="loudness_normalization_summary">Normalize volume levels between tracks</string>
 
     <string name="true_crossfade">Crossfade</string>
     <string name="true_crossfade_seconds_summary">Overlap in seconds (0–%1$d), 0 = off</string>
@@ -306,6 +304,7 @@
 
     <string name="no_user_found">No user found</string>
     <string name="select_x_account">Select %1$s account</string>
+    <string name="switched_to_x">Switched to %1$s</string>
     <string name="add_extension">Add Extension</string>
     <string name="webview">Webview</string>
     <string name="logout">Logout</string>
@@ -496,6 +495,7 @@
     <string name="deleting_x">Deleting %1$s</string>
     <string name="deleted_x">Deleted %1$s</string>
     <string name="loading_x">Loading %1s</string>
+    <string name="loading_songs_x">Loading %1$s…</string>
     <string name="saving_x">Saving %1$s</string>
     <string name="saved_to_x">Saved to %1$s</string>
     <string name="saved_to_playlists">Saved to playlists</string>

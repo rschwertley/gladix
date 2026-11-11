@@ -165,7 +165,12 @@ class ButtonsAdapter(
             (isComplete() && getAllLoaded().isNotEmpty())
 
         fun bind(feed: FeedData.Buttons?, showEditPlaylist: Boolean) {
-            val buttons = feed?.buttons ?: Feed.Buttons.EMPTY
+            // [2026-11-11] On a tracks-on-tap row's page, Play and Shuffle always show (FeedClickListener.forcesPlayAndShuffle):
+            // they load the row's whole list, songs in subfolders included, so they work even where the extension hid them.
+            // Only once the feed is known (feed != null): during a reload the row stays as the rule below has it.
+            // Display only: FeedAdapter.isPlayButtonShown, which decides what a song tap queues, still reads the extension.
+            val declared = feed?.buttons ?: Feed.Buttons.EMPTY
+            val buttons = if (feed != null && listener.forcesPlayAndShuffle) declared.copy(showPlayAndShuffle = true) else declared
             this.feed = feed
             val showButtons = buttons.run { showPlayAndShuffle || showSort || showSearch }
             binding.searchToggleButton.isChecked = viewModel.searchToggled

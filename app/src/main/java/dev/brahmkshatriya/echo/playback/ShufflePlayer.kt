@@ -73,6 +73,10 @@ class ShufflePlayer(
     private val reconstituteRunnable = Runnable { reconstitutionScheduled = false; runReconstitution() }
 
     private companion object {
+        // [2026-11-11] Raised from 100 to 1000 in 4b665eb5 ("raise Repeat-All cap"): reconstituteFromBackStack loops the back stack, so
+        // this is also the longest Repeat-All loop. At ~20-30 KB per MediaItem (PlayerService's restore-cache note) 1000 can hold
+        // 20-30 MB; the 1166 OOM's ~320 songs held ~6-10 MB, not what filled the heap. If it ever needs shrinking, the fix is lighter
+        // back-stack entries, not a smaller number.
         const val BACK_STACK_CAP = 1000
         const val PREVIOUS_RESTART_THRESHOLD_MS = 3000L
     }

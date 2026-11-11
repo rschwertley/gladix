@@ -185,6 +185,11 @@ class CrossfadeController(
      */
     private enum class Phase { IDLE, ARMED, PREROLL, HANDOFF, ACTIVE }
 
+    /** [2026-11-11] The pair rule's rows ([classifyPair]); [log] is the CROSSFADE-FEEL line's name for each. */
+    private enum class PairRow(val log: String) {
+        FULL("full"), FADE_OUT_OLD("fadeOut"), NO_FADES("noFade"), FADE_IN_NEW("fadeIn"), SEQUENTIAL("seq")
+    }
+
     /** Closed set, so an abort line can never read as free text. */
     private enum class Abort {
         SETTING_OFF, SETTING_CHANGE, TRACK_CHANGE, SEEK, USER_PAUSE, INTERRUPTION, STALL_HOLD,
@@ -234,7 +239,7 @@ class CrossfadeController(
      * the arm point ([maybeStartEndAnalysis]); read at [arm], which cancels a run still going, so the analysis decoder never
      * runs beside the sidecar's (the sidecar prepares only once ARMED, [maybePrepareSidecar]). A cancelled run clears the id
      * so a later eligible tick (after a seek back) runs it again; a run that finished undecided keeps it, so a failure is
-     * not retried every tick. [endAudibleMs] null = no result, which keeps today's window (the end of the file).
+     * not retried every tick. [endResult] null = no result, which keeps today's window (the end of the file).
      * [CORRECTED 2026-11-10] "Never runs beside the sidecar's" is true of the END look-ahead only. The start look-ahead
      * ([StartShape]) uses this scope too and may run while ARMED, beside the prepared sidecar, because the next song's head
      * commits after arm for lossy formats. It never runs at the same time as the end look-ahead. What keeps that safe is
@@ -248,7 +253,8 @@ class CrossfadeController(
     )
     private var endAnalysisJob: Job? = null
     private var endAnalysisMediaId: String? = null
-    private var endAudibleMs: Long? = null
+    // [2026-11-11] Was endAudibleMs; now the whole result (audible end, endDb, bodyDb) for the pair rule ([classifyPair]).
+    private var endResult: AudibleEndAnalyzer.End? = null
 
     /**
      * [2026-11-08] How far before the end of the file this arm's window ends: duration minus the audible end, 0 when there is
@@ -260,6 +266,23 @@ class CrossfadeController(
 
     // The CROSSFADE-FEEL line's endMoveMs (user-approved 2026-11-08): the move as set at arm, or "-" with no result.
     private var endMoveLog: String? = null
+
+    /**
+     * [2026-11-11] THE PAIR RULE: the transition is chosen from BOTH songs, the end of the one leaving and the start of the
+     * one arriving ([classifyPair], after Liquidsoap's cross.smart). [armedEnd] is the end look-ahead's result taken at
+     * [arm]; [pairRow] the row chosen and [pairForMediaId] the arriving song it was chosen for; [pairOverlapMs] the splice's
+     * overlap in media ms, set only for [PairRow.SEQUENTIAL] when the switch could still be placed (at [arm], or by
+     * [maybeRePark] before the pre-roll), and capping [effectiveFadeMs] wherever it is derived ([cappedFade]).
+     * [pairAtLog], [pairOutDb] and [pairInDb] are the CROSSFADE-FEEL line's pair, outDb and inDb (user-approved 2026-11-11).
+     * All cleared by [clearRampState].
+     */
+    private var armedEnd: AudibleEndAnalyzer.End? = null
+    private var pairRow: PairRow? = null
+    private var pairForMediaId: String? = null
+    private var pairOverlapMs: Long? = null
+    private var pairAtLog: String? = null
+    private var pairOutDb: Double? = null
+    private var pairInDb: Double? = null
 
     /**
      * [2026-11-10] THE START LOOK-AHEAD (AudibleEndAnalyzer.startShape): where the NEXT song's music starts and how soon it is
@@ -1190,6 +1213,118 @@ class CrossfadeController(
         }
     }
 
+    /** [2026-11-11] The start look-ahead's result for [item], when there is one for the file it will play. */
+    private fun shapeFor(item: MediaItem): AudibleEndAnalyzer.Start? =
+        startShapes[item.mediaId]?.takeIf { it.sourceUri == tail.sourceUriOf(item) }?.shape
+
+    /**
+     * [2026-11-11] THE PAIR RULE, the user's decisions of 2026-11-11, after Liquidsoap's cross.smart: a = the leaving song's
+     * level over the last 3 s before its audible end ([AudibleEndAnalyzer.End.endDb]), b = the arriving song's level from
+     * its onset over 3 s ([AudibleEndAnalyzer.Start.levelDb]). RAW levels, as decoded: normalization is removed (see
+     * AudioEffectsProcessor), so nothing is added to either. A side is QUIET at or below [PAIR_QUIET_DB], or at least
+     * [PAIR_QUIET_BELOW_BODY_DB] below its own body (the P95 block of what was analysed), which catches a fade-out or a
+     * soft intro however loud the song was mastered. Margin [PAIR_MARGIN_DB]. No "loud" cap: Liquidsoap's -15 dB would send
+     * nearly every unnormalised modern master to sequential. Null, meaning today's behaviour, without both levels.
+     *
+     * What each row does ([startRamps], [arm], [maybeRePark]):
+     *   FULL (both quiet, close)                 - today's crossfade.
+     *   FADE_OUT_OLD (b >= a + margin, a not quiet) and NO_FADES (b >= a + margin, a quiet) - the full fade-out and a
+     *       [FI_SHORT_MS] fade-in from the onset. One action for both: a fade on an already-quiet ending costs nothing.
+     *   SEQUENTIAL (the rest: both loud within the margin, or a loud end into a quiet start) - a SPLICE
+     *       ([spliceOverlapMs]): the switch moves to just before the leaving song's audible end, so the arriving song's
+     *       first note lands as the old one stops. Needs the switch moved, so only at [arm] or by [maybeRePark].
+     *
+     * ⚠️ DECLINED, AND WHY (2026-11-11):
+     *   - FADE_IN_NEW (a >= b + margin, b not quiet) would hold the old song at full and fade only the new one in. That
+     *     needs a new processor curve (a delayed fade-out) and a partner delay on the incoming side of the overlap trim;
+     *     today's both-fade handles the case acceptably, so the row is classified and logged but plays as FULL.
+     *   - A DUCK FALLBACK for a SEQUENTIAL result that arrives too late to move the switch (drop the old song ~8 dB at
+     *     the new one's onset, then fade): re-park covers late results until the pre-roll, and after that today's
+     *     behaviour stands (logged `seq@late`).
+     */
+    private fun classifyPair(end: AudibleEndAnalyzer.End?, start: AudibleEndAnalyzer.Start?): PairRow? {
+        val a = end?.endDb ?: return null
+        val b = start?.levelDb ?: return null
+        val quietA = a <= PAIR_QUIET_DB || a <= end.bodyDb - PAIR_QUIET_BELOW_BODY_DB
+        val quietB = b <= PAIR_QUIET_DB || b <= start.referenceDb - PAIR_QUIET_BELOW_BODY_DB
+        return when {
+            quietA && quietB && abs(a - b) <= PAIR_MARGIN_DB -> PairRow.FULL
+            b >= a + PAIR_MARGIN_DB && !quietA -> PairRow.FADE_OUT_OLD
+            b >= a + PAIR_MARGIN_DB -> PairRow.NO_FADES
+            a >= b + PAIR_MARGIN_DB && !quietB -> PairRow.FADE_IN_NEW
+            else -> PairRow.SEQUENTIAL
+        }
+    }
+
+    /**
+     * [2026-11-11] Records the pair rule's row for [arriving], at [arm] ("arm") or at [startRamps] ("ramps"). A SEQUENTIAL
+     * row at arm sets the splice's overlap; at startRamps the switch has already happened, so it is logged as `late` and
+     * plays as today. Leaves everything unset when there is no row (a result missing), so a later call can still decide.
+     */
+    private fun decidePair(arriving: MediaItem, at: String, speed: Float) {
+        val end = armedEnd
+        val shape = shapeFor(arriving)
+        val row = classifyPair(end, shape) ?: return
+        pairRow = row
+        pairForMediaId = arriving.mediaId
+        pairOutDb = end?.endDb
+        pairInDb = shape?.levelDb
+        pairAtLog = if (row == PairRow.SEQUENTIAL && at == "ramps") "late" else at
+        if (row == PairRow.SEQUENTIAL && at == "arm") pairOverlapMs = spliceOverlapMs(shape?.onsetMs ?: 0L, speed)
+    }
+
+    /**
+     * [2026-11-11] The splice's overlap, media ms: the arriving song's onset plus [SPLICE_PAD_MS] (the tick can fire the gate
+     * up to one [TICK_MS] late, which shortens the overlap by as much). Floored so the switch stays at least
+     * [SPLICE_MIN_TO_END_MS] before the real end of the file, or [LATE_ABORT_MS] would abort it to a plain transition.
+     * Never longer than the fade: [cappedFade] takes the smaller.
+     */
+    private fun spliceOverlapMs(onsetMs: Long, speed: Float): Long =
+        max(onsetMs + (SPLICE_PAD_MS * speed).toLong(), (SPLICE_MIN_TO_END_MS * speed).toLong() - armedEndMoveMs)
+            .coerceAtLeast(0L)
+
+    /** [2026-11-11] [fadeMs] capped by the splice's overlap when there is one; see [pairOverlapMs]. */
+    private fun cappedFade(fadeMs: Long): Long = pairOverlapMs?.let { min(fadeMs, it) } ?: fadeMs
+
+    /**
+     * [2026-11-11] RE-PARK: a SEQUENTIAL row whose start result arrived after [arm] still gets its splice while the phase is
+     * ARMED (the pre-roll has not started; PREROLL is its own phase). The switch and the park are recomputed exactly as
+     * [arm] computes them, and a sidecar already prepared at the old park is reset and prepared again at the new one, the
+     * same two steps as [recoverEndedSidecar] ([resetSidecar], then [maybePrepareSidecar]). NEVER A SEEK: the park
+     * travels with the source (see [maybePrepareSidecar]). Only when the new park is still at least [RE_PARK_LEAD_MS]
+     * ahead, so the re-prepare has time to reach READY; otherwise nothing changes and [startRamps] logs `seq@late`.
+     * Other rows need no switch move and are left for [startRamps]. Once per arm: a decided row stops it.
+     */
+    private fun maybeRePark(duration: Long) {
+        if (pairForMediaId != null) return
+        val end = armedEnd ?: return
+        val next = runCatching { sessionPlayer.getMediaItemAt(sessionPlayer.nextMediaItemIndex) }.getOrNull() ?: return
+        val shape = shapeFor(next) ?: return
+        if (classifyPair(end, shape) != PairRow.SEQUENTIAL) return
+        val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
+        val position = exoPlayer.currentPosition
+        val overlap = spliceOverlapMs(shape.onsetMs ?: 0L, speed)
+        val windowLeft = (duration - armedEndMoveMs - position).coerceAtLeast(0L)
+        val fade = min(min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong(), overlap)
+        val tailStart = duration - armedEndMoveMs - fade
+        val park = (tailStart - ((PREROLL_MS + PREROLL_SAFETY_MS) * speed).toLong()).coerceAtLeast(0L)
+        if (park - position < (RE_PARK_LEAD_MS * speed).toLong()) return
+        pairRow = PairRow.SEQUENTIAL
+        pairForMediaId = next.mediaId
+        pairOutDb = end.endDb
+        pairInDb = shape.levelDb
+        pairAtLog = "repark"
+        pairOverlapMs = overlap
+        effectiveFadeMs = fade
+        armedTailStartMs = tailStart
+        parkStartMs = park
+        if (sidecarPrepared) {
+            resetSidecar()
+            sidecarPrepared = false
+        }
+        maybePrepareSidecar()
+    }
+
     /**
      * [2026-11-08] Starts the end look-ahead for the song playing (see [endAnalysisScope]): once the main player has the whole
      * file (the same test as [maybePrepareSidecar]), and only before the arm point, so it has until arm to finish and never
@@ -1206,10 +1341,10 @@ class CrossfadeController(
         endAnalysisJob?.cancel()
         val mediaId = item.mediaId
         endAnalysisMediaId = mediaId
-        endAudibleMs = null
+        endResult = null
         endAnalysisJob = endAnalysisScope.launch {
-            val end = AudibleEndAnalyzer.audibleEndMs(tail.dataSourceFactory, uri, duration)
-            if (endAnalysisMediaId == mediaId) endAudibleMs = end
+            val end = AudibleEndAnalyzer.audibleEnd(tail.dataSourceFactory, uri, duration)
+            if (endAnalysisMediaId == mediaId) endResult = end
         }
     }
 
@@ -1249,6 +1384,8 @@ class CrossfadeController(
         // decoder while the sidecar is getting one (a prepare, or a re-prepare after [recoverEndedSidecar]).
         if (sidecarPrepared && runCatching { sidecar.playbackState }.getOrNull() == Player.STATE_READY)
             maybeStartStartAnalysis()
+        // [2026-11-11] A start result that arrived after arm can still move the switch, until the pre-roll starts.
+        maybeRePark(duration)
         // Gate point, re-derived every tick from the CURRENT duration and speed, so a duration that
         // changes under us (ProgressiveMediaPeriod back-fills it at load completion) moves the gate
         // rather than stranding it. effectiveFade is wall-clock intent, hence the speed factor.
@@ -1256,7 +1393,7 @@ class CrossfadeController(
         val remaining = duration - position
         // [2026-11-08] The window ends at the audible end found at arm ([armedEndMoveMs]); LATE_ABORT_MS still to the real end.
         val windowLeft = (duration - armedEndMoveMs - position).coerceAtLeast(0L)
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong()
+        effectiveFadeMs = cappedFade(min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong())
         if (position >= duration - armedEndMoveMs - effectiveFadeMs) {
             if (remaining <= LATE_ABORT_MS) return abort(Abort.NOT_READY)
             evaluateGate(item, position, duration)
@@ -1453,7 +1590,7 @@ class CrossfadeController(
         val remaining = duration - position
         // [2026-11-08] Same window as [tickArmed]: to the audible end, LATE_ABORT_MS to the real end.
         val windowLeft = (duration - armedEndMoveMs - position).coerceAtLeast(0L)
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong()
+        effectiveFadeMs = cappedFade(min(fadeSeconds * 1000L * speed, windowLeft.toFloat()).toLong())
         if (position >= duration - armedEndMoveMs - effectiveFadeMs) {
             if (remaining <= LATE_ABORT_MS) return abort(Abort.NOT_READY)
             evaluateGate(item, position, duration)
@@ -1648,13 +1785,18 @@ class CrossfadeController(
         // [2026-11-08] The end look-ahead's answer for this song, taken now or not at all: the park below is fixed at arm, so a
         // result arriving later is not used for this playthrough. A run still going is cancelled (see [endAnalysisScope]).
         cancelEndAnalysis()
-        val audibleEnd = endAudibleMs.takeIf { endAnalysisMediaId == item.mediaId }
+        armedEnd = endResult.takeIf { endAnalysisMediaId == item.mediaId }
+        val audibleEnd = armedEnd?.audibleEndMs
         armedEndMoveMs = audibleEnd?.let { end ->
             (duration - end).let { if (it < MIN_END_MOVE_MS) 0L else min(it, MAX_END_MOVE_MS) }
         } ?: 0L
         endMoveLog = if (audibleEnd == null) "-" else armedEndMoveMs.toString()
         val speed = exoPlayer.playbackParameters.speed.coerceAtLeast(0.1f)
-        effectiveFadeMs = min(fadeSeconds * 1000L * speed, (remaining - armedEndMoveMs).toFloat()).toLong()
+        // [2026-11-11] The pair rule, decided here when the next song's start result is already in ([decidePair]). A
+        // SEQUENTIAL row sets [pairOverlapMs], which caps the overlap below, so the switch and the park are placed for it.
+        val next = runCatching { sessionPlayer.getMediaItemAt(sessionPlayer.nextMediaItemIndex) }.getOrNull()
+        if (next != null) decidePair(next, "arm", speed)
+        effectiveFadeMs = cappedFade(min(fadeSeconds * 1000L * speed, (remaining - armedEndMoveMs).toFloat()).toLong())
         phase = Phase.ARMED
         armedMediaId = item.mediaId
         sidecarRePrepares = 0
@@ -2175,10 +2317,18 @@ class CrossfadeController(
         // incoming leg is as before: from main's first frame, over the full fade.
         var onsetMs = 0L
         var inMs = rampMs
-        if (ended || effectiveFadeMs < MIN_SHAPED_FADE_MS) {
+        // [2026-11-11] The pair rule's last chance: a row not yet decided for the song arriving is decided now, but only rows
+        // that keep the switch where it is can still apply ([decidePair] logs a SEQUENTIAL found here as `late`).
+        val incoming = exoPlayer.currentMediaItem
+        if (incoming != null && pairForMediaId != incoming.mediaId) decidePair(incoming, "ramps", speed)
+        val row = pairRow.takeIf { incoming != null && pairForMediaId == incoming.mediaId }
+        // The switch was placed short for a splice, whatever row a late re-decision found; the overlap is short either way.
+        val splice = pairOverlapMs != null
+        // [2026-11-11] A splice is shorter than MIN_SHAPED_FADE_MS by design and still needs its onset and short fade-in, so
+        // this gate does not apply to it (the user's decision). Every other short overlap is unshaped, as before.
+        if (ended || (effectiveFadeMs < MIN_SHAPED_FADE_MS && !splice)) {
             inOnsetLog = "-"
         } else {
-            val incoming = exoPlayer.currentMediaItem
             val entry = incoming?.let { startShapes[it.mediaId] }
                 ?.takeIf { it.sourceUri == tail.sourceUriOf(incoming) }
             val shape = entry?.shape
@@ -2188,7 +2338,12 @@ class CrossfadeController(
                 else -> {
                     // The onset is a position in the song; only meaningful while main is at its start.
                     if (exoPlayer.currentPosition <= NEAR_START_MS) onsetMs = shape.onsetMs ?: 0L
-                    if (shape.onsetMs != null) inMs = incomingFadeMs(shape, rampMs)
+                    if (shape.onsetMs != null) inMs = when {
+                        // [2026-11-11] The pair rule: the old song keeps the full fade-out and the new one comes in almost
+                        // at once from its onset (fade-out-old-only, overlap-no-fades, and the splice).
+                        row == PairRow.FADE_OUT_OLD || row == PairRow.NO_FADES || splice -> min(FI_SHORT_MS, rampMs)
+                        else -> incomingFadeMs(shape, rampMs)
+                    }
                     inOnsetLog = onsetMs.toString()
                 }
             }
@@ -2311,6 +2466,13 @@ class CrossfadeController(
      * that starts straight in (Penny Lane) gives inOnsetMs under 100 and inFadeMs 2500; one with a slow intro gives the full
      * fade. inFadeMs at the full fade on a song that plainly starts loud means the rise detection is wrong; `-late` on most
      * switches means the head is not committed in time (read the format against LengthSizedCacheDataSink's note).
+     * [ADDED 2026-11-11, USER-APPROVED] `pair` is the pair rule's row and when it was decided ([classifyPair]):
+     * `full|fadeOut|noFade|fadeIn|seq` @ `arm|repark|ramps|late` (`late` = sequential, found after the switch was fixed, so
+     * played as today; `fadeIn` plays as full), `-` = no row (a level missing). `outDb` and `inDb` are the raw levels it
+     * compared, dBFS RMS. Stated before the build, Ob-La-Di -> Penny Lane: `pair=seq@arm` or `@repark`, outDb about -17 +-3,
+     * inDb within 4 of it, overlapMs about 600. outDb below -32 there means the 3 s window reads the decay and the measure is
+     * wrong; `seq@late` on most MP3 128 switches means the re-park is not reaching them; `seq` on most pairs means the
+     * thresholds are too strict and the feature will sound switched off.
      * `fmt` is the sidecar's mime/sampleRate at the switch. `rampsEarly=1` can now appear occasionally
      * (a buffer between armIncoming and the seek) and is harmless, because the flush still gates.
      */
@@ -2329,9 +2491,13 @@ class CrossfadeController(
                 " overlapMs=" + overlapField() + " rampOutMs=" + (rampOutLog ?: "-") +
                 " endMoveMs=" + (endMoveLog ?: "-") +
                 " inOnsetMs=" + (inOnsetLog ?: "-") + " inFadeMs=" + (inFadeLog ?: "-") +
-                " tailDb=" + sidecarProcessor.tailDb()
+                " tailDb=" + sidecarProcessor.tailDb() +
+                " pair=" + (pairRow?.let { it.log + "@" + pairAtLog } ?: "-") +
+                " outDb=" + dbField(pairOutDb ?: armedEnd?.endDb) + " inDb=" + dbField(pairInDb)
         )
     }
+
+    private fun dbField(db: Double?): String = db?.let { (Math.round(it * 10) / 10.0).toString() } ?: "-"
 
     private fun overlapField(): String {
         val audibleMs = sidecarProcessor.tailAudibleMs() ?: return "-"
@@ -2394,6 +2560,13 @@ class CrossfadeController(
         inOnsetLog = null
         inFadeLog = null
         completeAfterMs = 0L
+        armedEnd = null
+        pairRow = null
+        pairForMediaId = null
+        pairOverlapMs = null
+        pairAtLog = null
+        pairOutDb = null
+        pairInDb = null
     }
 
     /**
@@ -2597,6 +2770,17 @@ class CrossfadeController(
         private const val LOUD_FLOOR_DB = -30.0
         private const val NEAR_START_MS = 500L
         private const val START_SHAPES_KEPT = 4
+
+        // [2026-11-11] The pair rule ([classifyPair]), the user's decisions of 2026-11-11: quiet at -32 dB or 15 dB below the
+        // song's own body, a 4 dB margin, a ~400 ms fade-in where the new song comes in almost at once, and the splice's pad
+        // and floor. RE_PARK_LEAD_MS (chosen, not measured) is how far ahead the new park must be for a re-prepare to settle.
+        private const val PAIR_QUIET_DB = -32.0
+        private const val PAIR_QUIET_BELOW_BODY_DB = 15.0
+        private const val PAIR_MARGIN_DB = 4.0
+        private const val FI_SHORT_MS = 400L
+        private const val SPLICE_PAD_MS = 300L
+        private const val SPLICE_MIN_TO_END_MS = 1_200L
+        private const val RE_PARK_LEAD_MS = 2_000L
 
         /**
          * How long the sidecar plays MUTED before the switch, so its AudioTrack activation and

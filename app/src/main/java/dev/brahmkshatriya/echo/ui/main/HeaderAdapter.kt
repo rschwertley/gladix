@@ -8,6 +8,9 @@ import android.widget.ImageView
 import androidx.fragment.app.Fragment
 import com.google.android.material.color.MaterialColors
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabelInline
 import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.common.models.ExtensionType
@@ -86,6 +89,9 @@ class HeaderAdapter(
         accountsCont.setLoopedLongClick(all, { all.find { it.second } }) {
             ext ?: return@setLoopedLongClick
             viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
+            // The button shows only the avatar, so say which account this switched to
+            if (AccountLabel.showsDetail(ext.id))
+                fragment.createSnack(context.getString(R.string.switched_to_x, it.first.accountLabelInline()))
         }
     }
 

@@ -243,6 +243,9 @@ class DeezerApi(private val session: DeezerSession) {
         // shared) - see renewSessionFromArl.
         private val arlRenewal = Mutex()
 
+        // One silent email/password re-login at a time, process-wide for the same reason - see reloginWithStoredPassword.
+        private val passwordRelogin = Mutex()
+
         // ⚠️ BOTH DERIVED FROM ONE MEASURED FACT - the pipe JWT's TTL is ~6 minutes (recorded at
         // smartTracklistTrackIds before the holder existed). 30s of margin is a twentieth of that; 60s
         // would be a sixth. The FALLBACK is used only when `exp` will not parse, and is deliberately far
@@ -491,6 +494,8 @@ class DeezerApi(private val session: DeezerSession) {
         np: Boolean = false,
         // True on the one retry after renewSessionFromArl, so a session that still fails is not renewed again.
         arlRenewed: Boolean = false,
+        // True on the one retry after reloginWithStoredPassword, so a call still refused asks to sign in instead of looping.
+        passwordRenewed: Boolean = false,
     ): JsonObject = withContext(Dispatchers.IO) {
         // The token THIS request carries, so a renewal can tell whether another call already replaced it.
         val usedToken = token
@@ -616,9 +621,8 @@ class DeezerApi(private val session: DeezerSession) {
                         // The September conclusion was right about the HOST layer and wrong to read as
                         // closing the question - the extension could already express it.
                         val userList = try {
-                            DeezerExtension().onLogin(
-                                "userPass", mapOf(Pair("email", email), Pair("pass", pass))
-                            )
+                            // passwordLogin, not onLogin: a silent re-login keeps the login's source (DeezerSession.loginSource).
+                            DeezerExtension().passwordLogin(email, pass)
                         } catch (_: DeezerAuthRejectedException) {
                             session.isArlExpired(true)
                             // Latch the refusal so the NEXT attempt costs nothing. This block re-runs
@@ -778,6 +782,20 @@ class DeezerApi(private val session: DeezerSession) {
                             return@withContext callApi(method, paramsBuilder, gatewayInput, np, arlRenewed = true)
                         session.isArlExpired(true)
                     }
+                    // [2026-11-11] EMAIL/PASSWORD SESSIONS: ONE SILENT RE-LOGIN WITH THE STORED CREDENTIALS, THEN ONE RETRY.
+                    // Before this, an expired ARL answering NEED_USER_AUTH_REQUIRED went straight to "Sign in" with the
+                    // email and password sitting in the session - seen on 1177 as Search asking to sign in. Only the
+                    // "Invalid CSRF token" answer above re-logged in. Same re-login as that branch ([reloginWithStoredPassword]).
+                    // NOT for user.getArl: getArlByEmail calls it inside the re-login itself. deezer.getUserData, the login
+                    // flow's method (onLogin, makeUser, webViewRequest.onStop, getCurrentUser), is excluded above. Nothing
+                    // here runs from setLoginUser or onExtensionSelected (the 1108 rule): they make no gateway call.
+                    // NEVER LOOPS: the retry carries passwordRenewed, and a second answer like this is a sign-in.
+                    if (!passwordRenewed && !arlRenewed && email.isNotEmpty() && pass.isNotEmpty() &&
+                        method != "user.getArl"
+                    ) {
+                        reloginWithStoredPassword(usedToken)
+                        return@withContext callApi(method, paramsBuilder, gatewayInput, np, passwordRenewed = true)
+                    }
                     throw ClientException.LoginRequired()
                 }
                 throw gatewayError
@@ -857,7 +875,7 @@ class DeezerApi(private val session: DeezerSession) {
                 "license_token" to licenseToken,
                 "email" to userEmail,
                 "pass" to userPass
-            )
+            ) + loginSourceExtra()
         )
         userList.add(user)
         return userList
@@ -1034,6 +1052,49 @@ class DeezerApi(private val session: DeezerSession) {
      * nothing is latched and the next call tries again. That split is what keeps this off the 1108 / September
      * credentialsRejected path: only an explicit guest answer latches, and setLoginUser clears it on the next login.
      */
+    /**
+     * [2026-11-11] THE SILENT RE-LOGIN WITH THE STORED EMAIL AND PASSWORD, for callApi's NEED_USER_AUTH_REQUIRED answer. The same
+     * steps as callApi's "Invalid CSRF token" branch: onLogin("userPass") (getArlByEmail, then makeUser), setLoginUser, and the
+     * renewed user saved over the stored one (DeezerSession.onUserRenewed).
+     * SINGLE-FLIGHT on [passwordRelogin]: concurrent calls refused at once share one re-login. A caller that waited finds the
+     * token changed under it and just retries; one that finds the refusal latch set throws without asking Deezer again.
+     * OUTCOMES: returns when the session is renewed. Deezer refusing the credentials (DeezerAuthRejectedException) latches
+     * credentialsRejected and isArlExpired and throws LoginRequired, as the CSRF branch does. Anything else propagates
+     * unchanged and latches nothing, so the next call tries again: a 403 from connect.deezer.com is LoginRequired as before
+     * (getToken), a network failure stays a network failure.
+     */
+    private suspend fun reloginWithStoredPassword(staleToken: String) = passwordRelogin.withLock {
+        val current = session.credentials
+        if (current.token.isNotEmpty() && current.token != staleToken) return@withLock
+        if (session.credentialsRejected) throw ClientException.LoginRequired()
+        val userList = try {
+            DeezerExtension().passwordLogin(current.email, current.pass)
+        } catch (_: DeezerAuthRejectedException) {
+            // ⚠⚠ A WEB LOGIN'S PASSWORD IS UNVERIFIED, SO ITS REFUSAL GETS ONE ARL RENEWAL BEFORE THE LATCH (2026-11-11).
+            // webViewRequest.onStop stores the PASSWORD field of Deezer's own deezer_userAuth request, and nothing shows whether
+            // the page sends it plain, as getArlByEmail needs (it MD5s it), or already hashed - the one public client that reads
+            // the field (upstream LuftVerbot/echo-deezer-extension) treats it as plain without saying why. A hashed one would be
+            // refused here every time. The ARL the web page set is still valid in that case, so the Nov 1 path renews from it
+            // (renewSessionFromArl) and the session carries on, unlatched. The password stays stored either way, because TV
+            // linking sends it so the TV gets its own login (TvPairingFragment): dropping it brought back the shared-ARL TV
+            // failures of Nov 1-2. Email/password FORM logins (no marker) latch exactly as before.
+            // The token passed is the CURRENT one, not this call's: a refusal after getArlByEmail's token step has already
+            // replaced it, and renewSessionFromArl would read that as "another call renewed" and skip the renewal.
+            if (session.loginSource == DeezerSession.LOGIN_SOURCE_WEB &&
+                renewSessionFromArl(session.credentials.token)
+            ) return@withLock
+            session.isArlExpired(true)
+            session.setCredentialsRejected(true)
+            throw ClientException.LoginRequired()
+        }
+        DeezerExtension().setLoginUser(userList.first())
+        session.notifyUserRenewed(userList.first())
+    }
+
+    // The login's source in a user's extras (DeezerSession.loginSource), so a renewal saved over the stored user keeps it.
+    private fun loginSourceExtra(): Map<String, String> =
+        session.loginSource.takeIf { it.isNotEmpty() }?.let { mapOf(DeezerSession.LOGIN_SOURCE_KEY to it) }.orEmpty()
+
     private suspend fun renewSessionFromArl(staleToken: String): Boolean = arlRenewal.withLock {
         val current = session.credentials
         if (current.token.isNotEmpty() && current.token != staleToken) return@withLock true
@@ -1095,7 +1156,7 @@ class DeezerApi(private val session: DeezerSession) {
                     "license_token" to licenseToken,
                     "email" to current.email,
                     "pass" to current.pass
-                )
+                ) + loginSourceExtra()
             )
         )
         true

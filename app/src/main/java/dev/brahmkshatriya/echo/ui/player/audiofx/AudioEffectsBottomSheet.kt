@@ -176,8 +176,6 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             equalizer.isVisible = hasEqualizer
             if (hasEqualizer) equalizer.setOnClickListener { onEqualizerClicked() }
 
-            loudnessNormalization.isVisible = false
-
             // ⚠⚠ ONE PREFERENCE, TWO SCREENS: appSettings IS THE SAME FILE
             // SettingsPlayerFragment WRITES. appSettings is Context.getSettings(), i.e.
             // getSharedPreferences(SETTINGS_NAME, MODE_PRIVATE), and the settings screen sets

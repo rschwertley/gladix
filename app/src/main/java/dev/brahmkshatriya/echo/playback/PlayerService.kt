@@ -203,7 +203,7 @@ class PlayerService : MediaLibraryService() {
             return
         }
         val sessionPlayer = crossfadeSessionPlayer ?: return
-        // Own processor: the ramp counters and the per-track gain LUT are per-player mutable state,
+        // Own processor: the ramp counters and the EQ state are per-player mutable state,
         // so sharing one instance across two players would cross-talk.
         // ⚠⚠ HELD IN A LOCAL AND HANDED TO THE CONTROLLER, NOT DISCARDED. Build 1
         // constructed it inline and kept no reference, which was fine while nothing ramped; Build 2
@@ -371,19 +371,9 @@ class PlayerService : MediaLibraryService() {
         SupervisorJob() + Dispatchers.IO + CoroutineName("PlayerService") + exceptionHandler
     )
 
-    private val audioEffectsProcessor by lazy {
-        AudioEffectsProcessor().apply {
-            // One-time migration: force normalization off for all existing users.
-            // Safe to re-enable by clearing normalization_force_disabled_v1 from prefs.
-            if (!app.settings.getBoolean("normalization_force_disabled_v1", false)) {
-                app.settings.edit {
-                    putBoolean(LOUDNESS_NORMALIZATION, false)
-                    putBoolean("normalization_force_disabled_v1", true)
-                }
-            }
-            normalizationEnabled = app.settings.getBoolean(LOUDNESS_NORMALIZATION, false)
-        }
-    }
+    // [2026-11-11] Loudness normalization and its forced-off migration (normalization_force_disabled_v1) are removed; see
+    // the removal note in AudioEffectsProcessor. The two stored keys stay in existing users' prefs, unread.
+    private val audioEffectsProcessor by lazy { AudioEffectsProcessor() }
 
     @OptIn(UnstableApi::class)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -396,10 +386,6 @@ class PlayerService : MediaLibraryService() {
             TRUE_CROSSFADE_SECONDS -> {
                 syncCrossfade()
                 exoPlayer.skipSilenceEnabled = effectiveSkipSilence()
-            }
-            LOUDNESS_NORMALIZATION -> {
-                audioEffectsProcessor.normalizationEnabled = prefs.getBoolean(key, false)
-                effects.updateNormalizationSettings()
             }
         }
     }
@@ -1399,7 +1385,6 @@ class PlayerService : MediaLibraryService() {
         const val CLOSE_PLAYER = "close_player"
         private const val ACTION_CLEAR_QUEUE = "dev.rschwertley.gladix.auto.CLEAR_QUEUE"
         const val SKIP_SILENCE = "skip_silence"
-        const val LOUDNESS_NORMALIZATION = "loudness_normalization"
         // ⚠⚠ crossfade_enabled / crossfade_duration ARE GONE AS OF BUILD 2 AND ARE NOT
         // MIGRATED. They belonged to Track Fade (fade the outgoing track into silence), which the
         // true crossfade replaced on 2026-10-15; TRUE_CROSSFADE_SECONDS below is the live key and

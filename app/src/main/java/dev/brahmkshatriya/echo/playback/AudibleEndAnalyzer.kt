@@ -77,6 +77,11 @@ object AudibleEndAnalyzer {
     // [2026-11-10] "Near its level": the first block within this of the window's 95th percentile ends the rise.
     private const val NEAR_LEVEL_DB = 6.0
 
+    // [2026-11-11] The pair rule's levels (CrossfadeController.classifyPair, the user's decision): the outgoing over the last
+    // 3 s before its audible end, the incoming from its onset over 3 s, at least 1 s of it inside the head window.
+    private const val LEVEL_WINDOW_MS = 3_000L
+    private const val MIN_LEVEL_MS = 1_000L
+
     // A decoder's first output after a seek can be pre-roll (Opus) or partial; not counted.
     private const val SKIP_HEAD_MS = 200L
 
@@ -87,8 +92,14 @@ object AudibleEndAnalyzer {
     // Waits of DEQUEUE_TIMEOUT_US for the decoder's end of stream once it is queued (~5 s), then give up (null).
     private const val MAX_END_WAITS = 500
 
-    /** The audible end in media ms, or null when undecided. Runs on IO; cancellable between reads. */
-    suspend fun audibleEndMs(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): Long? =
+    /**
+     * [2026-11-11] The end look-ahead's result. [audibleEndMs] as before; [endDb] the average power (RMS dBFS, raw PCM) over
+     * the last [LEVEL_WINDOW_MS] before it, null with nothing measured there; [bodyDb] the 15 s window's 95th-percentile block.
+     */
+    class End(val audibleEndMs: Long, val endDb: Double?, val bodyDb: Double)
+
+    /** The audible end, or null when undecided. Runs on IO; cancellable between reads. */
+    suspend fun audibleEnd(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): End? =
         withContext(Dispatchers.IO) {
             runCatching { measure(dataSourceFactory, uri, durationMs) }.getOrElse {
                 if (it is CancellationException) throw it
@@ -100,8 +111,10 @@ object AudibleEndAnalyzer {
      * [2026-11-10] Where the music starts in the first [HEAD_SCAN_MS] of a song, and how soon after that it is near its level.
      * [onsetMs] null = nothing above the threshold in the window; [riseMs] null = never near its level after the onset.
      * [referenceDb] is the window's 95th-percentile block, RMS dBFS.
+     * [2026-11-11] [levelDb] is the average power from the onset over [LEVEL_WINDOW_MS], clipped to the window; null with no
+     * onset or less than [MIN_LEVEL_MS] of it inside the window. Raw PCM, like every level here.
      */
-    class Start(val onsetMs: Long?, val riseMs: Long?, val referenceDb: Double)
+    class Start(val onsetMs: Long?, val riseMs: Long?, val referenceDb: Double, val levelDb: Double? = null)
 
     /**
      * The start of the song at [uri], or null when undecided: fewer than [HEAD_SCAN_MS] decodable from the first
@@ -116,12 +129,12 @@ object AudibleEndAnalyzer {
             }
         }
 
-    private suspend fun measure(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): Long? {
+    private suspend fun measure(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): End? {
         if (durationMs <= SCAN_MS) return null
         val blocks = Blocks(durationMs - SCAN_MS, SCAN_MS, SKIP_HEAD_MS)
         decode(dataSourceFactory, uri, blocks, head = false, boundLength = C.LENGTH_UNSET.toLong()) ?: return null
         if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
-        return blocks.audibleEndMs()
+        return blocks.end()
     }
 
     private suspend fun measureStart(dataSourceFactory: DataSource.Factory, uri: Uri, boundLength: Long): Start? {
@@ -343,13 +356,38 @@ object AudibleEndAnalyzer {
             return sorted[((sorted.size - 1) * 0.95).toInt()]
         }
 
-        fun audibleEndMs(): Long? {
+        fun end(): End? {
             val levels = levels()
             if (levels.isEmpty()) return null
-            val threshold = max(referenceOf(levels) - RELATIVE_DB, FLOOR_DB)
+            val reference = referenceOf(levels)
+            val threshold = max(reference - RELATIVE_DB, FLOOR_DB)
             val last = levels.lastOrNull { it.second >= threshold }?.first ?: return null
-            return startMs + (last + 1) * BLOCK_MS
+            val window = (LEVEL_WINDOW_MS / BLOCK_MS).toInt()
+            return End(
+                audibleEndMs = startMs + (last + 1) * BLOCK_MS,
+                endDb = meanDb(last - window + 1, last),
+                bodyDb = reference,
+            )
         }
+
+        /**
+         * [2026-11-11] Average power in dB over blocks [from]..[to] (clipped to the window): total squares over total samples,
+         * so loud blocks weigh as they sound, not an average of dB values. Null with no samples in the range.
+         */
+        fun meanDb(from: Int, to: Int): Double? {
+            var squareSum = 0.0
+            var sampleSum = 0L
+            for (block in max(from, 0)..minOf(to, count - 1)) {
+                squareSum += squares[block]
+                sampleSum += samples[block]
+            }
+            if (sampleSum == 0L) return null
+            return 10 * log10(max(squareSum / sampleSum, 1e-12))
+        }
+
+        /** [2026-11-11] Blocks from [from] that hold samples, up to [to] (clipped). */
+        fun filledBlocks(from: Int, to: Int): Int =
+            (max(from, 0)..minOf(to, count - 1)).count { samples[it] > 0 }
 
         /**
          * [2026-11-10] The onset: the first block at or above the same threshold as the end's whose next block is too (so a
@@ -365,10 +403,13 @@ object AudibleEndAnalyzer {
                 db >= threshold && (byBlock[block + 1] ?: Double.NEGATIVE_INFINITY) >= threshold
             }?.first ?: return Start(null, null, reference)
             val near = levels.firstOrNull { (block, db) -> block >= onset && db >= reference - NEAR_LEVEL_DB }?.first
+            val window = (LEVEL_WINDOW_MS / BLOCK_MS).toInt()
+            val enough = filledBlocks(onset, onset + window - 1) * BLOCK_MS >= MIN_LEVEL_MS
             return Start(
                 onsetMs = (startMs + onset * BLOCK_MS - encoderDelayMs).coerceAtLeast(0L),
                 riseMs = near?.let { (it - onset) * BLOCK_MS },
                 referenceDb = reference,
+                levelDb = if (enough) meanDb(onset, onset + window - 1) else null,
             )
         }
     }

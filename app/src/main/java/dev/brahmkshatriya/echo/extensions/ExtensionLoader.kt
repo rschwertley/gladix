@@ -232,6 +232,15 @@ class ExtensionLoader(
                             setLoginUser(user)
                             // Here because this is the delivery that hydrates a real session: see DeezerExtension.warmLiked.
                             if (this is DeezerExtension) warmLiked()
+                            // [2026-11-11] OpenGonic ONLY, by id. This block runs on every cold start, and
+                            // getCurrentUser can be a network call (Deezer's is api.makeUser): the 1108 lockout
+                            // is why nothing that may hit the network goes on this path for an extension whose
+                            // getCurrentUser we have not read. OpenGonic's is ours and needed (its saved logins
+                            // predate its server labels). Deezer saves a renewed login itself (onUserRenewed below).
+                            else if (user != null && metadata.id == OPENGONIC_ID) {
+                                val client = this
+                                scope.launch { relabelStoredUser(metadata, client, user.id) }
+                            }
                         }.onFailure { e ->
                             if (e is CancellationException) throw e
                             app.throwFlow.emit(e.toAppException(metadata))
@@ -242,6 +251,48 @@ class ExtensionLoader(
                 }
             }
         }
+    }
+
+    /**
+     * Refreshes how a saved login is shown (name, subtitle, cover) from the extension's
+     * getCurrentUser, after setLoginUser. For logins saved before an extension changed its labels,
+     * e.g. OpenGonic now naming accounts by server, so they show the new label without logging in
+     * again.
+     * Same rules as the Deezer renewal below: ONLY over the account that is still current, and it
+     * writes UserEntity only, which currentUsersFlow doesn't observe, so it doesn't re-run
+     * setLoginUser or reload anything.
+     * Extras are MERGED, never replaced: every stored key keeps its stored value (a password, API
+     * key or token is never dropped or overwritten); keys only getCurrentUser has are added
+     * (OpenGonic's "username", now that its name is the server's). A null subtitle or cover keeps
+     * the stored one. Nothing is written when nothing changes, and any failure is ignored, as
+     * this is only the label.
+     */
+    // [2026-11-11] The database steps are inside the catch too: a failure there would otherwise reach this scope's
+    // handler and show as an error snackbar, for a label.
+    private suspend fun relabelStoredUser(metadata: Metadata, client: LoginClient, userId: String) {
+        try {
+            relabel(metadata, client, userId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+    }
+
+    private suspend fun relabel(metadata: Metadata, client: LoginClient, userId: String) {
+        val fresh = client.getCurrentUser() ?: return
+        if (fresh.id != userId) return
+        val dao = db.userDao()
+        if (dao.getCurrentUser(metadata.type, metadata.id)?.userId != userId) return
+        // Re-read: the stored login may have changed while getCurrentUser ran
+        val stored = dao.getUser(metadata.type, metadata.id, userId)?.user?.getOrNull() ?: return
+        val merged = stored.copy(
+            name = fresh.name,
+            subtitle = fresh.subtitle ?: stored.subtitle,
+            cover = fresh.cover ?: stored.cover,
+            extras = fresh.extras + stored.extras,
+        )
+        if (merged == stored) return
+        dao.insertUsers(listOf(merged.toEntity(metadata.type, metadata.id)))
     }
 
     val webViewClientFactory = WebViewClientFactory(app.context)
@@ -383,6 +434,10 @@ class ExtensionLoader(
         fun ExtensionType.priorityKey() = "priority_${this.feature}"
 
         const val LAST_EXTENSION_KEY = "last_extension"
+
+        // OpenGonic: the one extension whose saved login is relabelled after setLoginUser (relabelStoredUser), and whose
+        // accounts show their subtitle and announce a switch (AccountLabel.showsDetail).
+        const val OPENGONIC_ID = "opengonic"
     }
 
 }
