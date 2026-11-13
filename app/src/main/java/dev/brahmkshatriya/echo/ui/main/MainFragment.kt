@@ -99,10 +99,9 @@ class MainFragment : Fragment() {
                     outline.alpha = max(0f, offset - extra)
                 }
             }
-            // Full-bleed: no appBar, so the metrics stay exactly as they were. traceTag only — the
-            // GladixScroll comparison needs a clean screen alongside the collapsing ones.
-            // REMOVE THE TAG WITH THE TRACE.
-            val scroller = FastScrollerHelper.applyTo(recyclerView, traceTag = "main")
+            // Full-bleed: no appBar, so the header terms of the scroll metrics are zero. [2026-11-13] traceTag is retired
+            // with the GladixScroll trace (FastScrollerHelper.applyTo).
+            val scroller = FastScrollerHelper.applyTo(recyclerView)
             applyInsets {
                 // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
                 // TV overscan safe-area (phone: isTv() == false → 20/20, unchanged). `it.start` already carries

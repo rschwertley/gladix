@@ -25,7 +25,7 @@ import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Feed
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
@@ -405,7 +405,8 @@ class OfflineExtension(
         val library = getLibrary()
         when (mediaItem) {
             is Album -> {
-                val tracks = loadTracks(mediaItem).loadAll().asSequence()
+                // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+                val tracks = loadTracks(mediaItem).loadAllBounded().asSequence()
                     .map { it.artists }.flatten().map { artist ->
                         library.artistMap[artist.id.toLongOrNull()]?.songList?.map { it } ?: emptyList()
                     }.flatten().filter { it.album?.id != mediaItem.id }.take(25)
@@ -415,7 +416,7 @@ class OfflineExtension(
             }
 
             is Playlist -> {
-                val tracks = loadTracks(mediaItem).loadAll()
+                val tracks = loadTracks(mediaItem).loadAllBounded()
                 val randomTracks = getLibrary().songList.shuffled().take(25).map { it }
                 (tracks + randomTracks).distinctBy { it.id }.toMutableList()
             }

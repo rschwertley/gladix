@@ -11,7 +11,7 @@ import dev.brahmkshatriya.echo.common.clients.PlaylistEditorListenerClient
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
@@ -59,13 +59,14 @@ class SaveToPlaylistViewModel(
             saveFlow.value = SaveState.LoadingTracks
             val tracks = when (item) {
                 is Album ->
-                    extension.getAs<AlbumClient, List<Track>> { loadTracks(item)?.loadAll().orEmpty() }
+                    // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+                    extension.getAs<AlbumClient, List<Track>> { loadTracks(item)?.loadAllBounded().orEmpty() }
 
                 is Playlist ->
-                    extension.getAs<PlaylistClient, List<Track>> { loadTracks(item).loadAll() }
+                    extension.getAs<PlaylistClient, List<Track>> { loadTracks(item).loadAllBounded() }
 
                 is Radio ->
-                    extension.getAs<RadioClient, List<Track>> { loadTracks(item).loadAll() }
+                    extension.getAs<RadioClient, List<Track>> { loadTracks(item).loadAllBounded() }
 
                 is Track -> Result.success(listOf(item))
                 else -> null
@@ -85,7 +86,7 @@ class SaveToPlaylistViewModel(
                     saveFlow.value = SaveState.LoadingPlaylist(playlist)
                     val loaded = loadPlaylist(playlist)
                     if (!loaded.isEditable) return@getAs false
-                    val playlistTracks = loadTracks(loaded).loadAll()
+                    val playlistTracks = loadTracks(loaded).loadAllBounded()
                     saveFlow.value = SaveState.Saving(loaded, tracks)
                     val listener = this as? PlaylistEditorListenerClient
                     listener?.onEnterPlaylistEditor(loaded, playlistTracks)

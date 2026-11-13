@@ -55,6 +55,9 @@ import kotlin.math.max
  * mattering under the new one, and songs differ in level by 20 dB or more; the floor keeps a quiet recording from being cut
  * at its music. The audible end is the end of the last block at or above the threshold. Only the last [SCAN_MS] is read, so a
  * hidden track after a longer gap is never reached. The minimum move and the cap are the caller's (CrossfadeController).
+ * [CORRECTED 2026-11-13] "Only the last [SCAN_MS] is read" holds only while that window has audio in it. An all-silent one is
+ * now followed by longer windows, up to [MAX_TAIL_SCAN_MS] (the user's decision), so a song ending in 15-60 s of silence gets
+ * the end of its music. A hidden track whose audio is inside the last [SCAN_MS] is still the end, as before.
  *
  * Returns null, meaning "keep today's window", for anything undecided: no seek map, a format the platform cannot decode, a
  * read or decoder error, a decode that stops well short of the duration, or no block above the threshold at all.
@@ -70,12 +73,26 @@ object AudibleEndAnalyzer {
 
     /** [2026-11-10] The start look-ahead's window (the user's decision): fewer than this decodable gives null. */
     const val HEAD_SCAN_MS = 5_000L
+
+    /**
+     * [2026-11-13] THE LONGER LOOK-AHEADS, the user's decisions of 2026-11-13. A tail whose last [SCAN_MS] is all silent is
+     * scanned again further back, [SCAN_MS] more at a time, up to [MAX_TAIL_SCAN_MS] before the end of the file
+     * ([End.noAudio] when nothing is found). A head with no onset in [HEAD_SCAN_MS] is scanned again over [MAX_HEAD_SCAN_MS]
+     * (a [Start] with no onset then means none in 15 s). Each longer scan is a new decode of its whole window, so a song
+     * whose answer is in the first window costs exactly what it did before.
+     */
+    const val MAX_TAIL_SCAN_MS = 60_000L
+    const val MAX_HEAD_SCAN_MS = 15_000L
     private const val BLOCK_MS = 50L
     private const val RELATIVE_DB = 40.0
     private const val FLOOR_DB = -60.0
 
     // [2026-11-10] "Near its level": the first block within this of the window's 95th percentile ends the rise.
     private const val NEAR_LEVEL_DB = 6.0
+
+    // [2026-11-13] The long fade-out's level (CrossfadeController's LONG_FADE row, the user's decision): blocks at least this
+    // far below the body count as the fade.
+    private const val FADE_BELOW_BODY_DB = 12.0
 
     // [2026-11-11] The pair rule's levels (CrossfadeController.classifyPair, the user's decision): the outgoing over the last
     // 3 s before its audible end, the incoming from its onset over 3 s, at least 1 s of it inside the head window.
@@ -95,8 +112,15 @@ object AudibleEndAnalyzer {
     /**
      * [2026-11-11] The end look-ahead's result. [audibleEndMs] as before; [endDb] the average power (RMS dBFS, raw PCM) over
      * the last [LEVEL_WINDOW_MS] before it, null with nothing measured there; [bodyDb] the 15 s window's 95th-percentile block.
+     * [2026-11-13] [fadeMs]: from the end of the last block within [FADE_BELOW_BODY_DB] of the body to the audible end, the
+     * length of a fade-out (0 when the music stays near its body to the end). [scannedMs]: the window that found the end,
+     * [SCAN_MS] unless the last [SCAN_MS] was all silent. [noAudio]: nothing audible within [MAX_TAIL_SCAN_MS] of the end (or
+     * in the whole song, if shorter); the other fields then mean nothing.
      */
-    class End(val audibleEndMs: Long, val endDb: Double?, val bodyDb: Double)
+    class End(
+        val audibleEndMs: Long, val endDb: Double?, val bodyDb: Double,
+        val fadeMs: Long = 0L, val scannedMs: Long = SCAN_MS, val noAudio: Boolean = false,
+    )
 
     /** The audible end, or null when undecided. Runs on IO; cancellable between reads. */
     suspend fun audibleEnd(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): End? =
@@ -129,18 +153,40 @@ object AudibleEndAnalyzer {
             }
         }
 
+    // [2026-11-13] The last SCAN_MS as before; only when all of it is silent, windows of 30, 45 and 60 s (MAX_TAIL_SCAN_MS),
+    // each decoded from its start to the end of the file. Audio inside the last SCAN_MS is the end, as before, so a hidden
+    // track after a gap is still the end. A window reaching the start of the song is the last one tried.
     private suspend fun measure(dataSourceFactory: DataSource.Factory, uri: Uri, durationMs: Long): End? {
         if (durationMs <= SCAN_MS) return null
-        val blocks = Blocks(durationMs - SCAN_MS, SCAN_MS, SKIP_HEAD_MS)
-        decode(dataSourceFactory, uri, blocks, head = false, boundLength = C.LENGTH_UNSET.toLong()) ?: return null
-        if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
-        return blocks.end()
+        var windowMs = SCAN_MS
+        while (true) {
+            val blocks = Blocks(durationMs - windowMs, windowMs, SKIP_HEAD_MS)
+            decode(dataSourceFactory, uri, blocks, head = false, boundLength = C.LENGTH_UNSET.toLong()) ?: return null
+            if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
+            if (!blocks.allSilent()) return blocks.end()?.let {
+                End(it.audibleEndMs, it.endDb, it.bodyDb, it.fadeMs, scannedMs = windowMs)
+            }
+            if (windowMs >= MAX_TAIL_SCAN_MS || windowMs >= durationMs) {
+                return End(durationMs - windowMs, null, FLOOR_DB, scannedMs = windowMs, noAudio = true)
+            }
+            windowMs = minOf(windowMs + SCAN_MS, MAX_TAIL_SCAN_MS, durationMs)
+        }
     }
 
+    // [2026-11-13] HEAD_SCAN_MS as before; only with no onset there, once more over MAX_HEAD_SCAN_MS. Undecided (null) when that
+    // much is not decodable yet, so the caller tries again once more of the head is committed.
     private suspend fun measureStart(dataSourceFactory: DataSource.Factory, uri: Uri, boundLength: Long): Start? {
-        val blocks = Blocks(0L, HEAD_SCAN_MS, 0L)
+        val first = measureStart(dataSourceFactory, uri, boundLength, HEAD_SCAN_MS) ?: return null
+        if (first.onsetMs != null) return first
+        return measureStart(dataSourceFactory, uri, boundLength, MAX_HEAD_SCAN_MS)
+    }
+
+    private suspend fun measureStart(
+        dataSourceFactory: DataSource.Factory, uri: Uri, boundLength: Long, windowMs: Long,
+    ): Start? {
+        val blocks = Blocks(0L, windowMs, 0L)
         val format = decode(dataSourceFactory, uri, blocks, head = true, boundLength = boundLength) ?: return null
-        if (blocks.lastFrameEndMs < HEAD_SCAN_MS) return null
+        if (blocks.lastFrameEndMs < windowMs) return null
         // The decoder's output starts with the encoder's priming frames, which the player's sink trims; ours does not.
         val delayMs = if (format.encoderDelay > 0 && format.sampleRate > 0)
             format.encoderDelay * 1000L / format.sampleRate else 0L
@@ -363,11 +409,22 @@ object AudibleEndAnalyzer {
             val threshold = max(reference - RELATIVE_DB, FLOOR_DB)
             val last = levels.lastOrNull { it.second >= threshold }?.first ?: return null
             val window = (LEVEL_WINDOW_MS / BLOCK_MS).toInt()
+            // [2026-11-13] The fade: back from the audible end to the last block still within FADE_BELOW_BODY_DB of the body.
+            val lastNearBody = levels.lastOrNull { (block, db) -> block <= last && db > reference - FADE_BELOW_BODY_DB }?.first
             return End(
                 audibleEndMs = startMs + (last + 1) * BLOCK_MS,
                 endDb = meanDb(last - window + 1, last),
                 bodyDb = reference,
+                fadeMs = if (lastNearBody == null) 0L else (last - lastNearBody) * BLOCK_MS,
             )
+        }
+
+        /** [2026-11-13] Blocks were measured and none is above the threshold: the whole window is silent. */
+        fun allSilent(): Boolean {
+            val levels = levels()
+            if (levels.isEmpty()) return false
+            val threshold = max(referenceOf(levels) - RELATIVE_DB, FLOOR_DB)
+            return levels.none { it.second >= threshold }
         }
 
         /**

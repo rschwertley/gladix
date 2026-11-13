@@ -1470,8 +1470,38 @@ private val GATEWAY_ERROR_KEY = Regex("""(?:^|, )([A-Z_]+)=""")
 
 private fun Throwable.scrubbedForReport(): Throwable = LikedFetchFailed(
     generateSequence(this) { it.cause }.take(5).joinToString(" <- ") { it.reportLabel() },
-    plainNetworkCause()
+    refusedCause() ?: plainNetworkCause()
 ).also { it.stackTrace = stackTrace }
+
+/**
+ * [2026-11-12] DEEZER REFUSED THE REQUEST WITH AN HTTP 403, as its own Crashlytics issue (the user's decision; e8a9e550, 1178).
+ * The report used to group with every other liked-list cause, so muting it would have hidden the rest. The app records a
+ * different exception type when it finds this marker in the chain (CapabilityProbeFailure.record), and only then.
+ * A 403 here is not an expired session: Deezer's session errors arrive as HTTP 200 with an error object (DeezerAuthRejectedException's
+ * note, established June 2026), so it is a refusal in front of the gateway, region, IP or bot, cause unknown. It is therefore
+ * neither a re-login nor a plain network failure, and stays reported.
+ * ⚠️ THE MESSAGE IS THE CONTRACT, NOT THE TYPE: this class is renamed by the extension's R8, and the app cannot load it. The app
+ * matches [LIKED_FETCH_REFUSED_MESSAGE] exactly, the same coupling as DeezerAuthRejectedException's message; change both or neither.
+ * A constant with no account data, so it is as safe in a report as the message-less network copies.
+ */
+private class LikedFetchRefused : Exception(LIKED_FETCH_REFUSED_MESSAGE)
+
+private const val LIKED_FETCH_REFUSED_MESSAGE = "Deezer refused the liked-list request (HTTP 403)"
+
+// callApi's status gate, byte for byte (DeezerApi.callApi, "API call failed with status ${response.code}"), at 403.
+private const val CALL_API_STATUS_403 = "API call failed with status 403"
+
+/**
+ * [2026-11-12] [LikedFetchRefused] when callApi's status gate answered 403, else null. Null as well when a gateway error or
+ * LoginRequired comes first in the chain, the same rule as [plainNetworkCause], so those keep grouping as before.
+ */
+private fun Throwable.refusedCause(): Throwable? {
+    for (node in generateSequence(this) { it.cause }.take(5)) {
+        if (node is DeezerGatewayException || node is ClientException.LoginRequired) return null
+        if (node.message == CALL_API_STATUS_403) return LikedFetchRefused()
+    }
+    return null
+}
 
 /**
  * [2026-11-11] A NEW, MESSAGE-LESS EXCEPTION OF THE SAME TYPE when the failure was the connection, as LikedFetchFailed's cause, so the

@@ -120,6 +120,8 @@ object RadioFallback {
 
     // Last.fm's free tier is 5 req/sec and needs no authentication — only an api_key in the query string.
     // We issue at most one request per exhausted station, so the rate limit is not reachable by design.
+    // [CORRECTED 2026-11-12] Now up to 1 + MAX_SPLIT_LOOKUPS + 1 (full name, name parts, top tracks), one after another, each
+    // only when the one before found nothing to queue. Still well under 5 per second.
     private const val ENDPOINT = "https://ws.audioscrobbler.com/2.0/"
 
     // How many similar tracks to ask for, and how many catalogue matches to append. Kept small: the point
@@ -157,10 +159,30 @@ object RadioFallback {
     // timeout worst case: 15 x ~300ms lands under SEARCH_BUDGET_MS with room for one slow outlier.
     private const val MAX_SEARCHES = 15
 
+    // [2026-11-12] At most this many lookups by the parts of a multi-artist name after the full name found nothing, and the
+    // search cap for the top-tracks step (see topTracksOrNothing).
+    private const val MAX_SPLIT_LOOKUPS = 2
+    private const val TOP_MAX_SEARCHES = 10
+
     // Wall clock for the SEARCH LOOP ONLY — deliberately not wrapping the Last.fm fetch, which carries its
     // own OUTER_TIMEOUT_MS. Two bounded phases rather than one bound over both: a slow fetch can no longer
     // eat the entire budget and leave nothing for the searches that actually produce the append.
     private const val SEARCH_BUDGET_MS = 6_000L
+
+    /**
+     * [2026-11-12] ONE DEADLINE FOR THE WHOLE FALLBACK, so its songs land inside LateAppendResume's window. The fallback starts
+     * when the LAST song starts (PlayerRadio.onMediaItemTransition -> startRadio / topUpQueue), and the phone's auto-resume
+     * plays an append only within LateAppendResume.WINDOW_MS of that song ENDING. So songs come too late when the fallback
+     * takes longer than the time left in the song plus the window, which happens with a short last song or a seek to near its
+     * end. The full-name lookup and its search, the path that existed before, take at most OUTER_TIMEOUT_MS + SEARCH_BUDGET_MS
+     * (12 s) and always fit. The name parts and the top tracks (2026-11-12) could take that to ~36 s; this caps every step
+     * after the first fetch to what is left, and a step with under MIN_STEP_MS left is not started (logged reason=budget).
+     * Window less 6 s: the station's own generation runs before the fallback (inference: not measured), and the append and
+     * the resume take a moment. Capping was chosen over lengthening the window, which would leave LateAppendResume's guards
+     * (sleep timer, user commands, casting, the audio check) as they are but let music start longer after it stopped.
+     */
+    private const val TOTAL_BUDGET_MS = LateAppendResume.WINDOW_MS - 6_000L
+    private const val MIN_STEP_MS = 1_000L
 
     // ⚠️ EXCLUDED BY IDENTITY, NOT BY CAPABILITY — AND THE CAPABILITY TEST WOULD NOT CATCH IT.
     // OfflineExtension implements BOTH RadioClient and SearchFeedClient, and its radio is a real local
@@ -189,6 +211,8 @@ object RadioFallback {
         val title = seed.title.trim()
         val q = "$artist - $title"
         val started = System.currentTimeMillis()
+        // [2026-11-12] What is left of TOTAL_BUDGET_MS.
+        fun left() = TOTAL_BUDGET_MS - (System.currentTimeMillis() - started)
 
         // ⚠️ `searched` IS THE FIELD THAT DOES THE WORK NOW THAT APPENDS CAN BE PARTIAL. Before the
         // partial change, reason=ok meant one thing: a full bridge. It no longer does — matched=3 and
@@ -200,6 +224,10 @@ object RadioFallback {
         //   similar=12 searched=7  matched=3  — partial: the search budget expired mid-loop
         //   similar=12 searched=12 matched=0  — searched everything, catalogue had none of it
         // reason carries the TERMINAL CAUSE and the counts carry the shape; neither alone is enough.
+        // [2026-11-12] step= (user-approved) names the lookup that produced the songs: full (the whole artist name, as before),
+        // split (one part of a multi-artist name), toptracks (artist.getTopTracks), or - when nothing did. The counts are that
+        // step's: similar= is the candidates it returned, searched= and matched= its search loop.
+        var step = "-"
         fun log(reason: String, similar: Int = 0, searched: Int = 0, matched: Int = 0) = Log.d(
             "GladixRadio",
             // ⚠️ artist= IS BROKEN OUT OF q DELIBERATELY. q reads as one opaque string and a
@@ -207,7 +235,7 @@ object RadioFallback {
             // Last.fm coverage problem for an hour when it was a metadata TIMING problem. A separate
             // field is skimmable; a composite is not.
             "LASTFM q=\"$q\" artist=\"$artist\" reason=$reason similar=$similar " +
-                "searched=$searched matched=$matched " +
+                "searched=$searched matched=$matched step=$step " +
                 "ms=${System.currentTimeMillis() - started}"
         )
 
@@ -226,13 +254,33 @@ object RadioFallback {
         // for weeks: channels/home-pipe was recorded as "TIMEOUT (confirmed dead)" in June and was still
         // being called on every load afterwards. A persisting reason=no-similar is that signal.
         // Fires ONLY on this path, so a healthy session that never exhausts a station prints nothing.
-        val similar = runCatching { fetchSimilar(artist, title) }
+        var similar = runCatching { fetchSimilar(artist, title) }
             .getOrElse { e ->
                 if (e is CancellationException) throw e
                 log(if (e is IllegalStateException) "parse" else "fetch-timeout")
                 return emptyList()
             }
-        if (similar.isEmpty()) { log("no-similar"); return emptyList() }
+        // [2026-11-12] THE FULL NAME FIRST, AS BEFORE, AND ONLY ON NOTHING THE PARTS (the user's decision). A multi-artist credit
+        // ("A; B", "A feat. B", "A & B") is often unknown to Last.fm as one name while each artist is known. Up to
+        // MAX_SPLIT_LOOKUPS more calls, in the order the parts appear. A part's failure is just no answer: the next part is
+        // tried. A full-name lookup that answers is untouched, so everything below runs exactly as it did for it.
+        // The artist whose name answered, for artist.getTopTracks below.
+        var seedArtist = artist
+        if (similar.isNotEmpty()) step = "full"
+        else for (part in splitArtist(artist)) {
+            if (left() < MIN_STEP_MS) break
+            val found = runCatching { fetchSimilar(part, title, left()) }.getOrElse { e ->
+                if (e is CancellationException) throw e
+                emptyList()
+            }
+            if (found.isNotEmpty()) {
+                similar = found
+                seedArtist = part
+                step = "split"
+                break
+            }
+        }
+        if (similar.isEmpty()) return topTracksOrNothing(extension, artist, title, ::left, ::log) { step = it }
 
         // ⚠⚠ THE PARTIAL APPEND IS THE FIX. THE CAP ALONE WOULD HAVE CHANGED NOTHING.
         // Before this, the whole mapping ran inside one all-or-nothing bound: if the budget expired after
@@ -272,10 +320,41 @@ object RadioFallback {
         //     per exhausted station, until the extension returns. Bounded by stations, not unbounded.
         // Survivable and worth knowing. If a wedge is ever observed instead, the thing that changed is that
         // something on this path started holding a lock — look there first, not at the budget.
+        val run = searchCandidates(extension, similar.shuffled(), MAX_SEARCHES, left())
+        if (run.noSearchClient) { log("no-search-client", similar.size, run.searched); return emptyList() }
+        if (run.matched.isEmpty()) {
+            // [2026-11-12] Nothing to queue from the similar tracks: the seed artist's top tracks before giving up.
+            // [CORRECTED 2026-11-12] This used to log no-match or search-timeout and return nothing. Those lines still print,
+            // now as the first of two when the top tracks are tried.
+            log(if (run.completed == null) "search-timeout" else "no-match", similar.size, run.searched)
+            step = "-"
+            return topTracksOrNothing(extension, seedArtist, title, ::left, ::log) { step = it }
+        }
+        val reason = when {
+            run.completed == null -> "ok-timeout"          // budget expired, but we kept what we had
+            run.matched.size >= MAX_APPEND -> "ok"         // full bridge
+            else -> "ok-partial"                           // ran out of candidates or hit MAX_SEARCHES
+        }
+        log(reason, similar.size, run.searched, run.matched.size)
+        return run.matched
+    }
+
+    // [2026-11-12] One run of the search loop below, moved out of similarTracks unchanged so the top tracks reuse it.
+    private class SearchRun(val matched: List<Track>, val searched: Int, val noSearchClient: Boolean, val completed: Boolean?)
+
+    /**
+     * [2026-11-12] THE SEARCH LOOP, as it ran inline in similarTracks: [candidates] in the order given (the caller shuffles),
+     * at most [maxSearches] searches inside SEARCH_BUDGET_MS, stopping at MAX_APPEND matches. The notes below are the
+     * loop's own and are unchanged.
+     */
+    private suspend fun searchCandidates(
+        extension: Extension<*>, candidates: List<Similar>, maxSearches: Int, leftMs: Long,
+    ): SearchRun {
         val matched = mutableListOf<Track>()
         var searched = 0
         var noSearchClient = false
-        val completed = withTimeoutOrNull(SEARCH_BUDGET_MS) {
+        // [2026-11-12] SEARCH_BUDGET_MS as before, or less when the whole fallback's deadline is nearer (TOTAL_BUDGET_MS).
+        val completed = withTimeoutOrNull(minOf(SEARCH_BUDGET_MS, leftMs).coerceAtLeast(1L)) {
             // shuffled(), so a repeatedly-exhausted station does not rebuild the identical bridge each
             // time. Applied BEFORE take(MAX_SEARCHES) so the cap selects a different 15 of the 25 on every
             // run rather than always the same prefix — that ordering is the whole point, do not swap them.
@@ -301,7 +380,7 @@ object RadioFallback {
             // ranking. Accepted: past the first few, Last.fm's ordering is not meaningfully better than
             // random for this purpose, and variety between plays is worth more than a ranking the user
             // cannot see. If a "best match first" property is ever wanted, this is the line that traded it.
-            for (candidate in similar.shuffled().take(MAX_SEARCHES)) {
+            for (candidate in candidates.take(maxSearches)) {
                 if (matched.size >= MAX_APPEND) break
                 searched++
                 val found = extension.getIf<SearchFeedClient, List<Track>> {
@@ -313,25 +392,70 @@ object RadioFallback {
             }
             true
         }
+        return SearchRun(matched, searched, noSearchClient, completed)
+    }
 
-        if (noSearchClient) { log("no-search-client", similar.size, searched); return emptyList() }
-        if (matched.isEmpty()) {
-            log(if (completed == null) "search-timeout" else "no-match", similar.size, searched)
+    /**
+     * [2026-11-12] THE LAST STEP, when the similar tracks gave nothing to queue: Last.fm's artist.getTopTracks for [seedArtist]
+     * (the name that answered, or the first part of a multi-artist name when none did), through the same search loop and the
+     * same match. The seed song itself is left out, so the queue does not replay it. Capped at TOP_MAX_SEARCHES, below
+     * MAX_SEARCHES: a top-tracks search runs only after a similar-tracks one, and every search writes the user's search
+     * history (see searchOne), so the two together stay at most MAX_SEARCHES + TOP_MAX_SEARCHES. The shuffle is the same as
+     * for similar tracks, so a re-bridged station varies.
+     */
+    private suspend fun topTracksOrNothing(
+        extension: Extension<*>, seedArtist: String, seedTitle: String, left: () -> Long,
+        log: (String, Int, Int, Int) -> Any, setStep: (String) -> Unit,
+    ): List<Track> {
+        val artist = splitArtist(seedArtist).firstOrNull() ?: seedArtist
+        // [2026-11-12] Not started with under MIN_STEP_MS of TOTAL_BUDGET_MS left; see that note.
+        if (left() < MIN_STEP_MS) { setStep("toptracks"); log("budget", 0, 0, 0); return emptyList() }
+        val top = runCatching { fetchTopTracks(artist, left()) }.getOrElse { e ->
+            if (e is CancellationException) throw e
+            setStep("toptracks")
+            log(if (e is IllegalStateException) "parse" else "fetch-timeout", 0, 0, 0)
+            return emptyList()
+        }.filterNot { it.title.strip() == seedTitle.strip() }
+        setStep("toptracks")
+        if (top.isEmpty()) { log("no-similar", 0, 0, 0); return emptyList() }
+        if (left() < MIN_STEP_MS) { log("budget", top.size, 0, 0); return emptyList() }
+        val run = searchCandidates(extension, top.shuffled(), TOP_MAX_SEARCHES, left())
+        if (run.noSearchClient) { log("no-search-client", top.size, run.searched, 0); return emptyList() }
+        if (run.matched.isEmpty()) {
+            log(if (run.completed == null) "search-timeout" else "no-match", top.size, run.searched, 0)
             return emptyList()
         }
         val reason = when {
-            completed == null -> "ok-timeout"          // budget expired, but we kept what we had
-            matched.size >= MAX_APPEND -> "ok"         // full bridge
-            else -> "ok-partial"                       // ran out of candidates or hit MAX_SEARCHES
+            run.completed == null -> "ok-timeout"
+            run.matched.size >= MAX_APPEND -> "ok"
+            else -> "ok-partial"
         }
-        log(reason, similar.size, searched, matched.size)
-        return matched
+        log(reason, top.size, run.searched, run.matched.size)
+        return run.matched
+    }
+
+    /**
+     * [2026-11-12] The parts of a multi-artist name, for the lookups after the full name: split on "; ", " / ", " feat. ",
+     * " ft. " and " featuring ", then each piece on ", " and " & " (the user's order), case-insensitive, trimmed, without
+     * repeats or the full name itself, at most MAX_SPLIT_LOOKUPS. Empty for a single name.
+     */
+    private fun splitArtist(full: String): List<String> {
+        fun splitOn(separators: List<String>, parts: List<String>) = separators.fold(parts) { acc, sep ->
+            acc.flatMap { it.split(sep, ignoreCase = true) }
+        }
+        val first = splitOn(listOf("; ", " / ", " feat. ", " ft. ", " featuring "), listOf(full))
+        return splitOn(listOf(", ", " & "), first)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.equals(full, ignoreCase = true) }
+            .distinctBy { it.lowercase() }
+            .take(MAX_SPLIT_LOOKUPS)
     }
 
     private data class Similar(val artist: String, val title: String)
 
-    private suspend fun fetchSimilar(artist: String, title: String): List<Similar> =
-        withTimeout(OUTER_TIMEOUT_MS) {
+    // [2026-11-12] budgetMs: what is left of TOTAL_BUDGET_MS. The first, full-name call passes none and keeps OUTER_TIMEOUT_MS.
+    private suspend fun fetchSimilar(artist: String, title: String, budgetMs: Long = OUTER_TIMEOUT_MS): List<Similar> =
+        withTimeout(minOf(OUTER_TIMEOUT_MS, budgetMs).coerceAtLeast(1L)) {
             withContext(Dispatchers.IO) {
                 val url = ENDPOINT.toHttpUrlLike(artist, title)
                 val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
@@ -349,6 +473,28 @@ object RadioFallback {
                 check(!body.trimStart().startsWith("<")) { "Last.fm returned HTML, not JSON" }
                 val root = json.parseToJsonElement(body).jsonObject
                 root["similartracks"]?.jsonObject?.get("track")?.jsonArray.orEmpty().mapNotNull { el ->
+                    val o = el as? JsonObject ?: return@mapNotNull null
+                    val t = o["name"]?.jsonPrimitive?.contentOrNullSafe() ?: return@mapNotNull null
+                    val a = o["artist"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNullSafe()
+                        ?: return@mapNotNull null
+                    Similar(a, t)
+                }
+            }
+        }
+
+    /** [2026-11-12] Last.fm's artist.getTopTracks for [artist], parsed into the same shape, with fetchSimilar's checks. */
+    private suspend fun fetchTopTracks(artist: String, budgetMs: Long): List<Similar> =
+        withTimeout(minOf(OUTER_TIMEOUT_MS, budgetMs).coerceAtLeast(1L)) {
+            withContext(Dispatchers.IO) {
+                val url = "$ENDPOINT?method=artist.gettoptracks&artist=${artist.enc()}" +
+                    "&api_key=${BuildConfig.LASTFM_API_KEY}&format=json&autocorrect=1&limit=$SIMILAR_LIMIT"
+                val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                    r.body.string()
+                }
+                // Same HTML check as fetchSimilar, for the same reasons.
+                check(!body.trimStart().startsWith("<")) { "Last.fm returned HTML, not JSON" }
+                val root = json.parseToJsonElement(body).jsonObject
+                root["toptracks"]?.jsonObject?.get("track")?.jsonArray.orEmpty().mapNotNull { el ->
                     val o = el as? JsonObject ?: return@mapNotNull null
                     val t = o["name"]?.jsonPrimitive?.contentOrNullSafe() ?: return@mapNotNull null
                     val a = o["artist"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNullSafe()

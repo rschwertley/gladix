@@ -569,6 +569,11 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * ⚠️ [PcmFormatProbe] IS THE CANARY FOR EXACTLY THAT. If the premise
      * ever fails, queueInput's pass-through would hand the audio through ungained and unramped
      * and nothing would say so; the probe reports it once per process instead.
+     * [CORRECTED 2026-11-13] Not to be read as "24-bit or hi-res tracks pass through unramped", which is how it was taken: the
+     * pass-through is a branch for a premise failure, not a live path. While float output and offload are both off
+     * (RenderersFactory, unchanged), the sink converts every decode to 16-bit before this chain, so this processor ALWAYS receives
+     * 16-bit and the crossfade's mute, ramps and trim apply to 24-bit FLAC as to any other track (read from media3 1.11.0's
+     * DefaultAudioSink.configure, above). What is lost is the depth: hi-res plays as 16-bit.
      */
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         configuredFormat = inputAudioFormat

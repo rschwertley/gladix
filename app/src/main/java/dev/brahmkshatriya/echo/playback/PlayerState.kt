@@ -30,6 +30,14 @@ data class PlayerState(
     val sleepTimerEndsAt = MutableStateFlow<Long?>(null)
 
     /**
+     * [2026-11-13] The running sleep timer is "end of song" (PlayerCallback.onSleepTimer's Long.MAX_VALUE). Written with
+     * [sleepTimerEndsAt], by the same code and cleared with it; read by CrossfadeController.armRefusal through PlayerService,
+     * so no crossfade arms while it runs (the timer is timed to the end of the file, which the switch comes before).
+     */
+    @Volatile
+    var sleepAtEndOfSong = false
+
+    /**
      * ⚠⚠ BOUNDED SINCE 2026-11-11 ([RecentServers]). It was one entry per song prepared, never pruned off Cast, for the life of the
      * process: the "genuine slow leak over multi-hour sessions" recorded Aug 11 and found again in the 1166 OOM read.
      * ⚠⚠ AN EVICTED ENTRY IS NOT ALWAYS A FRESH RESOLVE. StreamableMediaSource.prepareSourceInternal always resolves and writes

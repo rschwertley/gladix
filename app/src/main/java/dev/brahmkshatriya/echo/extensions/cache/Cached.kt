@@ -21,7 +21,6 @@ import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
 import dev.brahmkshatriya.echo.common.models.ImageHolder
@@ -57,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -991,7 +991,7 @@ object Cached {
                 else coalescedTracks(app, MEMO_MARKS_PREFIX + canonicalId(item.id)) {
                     val awaiting = item.copy(extras = item.extras + (AVAILABILITY_AWAIT_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(awaiting) }
-                        .getOrThrow().loadAll()
+                        .getOrThrow().loadAllBounded()
                 }.tracks
                 val marks = marked.filter { it.isPlayable != Track.Playable.Yes }
                     .associate { it.id to it.isPlayable }
@@ -1107,7 +1107,7 @@ object Cached {
                     val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
                     else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
-                        .getOrThrow().loadAll()
+                        .getOrThrow().loadAllBounded()
                 }.tracks
                 launchMarksPass(app, extension, item, rows)
             }
@@ -1224,7 +1224,7 @@ object Cached {
             val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
             else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
             val feed = extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }.getOrThrow()
-            feed.loadAll()
+            feed.loadAllBounded()
         }
         // result.fetched: only a REAL request may write the store or renew the 24h lease. See the
         // note on CoalescedTracks - a memo hit written here is what turned a bust into a renewal.
@@ -1283,7 +1283,7 @@ object Cached {
                     val asked = if (!recheckRequested(listKey(MEMO_PLAYLIST_PREFIX, item.id))) item
                     else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
                     extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(asked) }
-                        .getOrThrow().loadAll()
+                        .getOrThrow().loadAllBounded()
                 }
                 // ⚠⚠ THIS PATH WRITES WHETHER OR NOT IT FETCHED, UNLIKE THE ONE IN
                 // [loadPlaylistTracksCached], AND THE ASYMMETRY IS INTENDED. There, a write from a
@@ -1348,7 +1348,7 @@ object Cached {
         if (cached != null && System.currentTimeMillis() - cached.savedAtMs < TRACKS_TTL_MS) return
         runCatching {
             coalescedTracks(app, memoKey(MEMO_PLAYLIST_PREFIX, extension.id, item.id)) {
-                extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow().loadAll()
+                extension.getAs<PlaylistClient, Feed<Track>> { loadTracks(item) }.getOrThrow().loadAllBounded()
             }
         }
     }
@@ -1385,7 +1385,7 @@ object Cached {
             else item.copy(extras = item.extras + (AVAILABILITY_RECHECK_EXTRA to "1"))
             val feed = extension.getAs<AlbumClient, Feed<Track>?> { loadTracks(asked) }.getOrThrow()
                 ?: return@coalescedTracks emptyList()
-            feed.loadAll()
+            feed.loadAllBounded()
         }
         if (result.tracks.isEmpty()) return null
         // The extension's verdicts on these rows (markUnplayable), for the store paint above (2026-11-07).

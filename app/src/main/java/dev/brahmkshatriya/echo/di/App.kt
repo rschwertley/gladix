@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import dev.brahmkshatriya.echo.ui.common.hasRedirectedTls
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -304,7 +305,11 @@ data class App(
                 // all subsequent ones. Pairs with the DROP_OLDEST buffer above - that stops a stuck
                 // collector blocking emitters, this stops a throwing one disappearing entirely.
                 @Suppress("KotlinConstantConditions", "SimplifyBooleanWithConstants", "SwallowedException")
-                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired() && !it.isAuthRejection())
+                // [2026-11-13] Nor a connection the user's network redirected (ErrorCategory.hasRedirectedTls, the user's
+                // decision; Crashlytics 37e6ec83): the TLS check refused it correctly and nothing in the app can fix the network.
+                // June muted one such issue by hand ("Deezer CONNECT 403 tunnel", a hostile proxy); this filters the class. The
+                // snackbar still shows, with the plain network_redirecting line.
+                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired() && !it.isAuthRejection() && !it.hasRedirectedTls())
                     runCatching {
                     FirebaseCrashlytics.getInstance().apply {
                         // extension_id is the PLAYING extension (crashExtensionId, written by

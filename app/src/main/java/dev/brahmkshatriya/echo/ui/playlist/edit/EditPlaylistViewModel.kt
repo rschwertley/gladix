@@ -26,6 +26,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
 import dev.brahmkshatriya.echo.extensions.InstallationUtils.NoFileSelected
 import dev.brahmkshatriya.echo.extensions.InstallationUtils.openFileSelector
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.combineTransformLatest
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -85,7 +86,8 @@ class EditPlaylistViewModel(
         if (result == null) return@combineTransformLatest
         val extension = extensionFlow.value ?: return@combineTransformLatest
         val tracks = extension.getAs<PlaylistClient, List<Track>> {
-            result.getOrThrow().getPagedData(tab).pagedData.loadAll()
+            // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+            result.getOrThrow().getPagedData(tab).pagedData.loadAllBounded()
         }
         emit(tracks)
     }.stateIn(viewModelScope, Eagerly, null)
@@ -239,7 +241,7 @@ class EditPlaylistViewModel(
                             addTracksToPlaylist(playlist, tracks, action.index, action.items)
                             tracks =
                                 loadTracks(playlist).run { getPagedData(selectedTab).pagedData }
-                                    .loadAll()
+                                    .loadAllBounded()
                         }
 
                         is Action.Move -> {
@@ -253,7 +255,7 @@ class EditPlaylistViewModel(
                             removeTracksFromPlaylist(playlist, tracks, action.indexes)
                             tracks =
                                 loadTracks(playlist).run { getPagedData(selectedTab).pagedData }
-                                    .loadAll()
+                                    .loadAllBounded()
                         }
                     }
                 }

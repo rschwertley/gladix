@@ -263,6 +263,11 @@ object InstallationUtils {
                 // emitting to the error flow. That's what stops the "Failed to uninstall extension: null"
                 // snackbar and the crash-reporter non-fatal on a plain cancel.
                 throw CancellationException("Uninstall cancelled by user")
+                // [CORRECTED 2026-11-13] "User backed out" is RESULT_CANCELED only on the LEGACY uninstaller (TV, or
+                // with the flag off), whose Cancel finishes without setResult. The newer one (PIA v2, chosen in AOSP's
+                // UninstallerActivity.onCreate by `usePiaV2() && !isTv()`) answers Cancel with RESULT_FIRST_USER and no
+                // data (UninstallLaunch.onNegativeResponse), so on current phones a cancel arrives in the branch below.
+                // Crashlytics 3338f823 (1178, Pixel 10 Pro XL, Android 17) was one: "resultCode=1" with no status.
 
             else -> {
                 // Genuine failure (e.g. RESULT_FIRST_USER). The legacy ACTION_DELETE result carries an int
@@ -272,6 +277,15 @@ object InstallationUtils {
                 val status = result.data?.extras
                     ?.getInt("android.intent.extra.INSTALL_RESULT", Int.MIN_VALUE)
                     ?.takeIf { it != Int.MIN_VALUE }
+                // [2026-11-13] RESULT_FIRST_USER WITHOUT A STATUS IS A CANCEL, silent like the branch above (the user's
+                // decision). Read from AOSP main: every real uninstall result, success or failure, carries
+                // EXTRA_INSTALL_RESULT (UninstallUninstalling.onResult, v2 UninstallRepository.handleUninstallResult), so
+                // device-admin, owner-blocked and internal failures still report below with their status. What else
+                // arrives as 1 with no data is the v2 pre-check aborts (UninstallAborted: a bad caller, AppOps, a missing
+                // REQUEST_DELETE_PACKAGES, which the manifest declares, the app unavailable, the user not allowed); those
+                // go silent too, and the extension is still installed. The package-gone check above runs first.
+                if (result.resultCode == Activity.RESULT_FIRST_USER && status == null)
+                    throw CancellationException("Uninstall cancelled by user")
                 throw Exception(
                     "Failed to uninstall extension (resultCode=${result.resultCode}" +
                         (status?.let { ", status=$it" } ?: "") + ")"

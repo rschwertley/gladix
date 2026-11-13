@@ -9,6 +9,9 @@ import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.security.cert.CertPathValidatorException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -111,6 +114,26 @@ class ErrorCategoryTest {
     fun `AppException_Other wrapping UnknownHost is Network`() {
         val chain = IOException(AppException.Other(UnknownHostException("www.deezer.com"), meta))
         assertEquals(ErrorCategory.Network, classify(chain))
+    }
+
+    // [2026-11-13] getTitle's network_redirecting arm: a certificate for another host (37e6ec83's shape, wrapped as the
+    // extension's error) and a handshake refused for an untrusted certificate are Network at any depth.
+    @Test
+    fun `redirected TLS is Network`() {
+        val mismatch = SSLPeerUnverifiedException("Hostname www.deezer.com not verified")
+        assertEquals(ErrorCategory.Network, classify(mismatch))
+        assertEquals(ErrorCategory.Network, classify(IOException(AppException.Other(mismatch, meta))))
+        val untrusted = SSLHandshakeException("handshake").apply {
+            initCause(CertPathValidatorException("Trust anchor for certification path not found."))
+        }
+        assertEquals(ErrorCategory.Network, classify(untrusted))
+    }
+
+    // DRIFT GUARD: a handshake that failed for any other reason is NOT the network redirecting it, and stays Generic, as
+    // getTitle's arm returns null for it.
+    @Test
+    fun `other handshake failure stays Generic`() {
+        assertEquals(ErrorCategory.Generic, classify(SSLHandshakeException("Connection reset by peer")))
     }
 
     // getTitle `else -> null` -> getFinalTitle falls through to the message: not network/login.

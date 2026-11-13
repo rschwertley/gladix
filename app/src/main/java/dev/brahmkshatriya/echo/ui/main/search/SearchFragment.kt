@@ -240,6 +240,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         // extrapolation note: `mScrollbarEnabled = scrollOffsetRange > 0` rides the same
         // position-dependent computeVerticalScrollRange estimate, so a section that estimates the
         // content as short renders no thumb.
+        // [2026-11-13] That note is now "THE SEARCH MEASUREMENTS" in PixelFastScrollViewHelper.scrollTo's KDoc, and
+        // the estimate it describes is replaced by that class's height model, which prices each item by its own type.
         // ⚠️ THE SCROLLTOUCH PROBE THAT ESTABLISHED THIS IS GONE (removed 2026-09-13), AND IT WAS
         // NOT A DEAD END - worth saying, because a deleted probe reads like one. It eliminated gesture
         // ARBITRATION and the nested CAROUSELS, and eliminating those is what left visibility as the
@@ -281,7 +283,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         // PixelFastScrollViewHelper's addOnTouchEventListener note, describing something the library ships.
         //
         // ⚠️ AND ONE WRONG TURN, RECORDED SO IT IS NOT REPEATED: applyTo is called with
-        // traceTag = "main" here, and that was read as evidence the thumb belonged to a DIFFERENT
+        // traceTag = "main" here (retired 2026-11-13 with the trace), and that was read as evidence the thumb belonged to a DIFFERENT
         // RecyclerView (MainFragment's). It does not - applyInsets is a SHARED companion extension and the
         // tag is a label on the helper, not on a view. This screen has ONE RecyclerView with TWO listeners.
         // Second time in this codebase a NAME has been read as describing a function it does not perform;

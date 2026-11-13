@@ -5,6 +5,7 @@ import androidx.paging.cachedIn
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.utils.CrashKeys
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.Feed
@@ -677,7 +678,8 @@ data class FeedData(
         scope.launch(Dispatchers.IO) {
             // Failures swallowed: a missed pass costs only the dimming, and a dead song still skips at play.
             runCatching {
-                val tracks = state.feed.getPagedData(askTab.copy(extras = extras)).pagedData.loadAll()
+                // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+                val tracks = state.feed.getPagedData(askTab.copy(extras = extras)).pagedData.loadAllBounded()
                     .flatMap { shelf ->
                         when (shelf) {
                             is Shelf.Item -> listOfNotNull(shelf.media as? Track)

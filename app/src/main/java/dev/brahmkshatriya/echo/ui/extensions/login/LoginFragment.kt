@@ -18,6 +18,9 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
@@ -316,9 +319,28 @@ class LoginFragment : Fragment() {
                 }
                 if (form.inputFields.isNotEmpty()) {
                     view.post {
-                        val firstLayout = customInput.getChildAt(0)
-                            as? com.google.android.material.textfield.TextInputLayout
-                        (firstLayout?.editText ?: customInput.getChildAt(0))?.requestFocus()
+                        // [2026-11-12] PHONE: THE KEYBOARD OPENS ON THE FIRST EMPTY FIELD, like a standard Android form. requestFocus
+                        // alone moved the cursor and showed no keyboard (1178): a programmatic focus never asks for one, and the
+                        // manifest's stateVisible applies only when MainActivity's window first gains focus, not to a fragment
+                        // shown later. The insets controller is asked once the field holds focus (on API 30+ it also waits for the
+                        // window to be focused). TV: unchanged, the first field takes focus and no keyboard opens, so D-pad focus
+                        // never pops one.
+                        val fields = (0 until customInput.childCount).mapNotNull {
+                            (customInput.getChildAt(it) as? com.google.android.material.textfield.TextInputLayout)?.editText
+                        }
+                        if (requireContext().isTv()) {
+                            (fields.firstOrNull() ?: customInput.getChildAt(0))?.requestFocus()
+                            return@post
+                        }
+                        val target = fields.firstOrNull { it.text.isNullOrEmpty() } ?: fields.firstOrNull()
+                        if (target == null) {
+                            customInput.getChildAt(0)?.requestFocus()
+                            return@post
+                        }
+                        if (target.requestFocus()) {
+                            WindowCompat.getInsetsController(requireActivity().window, target)
+                                .show(WindowInsetsCompat.Type.ime())
+                        }
                     }
                 }
                 loginCustomSubmit.setOnClickListener {

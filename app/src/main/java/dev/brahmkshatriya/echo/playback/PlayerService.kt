@@ -267,6 +267,7 @@ class PlayerService : MediaLibraryService() {
             // Not the reason code: see the note at CrossfadeController.onUserPause.
             isPausedForFocus = { audioFocusListener.pausedForFocus },
             currentBassBoost = { currentBassBoost() },
+            sleepAtEndOfSong = { state.sleepAtEndOfSong },
         ).also { it.fadeSeconds = seconds }
     }
     /**
@@ -1408,6 +1409,7 @@ class PlayerService : MediaLibraryService() {
         // and would silently inherit Track Fade's on-by-default (d0ad6b93, 2026-09-24) for a feature
         // that must ship OFF. A separate key makes "off" the honest default for every existing user.
         // 0 = off, and 0 is the default; range 0..10s (CrossfadeController.FADE_SECONDS_MIN/MAX).
+        // [CORRECTED 2026-11-13] 0..12 s since the slider maximum went to 12 (the user's decision).
         const val TRUE_CROSSFADE_SECONDS = "true_crossfade_seconds"
 
         const val CACHE_SIZE = "cache_size"

@@ -49,13 +49,14 @@ object CapabilityProbeFailure {
         if (isPlainNetworkFailure(throwable)) return
         if (!reported.add(extensionId)) return
         if (!BuildConfig.HAS_FIREBASE) return
+        val message = "Capability probe " + probe + " failed for extension " + extensionId +
+            " - the media state was built with it unknown"
+        // [2026-11-12] A Deezer HTTP 403 refusal gets its own type, so it groups as its own issue (see CapabilityProbeRefused).
+        // Every other cause records CapabilityProbeFailed exactly as before. Same once-per-extension slot, taken above.
         runCatching {
             FirebaseCrashlytics.getInstance().recordException(
-                CapabilityProbeFailed(
-                    "Capability probe " + probe + " failed for extension " + extensionId +
-                        " - the media state was built with it unknown",
-                    throwable
-                )
+                if (isDeezerRefusal(throwable)) CapabilityProbeRefused(message, throwable)
+                else CapabilityProbeFailed(message, throwable)
             )
         }
     }
@@ -78,5 +79,23 @@ object CapabilityProbeFailure {
 
     private const val MAX_CHAIN = 8
 
+    // [2026-11-12] Byte-identical to DeezerExtension's LIKED_FETCH_REFUSED_MESSAGE; the type is not reachable from :app (renamed by
+    // the extension's R8, loaded by its own class loader), so the text is the contract, as with App.DEEZER_AUTH_REJECTED_MESSAGE.
+    // Changing either text silently sends the 403 back into CapabilityProbeFailed's issue.
+    private const val DEEZER_REFUSED_MESSAGE = "Deezer refused the liked-list request (HTTP 403)"
+
+    private fun isDeezerRefusal(throwable: Throwable): Boolean =
+        generateSequence(throwable) { it.cause }.take(MAX_CHAIN).any { it.message == DEEZER_REFUSED_MESSAGE }
+
     class CapabilityProbeFailed(message: String, cause: Throwable) : Exception(message, cause)
+
+    /**
+     * [2026-11-12] Deezer refusing the liked list with an HTTP 403 (e8a9e550, 1178): a third-party refusal, kept apart so the
+     * CapabilityProbeFailed issue can still be read for real causes. A SIBLING of CapabilityProbeFailed, not a subclass: in an
+     * unminified build a subclass's stack would start with the shared base <init> frame, the HealthMonitor family-split defect
+     * (see HealthMonitor.report). Its name survives R8 through proguard-rules.pro's `-keepnames class * extends
+     * java.lang.Throwable`, which also stops it being merged with CapabilityProbeFailed. What Crashlytics keys on is theirs; this
+     * changes the class name it sees, and both are recorded from the same frame.
+     */
+    class CapabilityProbeRefused(message: String, cause: Throwable) : Exception(message, cause)
 }

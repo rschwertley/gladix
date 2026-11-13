@@ -6,6 +6,10 @@ import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
+import java.security.cert.CertPathValidatorException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.TimeoutCancellationException
 
 /**
@@ -70,5 +74,27 @@ tailrec fun classify(throwable: Throwable?): ErrorCategory = when (throwable) {
     // answers are Network anyway, so there is nothing to condition on.
     is SocketTimeoutException, is TimeoutCancellationException -> ErrorCategory.Network
     is AppException.LoginRequired -> ErrorCategory.LoginOrAuth // Unauthorized is a LoginRequired subclass
-    else -> classify(throwable.cause)
+    // [2026-11-13] A TLS refusal the NETWORK caused (Crashlytics 37e6ec83; see [isRedirectedTls]): Network, so the AA tile and the
+    // snackbar both speak of the connection. getTitle carries the matching arm (network_redirecting), ErrorCategoryTest the case.
+    else -> if (isRedirectedTls(throwable)) ErrorCategory.Network else classify(throwable.cause)
 }
+
+/**
+ * [2026-11-13] THE CONNECTION WAS REFUSED BECAUSE THE NETWORK SENT IT SOMEWHERE ELSE (Crashlytics 37e6ec83, 1178: deezer.com
+ * answered with a certificate for CN=instaposts.halahala.ru, a DNS block or hijack, a VPN or proxy, or a captive portal; the
+ * user's decision). The TLS check did its job and is not changed: this only names what it refused.
+ * - SSLPeerUnverifiedException: a valid certificate for a DIFFERENT host (OkHttp's hostname check).
+ * - SSLHandshakeException only with a CertificateException or CertPathValidatorException in its chain: a certificate nothing
+ *   on the device trusts (a portal's or an interceptor's). A handshake that failed for another reason (a protocol mismatch, a
+ *   reset mid-handshake) is not this and stays as it was.
+ * One node at a time, so classify's walk keeps its first-match order. Read by classify, ExceptionUtils.getTitle and App's
+ * report filter ([hasRedirectedTls]), which must agree.
+ */
+fun isRedirectedTls(node: Throwable): Boolean = node is SSLPeerUnverifiedException ||
+    (node is SSLHandshakeException && generateSequence(node.cause) { it.cause }.take(MAX_TLS_CHAIN)
+        .any { it is CertificateException || it is CertPathValidatorException })
+
+/** [2026-11-13] [isRedirectedTls] anywhere in this chain: App's throwFlow collector does not report these. */
+fun Throwable.hasRedirectedTls(): Boolean = generateSequence(this) { it.cause }.take(MAX_TLS_CHAIN).any(::isRedirectedTls)
+
+private const val MAX_TLS_CHAIN = 8

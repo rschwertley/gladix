@@ -108,13 +108,8 @@ object CrashKeys {
     private val extensionSwitches = AtomicInteger(0)
     private val feedLoads = AtomicInteger(0)
 
-    /**
-     * ⚠️ TRACE SUPPORT — REMOVE WITH THE SCROLLER INVESTIGATION. Read-only view of the same counter
-     * `feed_load_count` reports, so the GladixScroll line can say whether a FeedData reload happened
-     * between two gesture-start samples. If the item count moves while this does NOT, the reload path is
-     * not responsible and the movement has another source.
-     */
-    fun feedLoadCount() = feedLoads.get()
+    // [2026-11-13] feedLoadCount(), the GladixScroll trace's read of this counter, is retired with the trace; the
+    // feed_load_count key itself is unchanged.
     // Split from the old remote_controller_count gauge (see doc note 1). Both monotonic: their DIFFERENCE is
     // the old gauge, their RATIO is the churn signal the gauge hid.
     private val controllerConnects = AtomicInteger(0)
@@ -303,6 +298,7 @@ object CrashKeys {
      * this change: 33 literal names + 10 stampAge sites x2 + 5 sampleHeap sites x2 = 63 OF 64, and
      * per-session maxima of 50 baseline, 51 non-AA with a stuck report, 56 on AA, 63 on AA plus an
      * app-update session. ONE KEY OF HEADROOM IN THE WORST CASE - the next key added has to take one
+     *   [2026-11-12] That key is taken: queue_build ([onQueueSet]) makes it 34 literal names, 64 OF 64.
      * out, and the cheapest candidate is folding install_source_installer into install_source the way
      * app_update_completed already formats "$from->$to".
      * HOW TO RE-RUN IT: count the stampAge call sites x2 and the sampleHeap call sites x2, add the
@@ -530,6 +526,20 @@ object CrashKeys {
         stampAge("age_s_build")
         set("restore_build_count", itemCount)
         sampleHeap("heap_used_mb_build")
+    }
+
+    /**
+     * [2026-11-12] A queue set from the phone (PlayerViewModel.setQueue, user-approved): its size and the heap used, so an OOM
+     * that follows a big Play or Shuffle says how big. ITS OWN KEY, so restore_build_count and heap_used_mb_build ([onQueueBuild])
+     * keep meaning a cold restore only. ONE STRING KEY, NOT TWO NUMBERS, because of the census above: 63 of 64 names in the worst
+     * session, so a count plus a sampleHeap pair (which also writes a _first twin) would push three keys over the limit and
+     * Crashlytics would drop whichever were written last. This makes it 64 of 64; the next key added has to take one out.
+     * Not a checkpoint: no stampAge, and no heap_limit_mb (any sampleHeap call writes that once).
+     */
+    fun onQueueSet(itemCount: Int) {
+        val rt = Runtime.getRuntime()
+        val usedMb = ((rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)).toInt()
+        set("queue_build", "$itemCount items, $usedMb MB used")
     }
 
     fun onQueueSize(count: Int) {

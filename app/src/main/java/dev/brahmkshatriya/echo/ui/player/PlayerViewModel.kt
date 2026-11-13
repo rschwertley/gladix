@@ -36,6 +36,11 @@ import dev.brahmkshatriya.echo.extensions.MediaState
 import dev.brahmkshatriya.echo.history.HistoryRepository
 import dev.brahmkshatriya.echo.history.db.HistoryEntity
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
+import dev.brahmkshatriya.echo.ui.feed.QueueSample
+import dev.brahmkshatriya.echo.ui.feed.QueueSampler
+import dev.brahmkshatriya.echo.utils.CrashKeys
+import java.text.NumberFormat
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -667,7 +672,15 @@ class PlayerViewModel(
          * would give a random start AND throw away everything before it.
          */
         shuffleList: Boolean = false,
+        /**
+         * [2026-11-12] The MediaItems for [list], already built off the main thread by [buildQueueItems] (playTracksOnTap). Used
+         * only when the queue starts at the list's first song, which is how that caller sets it; otherwise built here as before.
+         */
+        prebuilt: List<MediaItem>? = null,
     ) {
+        // [2026-11-12] User-approved: the queue size and the heap used, on the report of an OOM that follows. Its own key
+        // (CrashKeys.onQueueSet), so the restore keys keep meaning a restore.
+        CrashKeys.onQueueSet(if (shuffleList) list.size else (list.size - index.coerceAtLeast(0)).coerceIn(0, list.size))
         cancelPendingQueueLoad()
         withBrowser { controller ->
             if (list.isEmpty()) return@withBrowser
@@ -676,14 +689,8 @@ class PlayerViewModel(
             // playItem and freshContextUpcoming. `index` locates the tapped track within `list`.
             val start = if (shuffleList) 0 else index.coerceIn(0, list.size - 1)
             val upcoming = list.subList(start, list.size)
-            val mediaItems = upcoming.map {
-                MediaItemUtils.build(
-                    app,
-                    downloadFlow.value,
-                    MediaState.Unloaded(id, it),
-                    context
-                )
-            }
+            val mediaItems = prebuilt?.takeIf { start == 0 && it.size == upcoming.size }
+                ?: buildQueueItems(id, upcoming, context)
             // ⚠⚠ respectShuffle = "HONOUR WHATEVER SHUFFLE STATE THE PLAYER IS IN",
             // AND THE DECISION IS NOT MADE HERE. This side cannot make it: viewModel.shuffleMode is a
             // mirror seeded only when PlayerUiListener attaches, so a tap before that reads a default
@@ -924,23 +931,95 @@ class PlayerViewModel(
      */
     private var pendingQueueLoad: Job? = null
 
+    // [2026-11-12] The pending load's "Loading…" message, so a cancel takes it down at once. The load's own finally also
+    // dismisses it, but only when the load stops, and a load blocked in I/O can take a while to notice its cancellation.
+    private var pendingLoadingMessage: Message? = null
+
     fun cancelPendingQueueLoad() {
         pendingQueueLoad?.cancel()
         pendingQueueLoad = null
+        pendingLoadingMessage?.let { snackBarHandler.dismiss(it) }
+        pendingLoadingMessage = null
     }
 
     // After LOADING_NOTICE_MS a "Loading <title>…" message with Cancel shows, and is taken down when the load ends either way.
     // A load error goes to throwFlow, as any feed load error does.
-    fun loadThenQueue(title: String, load: suspend () -> List<Track>, onLoaded: suspend (List<Track>) -> Unit) {
+    /**
+     * [2026-11-12] The MediaItems setQueue would build for [tracks], on any thread: MediaItemUtils.build reads only its arguments,
+     * downloadFlow's value and a preference. Moved here unchanged from setQueue, which now calls it too.
+     */
+    fun buildQueueItems(id: String, tracks: List<Track>, context: EchoMediaItem?): List<MediaItem> {
+        val downloads = downloadFlow.value
+        return tracks.map { MediaItemUtils.build(app, downloads, MediaState.Unloaded(id, it), context) }
+    }
+
+    /**
+     * [2026-11-12] PLAY OR SHUFFLE A LOAD-ON-TAP LIST (a tracks-on-tap folder page, or the long-press folder menu). The load,
+     * the unplayable filter, the cap ([capped]: TracksOnTap.QueueSampler) and the MediaItem build all run off the main thread
+     * inside [loadThenQueue]'s load; the main thread only hands the built queue over. Building in setQueue instead would block
+     * the main thread for the whole list, and moving setQueue's own build off it would let the caller's setShuffle and
+     * setPlaying reach the player before the queue does. The full list is not referenced once sampled, so it can be collected
+     * before the build. A sampled list says so ("Shuffling 2,000 of 14,212 songs").
+     * [2026-11-12] ONE MESSAGE PER PLAY (the user's decision): a sampled list shows only the sample message. [unsampledMessage],
+     * when given, is shown instead for a list that was not sampled: the caller's usual "Shuffling <title>", which it then does
+     * not show at the tap, since only the load knows whether the list will be sampled.
+     * [2026-11-13] [load] HANDS OVER PAGES, and a capped list is sampled while it is read (TracksOnTap.QueueSampler), so the
+     * whole list is never held (Crashlytics 63ec9068, an OOM loading a whole OpenGonic tree before the sample ran; the user's
+     * decision). [load] calls its argument with each page and stops reading when it returns false. "The full list is not
+     * referenced once sampled" above is now "never referenced as a whole" for a capped list; an uncapped one (a folder's own
+     * songs) is still collected whole, as before. Play now stops at 2,000 and says "Playing the first 2,000 songs".
+     */
+    fun playTracksOnTap(
+        title: String, extensionId: String, label: EchoMediaItem?, shuffle: Boolean, capped: Boolean,
+        unsampledMessage: String? = null,
+        load: suspend (onPage: suspend (List<Track>) -> Boolean) -> Unit,
+    ) {
+        loadThenQueue(title, {
+            val sample = if (capped) {
+                val sampler = QueueSampler(shuffle)
+                load { sampler.offer(it) }
+                sampler.result()
+            } else {
+                val all = mutableListOf<Track>()
+                load { all.addAll(it); true }
+                all.droppingUnplayable().let { QueueSample(it, it.size) }
+            }
+            sample to buildQueueItems(extensionId, sample.tracks, label)
+        }) { (sample, items) ->
+            if (sample.tracks.isEmpty()) {
+                app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
+                return@loadThenQueue
+            }
+            setQueue(extensionId, sample.tracks, 0, label, shuffleList = shuffle, prebuilt = items)
+            if (!shuffle) setShuffle(false, true)
+            setPlaying(true)
+            if (sample.isSample) {
+                val format = NumberFormat.getIntegerInstance()
+                // [2026-11-13] Play's total is unknown (it stops reading at 2,000): "Playing the first 2,000 songs". A Play
+                // sample is only ever one that stopped early (QueueSampler), so the other message is always Shuffle's.
+                val text = if (sample.stoppedEarly) app.context.getString(
+                    R.string.playing_first_x_songs, format.format(sample.tracks.size)
+                ) else app.context.getString(
+                    R.string.shuffling_x_of_y_songs, format.format(sample.tracks.size), format.format(sample.total)
+                )
+                app.messageFlow.emit(Message(text))
+            } else if (unsampledMessage != null) app.messageFlow.emit(Message(unsampledMessage))
+        }
+    }
+
+    // [2026-11-12] Each load has its own Message object and every dismissal is of that object (SnackBarHandler matches by
+    // identity), so an earlier load ending can never take down a later load's message.
+    // [2026-11-12] Generic in what the load returns, so playTracksOnTap can build the queue inside the load.
+    fun <T : Any> loadThenQueue(title: String, load: suspend () -> T, onLoaded: suspend (T) -> Unit) {
         cancelPendingQueueLoad()
         lateinit var job: Job
+        val loading = Message(
+            app.context.getString(R.string.loading_songs_x, title),
+            Message.Action(app.context.getString(R.string.cancel)) {
+                if (pendingQueueLoad === job) cancelPendingQueueLoad()
+            }
+        ).showFor(Snackbar.LENGTH_INDEFINITE)
         job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            val loading = Message(
-                app.context.getString(R.string.loading_songs_x, title),
-                Message.Action(app.context.getString(R.string.cancel)) {
-                    if (pendingQueueLoad === job) cancelPendingQueueLoad()
-                }
-            ).showFor(Snackbar.LENGTH_INDEFINITE)
             val notice = launch {
                 delay(LOADING_NOTICE_MS)
                 app.messageFlow.emit(loading)
@@ -958,9 +1037,11 @@ class PlayerViewModel(
             }
             if (pendingQueueLoad !== job) return@launch
             pendingQueueLoad = null
+            pendingLoadingMessage = null
             if (tracks != null) onLoaded(tracks)
         }
         pendingQueueLoad = job
+        pendingLoadingMessage = loading
         job.start()
     }
 

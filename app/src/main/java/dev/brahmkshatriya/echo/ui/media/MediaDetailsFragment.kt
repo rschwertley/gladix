@@ -143,7 +143,7 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
         // one, and is a sibling of this fragment's container under the CoordinatorLayout — hence resolved
         // from the parent rather than from binding.
         val appBar = requireParentFragment().view?.findViewById<AppBarLayout>(R.id.appBarLayout)
-        val scroller = FastScrollerHelper.applyTo(binding.recyclerView, appBar, traceTag = "media")
+        val scroller = FastScrollerHelper.applyTo(binding.recyclerView, appBar)
         applyInsets(viewModel.uiResultFlow) {
             // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
             binding.recyclerView.applyContentInsets(it, 20, 0, 16)

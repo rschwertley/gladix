@@ -245,7 +245,7 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             // COLLAPSING SCREEN — see MediaDetailsFragment. The AppBarLayout is in the OUTER
             // FeedFragment's layout (fragment_generic_collapsable.xml); this is FeedFragment.Actual.
             val appBar = requireParentFragment().view?.findViewById<AppBarLayout>(R.id.appBarLayout)
-            val scroller = FastScrollerHelper.applyTo(recyclerView, appBar, traceTag = "seeall")
+            val scroller = FastScrollerHelper.applyTo(recyclerView, appBar)
             applyInsets {
                 // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
                 recyclerView.applyContentInsets(it, 20, 8, 16)

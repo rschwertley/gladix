@@ -89,6 +89,12 @@ class FeedAdapter(
     // O(position) calls per child that is thousands of spurious access hints per layout, which also
     // CLOSES A LOOP: a hint triggers a page load, the insert fires onItemsAdded, GridLayoutManager
     // clears the span-group cache, and the next walk starts from 0 again.
+    // [CORRECTED 2026-11-12] The cache is never warm on this path, insert or not: GridLayoutManager writes the span-GROUP cache
+    // only from accessibility, focus search and the span-info estimator, never in layout, and the public getSpanGroupIndex
+    // only reads it (RecyclerView 1.4.0 source). So "whenever the cache is cold" was always, and the walk was O(position)
+    // per call regardless. GridAdapter.VerticalSpacingItemDecoration no longer walks (it reads the child's LayoutParams), so
+    // this call now runs at most spanCount times per child; peek still matters for the fallback path and for every other
+    // caller.
     // peek returns the identical value with none of it (paging 3.5.1, AsyncPagingDataDiffer:484).
     //
     // ⚠⚠ IT IS A DROP-IN ONLY BECAUSE enablePlaceholders = false (PagedSource.kt). THIS IS THE

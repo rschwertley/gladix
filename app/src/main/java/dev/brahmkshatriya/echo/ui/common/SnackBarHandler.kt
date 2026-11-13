@@ -194,8 +194,21 @@ class SnackBarHandler(
             val handler by inject<SnackBarHandler>()
             val padding = 8.dpToPx(this@setupSnackBar)
             val isTv = isTv()
-            @Suppress("IDENTITY_SENSITIVE_OPERATIONS_WITH_VALUE_TYPE")
-            val snackBars = WeakHashMap<Int, Snackbar>()
+            // [CORRECTED 2026-11-12] Was WeakHashMap<Int, Snackbar> keyed by message.hashCode() (upstream Echo, 8f5f7860), and
+            // that lost snackbars two ways, which left 1178's folder "Loading…" up after its load ended:
+            //   - A WEAK map with BOXED Int keys: Integer.valueOf caches only -128..127, so almost every key was an Integer
+            //     nothing else held, and the next GC cleared the entry. A folder load allocates heavily, so by the time
+            //     dismissFlow asked for the snackbar it was usually gone from the map and was never taken down.
+            //   - ONE ENTRY PER MESSAGE, so a second Snackbar for the same message overwrote the first, and the first's
+            //     onDismissed then removed the second's entry. A second copy is ordinary here: Material's SnackbarManager.show
+            //     (1.14.0, decoded) cancels the current snackbar with DISMISS_EVENT_CONSECUTIVE whenever another is shown, and
+            //     onDismissed's handler.remove re-emits the queue head, which can be a message already on screen.
+            // Now: a strong list of every live Snackbar with its Message, matched by IDENTITY (a later message with the same
+            // text is a different message and is never taken down by an earlier one's dismissal). An entry leaves on its
+            // onDismissed, and stale ones (a snackbar Material dropped from its single "next" slot, which gets no callback)
+            // are pruned by [isShownOrQueued]. Strong is safe: the list is this Activity's, and nothing stays in it once shown.
+            val snackBars = mutableListOf<Pair<Message, Snackbar>>()
+            fun prune() = snackBars.removeAll { !it.second.isShownOrQueued }
             fun updateInsets(snackBar: Snackbar) {
                 snackBar.view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                     val insets = uiViewModel.systemInsets.value
@@ -211,12 +224,15 @@ class SnackBarHandler(
                     lifecycleScope.launch { handler.remove(message, true) }
                     return
                 }
+                // [2026-11-12] One Snackbar per message: already showing, or next in line, is not shown again (see snackBars).
+                prune()
+                if (snackBars.any { it.first === message }) return
                 val snackBar = Snackbar.make(root, message.message, Snackbar.LENGTH_LONG)
                 durations[message]?.let { snackBar.duration = it }
                 snackBar.animationMode = Snackbar.ANIMATION_MODE_SLIDE
                 updateInsets(snackBar)
                 message.action?.run { snackBar.setAction(name) { handler() } }
-                snackBars[message.hashCode()] = snackBar
+                snackBars.add(message to snackBar)
                 // ⚠️ TV: THE ACTION (Undo, Sign in, Retry) IS A D-PAD STOP WHILE THE SNACKBAR SHOWS (2026-10-31). Nothing
                 // could reach it: the mini bar's Down points at itself (the May focus-containment fix) and a feed's
                 // last row goes to the mini bar or nowhere. While an ACTIONABLE snackbar is up, the mini bar's Down
@@ -236,7 +252,7 @@ class SnackBarHandler(
                 })
                 snackBar.addCallback(object : Snackbar.Callback() {
                     override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
-                        snackBars.remove(message.hashCode())
+                        snackBars.removeAll { it.second === snackBar }
                         lifecycleScope.launch {
                             handler.remove(message, event != DISMISS_EVENT_MANUAL)
                         }
@@ -257,6 +273,7 @@ class SnackBarHandler(
             // already displaying when a new one arrives as we reach STARTED.
             lifecycleScope.launch {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    prune()
                     if (snackBars.isEmpty()) handler.pending()?.let { createSnackBar(it) }
                 }
             }
@@ -264,10 +281,16 @@ class SnackBarHandler(
             // not a presentation. Gated, a dismissal sent while the app is stopped would be lost and an indefinite "Loading…"
             // would still be up on return.
             lifecycleScope.launch {
-                handler.dismissFlow.collect { snackBars[it.hashCode()]?.dismiss() }
+                // [2026-11-12] Every live copy of exactly this message, and its entries dropped here as well: a copy Material
+                // never showed gets no onDismissed to remove it.
+                handler.dismissFlow.collect { message ->
+                    val copies = snackBars.filter { it.first === message }
+                    snackBars.removeAll { it.first === message }
+                    copies.forEach { it.second.dismiss() }
+                }
             }
             observe(uiViewModel.combined) { _ ->
-                snackBars.values.forEach { updateInsets(it) }
+                snackBars.forEach { updateInsets(it.second) }
             }
             return handler
         }

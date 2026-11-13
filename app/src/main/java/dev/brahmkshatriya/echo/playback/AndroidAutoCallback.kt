@@ -57,6 +57,7 @@ import dev.brahmkshatriya.echo.extensions.builtin.offline.OfflineExtension
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException.Companion.toAppException
 import dev.brahmkshatriya.echo.utils.CrashKeys
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.await
@@ -1029,7 +1030,8 @@ abstract class AndroidAutoCallback(
             // shuffle would be equivalent, but filtering after `unshuffled` is recorded would not:
             // `original` is what a later toggle-OFF restores, and a dropped track must not reappear
             // in album order. No keepFirst - a shuffle tile has no tapped head.
-            val unshuffled = tracks.loadAll().droppingUnplayable().map {
+            // [2026-11-13] Bounded: see BoundedLoadAll.
+            val unshuffled = tracks.loadAllBounded().droppingUnplayable().map {
                 MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
             }
             val shuffled = unshuffled.shuffled()
@@ -1125,7 +1127,8 @@ abstract class AndroidAutoCallback(
                     }
                     if (tracksEntry != null) {
                         val (item, pagedData) = tracksEntry
-                        val allTracks = pagedData.loadAll()
+                        // [2026-11-13] Bounded: see BoundedLoadAll.
+                        val allTracks = pagedData.loadAllBounded()
                         // A miss here means the context no longer contains the tapped track — it was
                         // removed from the playlist since it was played. Starting at the top is the
                         // defensible fallback for that, but it must not be SILENT: an identical silent
@@ -1304,6 +1307,8 @@ abstract class AndroidAutoCallback(
         // Same figure, same reason, as FeedClickListener.DECLARED_QUEUE_CAP on the phone: it matches
         // ResumptionUtils' persisted-upcoming cap, so a queue cannot outlive its own restore. Keep the
         // three in step.
+        // [2026-11-12] A 2,000-item queue on Android Auto is proven on device by the 1147 liked-list test (2026-10-25), not by
+        // any note from Aug 11 (user record). The phone's load-on-tap folders queue the same 2,000 (TracksOnTap.QueueSampler).
         private const val AA_DECLARED_QUEUE_CAP = 2000
 
         // ⚠⚠ SAME FIGURE AS ResumptionUtils.QUEUE_FILE_MAX_BYTES, AND THE SAME

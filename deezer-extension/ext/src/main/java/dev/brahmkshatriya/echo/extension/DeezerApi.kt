@@ -533,6 +533,7 @@ class DeezerApi(private val session: DeezerSession) {
             // clean status error instead of a JsonDecodingException. The CSRF/errorObj/ARL-refresh
             // path below is unchanged - those errors are HTTP 200 with an error object, so they pass
             // this gate exactly as before.
+            // ⚠️ DeezerExtension.CALL_API_STATUS_403 matches this text at 403, to give Deezer's refusal its own report. Change both.
             if (!response.isSuccessful) throw Exception("API call failed with status ${response.code}")
             val result = response.body.source().let {
                 decodeJsonStream(it, response.code)

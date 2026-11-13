@@ -2,7 +2,7 @@ package dev.brahmkshatriya.echo.download.tasks
 
 import android.content.Context
 import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.download.db.models.TaskType
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
@@ -41,7 +41,8 @@ class SaveToUnifiedTask(
         if (context != null) unifiedExtension.getAs<PlaylistEditClient, Any?> {
             val db = (this as UnifiedExtension).db
             val playlist = db.getOrCreate(app, context)
-            val tracks = loadTracks(playlist).loadAll()
+            // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+            val tracks = loadTracks(playlist).loadAllBounded()
             if (allDownloads.all { it.finalFile != null }) {
                 removeTracksFromPlaylist(playlist, tracks, tracks.indices.toList())
                 val sorted = allDownloads.sortedBy { it.sortOrder }

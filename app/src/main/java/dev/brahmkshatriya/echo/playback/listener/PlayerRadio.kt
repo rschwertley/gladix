@@ -1334,7 +1334,10 @@ class PlayerRadio(
                             val extra = RadioFallback.similarTracks(extension, seed)
                             // ⚠️ THE LONGEST BOUNDED WINDOW ON THIS PATH (~12s: OUTER_TIMEOUT_MS for
                             // the Last.fm fetch plus SEARCH_BUDGET_MS for the catalogue searches) and the one
-                            // actually observed appending into a replaced queue. Same epoch as the page append
+                            // actually observed appending into a replaced queue.
+                            // [CORRECTED 2026-11-12] Now up to RadioFallback.TOTAL_BUDGET_MS (14 s): the name-part and
+                            // top-tracks steps added that day all run inside that one deadline, which also keeps the
+                            // append inside LateAppendResume.WINDOW_MS of the queue ending. Same epoch as the page append
                             // above: both belong to the queue play() started against.
                             // ⚠⚠ ROUTED THROUGH appendDeduped 2026-09-11. IT USED TO CALL
                             // player.addMediaItems DIRECTLY, SO THERE WAS NO DEDUP AT ALL ON THIS PATH - no

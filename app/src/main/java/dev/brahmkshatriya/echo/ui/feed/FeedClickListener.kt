@@ -111,7 +111,8 @@ open class FeedClickListener(
          * a separate design: PlayerRadio.topUpQueue is radio-keyed, and the backfill command
          * rebuilds from a CONTEXT item, which favorites do not have.
          */
-        private const val DECLARED_QUEUE_CAP = 2000
+        // [2026-11-12] Internal, not private: the load-on-tap cap (TracksOnTap.QueueSampler) is this same number.
+        internal const val DECLARED_QUEUE_CAP = 2000
 
         fun Fragment.getFeedListener(
             navFragment: Fragment = this,
@@ -179,19 +180,12 @@ open class FeedClickListener(
             val args = fragment.arguments
             val id = args?.getString("feedId") ?: return notFoundSnack(R.string.item)
             val title = args.getString("title").orEmpty()
-            val app = vm.app
             // Built now, while the page is alive (it reads the page's FeedData); the load may finish after it is gone.
             val label = feedPageLabel()
             val extensions = vm.extensions
-            vm.loadThenQueue(title, { loadTracksOnTap(extensions, extensionId, id, title, row) }) { loaded ->
-                val playable = loaded.droppingUnplayable()
-                if (playable.isEmpty()) {
-                    app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
-                    return@loadThenQueue
-                }
-                vm.setQueue(extensionId, playable, 0, label, shuffleList = shuffle)
-                if (!shuffle) vm.setShuffle(false, true)
-                vm.setPlaying(true)
+            // [2026-11-12] Capped at DECLARED_QUEUE_CAP by a fair sample; see PlayerViewModel.playTracksOnTap.
+            vm.playTracksOnTap(title, extensionId, label, shuffle, capped = true) { onPage ->
+                loadTracksOnTap(extensions, extensionId, id, title, row, onPage)
             }
             return true
         }

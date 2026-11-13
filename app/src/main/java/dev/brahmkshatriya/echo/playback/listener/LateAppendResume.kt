@@ -27,7 +27,8 @@ import dev.brahmkshatriya.echo.playback.queueEpochOrZero
  * while this waits. Hence the check at the resume: another app playing, or a call, refuses it.
  */
 internal object LateAppendResume {
-    private const val WINDOW_MS = 20_000L
+    // [2026-11-12] Internal, not private: RadioFallback.TOTAL_BUDGET_MS is derived from it, so its songs land inside it.
+    const val WINDOW_MS = 20_000L
 
     // SystemClock.elapsedRealtime when the queue ended; 0 when not armed.
     private var endedAtMs = 0L

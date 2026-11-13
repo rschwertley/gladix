@@ -80,6 +80,7 @@
     <string name="extension_failed_to_load_x">Failed to load extension: %1$s</string>
     <string name="extension_incompatible_version">Incompatible with this app version — some features may not work</string>
     <string name="no_internet">No Internet</string>
+    <string name="network_redirecting">Your network is redirecting this connection. Check your DNS, VPN or proxy settings.</string>
     <string name="error_loading_extension_from_x">Error loading extension from %1$s</string>
     <string name="extension_x_not_found">Extension %1$s not found</string>
     <!-- Shown when a media item carries no extension stamp at all, so there was nothing to
@@ -496,6 +497,8 @@
     <string name="deleted_x">Deleted %1$s</string>
     <string name="loading_x">Loading %1s</string>
     <string name="loading_songs_x">Loading %1$s…</string>
+    <string name="shuffling_x_of_y_songs">Shuffling %1$s of %2$s songs</string>
+    <string name="playing_first_x_songs">Playing the first %1$s songs</string>
     <string name="saving_x">Saving %1$s</string>
     <string name="saved_to_x">Saved to %1$s</string>
     <string name="saved_to_playlists">Saved to playlists</string>

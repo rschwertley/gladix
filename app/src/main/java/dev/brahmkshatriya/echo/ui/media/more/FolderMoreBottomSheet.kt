@@ -33,10 +33,12 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
 import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
 import dev.brahmkshatriya.echo.ui.feed.loadTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.QueueSampler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.forEachPageBounded
 
 /**
  * [2026-11-08] The long-press menu of a marked folder row (FeedSort's isMarkedFolder): Play, Shuffle, Play next, Add to queue,
@@ -73,19 +75,24 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
             }.show(manager, null)
         }
 
+        // [2026-11-13] PAGE BY PAGE (Crashlytics 63ec9068): [onPage] gets each page's tracks and returns false to stop reading,
+        // so a load-on-tap folder sampled to 2,000 is never held whole. A folder's own songs and a custom track list arrive
+        // the same way and are collected whole by the caller, as before.
         private suspend fun Shelf.Category.folderTracks(
-            extensions: ExtensionLoader, extensionId: String,
-        ): List<Track> {
-            if (hasTracksOnTap()) return loadTracksOnTap(extensions, extensionId, id, title, extras)
-            val feed = feed ?: return listOf()
+            extensions: ExtensionLoader, extensionId: String, onPage: suspend (List<Track>) -> Boolean,
+        ) {
+            if (hasTracksOnTap()) return loadTracksOnTap(extensions, extensionId, id, title, extras, onPage)
+            val feed = feed ?: return
             val data = feed.getPagedData(feed.notSortTabs.firstOrNull())
-            data.buttons?.customTrackList?.let { return it }
-            return data.pagedData.loadAll().flatMap { shelf ->
-                when (shelf) {
-                    is Shelf.Item -> listOfNotNull(shelf.media as? Track)
-                    is Shelf.Lists.Tracks -> shelf.list
-                    else -> listOf()
-                }
+            data.buttons?.customTrackList?.let { onPage(it); return }
+            data.pagedData.forEachPageBounded { shelves ->
+                onPage(shelves.flatMap { shelf ->
+                    when (shelf) {
+                        is Shelf.Item -> listOfNotNull(shelf.media as? Track)
+                        is Shelf.Lists.Tracks -> shelf.list
+                        else -> listOf()
+                    }
+                })
             }
         }
     }
@@ -192,22 +199,27 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
     private fun play(shuffle: Boolean) {
         val app = playerViewModel.app
         val title = category.title
-        playerViewModel.viewModelScope.launch {
-            app.messageFlow.emit(Message(
-                app.context.getString(if (shuffle) R.string.shuffling_x else R.string.playing_x, title)
-            ))
-        }
-        withTracks { tracks ->
-            val playable = tracks.droppingUnplayable()
-            if (playable.isEmpty()) {
-                app.messageFlow.emit(Message(app.context.getString(R.string.list_is_empty)))
-                return@withTracks
-            }
-            playerViewModel.setQueue(extensionId, playable, 0, queueLabel(), shuffleList = shuffle)
-            if (!shuffle) playerViewModel.setShuffle(false, true)
-            playerViewModel.setPlaying(true)
+        val message = app.context.getString(if (shuffle) R.string.shuffling_x else R.string.playing_x, title)
+        // [2026-11-12] Through PlayerViewModel.playTracksOnTap: capped at 2,000 by a fair sample for a load-on-tap folder only
+        // (TracksOnTap.QueueSampler); a folder's own songs are queued whole, as before.
+        // ONE MESSAGE (the user's decision): a load-on-tap folder's "Shuffling <title>" moves to after the load and is replaced
+        // by the sample message when the list was sampled; any other folder keeps it at the tap, as before.
+        val extensions = playerViewModel.extensions
+        val extensionId = extensionId
+        val category = category
+        val capped = category.hasTracksOnTap()
+        if (!capped) playerViewModel.viewModelScope.launch { app.messageFlow.emit(Message(message)) }
+        playerViewModel.playTracksOnTap(
+            title, extensionId, queueLabel(), shuffle, capped = capped, unsampledMessage = message.takeIf { capped },
+        ) { onPage ->
+            category.folderTracks(extensions, extensionId, onPage)
         }
     }
+
+    // [2026-11-12] Play next and Add to queue from a load-on-tap folder add at most the first 2,000 in folder order (the same cap);
+    // a folder's own songs are added whole, as before.
+    // [2026-11-13] Taken while reading (TracksOnTap.QueueSampler, Play's rule: stop at 2,000), not cut from a whole list, which
+    // was capIfOnTap. Unplayable songs are not dropped here, as before.
 
     // Loads the folder's tracks off the main thread, then runs [block] on it (PlayerViewModel.loadThenQueue: a load error goes to
     // throwFlow, as any feed load error does, and a newer play or queue action cancels it).
@@ -215,7 +227,17 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         val extensions = playerViewModel.extensions
         val extensionId = extensionId
         val category = category
-        playerViewModel.loadThenQueue(category.title, { category.folderTracks(extensions, extensionId) }, block)
+        playerViewModel.loadThenQueue(category.title, {
+            if (category.hasTracksOnTap()) {
+                val sampler = QueueSampler(shuffle = false, dropUnplayable = false)
+                category.folderTracks(extensions, extensionId) { sampler.offer(it) }
+                sampler.result().tracks
+            } else {
+                val all = mutableListOf<Track>()
+                category.folderTracks(extensions, extensionId) { all.addAll(it); true }
+                all
+            }
+        }, block)
     }
 
     private fun like(like: Boolean) {

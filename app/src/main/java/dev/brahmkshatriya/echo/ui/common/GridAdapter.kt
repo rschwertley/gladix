@@ -62,11 +62,33 @@ interface GridAdapter {
             val lm = parent.layoutManager as? GridLayoutManager
             val spanCount = lm?.spanCount ?: 1
             val lookup = lm?.spanSizeLookup
-            val itemGroup = lookup?.getSpanGroupIndex(position, spanCount) ?: position
             // Find the rightmost adapter position in the same visual row. With caching
             // enabled this is O(1) per step; for spanCount=2 it checks at most 1 extra item.
+            // [CORRECTED 2026-11-12] NOT O(1): IT WAS O(position) PER CALL, and it caused ANR 911f7347 (1178, a fast-scroll
+            // jump on echo-offline). The public SpanSizeLookup.getSpanGroupIndex only READS the group cache enabled in
+            // configureGridLayout; only the package-private getCachedSpanGroupIndex writes it, and GridLayoutManager calls that
+            // for accessibility, focus search and the span-info estimator (off here), never in layout (RecyclerView 1.4.0,
+            // GridLayoutManager.java:1618 and :1723-1758, read from the sources jar). So every call walked from position 0,
+            // at least twice per item, and a drag that lays out N items deep in a long list cost about N x position.
+            // Now the row is found from the child's own LayoutParams: GridLayoutManager.layoutChunk sets spanIndex and
+            // spanSize (assignSpans) before calculateItemDecorationsForChild calls this, and the walk takes the next item
+            // while it still fits in the row, exactly GridLayoutManager's own grouping, so at most spanCount steps. The old
+            // walk stays for a child with no span yet (INVALID_SPAN_ID). A child laid out before an insert can carry a span
+            // one layout stale: at worst one row's gap for one frame.
+            val lp = view.layoutParams as? GridLayoutManager.LayoutParams
             val lastInRow = runCatching {
-                if (lookup != null) {
+                if (lookup != null && lp != null && lp.spanIndex != GridLayoutManager.LayoutParams.INVALID_SPAN_ID) {
+                    var used = lp.spanIndex + lp.spanSize
+                    var last = position
+                    while (last + 1 < state.itemCount) {
+                        val next = lookup.getSpanSize(last + 1)
+                        if (used + next > spanCount) break
+                        used += next
+                        last++
+                    }
+                    last
+                } else if (lookup != null) {
+                    val itemGroup = lookup.getSpanGroupIndex(position, spanCount)
                     var last = position
                     while (last + 1 < state.itemCount &&
                         lookup.getSpanGroupIndex(last + 1, spanCount) == itemGroup) last++

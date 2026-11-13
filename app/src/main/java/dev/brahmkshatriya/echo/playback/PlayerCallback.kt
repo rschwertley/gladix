@@ -66,6 +66,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.addedNextId
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.utils.CrashKeys
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
@@ -621,11 +622,14 @@ class PlayerCallback(
         val time = when (ms) {
             0L -> {
                 state.sleepTimerEndsAt.value = null
+                state.sleepAtEndOfSong = false
                 return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
             Long.MAX_VALUE -> player.run { duration - currentPosition }
             else -> ms
         }
+        // [2026-11-13] See PlayerState.sleepAtEndOfSong: no crossfade while an end-of-song timer runs.
+        state.sleepAtEndOfSong = ms == Long.MAX_VALUE
 
         // The end time the UI shows (PlayerState.sleepTimerEndsAt). Cleared in `finally` whichever way this job
         // ends - fired, replaced, cancelled, or the service scope dying - but only if it is still THIS timer's
@@ -643,7 +647,8 @@ class PlayerCallback(
                 onTransportIntent()
                 player.with { pause() }
             } finally {
-                state.sleepTimerEndsAt.compareAndSet(endsAt, null)
+                // [2026-11-13] Cleared with the end time, and only while it is still this timer's (the same reason).
+                if (state.sleepTimerEndsAt.compareAndSet(endsAt, null)) state.sleepAtEndOfSong = false
             }
         }
         return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
@@ -1041,7 +1046,8 @@ class PlayerCallback(
                 // empty collection from an empty FIRST page that has more pages. Shuffle loadAll()s the
                 // whole thing, so its continuation is always null (an empty result there IS genuinely empty).
                 val result: Result<Pair<List<Track>, String?>> =
-                    if (shuffle) extension.get { tracks.loadAll() }.map { it to null as String? }
+                    // [2026-11-13] Bounded (BoundedLoadAll): a looping extension list ran this out of memory (700db7c5).
+                    if (shuffle) extension.get { tracks.loadAllBounded() }.map { it to null as String? }
                     // loadPage returns Page<Track>; `result` is a Pair because the shuffle branch above
                     // produces one from loadAll(). The conversion is NOT incidental - it is the only thing
                     // reconciling the two branches, and it was lost on 2026-09-10 when the loadAll
@@ -1133,6 +1139,8 @@ class PlayerCallback(
                 // This is a detached scope.launch running an UNBOUNDED loadAll() (PagedData.loadAll has no
                 // cap and no timeout), so it is the LONGEST-LIVED async append in the app and the only
                 // fire-and-forget one: its `future` returns long before it does.
+                // [CORRECTED 2026-11-13] No longer unbounded in items: it is loadAllBounded now (BoundedLoadAll), which
+                // stops on a repeated continuation or 50,000 items. Still no timeout, so the ordering notes below stand.
                 //   1. Started above, it raced its OWN setMediaItems. A fast loadAll appended to the
                 //      PREVIOUS queue, which setMediaItems then wiped - the extra pages silently vanished.
                 //   2. It could not be epoch-gated from up there either: capturing the epoch before this
@@ -1168,7 +1176,8 @@ class PlayerCallback(
                 if (continuation != null) {
                     val epoch = player.queueEpochOrZero
                     scope.launch {
-                        val all = extension.get { tracks.loadAll() }.getOrElse {
+                        // [2026-11-13] Bounded: see BoundedLoadAll.
+                        val all = extension.get { tracks.loadAllBounded() }.getOrElse {
                             if (it is CancellationException) throw it
                             throwableFlow.emit(it)
                             return@launch

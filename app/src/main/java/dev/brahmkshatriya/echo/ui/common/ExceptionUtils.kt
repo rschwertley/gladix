@@ -38,6 +38,8 @@ import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -95,6 +97,12 @@ object ExceptionUtils {
         is SocketTimeoutException, is TimeoutCancellationException ->
             if (hasActiveNetwork()) getString(R.string.playback_stream_stalling)
             else getString(R.string.no_internet)
+
+        // [2026-11-13] A connection the network redirected (ErrorCategory.isRedirectedTls, the user's decision): a plain line in
+        // place of OkHttp's raw certificate text (Crashlytics 37e6ec83). Paired with classify's arm (ErrorCategoryTest). A
+        // handshake failure for another reason returns null here, so the walk goes on to its cause as before.
+        is SSLPeerUnverifiedException, is SSLHandshakeException ->
+            if (isRedirectedTls(throwable)) getString(R.string.network_redirecting) else null
 
         // Deferred class-load/instantiate failure carrying extension identity (see ExtensionParser).
         // Root-cause unwrapped so a constructor failure wrapped in InvocationTargetException shows the

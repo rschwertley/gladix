@@ -165,6 +165,8 @@ object FastScrollerHelper {
         // because the thumb IS NOT RENDERED at that scroll position (see PixelFastScrollViewHelper's
         // extrapolation note - mScrollbarEnabled rides the same estimate). Same failed grab, two
         // mechanisms; separate them by x before reading anything else into a capture.
+        // [2026-11-13] That note is now "THE SEARCH MEASUREMENTS" in PixelFastScrollViewHelper.scrollTo's KDoc, and
+        // the estimate it describes is replaced by that class's height model, which prices each item by its own type.
         setThumbDrawable(AppCompatResources.getDrawable(context, R.drawable.fast_scroll_thumb)!!)
     }
 
@@ -172,13 +174,10 @@ object FastScrollerHelper {
      * [appBar] is the collapsing header ABOVE this list, or null on a full-bleed screen. Passing it makes
      * the scroll metrics COMPOSITE — see PixelFastScrollViewHelper's note. Null keeps today's arithmetic
      * exactly, so the six full-bleed call sites are unchanged by construction rather than by testing.
-     * [traceTag] labels the GladixScroll trace lines.
-     * ⚠⚠ RETAINED DELIBERATELY - NOT PENDING A REMOVAL CONDITION (2026-09-12). The GladixScroll
-     * trace is kept at the user's explicit request for an OPEN Search investigation (the 2/3 stall and the
-     * short-of-bottom case); it is the instrument that investigation needs. It was reviewed in the
-     * 2026-09-12 temporary-logging inventory and deliberately left in place.
-     * So "REMOVE WITH THE TRACE" markers in this file and PixelFastScrollViewHelper describe what goes
-     * TOGETHER when the trace eventually goes - they are NOT a signal that it is ready to go now.
+     * [2026-11-13] The GladixScroll trace and its traceTag are RETIRED (the user's decision), with the height model
+     * that replaced the metrics it measured (PixelFastScrollViewHelper). It had been kept since 2026-09-12 at the user's
+     * request for the Search investigation (the two-thirds stop), which that change answers; its fields described the
+     * extrapolated estimate, which nothing reads any more.
      */
     /**
      * ⚠️ THE COMPOSITE PATH WENT LIVE AGAIN ON 2026-09-07 AND HAS NOT RUN SINCE 4c4fb267. READ THIS
@@ -220,7 +219,6 @@ object FastScrollerHelper {
     fun applyTo(
         view: RecyclerView,
         appBar: AppBarLayout? = null,
-        traceTag: String = "?",
     ): FastScroller? {
         view.isVerticalScrollBarEnabled = false
         if (!view.isFastScrollUsable()) return null
@@ -233,7 +231,7 @@ object FastScrollerHelper {
             // RecyclerView's own averaged estimates satisfy it, and for why the earlier position-based
             // attempt could not. RecyclerView ONLY — the NestedScrollView overload below keeps the
             // library's default helper, which is already this shape there.
-            setViewHelper(PixelFastScrollViewHelper(view, appBar, traceTag))
+            setViewHelper(PixelFastScrollViewHelper(view, appBar))
             // Pre-inset default; applyInsets overwrites it on the first inset pass. Flush on the thumb
             // side here too so the first frame does not show the gap and then close it.
             val pad = 8.dpToPx(view.context)

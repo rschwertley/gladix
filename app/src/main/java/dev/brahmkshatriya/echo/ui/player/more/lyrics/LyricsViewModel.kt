@@ -21,6 +21,7 @@ import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.ui.common.PagedSource
 import dev.brahmkshatriya.echo.ui.extensions.list.ExtensionListViewModel
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.combineTransformLatest
 import kotlinx.coroutines.Dispatchers
@@ -235,7 +236,8 @@ class LyricsViewModel(
             dataFlow.collectLatest { (cached, loaded) ->
                 if (lyricsState.value != State.Initial) return@collectLatest
                 runCatching {
-                    val cachedLyrics = cached?.getOrNull()?.second?.loadAll()?.firstOrNull()
+                    // [2026-11-13] Bounded (BoundedLoadAll): no unbounded loadAll left in the app (Crashlytics 700db7c5).
+                    val cachedLyrics = cached?.getOrNull()?.second?.loadAllBounded()?.firstOrNull()
                     val loaded = loaded?.getOrNull()?.second
                     if (loaded != null) {
                         lyricsState.value = State.Loading
