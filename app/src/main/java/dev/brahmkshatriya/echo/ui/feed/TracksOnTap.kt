@@ -25,17 +25,29 @@ const val GLADIX_TRACKS_ON_TAP = "gladix_tracks_on_tap"
 
 fun Shelf.hasTracksOnTap() = this is Shelf.Category && extras[GLADIX_TRACKS_ON_TAP] == "1"
 
+/**
+ * [2026-11-13] THE SHUFFLE INTENT (the user's decision): loadTracksOnTap adds GLADIX_SHUFFLE = "1" to the Album's extras when the
+ * list is loaded for Shuffle; Play, Play next and Add to queue send none. For an extension that can answer a load-on-tap list
+ * already shuffled (OpenGonic, planned), so a Shuffle of a big folder can start without reading it all. An extension that does
+ * not know the key ignores it, and UnifiedExtension.loadTracks passes the Album through whole. Nothing here changes with it:
+ * QueueSampler still takes its fair 2,000, so a list of 2,000 or fewer random songs is kept as the extension returned it.
+ */
+const val GLADIX_SHUFFLE = "gladix_shuffle"
+
 // The row's extras go along (they carry the marker, and under Unified the routing stamp) so the extension can tell the row apart.
 // [2026-11-13] PAGE BY PAGE, not as one list (Crashlytics 63ec9068, the user's decision): [onPage] gets each page as it is read
 // and returns false to stop reading (BoundedLoadAll.forEachPageBounded), so a caller that keeps a 2,000-song sample never holds
 // the whole folder. An extension that returns its whole list at once (OpenGonic today) arrives as one page.
 suspend fun loadTracksOnTap(
     extensions: ExtensionLoader, extensionId: String, id: String, title: String, extras: Map<String, String>,
+    shuffle: Boolean = false,
     onPage: suspend (List<Track>) -> Boolean,
 ) {
     val extension = extensions.music.getExtensionOrThrow(extensionId)
+    // [2026-11-13] See GLADIX_SHUFFLE.
+    val sent = if (shuffle) extras + (GLADIX_SHUFFLE to "1") else extras
     val feed = extension.getAs<AlbumClient, Feed<Track>?> {
-        loadTracks(Album(id = id, title = title, extras = extras))
+        loadTracks(Album(id = id, title = title, extras = sent))
     }.getOrThrow() ?: return
     feed.forEachPageBounded(onPage)
 }
@@ -65,6 +77,8 @@ class QueueSample(val tracks: List<Track>, val total: Int, val stoppedEarly: Boo
  *   which is a uniform sample of the whole list like the shuffled-indices one it replaces. Each song is kept with its position
  *   and the sample is put back in SOURCE order at the end, so the rule above holds. Every page is read, so [QueueSample.total]
  *   is exact: "Shuffling 2,000 of N songs".
+ * [CORRECTED 2026-11-13] Neither message is shown any more (PlayerViewModel.playTracksOnTap): the cap is silent. The total is
+ *   still counted, and stoppedEarly still set, for any later use.
  * - PLAY: the first [cap] in source order, then false, which stops the reading. The total is unknown ("Playing the first 2,000
  *   songs"): counting it would mean reading the rest.
  * [dropUnplayable]: the songs counted and kept are the playable ones (MediaItemUtils.droppingUnplayable, per page), as Play and

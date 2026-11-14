@@ -1024,6 +1024,10 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // loud start's shorter fade-in (CrossfadeController.incomingFadeMs) would sum to 1.92 (+5.7 dB) correlated, so each
         // leg now applies the overlap trim (overlapTrim, see the note at fadeInStartFrame), which keeps the 1.41 bound above;
         // it is inert on every other overlap. This constant is unchanged and still 1.0.
+        // [CORRECTED 2026-11-13] incomingFadeMs is removed with the pair rule (the user's decision): the fade-in is now the whole
+        // overlap. The trim stays, by the same decision, as a guard. Derived, not measured: it acts only when cos^2 + sin^2 > 1,
+        // which needs a fade-in shorter than the fade-out. A fade-out shortened to the tail's remaining audio
+        // (CrossfadeController.outgoingRampMs) or a fade-in delayed to the onset only lowers the sum, so it should now be inert.
         const val OVERLAP_PEDESTAL = 1.0f
 
         /** -60 dBFS: below this a sample counts as silence for [TailMeter]. Chosen, not measured. */

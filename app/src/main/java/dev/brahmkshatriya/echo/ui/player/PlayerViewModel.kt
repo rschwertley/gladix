@@ -40,7 +40,6 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.ui.feed.QueueSample
 import dev.brahmkshatriya.echo.ui.feed.QueueSampler
 import dev.brahmkshatriya.echo.utils.CrashKeys
-import java.text.NumberFormat
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
@@ -968,6 +967,7 @@ class PlayerViewModel(
      * decision). [load] calls its argument with each page and stops reading when it returns false. "The full list is not
      * referenced once sampled" above is now "never referenced as a whole" for a capped list; an uncapped one (a folder's own
      * songs) is still collected whole, as before. Play now stops at 2,000 and says "Playing the first 2,000 songs".
+     * [CORRECTED 2026-11-13] Neither "says so" above holds now: the cap is silent (the user's decision); see the note in the body.
      */
     fun playTracksOnTap(
         title: String, extensionId: String, label: EchoMediaItem?, shuffle: Boolean, capped: Boolean,
@@ -993,17 +993,10 @@ class PlayerViewModel(
             setQueue(extensionId, sample.tracks, 0, label, shuffleList = shuffle, prebuilt = items)
             if (!shuffle) setShuffle(false, true)
             setPlaying(true)
-            if (sample.isSample) {
-                val format = NumberFormat.getIntegerInstance()
-                // [2026-11-13] Play's total is unknown (it stops reading at 2,000): "Playing the first 2,000 songs". A Play
-                // sample is only ever one that stopped early (QueueSampler), so the other message is always Shuffle's.
-                val text = if (sample.stoppedEarly) app.context.getString(
-                    R.string.playing_first_x_songs, format.format(sample.tracks.size)
-                ) else app.context.getString(
-                    R.string.shuffling_x_of_y_songs, format.format(sample.tracks.size), format.format(sample.total)
-                )
-                app.messageFlow.emit(Message(text))
-            } else if (unsampledMessage != null) app.messageFlow.emit(Message(unsampledMessage))
+            // [CORRECTED 2026-11-13] No sample message any more ("Shuffling 2,000 of N songs", "Playing the first 2,000
+            // songs"): the cap is silent, as Spotify's, Apple Music's and Roon's are (the user's decision). The caller's usual
+            // message, when it gives one, now shows whether or not the list was sampled.
+            if (unsampledMessage != null) app.messageFlow.emit(Message(unsampledMessage))
         }
     }
 

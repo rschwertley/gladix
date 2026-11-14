@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.common
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.ImportType
 import dev.brahmkshatriya.echo.common.models.Metadata
+import dev.brahmkshatriya.echo.extensions.cache.CapabilityProbeFailure
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import java.io.IOException
 import java.net.ConnectException
@@ -17,6 +18,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -134,6 +137,17 @@ class ErrorCategoryTest {
     @Test
     fun `other handshake failure stays Generic`() {
         assertEquals(ErrorCategory.Generic, classify(SSLHandshakeException("Connection reset by peer")))
+    }
+
+    // [2026-11-13] Crashlytics 0a70517c: the capability-probe report counts a SocketException in the chain as a plain network
+    // failure (CapabilityProbeFailure.isPlainNetworkFailure), while classify keeps it Generic (the drift guard above). A login
+    // error found first still reports.
+    @Test
+    fun `SocketException is a plain network failure for the probe report only`() {
+        val liked = Exception("liked fetch failed", SocketException())
+        assertEquals(ErrorCategory.Generic, classify(liked))
+        assertTrue(CapabilityProbeFailure.isPlainNetworkFailure(liked))
+        assertFalse(CapabilityProbeFailure.isPlainNetworkFailure(AppException.LoginRequired(meta)))
     }
 
     // getTitle `else -> null` -> getFinalTitle falls through to the message: not network/login.

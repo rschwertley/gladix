@@ -229,6 +229,8 @@
     <string name="extension_installer">Extension Installer</string>
     <string name="extension_installed_successfully">Extension installed successfully.</string>
     <string name="extension_uninstalled_successfully">Extension uninstalled successfully.</string>
+    <string name="remove_extension_x">Remove %1$s?</string>
+    <string name="remove_extension_keeps_data">Its saved logins and settings stay on this device and come back if you add it again.</string>
     <string name="allow_opening_links">Allow opening links</string>
     <string name="open_links_instruction">To allow opening these links, you need to:\n- Scroll down and click on \"Open by Default\"\n- Click on \"+ Add Link\"</string>
     <string name="downloading_update_for_x">Downloading update for %1$s</string>
@@ -309,6 +311,10 @@
     <string name="add_extension">Add Extension</string>
     <string name="webview">Webview</string>
     <string name="logout">Logout</string>
+    <string name="remove_account">Remove account</string>
+    <string name="remove_account_x">Remove %1$s?</string>
+    <string name="use_without_account">Use without an account</string>
+    <string name="account_switch_hint">Tip: long-press your profile picture to switch to the next account.</string>
     <string name="switch_account">Switch Account</string>
     <string name="incognito">Incognito</string>
     <string name="link_tv_device">Link TV Device</string>
@@ -497,8 +503,6 @@
     <string name="deleted_x">Deleted %1$s</string>
     <string name="loading_x">Loading %1s</string>
     <string name="loading_songs_x">Loading %1$s…</string>
-    <string name="shuffling_x_of_y_songs">Shuffling %1$s of %2$s songs</string>
-    <string name="playing_first_x_songs">Playing the first %1$s songs</string>
     <string name="saving_x">Saving %1$s</string>
     <string name="saved_to_x">Saved to %1$s</string>
     <string name="saved_to_playlists">Saved to playlists</string>

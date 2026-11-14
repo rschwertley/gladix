@@ -1518,6 +1518,9 @@ private fun Throwable.plainNetworkCause(): Throwable? =
             is java.net.ConnectException -> java.net.ConnectException()
             is java.net.NoRouteToHostException -> java.net.NoRouteToHostException()
             is java.net.UnknownHostException -> java.net.UnknownHostException()
+            // [2026-11-13] Any other SocketException (a reset, broken pipe or abort, e.g. mid-TLS-handshake: Crashlytics 0a70517c).
+            // After ConnectException and NoRouteToHostException, which are SocketExceptions too and keep their own type.
+            is java.net.SocketException -> java.net.SocketException()
             is javax.net.ssl.SSLHandshakeException -> javax.net.ssl.SSLHandshakeException("")
             else -> null
         }

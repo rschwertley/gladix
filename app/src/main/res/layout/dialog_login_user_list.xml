@@ -26,6 +26,18 @@
             app:title="@string/select_x_account"
             app:titleCentered="true" />
 
+        <!-- [2026-11-13] Phone only (LoginUserListBottomSheet): the long-press quick switch, said once here. -->
+        <TextView
+            android:id="@+id/switchHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:alpha="0.66"
+            android:gravity="center"
+            android:text="@string/account_switch_hint"
+            android:textAppearance="?textAppearanceBodySmall"
+            android:visibility="gone" />
+
         <include
             android:id="@+id/accountListLoading"
             layout="@layout/item_loading"
@@ -34,15 +46,26 @@
             android:layout_margin="48dp"
             android:layout_weight="1" />
 
-        <com.google.android.material.button.MaterialButtonToggleGroup
-            android:id="@+id/accountListToggleGroup"
-            style="@style/ConnectedToggleGroup"
+        <!-- [2026-11-13] Rows of item_account_row, built by LoginUserListBottomSheet (was a MaterialButtonToggleGroup). -->
+        <LinearLayout
+            android:id="@+id/accountList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- [2026-11-13] Phone only: Incognito as a labelled row below the accounts (was the toolbar icon, kept on TV). -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/withoutAccount"
+            style="@style/OutlinedButton"
             android:layout_marginBottom="16dp"
-            android:orientation="vertical"
-            app:selectionRequired="true"
-            app:singleSelection="true" />
+            android:checkable="true"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/use_without_account"
+            android:visibility="gone"
+            app:icon="@drawable/ic_incognito"
+            app:iconPadding="16dp"
+            app:iconSize="32dp" />
 
 
         <com.google.android.material.button.MaterialButtonGroup
@@ -61,7 +84,7 @@
                 android:enabled="false"
                 android:minHeight="64dp"
                 app:icon="@drawable/ic_logout"
-                android:text="@string/logout" />
+                android:text="@string/remove_account" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/addAccount"
@@ -74,6 +97,17 @@
                 android:text="@string/add" />
 
         </com.google.android.material.button.MaterialButtonGroup>
+
+        <!-- [2026-11-13] Phone only: the header avatar opens this sheet now, so Settings stays one tap away. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/openSettings"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/settings"
+            android:visibility="gone"
+            app:icon="@drawable/ic_settings_outline" />
     </LinearLayout>
 
 

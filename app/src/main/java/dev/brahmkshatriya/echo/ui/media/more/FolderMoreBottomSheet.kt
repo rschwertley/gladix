@@ -78,10 +78,12 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         // [2026-11-13] PAGE BY PAGE (Crashlytics 63ec9068): [onPage] gets each page's tracks and returns false to stop reading,
         // so a load-on-tap folder sampled to 2,000 is never held whole. A folder's own songs and a custom track list arrive
         // the same way and are collected whole by the caller, as before.
+        // [2026-11-13] [shuffle]: only Shuffle passes true (TracksOnTap.GLADIX_SHUFFLE); Play next and Add to queue never do.
         private suspend fun Shelf.Category.folderTracks(
-            extensions: ExtensionLoader, extensionId: String, onPage: suspend (List<Track>) -> Boolean,
+            extensions: ExtensionLoader, extensionId: String, shuffle: Boolean = false,
+            onPage: suspend (List<Track>) -> Boolean,
         ) {
-            if (hasTracksOnTap()) return loadTracksOnTap(extensions, extensionId, id, title, extras, onPage)
+            if (hasTracksOnTap()) return loadTracksOnTap(extensions, extensionId, id, title, extras, shuffle, onPage)
             val feed = feed ?: return
             val data = feed.getPagedData(feed.notSortTabs.firstOrNull())
             data.buttons?.customTrackList?.let { onPage(it); return }
@@ -212,7 +214,7 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         playerViewModel.playTracksOnTap(
             title, extensionId, queueLabel(), shuffle, capped = capped, unsampledMessage = message.takeIf { capped },
         ) { onPage ->
-            category.folderTracks(extensions, extensionId, onPage)
+            category.folderTracks(extensions, extensionId, shuffle, onPage)
         }
     }
 

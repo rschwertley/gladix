@@ -185,7 +185,7 @@ open class FeedClickListener(
             val extensions = vm.extensions
             // [2026-11-12] Capped at DECLARED_QUEUE_CAP by a fair sample; see PlayerViewModel.playTracksOnTap.
             vm.playTracksOnTap(title, extensionId, label, shuffle, capped = true) { onPage ->
-                loadTracksOnTap(extensions, extensionId, id, title, row, onPage)
+                loadTracksOnTap(extensions, extensionId, id, title, row, shuffle, onPage)
             }
             return true
         }

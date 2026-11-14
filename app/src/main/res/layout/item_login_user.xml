@@ -101,7 +101,7 @@
                 android:id="@+id/logout"
                 style="@style/DialogHorizontalButton"
                 app:icon="@drawable/ic_logout"
-                android:text="@string/logout" />
+                android:text="@string/remove_account" />
 
             <Button
                 android:id="@+id/switchAccount"

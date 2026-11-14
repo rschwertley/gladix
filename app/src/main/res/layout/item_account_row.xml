@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [2026-11-13] One saved account in the account sheet (LoginUserListBottomSheet): the account, which selects it, and a
+     visible ⋮ with "Remove account". Replaces item_extension_button inside a MaterialButtonToggleGroup, whose children must
+     be MaterialButtons only, so a row could not carry a second control. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="4dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/account"
+        style="@style/OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:checkable="true"
+        android:focusable="true"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        app:icon="@drawable/ic_extension_32dp"
+        app:iconPadding="16dp"
+        app:iconSize="32dp"
+        app:iconTint="?colorControlActivated" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/more"
+        style="@style/IconButton"
+        android:contentDescription="@string/more"
+        app:icon="@drawable/ic_more_vert" />
+
+</LinearLayout>

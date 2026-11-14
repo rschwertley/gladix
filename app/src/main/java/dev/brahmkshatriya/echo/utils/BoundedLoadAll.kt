@@ -132,8 +132,14 @@ object BoundedLoadAll {
         while (true) {
             val page = data.loadPage(key)
             pages++
-            val over = page.data.size > walk.left || (page.data.size == walk.left && page.continuation != null)
-            val items = if (page.data.size > walk.left) page.data.take(walk.left) else page.data
+            // [2026-11-13] A COPY, TAKEN BEFORE ANYTHING ELSE CAN RUN. PagedData.Single hands back its own `items` list as the page
+            // (Single.loadListInternal -> loadList, :common) and its invalidate()/clear() empties that same list. This walk never
+            // invalidates, and a load-on-tap feed is a fresh loadTracks result no screen holds; but a folder's own feed can be on
+            // screen, where PagedSource.getRefreshKey invalidates it on the main thread while this runs on IO. The copy is of
+            // references only, so the consumer always iterates a stable list.
+            val snapshot = page.data.toList()
+            val over = snapshot.size > walk.left || (snapshot.size == walk.left && page.continuation != null)
+            val items = if (snapshot.size > walk.left) snapshot.take(walk.left) else snapshot
             walk.left -= items.size
             walk.taken += items.size
             if (!walk.onPage(items)) return false

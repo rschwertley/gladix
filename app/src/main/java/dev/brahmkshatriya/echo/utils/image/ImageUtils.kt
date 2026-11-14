@@ -145,6 +145,11 @@ object ImageUtils {
         // we do want. Callers that reuse a view across items MUST guard their own paint callback against
         // a superseded load; PlayerTrackAdapter does this with pendingMediaId. If you add a call site that
         // paints into a recycled or reused view, it needs the same guard.
+        // [CORRECTED 2026-11-13] "PlayerTrackAdapter does this" was the only guarded site, and one reused view was not: the
+        // full-screen player's Ken Burns background (loadBlurred(cover), from PlayerFragment.loadCurrentBackground) has the
+        // same lambda target and lifecycle, so every song change with the screen off parked a load and at wake the last to
+        // finish painted, a previous song's art (1179, natural timeout). It is guarded now too: loadBlurred's shouldPaint,
+        // passed `lastBlurredItemId == itemId`. The guarded call sites are PlayerTrackAdapter and that background.
         //
         // This load is ENQUEUED and its target is a lambda, NOT a ViewTarget, so
         // RequestService.requestDelegate takes the `request.lifecycle ?: findLifecycle()` branch and
@@ -214,13 +219,15 @@ object ImageUtils {
     // bar's identity load. Unlike loadBlurred(Drawable), this doesn't need a pre-resolved page drawable, so
     // the Ken Burns background is no longer coupled to an attached ViewPager holder (which is null/detached
     // after a screen-off auto-advance). No crop transform, matching the existing full-bleed blurred look.
-    fun ImageView.loadBlurred(cover: ImageHolder?, radius: Float) = tryWith {
+    // [2026-11-13] [shouldPaint]: read when the image arrives, and false means a newer load has superseded this one, so it
+    // does not paint (the paint guard at loadWithThumb's coalescing note, which this lambda target needs as much).
+    fun ImageView.loadBlurred(cover: ImageHolder?, radius: Float, shouldPaint: () -> Boolean = { true }) = tryWith {
         if (cover == null) { setImageDrawable(null); return@tryWith }
         val builder = ImageRequest.Builder(context)
         createRequest(cover, builder)
         builder.transformations(BlurTransformation(context, radius))
             .lifecycle(findViewTreeLifecycleOwner())
-            .target({}, {}) { image -> setImageDrawable(image.asDrawable(resources)) }
+            .target({}, {}) { image -> if (shouldPaint()) setImageDrawable(image.asDrawable(resources)) }
         enqueue(builder)
     }
 

@@ -15,6 +15,9 @@ import dev.brahmkshatriya.echo.common.Extension
 import dev.brahmkshatriya.echo.common.MusicExtension
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
+import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.databinding.ItemMainHeaderBinding
 import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
@@ -50,8 +53,11 @@ class HeaderAdapter(
                 .show(parentFragmentManager, null)
         }
 
+        // [2026-11-13] On a phone, for an extension with login, the avatar opens the account sheet directly (audit item 3); the
+        // sheet has a Settings entry, so Settings stays one tap away. Without login, and on TV, it opens Settings as before.
         binding.accountsCont.setOnClickListener {
-            SettingsBottomSheet().show(parentFragmentManager, null)
+            if (!parent.context.isTv() && triple.second) LoginUserListBottomSheet().show(parentFragmentManager, null)
+            else SettingsBottomSheet().show(parentFragmentManager, null)
         }
         return holder
     }
@@ -86,13 +92,7 @@ class HeaderAdapter(
             viewModel.currentUser.value?.cover,
             if (isLoginClient) R.drawable.ic_account_circle_32dp else R.drawable.ic_settings_outline_32dp
         )
-        accountsCont.setLoopedLongClick(all, { all.find { it.second } }) {
-            ext ?: return@setLoopedLongClick
-            viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
-            // The button shows only the avatar, so say which account this switched to
-            if (AccountLabel.showsDetail(ext.id))
-                fragment.createSnack(context.getString(R.string.switched_to_x, it.first.accountLabelInline()))
-        }
+        accountsCont.setAccountQuickSwitch(fragment, viewModel, ext, all)
     }
 
     class ViewHolder(
@@ -116,15 +116,48 @@ class HeaderAdapter(
     }
 
     companion object {
+        /**
+         * [2026-11-13] THE ACCOUNT QUICK SWITCH: long-press moves to the next saved account (the header avatar, and the Settings
+         * sheet's account name and avatar). On a phone (audit item 4): it always says "Switched to <account>" with Undo, which
+         * puts back the account that was current (or no account), and with no account selected it switches to the first saved
+         * one. On TV it is as before: no Undo, nothing from no account, and the message only when AccountLabel.showsDetail.
+         */
+        fun View.setAccountQuickSwitch(
+            fragment: Fragment, viewModel: LoginUserListViewModel, ext: Extension<*>?, all: List<Pair<User, Boolean>>,
+        ) {
+            val phone = !context.isTv()
+            setLoopedLongClick(all, { all.find { it.second } }, fromNoneToFirst = phone) { (user, _) ->
+                ext ?: return@setLoopedLongClick
+                val previous = all.find { it.second }?.first
+                viewModel.setLoginUser(user.toEntity(ext.type, ext.id))
+                val text = context.getString(R.string.switched_to_x, user.accountLabelInline())
+                if (phone) fragment.createSnack(
+                    Message(text, Message.Action(context.getString(R.string.undo)) {
+                        if (previous != null) viewModel.setLoginUser(previous.toEntity(ext.type, ext.id))
+                        else viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))
+                    })
+                )
+                // The button shows only the avatar, so say which account this switched to
+                else if (AccountLabel.showsDetail(ext.id)) fragment.createSnack(text)
+            }
+        }
+
+        // [2026-11-13] [fromNoneToFirst]: with nothing current, the first item instead of nothing (the account quick switch on
+        // a phone). The extension switcher passes false, as before.
         fun <T> View.setLoopedLongClick(
             list: List<T>,
             getCurrent: (View) -> T?,
+            fromNoneToFirst: Boolean = false,
             onSelect: (T) -> Unit,
         ) {
             setOnLongClickListener {
                 val current = getCurrent(this)
                 val index = list.indexOf(current)
-                if (index == -1) return@setOnLongClickListener false
+                if (index == -1) {
+                    if (!fromNoneToFirst || current != null || list.isEmpty()) return@setOnLongClickListener false
+                    onSelect(list.first())
+                    return@setOnLongClickListener true
+                }
                 val next = list[(index + 1) % list.size]
                 if (next == current) return@setOnLongClickListener false
                 onSelect(next)

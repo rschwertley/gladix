@@ -87,15 +87,11 @@ object AudibleEndAnalyzer {
     private const val RELATIVE_DB = 40.0
     private const val FLOOR_DB = -60.0
 
-    // [2026-11-10] "Near its level": the first block within this of the window's 95th percentile ends the rise.
-    private const val NEAR_LEVEL_DB = 6.0
-
-    // [2026-11-13] The long fade-out's level (CrossfadeController's LONG_FADE row, the user's decision): blocks at least this
-    // far below the body count as the fade.
-    private const val FADE_BELOW_BODY_DB = 12.0
-
     // [2026-11-11] The pair rule's levels (CrossfadeController.classifyPair, the user's decision): the outgoing over the last
     // 3 s before its audible end, the incoming from its onset over 3 s, at least 1 s of it inside the head window.
+    // [CORRECTED 2026-11-13] The pair rule is removed (the user's decision; see the note after CrossfadeController.shapeFor).
+    // These levels are still measured, for the CROSSFADE-FEEL line's outDb and inDb only. End.bodyDb and End.fadeMs (the long
+    // fade-out, 12 dB below the body, for the LONG_FADE row) are removed with their computation (the user's decision).
     private const val LEVEL_WINDOW_MS = 3_000L
     private const val MIN_LEVEL_MS = 1_000L
 
@@ -111,15 +107,16 @@ object AudibleEndAnalyzer {
 
     /**
      * [2026-11-11] The end look-ahead's result. [audibleEndMs] as before; [endDb] the average power (RMS dBFS, raw PCM) over
-     * the last [LEVEL_WINDOW_MS] before it, null with nothing measured there; [bodyDb] the 15 s window's 95th-percentile block.
-     * [2026-11-13] [fadeMs]: from the end of the last block within [FADE_BELOW_BODY_DB] of the body to the audible end, the
-     * length of a fade-out (0 when the music stays near its body to the end). [scannedMs]: the window that found the end,
+     * the last [LEVEL_WINDOW_MS] before it, null with nothing measured there; bodyDb the 15 s window's 95th-percentile block.
+     * [2026-11-13] fadeMs: from the end of the last block within FADE_BELOW_BODY_DB of the body to the audible end, the
+     * length of a fade-out (0 when the music stays near its body to the end).
+     * [CORRECTED 2026-11-13] bodyDb and fadeMs are removed: only the pair rule read them, and it is removed. The 95th-percentile
+     * block is still computed in [Blocks.end], for the audible-end threshold. [scannedMs]: the window that found the end,
      * [SCAN_MS] unless the last [SCAN_MS] was all silent. [noAudio]: nothing audible within [MAX_TAIL_SCAN_MS] of the end (or
      * in the whole song, if shorter); the other fields then mean nothing.
      */
     class End(
-        val audibleEndMs: Long, val endDb: Double?, val bodyDb: Double,
-        val fadeMs: Long = 0L, val scannedMs: Long = SCAN_MS, val noAudio: Boolean = false,
+        val audibleEndMs: Long, val endDb: Double?, val scannedMs: Long = SCAN_MS, val noAudio: Boolean = false,
     )
 
     /** The audible end, or null when undecided. Runs on IO; cancellable between reads. */
@@ -133,12 +130,16 @@ object AudibleEndAnalyzer {
 
     /**
      * [2026-11-10] Where the music starts in the first [HEAD_SCAN_MS] of a song, and how soon after that it is near its level.
-     * [onsetMs] null = nothing above the threshold in the window; [riseMs] null = never near its level after the onset.
-     * [referenceDb] is the window's 95th-percentile block, RMS dBFS.
+     * [onsetMs] null = nothing above the threshold in the window; riseMs null = never near its level after the onset.
+     * referenceDb is the window's 95th-percentile block, RMS dBFS.
      * [2026-11-11] [levelDb] is the average power from the onset over [LEVEL_WINDOW_MS], clipped to the window; null with no
      * onset or less than [MIN_LEVEL_MS] of it inside the window. Raw PCM, like every level here.
+     * [CORRECTED 2026-11-13] riseMs and referenceDb are removed, with the rise's computation and NEAR_LEVEL_DB: only
+     * CrossfadeController.incomingFadeMs read them, and it is removed with the pair rule (the user's decision). The
+     * 95th-percentile block is still computed in [Blocks.start], for the onset threshold. [onsetMs] (the onset, and the
+     * silent-intro decline when null) and [levelDb] (the CROSSFADE-FEEL line's inDb) remain.
      */
-    class Start(val onsetMs: Long?, val riseMs: Long?, val referenceDb: Double, val levelDb: Double? = null)
+    class Start(val onsetMs: Long?, val levelDb: Double? = null)
 
     /**
      * The start of the song at [uri], or null when undecided: fewer than [HEAD_SCAN_MS] decodable from the first
@@ -164,10 +165,10 @@ object AudibleEndAnalyzer {
             decode(dataSourceFactory, uri, blocks, head = false, boundLength = C.LENGTH_UNSET.toLong()) ?: return null
             if (blocks.lastFrameEndMs < durationMs - COVERAGE_SLACK_MS) return null
             if (!blocks.allSilent()) return blocks.end()?.let {
-                End(it.audibleEndMs, it.endDb, it.bodyDb, it.fadeMs, scannedMs = windowMs)
+                End(it.audibleEndMs, it.endDb, scannedMs = windowMs)
             }
             if (windowMs >= MAX_TAIL_SCAN_MS || windowMs >= durationMs) {
-                return End(durationMs - windowMs, null, FLOOR_DB, scannedMs = windowMs, noAudio = true)
+                return End(durationMs - windowMs, null, scannedMs = windowMs, noAudio = true)
             }
             windowMs = minOf(windowMs + SCAN_MS, MAX_TAIL_SCAN_MS, durationMs)
         }
@@ -409,13 +410,9 @@ object AudibleEndAnalyzer {
             val threshold = max(reference - RELATIVE_DB, FLOOR_DB)
             val last = levels.lastOrNull { it.second >= threshold }?.first ?: return null
             val window = (LEVEL_WINDOW_MS / BLOCK_MS).toInt()
-            // [2026-11-13] The fade: back from the audible end to the last block still within FADE_BELOW_BODY_DB of the body.
-            val lastNearBody = levels.lastOrNull { (block, db) -> block <= last && db > reference - FADE_BELOW_BODY_DB }?.first
             return End(
                 audibleEndMs = startMs + (last + 1) * BLOCK_MS,
                 endDb = meanDb(last - window + 1, last),
-                bodyDb = reference,
-                fadeMs = if (lastNearBody == null) 0L else (last - lastNearBody) * BLOCK_MS,
             )
         }
 
@@ -448,7 +445,8 @@ object AudibleEndAnalyzer {
 
         /**
          * [2026-11-10] The onset: the first block at or above the same threshold as the end's whose next block is too (so a
-         * click alone is not one). The rise: from the onset to the first block within [NEAR_LEVEL_DB] of the reference.
+         * click alone is not one). The rise: from the onset to the first block within NEAR_LEVEL_DB of the reference.
+         * [CORRECTED 2026-11-13] The rise is no longer computed; see the note at [Start].
          */
         fun start(encoderDelayMs: Long): Start? {
             val levels = levels()
@@ -458,14 +456,11 @@ object AudibleEndAnalyzer {
             val byBlock = levels.toMap()
             val onset = levels.firstOrNull { (block, db) ->
                 db >= threshold && (byBlock[block + 1] ?: Double.NEGATIVE_INFINITY) >= threshold
-            }?.first ?: return Start(null, null, reference)
-            val near = levels.firstOrNull { (block, db) -> block >= onset && db >= reference - NEAR_LEVEL_DB }?.first
+            }?.first ?: return Start(null)
             val window = (LEVEL_WINDOW_MS / BLOCK_MS).toInt()
             val enough = filledBlocks(onset, onset + window - 1) * BLOCK_MS >= MIN_LEVEL_MS
             return Start(
                 onsetMs = (startMs + onset * BLOCK_MS - encoderDelayMs).coerceAtLeast(0L),
-                riseMs = near?.let { (it - onset) * BLOCK_MS },
-                referenceDb = reference,
                 levelDb = if (enough) meanDb(onset, onset + window - 1) else null,
             )
         }

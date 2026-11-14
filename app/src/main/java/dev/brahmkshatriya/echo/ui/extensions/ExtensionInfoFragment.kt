@@ -12,6 +12,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.net.toUri
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
@@ -145,9 +146,23 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
             val metadata = extension.metadata
             binding.toolBar.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.itemId) {
+                    // [2026-11-13] CONFIRMED FIRST, for every import type (the user's decision): a file extension was removed
+                    // the moment the trash icon was tapped, with no prompt (an app extension at least got Android's own
+                    // dialog, which still follows this one). The wording says what removal keeps, read from the code:
+                    // ExtensionsViewModel.uninstall deletes the .eapk (InstallationUtils.uninstallFile) or uninstalls the
+                    // app, and nothing on that path touches the extension's settings (SharedPreferences "<TYPE>-<id>",
+                    // ExtensionUtils.extensionPrefId) or its saved logins (UserEntity / CurrentUser in extension-db), so
+                    // both return when it is added again.
                     R.id.menu_uninstall -> {
-                        parentFragmentManager.popBackStack()
-                        extensionsViewModel.uninstall(requireActivity(), extension)
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setTitle(getString(R.string.remove_extension_x, metadata.name))
+                            .setMessage(R.string.remove_extension_keeps_data)
+                            .setNegativeButton(R.string.cancel, null)
+                            .setPositiveButton(R.string.remove) { _, _ ->
+                                parentFragmentManager.popBackStack()
+                                extensionsViewModel.uninstall(requireActivity(), extension)
+                            }
+                            .show()
                         true
                     }
 

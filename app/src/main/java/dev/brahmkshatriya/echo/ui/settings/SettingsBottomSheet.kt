@@ -22,13 +22,9 @@ import dev.brahmkshatriya.echo.MainApplication.Companion.getCurrentLanguage
 import dev.brahmkshatriya.echo.MainApplication.Companion.languages
 import dev.brahmkshatriya.echo.MainApplication.Companion.setCurrentLanguage
 import dev.brahmkshatriya.echo.R
-import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
-import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel
-import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabelInline
 import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabel
 import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.databinding.DialogSettingsBinding
-import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.download.DownloadFragment
 import dev.brahmkshatriya.echo.ui.download.DownloadViewModel
@@ -41,6 +37,7 @@ import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
 import dev.brahmkshatriya.echo.ui.extensions.manage.ManageExtensionsFragment
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter.Companion.loadBigIcon
+import dev.brahmkshatriya.echo.ui.main.HeaderAdapter.Companion.setAccountQuickSwitch
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter.Companion.setLoopedLongClick
 import dev.brahmkshatriya.echo.utils.AppUpdater
 import dev.brahmkshatriya.echo.utils.ContextUtils.appVersion
@@ -247,24 +244,15 @@ class SettingsBottomSheet : BottomSheetDialogFragment(R.layout.dialog_settings) 
             binding.currentAccountName.run {
                 isVisible = isLoginClient
                 text = viewModel.currentUser.value?.accountLabel(ext?.id) ?: getString(R.string.no_account)
-                setLoopedLongClick(all, { all.find { it.second } }) {
-                    ext ?: return@setLoopedLongClick
-                    viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
-                    if (AccountLabel.showsDetail(ext.id))
-                        createSnack(getString(R.string.switched_to_x, it.first.accountLabelInline()))
-                }
+                // [2026-11-13] The shared quick switch (HeaderAdapter.setAccountQuickSwitch).
+                setAccountQuickSwitch(this@SettingsBottomSheet, viewModel, ext, all)
             }
             binding.accounts.loadBigIcon(
                 viewModel.currentUser.value?.cover, R.drawable.ic_account_circle_32dp
             )
             binding.accountsCont.run {
                 isVisible = isLoginClient
-                setLoopedLongClick(all, { all.find { it.second } }) {
-                    ext ?: return@setLoopedLongClick
-                    viewModel.setLoginUser(it.first.toEntity(ext.type, ext.id))
-                    if (AccountLabel.showsDetail(ext.id))
-                        createSnack(getString(R.string.switched_to_x, it.first.accountLabelInline()))
-                }
+                setAccountQuickSwitch(this@SettingsBottomSheet, viewModel, ext, all)
             }
         }
     }

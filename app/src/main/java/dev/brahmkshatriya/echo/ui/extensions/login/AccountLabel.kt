@@ -27,8 +27,11 @@ object AccountLabel {
     // Whether this extension's accounts show their subtitle and announce a switch.
     fun showsDetail(extensionId: String?) = extensionId == ExtensionLoader.OPENGONIC_ID
 
-    fun User.accountLabel(extensionId: String?): CharSequence {
-        if (!showsDetail(extensionId)) return name
+    // [CORRECTED 2026-11-13] "OpenGonic only" above holds on TV and in the Settings sheet. The account sheet on a PHONE passes
+    // [detail] true for every extension (the user's decision, aligning them, audit item 2): any subtitle an extension sets is
+    // shown. The concern recorded above (a third-party subtitle could be an email, a plan or an id) is accepted, not answered.
+    fun User.accountLabel(extensionId: String?, detail: Boolean = showsDetail(extensionId)): CharSequence {
+        if (!detail) return name
         val sub = subtitle?.takeIf { it.isNotBlank() } ?: return name
         val text = SpannableStringBuilder(name).append('\n')
         val start = text.length

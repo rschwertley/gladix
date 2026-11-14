@@ -5,6 +5,7 @@ import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.ui.common.ErrorCategory
 import dev.brahmkshatriya.echo.ui.common.classify
 import java.io.InterruptedIOException
+import java.net.SocketException
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLHandshakeException
 
@@ -70,11 +71,15 @@ object CapabilityProbeFailure {
      * LoginOrAuth found first keeps reporting, as classify returns at the first node it recognises.
      * Deezer's LikedFetchFailed carries a message-less copy of its network cause so these type checks can see it (scrubbedForReport).
      */
-    private fun isPlainNetworkFailure(throwable: Throwable): Boolean = when (classify(throwable)) {
+    // [2026-11-13] SocketException added HERE ONLY (Crashlytics 0a70517c: a reset during Deezer's TLS handshake under the liked fetch,
+    // the user's decision): for this report a dropped socket is the connection. classify keeps it Generic on purpose (a mid-stream
+    // reset is a per-track transient for PlayerEventListener's retry-then-skip; ErrorCategoryTest's drift guard). Internal for
+    // ErrorCategoryTest.
+    internal fun isPlainNetworkFailure(throwable: Throwable): Boolean = when (classify(throwable)) {
         ErrorCategory.Network -> true
         ErrorCategory.LoginOrAuth -> false
         ErrorCategory.Generic -> generateSequence(throwable) { it.cause }.take(MAX_CHAIN)
-            .any { it is SSLHandshakeException || it is InterruptedIOException }
+            .any { it is SSLHandshakeException || it is InterruptedIOException || it is SocketException }
     }
 
     private const val MAX_CHAIN = 8

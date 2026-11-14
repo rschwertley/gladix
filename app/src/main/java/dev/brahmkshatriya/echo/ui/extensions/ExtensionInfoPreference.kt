@@ -22,13 +22,14 @@ import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.databinding.ItemLoginUserBinding
 import dev.brahmkshatriya.echo.databinding.PreferenceExtensionInfoBinding
 import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
-import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.extensions.ExtensionInfoFragment.Companion.openLink
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment
 import dev.brahmkshatriya.echo.ui.settings.TvPairingFragment
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabelInline
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.AutoClearedValue.Companion.addOnDestroyObserver
@@ -138,10 +139,18 @@ class ExtensionInfoPreference(
                     )
                 }
 
+                // [2026-11-13] "Remove account": removes the current account and selects the next saved one, or none
+                // (LoginUserListViewModel.remove).
+                // [2026-11-13] On a phone, after "Remove (account)?" (audit item 1); a TV removes at once, as before.
                 binding.logout.setOnClickListener {
                     ext ?: return@setOnClickListener
-                    viewModel.logout(user?.toEntity(ext.type, ext.id))
-                    viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))
+                    val current = user ?: return@setOnClickListener
+                    if (requireContext().isTv()) return@setOnClickListener viewModel.removeCurrent(ext.type, ext.id)
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(getString(R.string.remove_account_x, current.accountLabelInline()))
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.remove) { _, _ -> viewModel.removeCurrent(ext.type, ext.id) }
+                        .show()
                 }
 
                 binding.incognito.setOnClickListener {

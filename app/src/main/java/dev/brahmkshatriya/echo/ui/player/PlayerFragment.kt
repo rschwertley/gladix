@@ -1191,7 +1191,14 @@ class PlayerFragment : Fragment() {
         val itemId = item?.mediaId
         if (itemId == lastBlurredItemId) return
         lastBlurredItemId = itemId
-        bg.loadBlurred(item?.track?.cover, 8f)
+        // [2026-11-13] PAINTS ONLY IF THIS IS STILL THE CURRENT SONG when the image arrives, the cover's 1057 guard
+        // (PlayerTrackAdapter.pendingMediaId) for this view (the user's decision). The collector above runs while the
+        // Activity is stopped, so each song change with the screen off parks one load until ON_START; at wake they all run and
+        // the last to finish painted, so a previous song's art could stay (1179, Deezer, natural timeout: Twist and Shout
+        // behind Blackbird), and it stayed, because the early return above made later emissions for the same song no-ops.
+        // The user's record (Aug 13-24) has a natural timeout leaving the Activity STARTED longer through the dim phase than
+        // the power button does, so those loads are parked differently: the record's reading of why that path showed it.
+        bg.loadBlurred(item?.track?.cover, 8f) { lastBlurredItemId == itemId }
     }
 
     private fun configureColors() {
