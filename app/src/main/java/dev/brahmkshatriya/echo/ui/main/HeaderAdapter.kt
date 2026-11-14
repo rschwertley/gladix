@@ -17,7 +17,6 @@ import dev.brahmkshatriya.echo.common.models.ExtensionType
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.extensions.db.models.CurrentUser
-import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.databinding.ItemMainHeaderBinding
 import dev.brahmkshatriya.echo.extensions.db.models.UserEntity.Companion.toEntity
@@ -55,9 +54,11 @@ class HeaderAdapter(
 
         // [2026-11-13] On a phone, for an extension with login, the avatar opens the account sheet directly (audit item 3); the
         // sheet has a Settings entry, so Settings stays one tap away. Without login, and on TV, it opens Settings as before.
+        // [CORRECTED 2026-11-14] Reverted (the user's decision): the avatar opens Settings again on every device and for every
+        // extension, as through 1179. The 1180 avatar → account sheet change added a tap to reach Settings for the common
+        // one-account case (Deezer especially). The long-press quick switch is unchanged (setAccountQuickSwitch).
         binding.accountsCont.setOnClickListener {
-            if (!parent.context.isTv() && triple.second) LoginUserListBottomSheet().show(parentFragmentManager, null)
-            else SettingsBottomSheet().show(parentFragmentManager, null)
+            SettingsBottomSheet().show(parentFragmentManager, null)
         }
         return holder
     }

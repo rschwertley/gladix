@@ -27,6 +27,20 @@ object AccountLabel {
     // Whether this extension's accounts show their subtitle and announce a switch.
     fun showsDetail(extensionId: String?) = extensionId == ExtensionLoader.OPENGONIC_ID
 
+    /**
+     * [2026-11-14] Whether this extension does nothing without an account, so the account sheet hides its "Use without an
+     * account" row (the user's decision; TV's toolbar Incognito icon is unchanged). Keyed on id because the extension API has
+     * no such field (LoginClient and Metadata were read 2026-11-14), and no extension or shared API changes for it.
+     * WHY THESE TWO: signed out, each throws ClientException.LoginRequired before any network call on every surface.
+     * - Deezer, read 2026-11-14: setLoginUser(null) empties every credential, and DeezerExtension.handleArlExpiration, the
+     *   first statement of loadHomeFeed, quickSearch, loadSearchFeed, loadSearchFeedTabs, loadLibraryFeed, loadTrack and
+     *   loadStreamableMedia, then throws on the empty ARL with no email to re-login with.
+     * - OpenGonic, from the user (its checkAuth); its source is not in this repo, so this half was not read here.
+     * Every other extension with accounts keeps the row.
+     */
+    fun requiresAccount(extensionId: String?) =
+        extensionId == ExtensionLoader.OPENGONIC_ID || extensionId == ExtensionLoader.DEEZER_ID
+
     // [CORRECTED 2026-11-13] "OpenGonic only" above holds on TV and in the Settings sheet. The account sheet on a PHONE passes
     // [detail] true for every extension (the user's decision, aligning them, audit item 2): any subtitle an extension sets is
     // shown. The concern recorded above (a third-party subtitle could be an email, a plan or an id) is accepted, not answered.

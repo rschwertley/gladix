@@ -39,11 +39,14 @@ class LoginUserListBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         binding.title.setNavigationOnClickListener { dismiss() }
-        // [2026-11-13] PHONE ONLY, TV UNCHANGED (the user's decision, audit items 1-5): the hint, the labelled "Use without an
+        // [2026-11-13] PHONE ONLY, TV UNCHANGED (the user's decision, audit items 1-5): the labelled "Use without an
         // account" row in place of the toolbar icon, the Settings entry, subtitles for every extension and the confirmation
         // on Remove account. A TV keeps the toolbar icon and the sheet as it was.
         val phone = !requireContext().isTv()
         if (phone) binding.title.menu.clear()
+        // [CORRECTED 2026-11-14] The header avatar no longer opens this sheet (HeaderAdapter, reverted). The Settings entry stays
+        // because the sheet is still reached from outside Settings: an extension's page (Switch account), opened from the
+        // player's extension icon or from the extension switcher's info action.
         binding.openSettings.isVisible = phone
         binding.openSettings.setOnClickListener {
             dismiss()
@@ -82,8 +85,8 @@ class LoginUserListBottomSheet : BottomSheetDialogFragment() {
                 val current = selectedUser ?: return@setOnClickListener
                 confirmRemove(current.accountLabelInline()) { viewModel.removeCurrent(ext.type, ext.id) }
             }
-            binding.switchHint.isVisible = phone && list.size > 1
-            binding.withoutAccount.isVisible = phone
+            // [2026-11-14] Not for an extension that needs an account (AccountLabel.requiresAccount).
+            binding.withoutAccount.isVisible = phone && !AccountLabel.requiresAccount(ext.id)
             binding.withoutAccount.isChecked = selectedUser == null
             binding.withoutAccount.setOnClickListener {
                 binding.withoutAccount.isChecked = selectedUser == null

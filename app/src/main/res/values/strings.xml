@@ -314,7 +314,6 @@
     <string name="remove_account">Remove account</string>
     <string name="remove_account_x">Remove %1$s?</string>
     <string name="use_without_account">Use without an account</string>
-    <string name="account_switch_hint">Tip: long-press your profile picture to switch to the next account.</string>
     <string name="switch_account">Switch Account</string>
     <string name="incognito">Incognito</string>
     <string name="link_tv_device">Link TV Device</string>
@@ -441,6 +440,7 @@
     <string name="add_to_queue">Add to queue</string>
     <string name="loading_radio_for_x">Loading radio for %1$s</string>
     <string name="playing_x">Playing %1$s</string>
+    <string name="player_unreachable">Couldn\'t reach the player. Close Gladix and open it again.</string>
     <string name="adding_x_to_queue">Adding %1$s to queue</string>
     <string name="adding_x_to_next">Adding %1$s to next</string>
     <string name="undo">Undo</string>

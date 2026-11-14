@@ -105,6 +105,8 @@ object ContextUtils {
      * reported. The only way to reach a cancelled future is `MediaController.releaseFuture`, whose first
      * act is `controllerFuture.cancel(false)`; in this app that is called only from our own teardown
      * (PlayerViewModel.onCleared, ControllerHelper). Cancelled == we tore it down. Failed == it broke.
+     * [2026-11-14] PlayerViewModel.reconnectIfDead also calls it, but only on a future that has already FAILED, where
+     * cancel(false) returns false and nothing is cancelled, so the rule above still holds.
      *
      * Genuine failures are still reported, now UNWRAPPED. `get()` wraps everything in ExecutionException,
      * whose stack is generated at the `get()` call site — identical for every failure through this helper —

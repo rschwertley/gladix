@@ -325,10 +325,17 @@ class LoginFragment : Fragment() {
                         // shown later. The insets controller is asked once the field holds focus (on API 30+ it also waits for the
                         // window to be focused). TV: unchanged, the first field takes focus and no keyboard opens, so D-pad focus
                         // never pops one.
+                        // [CORRECTED 2026-11-14] This ran requireContext() and requireActivity() unguarded, and a post can run after
+                        // the fragment has left: Crashlytics e5252ed5 (fatal, 1179), IllegalStateException "not attached to a
+                        // context" here, with the Deezer web-login WebView loading on other threads, so the form was most likely
+                        // left before the post ran. Now a fragment that is detached, or whose view is gone, does nothing.
+                        val ctx = context ?: return@post
+                        val window = activity?.window ?: return@post
+                        if (this@CustomInput.view == null) return@post
                         val fields = (0 until customInput.childCount).mapNotNull {
                             (customInput.getChildAt(it) as? com.google.android.material.textfield.TextInputLayout)?.editText
                         }
-                        if (requireContext().isTv()) {
+                        if (ctx.isTv()) {
                             (fields.firstOrNull() ?: customInput.getChildAt(0))?.requestFocus()
                             return@post
                         }
@@ -338,7 +345,7 @@ class LoginFragment : Fragment() {
                             return@post
                         }
                         if (target.requestFocus()) {
-                            WindowCompat.getInsetsController(requireActivity().window, target)
+                            WindowCompat.getInsetsController(window, target)
                                 .show(WindowInsetsCompat.Type.ime())
                         }
                     }

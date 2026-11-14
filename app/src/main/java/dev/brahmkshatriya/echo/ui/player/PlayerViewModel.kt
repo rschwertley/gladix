@@ -188,6 +188,9 @@ class PlayerViewModel(
     //     INSIDE THE HANDLER (its list_is_empty guard), and trackRadio's catch does the same for its
     //     generation phase. Neither touches SessionResult.
     // So withBrowser SHOULD NOT CHANGE. The work is one emit per silent guard, inside PlayerCallback.
+    // [CORRECTED 2026-11-14] withBrowser did change, for the CONNECTION, not for SessionResult (b1b80943, see reconnectIfDead):
+    // an action now gives up when the controller's connection fails instead of waiting forever. Everything above about
+    // SessionResult still holds.
     // ⚠️ SAME RULE, ONE SUBSYSTEM OVER: see CALLED vs LAUNCHED at App.exceptionHandler. THE CODE
     // THAT KNOWS ABOUT THE FAILURE REPORTS IT - there it is why a CALLED extension method is attributed and
     // a LAUNCHED coroutine is not; here it is why the handler reports and the dispatch helper cannot.
@@ -222,15 +225,53 @@ class PlayerViewModel(
     // side could learn. If a new command handler is added, give its guards a classification HERE-style
     // rather than returning a bare error - a partially-reporting command surface is harder to reason
     // about than a uniformly silent one, because "no message" stops being evidence of anything.
+    // [CORRECTED 2026-11-14] It changed for the connection only (b1b80943): it may start one reconnect, and drops the
+    // action with [linkLostMessage] when the connection has failed. SessionResult handling is as described above.
     private fun withBrowser(block: suspend (MediaController) -> Unit) {
         viewModelScope.launch {
-            val browser = browser.first { it != null }!!
+            reconnectIfDead()
+            combine(browser, linkFailed) { controller, failed -> controller != null || failed }.first { it }
+            val browser = browser.value ?: return@launch app.messageFlow.emit(linkLostMessage)
             block(browser)
         }
     }
 
     private val context = app.context
-    val controllerFutureRelease = getController(app) { player ->
+
+    /**
+     * [2026-11-14] RECOVERY FROM A FAILED CONTROLLER CONNECTION (Crashlytics b1b80943: Android refused bindService at cold start,
+     * so Media3 rejected the connection inside buildAsync and nothing ever set [browser]). Before this, every [withBrowser]
+     * action then waited forever and the player's controls did nothing until the Activity was recreated.
+     * Now: [linkFailed] is true once an attempt has failed. While it is false and [browser] is null, an attempt is in flight
+     * and actions wait for it, as before. When it is true, the next user action ([withBrowser]) or return to the app
+     * (MainActivity.onStart) starts ONE new attempt, and actions waiting on an attempt that fails are DROPPED with
+     * [linkLostMessage], never replayed later by a connection that succeeds. All of this runs on the main thread
+     * (viewModelScope, MainActivity.onStart, and listenFuture's main executor), so the flags need no locking.
+     * THE CAP OF 3 IS A HARD LIMIT, NOT A TUNING VALUE: each attempt is a bindService with BIND_AUTO_CREATE, the build-1039
+     * service-creation storm (about 1,050 creations in a minute, OOM) was never explained, and on all six of those OOMs
+     * ctrl_conn was about equal to svc_create with last_controller_pkg our own package, so our own controllers are not ruled
+     * out as its driver (the user's history, 2026-11-14). No timer and no loop: an attempt starts only from a user action or
+     * an onStart, never from a failure. A user whose first connection succeeds never reaches a retry, since [browser] is set.
+     */
+    private val linkFailed = MutableStateFlow(false)
+    private var retriesLeft = 3
+
+    // [2026-11-14] ONE instance, not one per drop: setupSnackBar.createSnackBar refuses a message already up by IDENTITY,
+    // and SnackBarHandler.enqueue refuses one already queued by text, so repeated taps cannot stack copies of it.
+    private val linkLostMessage by lazy { Message(context.getString(R.string.player_unreachable)) }
+    private var controllerFutureRelease = connect(app.throwFlow)
+
+    fun reconnectIfDead() {
+        if (browser.value != null || !linkFailed.value || retriesLeft == 0) return
+        retriesLeft--
+        controllerFutureRelease()
+        linkFailed.value = false
+        controllerFutureRelease = connect(app.silentThrowFlow)
+    }
+
+    private fun connect(reportTo: MutableSharedFlow<Throwable>): () -> Unit = getController(
+        app, reportTo, onFailure = { linkFailed.value = true },
+    ) { player ->
         browser.value = player
         player.addListener(PlayerUiListener(player, this))
         // At-rest position seed (display half of the cold-start position fix). The controller reports

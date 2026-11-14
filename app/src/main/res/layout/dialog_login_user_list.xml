@@ -26,18 +26,6 @@
             app:title="@string/select_x_account"
             app:titleCentered="true" />
 
-        <!-- [2026-11-13] Phone only (LoginUserListBottomSheet): the long-press quick switch, said once here. -->
-        <TextView
-            android:id="@+id/switchHint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:alpha="0.66"
-            android:gravity="center"
-            android:text="@string/account_switch_hint"
-            android:textAppearance="?textAppearanceBodySmall"
-            android:visibility="gone" />
-
         <include
             android:id="@+id/accountListLoading"
             layout="@layout/item_loading"
@@ -98,7 +86,9 @@
 
         </com.google.android.material.button.MaterialButtonGroup>
 
-        <!-- [2026-11-13] Phone only: the header avatar opens this sheet now, so Settings stays one tap away. -->
+        <!-- [2026-11-13] Phone only: the header avatar opens this sheet now, so Settings stays one tap away.
+             [CORRECTED 2026-11-14] The avatar opens Settings again; kept for the routes from outside Settings
+             (LoginUserListBottomSheet's openSettings note). -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/openSettings"
             style="@style/Widget.Material3.Button.TextButton"

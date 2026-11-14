@@ -29,6 +29,15 @@ object ControllerHelper {
 
     val map = mutableMapOf<String, () -> Unit>()
 
+    // [2026-11-14] ONE CONNECTION ATTEMPT FOR THE PROCESS, ON PURPOSE FOR NOW (recorded with b1b80943, where PlayerViewModel
+    // gained a bounded reconnect; see PlayerViewModel.reconnectIfDead). `callback` is assigned once, synchronously, by the
+    // first register, so a failed connection leaves `controller` null for good and BaseWidget.onReceive returns at
+    // `ControllerHelper.controller ?: return`: the widget's buttons do nothing until the process restarts. Separately,
+    // unregister invokes `callback` but never sets it back to null, so once every widget is removed and one is added
+    // again, register never reconnects either, even after a first connection that succeeded. Both read from source, not
+    // seen on a device. NOT CHANGED, by the user's decision: in August the widget was ruled out as the cause of the
+    // build-1039 service-creation storm BECAUSE `callback` is assigned once, synchronously. A widget that reconnects
+    // would lose that property, so any fix here needs the same hard cap as reconnectIfDead and its own decision.
     @Synchronized
     fun register(app: App, key: String, updateCallback: () -> Unit): Job? {
         map[key] = updateCallback

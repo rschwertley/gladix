@@ -438,6 +438,10 @@ class ExtensionLoader(
         // OpenGonic: the one extension whose saved login is relabelled after setLoginUser (relabelStoredUser), and whose
         // accounts show their subtitle and announce a switch (AccountLabel.showsDetail).
         const val OPENGONIC_ID = "opengonic"
+
+        // [2026-11-14] The built-in Deezer extension's id, for AccountLabel.requiresAccount. The literal "deezer" elsewhere
+        // (this class's Metadata, CastSessionController.DEEZER_EXTENSION_ID) is left as it is.
+        const val DEEZER_ID = "deezer"
     }
 
 }

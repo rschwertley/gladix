@@ -270,6 +270,13 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
+    // [2026-11-14] At most one new player connection per return to the app, and only after one has failed (b1b80943; see
+    // PlayerViewModel.reconnectIfDead). With the player connected, or its first connection still in flight, this does nothing.
+    override fun onStart() {
+        super.onStart()
+        playerViewModel.reconnectIfDead()
+    }
+
     // SINGLE TV window-focus arbiter (warm resume, and cold-start window gain). Exactly one
     // destination per window-focus event: expanded player -> play/pause; otherwise -> visible feed.
     // Replaces both the feed RV's former onWindowFocusChanged and the former B3 player fallback, so

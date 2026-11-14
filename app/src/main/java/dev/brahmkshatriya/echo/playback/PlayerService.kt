@@ -1514,8 +1514,13 @@ class PlayerService : MediaLibraryService() {
         // Crashlytics, no snackbar, and no state change — which is why a service/controller churn loop
         // was invisible until it OOM'd the process (build 1039, 2026-08-23). Routing to app.throwFlow
         // gives it the same non-fatal path as every other reported error.
+        // [2026-11-14] [reportTo] and [onFailure] are for PlayerViewModel.reconnectIfDead (b1b80943): a retry reports to
+        // app.silentThrowFlow so it is recorded without a second raw snackbar, and [onFailure] runs on the main thread after
+        // the report. The defaults leave the widget and notification-resume callers exactly as they were.
         fun getController(
             app: App,
+            reportTo: MutableSharedFlow<Throwable> = app.throwFlow,
+            onFailure: () -> Unit = {},
             block: (MediaController) -> Unit,
         ): () -> Unit {
             val context = app.context
@@ -1527,7 +1532,8 @@ class PlayerService : MediaLibraryService() {
                     it.printStackTrace()
                     // scope.launch bridges the non-suspend callback to the suspending emit; runCatching so
                     // a failure to record can never re-crash the caller (often a BroadcastReceiver).
-                    runCatching { app.scope.launch { app.throwFlow.emit(it) } }
+                    runCatching { app.scope.launch { reportTo.emit(it) } }
+                    onFailure()
                     return@listenFuture
                 }
                 block(controller)
