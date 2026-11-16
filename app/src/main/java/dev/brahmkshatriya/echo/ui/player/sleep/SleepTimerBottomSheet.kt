@@ -14,11 +14,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.edit
 import androidx.core.view.doOnLayout
-import androidx.media3.common.C
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.databinding.DialogPlayerSleepTimerBinding
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
@@ -62,6 +62,10 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
 
         binding.okay.setOnClickListener { saveAndDismiss(rulerTime) }
         binding.endOfTrack.setOnClickListener { setTimerAndDismiss(Long.MAX_VALUE) }
+        // [2026-11-15] Not for a live item, which never ends, nor while casting, where the pause at the end of the item has no
+        // effect on the receiver (PlayerCallback.startEndOfSong; both the user's decision).
+        binding.endOfTrack.isVisible =
+            viewModel.browser.value?.isCurrentMediaItemLive != true && !CastState.isCasting
         binding.min15.setOnClickListener { saveAndDismiss(15) }
         binding.min30.setOnClickListener { saveAndDismiss(30) }
         binding.min45.setOnClickListener { saveAndDismiss(45) }
@@ -76,6 +80,11 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         // sets and clears; observe's collectLatest cancels the ticking loop whenever it changes.
         viewLifecycleOwner.observe(viewModel.playerState.sleepTimerEndsAt) { endsAt ->
             binding.sleepTimerRunning.isVisible = endsAt != null
+            // [2026-11-15] An end-of-track timer shows no countdown (1181 report; see onDismiss).
+            if (endsAt != null && viewModel.playerState.sleepAtEndOfSong) {
+                binding.sleepTimerRemaining.text = getString(R.string.sleep_timer_stops_end_of_song)
+                return@observe
+            }
             while (endsAt != null) {
                 val left = requireContext().timeLeft(endsAt) ?: break
                 binding.sleepTimerRemaining.text = getString(R.string.sleep_timer_x_left, left)
@@ -130,12 +139,12 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
         viewModel.setSleepTimer(chosen)
         val message = when (chosen) {
             0L -> getString(R.string.sleep_timer_cancelled)
-            Long.MAX_VALUE -> {
-                val until = viewModel.browser.value?.run {
-                    (duration.takeIf { it != C.TIME_UNSET } ?: 0) - currentPosition
-                } ?: 0
-                getString(R.string.sleep_timer_set_for, requireContext().createString(until))
-            }
+            // [2026-11-15] NO NUMBER FOR END OF TRACK (1181 report: "Sleep timer set for X minutes" with X rounded, and
+            // "Sleep timer set for  minutes", blank, under a minute). It used to format the song's remaining time with
+            // createString, which floored to whole minutes and wrote nothing at all for 0. The stop is the end of the song,
+            // so the message says that. The sheet's countdown and the player ⋮ entry say the same, through
+            // PlayerState.sleepAtEndOfSong.
+            Long.MAX_VALUE -> getString(R.string.sleep_timer_set_end_of_song)
 
             else -> getString(R.string.sleep_timer_set_for, requireContext().createString(chosen))
         }
@@ -166,8 +175,10 @@ class SleepTimerBottomSheet : BottomSheetDialogFragment() {
             return createString((left + 59_999) / 60_000 * 60_000)
         }
 
+        // [2026-11-15] Rounds a part minute UP, as timeLeft does, so a positive time is never blank (1181 report). Whole
+        // minutes, which is every ruler, preset and scheduled value, are unchanged.
         private fun Context.createString(ms: Long): String {
-            val minutes = ms / 1000 / 60
+            val minutes = (ms + 59_999) / 60_000
             val hrs = minutes / 60
             val min = minutes % 60
             val str = StringBuilder()

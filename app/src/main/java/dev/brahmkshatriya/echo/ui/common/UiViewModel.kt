@@ -116,6 +116,12 @@ class UiViewModel(
     val isMainFragment = MutableStateFlow(true)
     var isRail = false
 
+    // [2026-11-15] True from a nav-tab tap's pop-to-root until that pop is reported, so ExtensionInfoFragment's
+    // expandPlayerOnPop does not expand the player for a page the tap removed. Set and cleared in setupNavBarAndInsets.
+    // Read in fragment 1.9.1 FragmentManager.executeOpsTogether: onBackStackChangeCommitted (:2167) is called before
+    // reportBackStackChanged (:2218), so the page reads it before the clear. Main thread only.
+    var poppingToRoot = false
+
     // Set ONLY by MainActivity.setupTvMiniPlayer, which returns early unless the TV-only tvMiniPlayer view
     // exists (layout-land-television/activity_main.xml), so it is false for the life of a phone process -
     // portrait AND landscape. Declared ABOVE [combined] because combined's initializer reads it.
@@ -694,12 +700,15 @@ class UiViewModel(
                 uiViewModel.navigation.value = uiViewModel.navIds.indexOf(it.itemId)
                 true
             }
+            // [2026-11-15] Clears poppingToRoot (see it) once the pop below is reported.
+            supportFragmentManager.addOnBackStackChangedListener { uiViewModel.poppingToRoot = false }
             var lastTappedItemId: Int? = null
             navView.menu.forEach {
                 val itemIndex = uiViewModel.navIds.indexOf(it.itemId)
                 val itemId = it.itemId
                 findViewById<View>(it.itemId).setOnClickListener { _ ->
                     if (!uiViewModel.isMainFragment.value) {
+                        uiViewModel.poppingToRoot = true
                         supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
                     }
                     val isCurrentTab = navView.selectedItemId == itemId

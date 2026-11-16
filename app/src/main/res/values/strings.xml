@@ -285,8 +285,6 @@
 
     <string name="animation">Animation</string>
 
-    <string name="back_animations">Back Animations</string>
-    <string name="back_animations_summary">Can cause visual bug due to android, but you can just open recents to fix it.</string>
 
     <string name="animations">Animations</string>
     <string name="animations_summary">Feeling too much stutter? turning this off, might help</string>
@@ -369,6 +367,10 @@
     <string name="turn_off_timer">Turn off timer</string>
     <string name="sleep_timer_x_left">%1$s left</string>
     <string name="sleep_timer_with_left">%1$s · %2$s left</string>
+    <!-- [2026-11-15] End-of-track timers (1181 report): no number, since the stop is tied to the song, not a duration. -->
+    <string name="sleep_timer_set_end_of_song">Sleep timer set: stops at the end of this song</string>
+    <string name="sleep_timer_stops_end_of_song">Stops at the end of this song</string>
+    <string name="sleep_timer_with_end_of_song">%1$s · end of song</string>
     <string name="search_x">Search %1$s</string>
     <string name="n_hours">%1$d hours</string>
     <plurals name="number_hour">
@@ -414,6 +416,8 @@
 
     <string name="radio">Radio</string>
     <string name="folder">Folder</string>
+    <string name="folder_x">Folder: %1$s</string>
+    <string name="go_to_folder">Go to folder</string>
     <string name="download">Download</string>
 
     <string name="follow">Follow</string>

@@ -4,7 +4,10 @@ import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.DiffUtil
 
 data class MoreButton(
-    val id: String, val title: String, val icon: Int, val enabled: Boolean = true
+    val id: String, val title: String, val icon: Int, val enabled: Boolean = true,
+    // [2026-11-15] An information row: shown at full colour, but not clickable or focusable (MoreButtonAdapter), unlike a
+    // disabled one, which is greyed. First used for the song menu's "Folder: <title>" (MediaMoreBottomSheet.getFolderButtons).
+    val info: Boolean = false,
 ) {
     var onClick: () -> Unit = {}
 

@@ -28,6 +28,7 @@ import dev.brahmkshatriya.echo.ui.extensions.login.LoginFragment
 import dev.brahmkshatriya.echo.ui.settings.TvPairingFragment
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListBottomSheet
 import dev.brahmkshatriya.echo.ui.extensions.login.LoginUserListViewModel
+import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel
 import dev.brahmkshatriya.echo.ui.extensions.login.AccountLabel.accountLabelInline
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
@@ -153,6 +154,14 @@ class ExtensionInfoPreference(
                         .show()
                 }
 
+                // [2026-11-15] The same action as the account sheet's "Use without an account" row
+                // (LoginUserListBottomSheet's withoutAccount: setLoginUser with a null user), so on a phone it carries the
+                // same words and the same Nov 14 AccountLabel.requiresAccount decision: hidden for Deezer and OpenGonic,
+                // which do nothing without an account. A TV keeps the button as before, labelled Incognito, like the
+                // sheet's TV toolbar icon.
+                val phone = !requireContext().isTv()
+                binding.incognito.isVisible = !phone || !AccountLabel.requiresAccount(ext?.id)
+                binding.incognito.setText(if (phone) R.string.use_without_account else R.string.incognito)
                 binding.incognito.setOnClickListener {
                     ext ?: return@setOnClickListener
                     viewModel.setLoginUser(CurrentUser(ext.type, ext.id, null))

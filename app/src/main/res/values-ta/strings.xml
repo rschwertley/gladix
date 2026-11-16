@@ -154,8 +154,6 @@
     <string name="scroll_bar">உருள் பட்டி</string>
     <string name="scroll_bar_summary">வேகமான இசைவுக்கு பக்கத்தில் உருள் (தடுமாற்றமாக இருக்கலாம்)</string>
     <string name="animation">அசைவூட்டம்</string>
-    <string name="back_animations">பின் அசைவூட்டங்கள்</string>
-    <string name="back_animations_summary">ஆண்ட்ராய்டு காரணமாகக் காட்சி பிழையை ஏற்படுத்தக்கூடும், ஆனால் அதைச் சரிசெய்ய நீங்கள் முன்னணிகளைத் திறக்கலாம்.</string>
     <string name="animations">அசைவூட்டங்கள்</string>
     <string name="animations_summary">அதிகமாகத் தடுமாறுகிறதா? இதை அணைப்பது, உதவக்கூடும்</string>
     <string name="refresh">புதுப்பி</string>

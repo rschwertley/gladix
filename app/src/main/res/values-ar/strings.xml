@@ -155,8 +155,6 @@
     <string name="show_background">إظهار الخلفية</string>
     <string name="show_background_summary">فيديو الخلفية او الغلاف الضبابي الخاص بالاغنية على المشغل</string>
     <string name="animation">حركات</string>
-    <string name="back_animations">تنقلات الرجوع للخلف</string>
-    <string name="back_animations_summary">قد يتسبب ذلك في حدوث خلل بصري بسبب نظام Android، ولكن يمكنك فقط فتح التطبيقات الأخيرة لإصلاحه.</string>
     <string name="animations">تنقلات</string>
     <string name="enabled">مفعل</string>
     <string name="disabled">معطل</string>

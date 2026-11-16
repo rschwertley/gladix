@@ -33,6 +33,10 @@ data class PlayerState(
      * [2026-11-13] The running sleep timer is "end of song" (PlayerCallback.onSleepTimer's Long.MAX_VALUE). Written with
      * [sleepTimerEndsAt], by the same code and cleared with it; read by CrossfadeController.armRefusal through PlayerService,
      * so no crossfade arms while it runs (the timer is timed to the end of the file, which the switch comes before).
+     * [CORRECTED 2026-11-15] Not a timed delay any more: PlayerCallback.startEndOfSong pauses at the end of the current item
+     * (Media3's pause at end of media items). The refusal still holds, for a new reason: a crossfade moves to the next item
+     * before this one ends, so the pause would land at the end of the NEXT song. Written and cleared by startEndOfSong /
+     * endEndOfSong and onSleepTimer.
      */
     @Volatile
     var sleepAtEndOfSong = false

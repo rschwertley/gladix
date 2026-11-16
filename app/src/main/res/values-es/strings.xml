@@ -291,7 +291,6 @@
     <string name="check_for_updates">Buscar actualizaciones</string>
     <string name="check_for_updates_summary">Busque nuevas actualizaciones tanto de la aplicación como de las extensiones cuando abra la aplicación.</string>
     <string name="checking_for_updates">Buscando actualizaciones</string>
-    <string name="back_animations_summary">Puede causar un error visual debido a Android, pero puedes abrir Recientes para solucionarlo.</string>
     <string name="n_hours">%1$d Horas</string>
     <string name="n_minutes">%1$d minutos</string>
     <string name="hidden_x">Ocultar %1$s</string>
@@ -366,7 +365,6 @@
         <item quantity="other">%1$d Elementos</item>
     </plurals>
     <string name="scroll_bar">Barra de desplazamiento</string>
-    <string name="back_animations">Animaciones de retroceso</string>
     <plurals name="number_episodes">
         <item quantity="one">%1$d Episodio</item>
         <item quantity="many">%1$d Episodios</item>

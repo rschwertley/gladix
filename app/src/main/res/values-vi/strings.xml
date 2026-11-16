@@ -133,7 +133,6 @@
     <string name="scroll_bar">Thanh cuộn</string>
     <string name="scroll_bar_summary">Thanh cuộn để lướt danh sách nhanh hơn (có thể không được mượt)</string>
     <string name="animation">Hiệu ứng động</string>
-    <string name="back_animations">Khi quay lại</string>
     <string name="x_was_not_granted">%1$s đã không được cấp phép</string>
     <string name="tabs">Tab</string>
     <string name="show_tabs">Hiển thị Tab</string>
@@ -155,7 +154,6 @@
     <string name="downloaded_x">Đã tải xuống %1$s</string>
     <string name="ui">UI</string>
     <string name="custom_colors">Màu sắc tùy chỉnh</string>
-    <string name="back_animations_summary">Có thể gây ra lỗi hiển thị (do Android), nhưng bạn chỉ cần mở Quản lý tác vụ để khắc phục.</string>
     <string name="animations">Hiệu ứng động</string>
     <string name="refresh">Làm mới</string>
     <string name="x_disabled">%1$s (đã tắt)</string>

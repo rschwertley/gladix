@@ -174,6 +174,35 @@ class DeezerGatewayException(
     // DeezerAuthRejectedException's note makes for testing a type rather than a sentence.
     val isUserAuthRequired: Boolean
         get() = errorText.contains("NEED_USER_AUTH_REQUIRED", ignoreCase = true)
+
+    // [2026-11-14] A PLAYLIST THIS ACCOUNT CANNOT OPEN, NOT A FAULT (Crashlytics dc8c93d2, 1179: deezer_gateway
+    // `gw=deezer.pagePlaylist err=PERMISSION_ERROR` "user not allowed to access playlist"). Someone else's private
+    // playlist, or one made private or deleted. callApi turns it into DeezerPlaylistUnavailableException, whose message the
+    // user sees and which App.kt does not report. It reaches the user from DeezerPlaylistClient.loadPlaylist and
+    // DeezerRadioClient.radio's Playlist branch; the other two pagePlaylist callers (DeezerRadioClient.loadTracks and
+    // radio's context branch) already swallow every error in runCatching.
+    // ⚠️ MATCHED ON THE CODE, NOT DEEZER'S SENTENCE (the September rule): a rewording must not silently send it back to
+    // the generic report. The code alone, as [isUserAuthRequired] argues, because it names one condition.
+    // ⚠️ SCOPED TO deezer.pagePlaylist ON PURPOSE. No open-source client was found that branches on PERMISSION_ERROR
+    // (dzr, d-fi-core, deemix's deezer-sdk and upstream echo-deezer-extension, searched 2026-11-14), so what it means on
+    // any other method is unknown. Another method's PERMISSION_ERROR stays a DeezerGatewayException on the reported path,
+    // so its first sighting arrives as a report that can say what it means. Widen only against an observed error string.
+    // ⚠️ ACCEPTED EDGE CASE (the user's decision, 2026-11-14): a session that has quietly become anonymous (user "0")
+    // opening the user's own private playlist may get this too, and would see "private or no longer available" rather
+    // than a sign-in prompt. loadPlaylist's handleArlExpiration throws LoginRequired only for EMPTY credentials.
+    val isPlaylistNotAccessible: Boolean
+        get() = method == "deezer.pagePlaylist" && errorText.contains("PERMISSION_ERROR", ignoreCase = true)
+}
+
+/**
+ * [2026-11-14] Deezer refused to open a playlist for this account: see DeezerGatewayException.isPlaylistNotAccessible.
+ * Its own type, not a DeezerGatewayException, so it never reaches the catch sites that test those predicates, and so
+ * App.kt can skip reporting it with an `is` check. Two strings, as for DeezerGatewayException: `message` is for the
+ * user, `errorText` is for the log and rides on toString().
+ */
+class DeezerPlaylistUnavailableException(val errorText: String) :
+    Exception("This playlist is private or no longer available.") {
+    override fun toString() = "DeezerPlaylistUnavailableException(error=$errorText)"
 }
 
 /**
@@ -799,6 +828,9 @@ class DeezerApi(private val session: DeezerSession) {
                     }
                     throw ClientException.LoginRequired()
                 }
+                // [2026-11-14] After the auth exit, so NEED_USER_AUTH_REQUIRED still goes to re-login and Sign in. See
+                // DeezerGatewayException.isPlaylistNotAccessible.
+                if (gatewayError.isPlaylistNotAccessible) throw DeezerPlaylistUnavailableException(errorText)
                 throw gatewayError
             }
             result

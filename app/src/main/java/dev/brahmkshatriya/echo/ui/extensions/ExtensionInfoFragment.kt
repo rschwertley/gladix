@@ -1,6 +1,10 @@
 package dev.brahmkshatriya.echo.ui.extensions
 
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -8,7 +12,6 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
 import com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN
@@ -89,6 +92,7 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
 
         // [2026-11-08] Set only by the player's extension icon (PlayerFragment.applyCurrent): Back and the toolbar arrow return
         // to the expanded player instead of the page under this one (returnToPlayer). Settings -> Extensions never sets it.
+        // [CORRECTED 2026-11-15] Now done by expandPlayerOnPop after the pop commits; the key's name and value are unchanged.
         const val RETURN_TO_PLAYER = "returnToPlayer"
 
         // ⚠️ SAYS SO WHEN NOTHING CAN OPEN THE LINK (2026-10-31). It used to swallow the failure, so on a TV with no
@@ -104,42 +108,45 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
 
     private val returnsToPlayer by lazy { args.getBoolean(RETURN_TO_PLAYER, false) }
     private val uiViewModel by activityViewModel<UiViewModel>()
-    private var playerBack: OnBackPressedCallback? = null
+    // [2026-11-15] Set by Uninstall just before its pop, so leaving this page that way does not expand the player.
+    private var skipReturnToPlayer = false
 
     /**
      * [2026-11-08] Opened from the player's icon: leave this page and expand the player again. openFragment collapsed it on
      * the way in. Not when the queue was cleared meanwhile (the player is hidden): then only the pop, as before. Reached from
      * the Back gesture (playerBack) and the toolbar arrow (onNavigateUp), never from a nav-tab tap, which pops the whole
      * stack itself (UiViewModel's nav item listener), nor from Uninstall, which pops directly.
+     * [CORRECTED 2026-11-15] There is no playerBack and no returnToPlayer any more. With predictive back on for everyone, a
+     * callback that took the gesture to pop and expand stopped the page following the finger (the Nov 8-9 notes recorded
+     * that loss as inferred). Now the FragmentManager's own callback runs the pop, so the page's transition follows the
+     * swipe, and this listener expands the player once the pop is COMMITTED. The toolbar arrow falls through to
+     * BaseSettingsFragment.onNavigateUp's popBackStack and lands here too. The exclusions are unchanged: Uninstall sets
+     * skipReturnToPlayer, and the nav-tab tap sets UiViewModel.poppingToRoot. This listener is expandPlayerOnPop.
+     * Read in fragment 1.9.1 FragmentManager.java: onBackStackChangeCommitted fires for an ordinary pop (:2167) and for a
+     * completed predictive gesture (:870); a cancelled gesture fires only onBackStackChangeCancelled (:1062), so a cancel
+     * never expands. It is called for EVERY fragment in the popped record, which includes the page shown again underneath, so
+     * popping a page opened from here also reaches this with fragment === this. isRemoving is what tells the two apart (the
+     * listener's own doc). When both flags are clear it fires once per pop of this page.
      */
-    private fun returnToPlayer() {
-        parentFragmentManager.popBackStack()
-        if (uiViewModel.playerSheetState.value != STATE_HIDDEN) uiViewModel.changePlayerState(STATE_EXPANDED)
-    }
-
-    override fun onNavigateUp() {
-        if (returnsToPlayer) returnToPlayer() else super.onNavigateUp()
-    }
-
-    // Off while the player is expanded (BaseSettingsFragment's own callback collapses it, as on every page) and while a page
-    // opened from here covers this one, so its Back is unchanged.
-    private fun updatePlayerBack() {
-        playerBack?.isEnabled = !isHidden && uiViewModel.playerSheetState.value != STATE_EXPANDED
-    }
-
-    override fun onHiddenChanged(hidden: Boolean) {
-        super.onHiddenChanged(hidden)
-        updatePlayerBack()
+    private val expandPlayerOnPop = object : FragmentManager.OnBackStackChangedListener {
+        override fun onBackStackChanged() {}
+        override fun onBackStackChangeCommitted(fragment: Fragment, pop: Boolean) {
+            val page = this@ExtensionInfoFragment
+            if (fragment !== page || !pop || !page.isRemoving) return
+            if (skipReturnToPlayer || uiViewModel.poppingToRoot) return
+            if (uiViewModel.playerSheetState.value != STATE_HIDDEN) uiViewModel.changePlayerState(STATE_EXPANDED)
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         if (returnsToPlayer) {
-            // Added after super's callback, so it is asked first; the dispatcher calls the newest enabled one.
-            playerBack = object : OnBackPressedCallback(false) {
-                override fun handleOnBackPressed() = returnToPlayer()
-            }.also { requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it) }
-            observe(uiViewModel.playerSheetState) { updatePlayerBack() }
+            val fragmentManager = parentFragmentManager
+            fragmentManager.addOnBackStackChangedListener(expandPlayerOnPop)
+            viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) =
+                    fragmentManager.removeOnBackStackChangedListener(expandPlayerOnPop)
+            })
         }
         observe(viewModel.stateFlow) { state ->
             val extension = state?.extension ?: return@observe
@@ -159,6 +166,7 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
                             .setMessage(R.string.remove_extension_keeps_data)
                             .setNegativeButton(R.string.cancel, null)
                             .setPositiveButton(R.string.remove) { _, _ ->
+                                skipReturnToPlayer = true
                                 parentFragmentManager.popBackStack()
                                 extensionsViewModel.uninstall(requireActivity(), extension)
                             }

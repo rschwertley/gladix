@@ -296,8 +296,6 @@
     <string name="check_for_updates">আপডেটৰ বাবে চেক কৰক</string>
     <string name="check_for_updates_summary">এপ আৰু এক্সটেনশ্যনৰ নতুন আপডেটৰ বাবে পৰীক্ষা কৰক, যেতিয়া এপ খোলা হয়।</string>
     <string name="checking_for_updates">আপডেটৰ বাবে চেক কৰা হৈ আছে</string>
-    <string name="back_animations">বেক এনিমেশ্যন</string>
-    <string name="back_animations_summary">এণ্ড্ৰইডৰ বাবে ভিজুৱেল বাগ হ’ব পাৰে, কিন্তু ৰিচেণ্ট খোলাৰ দ্বাৰা ঠিক কৰিব পাৰি।</string>
     <string name="regex_invalid">%1$s ইনভেলিড, অনুগ্ৰহ কৰি ৰেজেক্স ফ’ল’ কৰক: %2$s</string>
     <string name="n_hours">%1$d ঘণ্টা</string>
     <string name="n_minutes">%1$d মিনিট</string>

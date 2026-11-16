@@ -71,8 +71,6 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 
 open class MainActivity : AppCompatActivity() {
 
-    class Back : MainActivity()
-
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
     private val uiViewModel by viewModel<UiViewModel>()
     private val app by inject<App>()
@@ -501,7 +499,7 @@ open class MainActivity : AppCompatActivity() {
             return builder.build()
         }
 
-        const val BACK_ANIM = "back_anim"
+        // [2026-11-15] BACK_ANIM ("back_anim") and the Back class are gone with the setting; the stored value is left unread.
 
         // Picks the Back-animation launcher variant when the BACK_ANIM pref is on — but Back's <activity> is
         // android:enabled="false" by default and only ENABLED at runtime by the settings toggle
@@ -547,18 +545,30 @@ open class MainActivity : AppCompatActivity() {
         // divergent install stays divergent and keeps working. Writing to a settings-owned area from a read
         // path reached by a notification builder and a Worker is a different change; if it is wanted it
         // belongs in SettingsLookFragment.changeEnabledComponent's screen, on its own pass.
+        //
+        // ⚠⚠ [CORRECTED 2026-11-15] THE SETTING IS RETIRED, AND SO IS MOST OF THE ABOVE. Predictive back is on for everyone,
+        // and MainActivity$Back is now a filter-less <activity-alias> of MainActivity (AndroidManifest, at the alias). Three
+        // claims change:
+        //   1. "NO SELF-HEAL" is reversed by the user's decision: LauncherEntryReset re-enables MainActivity after the update,
+        //      off the main thread, and leaves the alias alone.
+        //   2. "a reinstall/update reverts Back to the manifest default" (1bff9b02) looks wrong for an update. The stored
+        //      component state survives an update and is cleared only by uninstalling (inference). The reset exists because of
+        //      that.
+        //   3. There is no pref to consult. This now returns MainActivity unless PackageManager says it is DISABLED, and then
+        //      the alias. That covers the window before the reset runs, and a reset that failed. Opening the alias opens
+        //      MainActivity, so either answer gets predictive back.
 
         /**
          * Usability of one half of the launcher pair: true/false when PackageManager answers, null when the
          * query itself fails. [enabledByManifest] is what COMPONENT_ENABLED_STATE_DEFAULT means for THIS
-         * component - true for MainActivity, false for Back. DISABLED, and the app-level DISABLED_USER /
+         * component - true for MainActivity, false for the $Back alias. DISABLED, and the app-level DISABLED_USER /
          * DISABLED_UNTIL_USED which cannot apply to a component, all read as unusable.
          */
         private fun Context.isUsable(
-            clazz: Class<out MainActivity>, enabledByManifest: Boolean
+            component: ComponentName, enabledByManifest: Boolean
         ): Boolean? {
             val state = runCatching {
-                packageManager.getComponentEnabledSetting(ComponentName(this, clazz))
+                packageManager.getComponentEnabledSetting(component)
             }.getOrNull() ?: return null
             return when (state) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
@@ -567,30 +577,15 @@ open class MainActivity : AppCompatActivity() {
             }
         }
 
-        // ⚠⚠ RESOLVES ON THE COMPONENT STATE. THE PREF IS A PREFERENCE, NOT A FACT ABOUT
-        // PackageManager - that conflation is what the correction above is about. The order is the whole
-        // design:
-        //   1. pref on AND Back KNOWN usable     -> Back          the feature, working as intended
-        //   2. MainActivity not KNOWN disabled   -> MainActivity  true or unknown; every prior build
-        //   3. MainActivity KNOWN disabled       -> Back          the divergence rescue
-        //   4. both KNOWN disabled               -> MainActivity  unreachable; nothing to pick
-        // Step 2 accepts UNKNOWN deliberately: with no evidence, follow the manifest, which is what every
-        // build before this one did. Step 3 accepts an UNKNOWN Back over a KNOWN-disabled MainActivity
-        // because certain failure loses to possible failure - and by the pair invariant, MainActivity being
-        // disabled means the toggle enabled Back in that same call.
-        // Step 4 is spelled out rather than folded into step 2's else so it is visible that it was
-        // considered: nothing in the app disables both, and if something did there would be no activity to
-        // start and nothing this function could do about it.
-        fun Context.getMainActivity(): Class<out MainActivity> {
-            val prefersBack = getSettings().getBoolean(BACK_ANIM, false)
-            val backUsable = isUsable(Back::class.java, enabledByManifest = false)
-            val mainUsable = isUsable(MainActivity::class.java, enabledByManifest = true)
-            return when {
-                prefersBack && backUsable == true -> Back::class.java
-                mainUsable != false -> MainActivity::class.java
-                backUsable != false -> Back::class.java
-                else -> MainActivity::class.java
-            }
+        // ⚠⚠ RESOLVES ON THE COMPONENT STATE (see the correction above). Unknown counts as usable for MainActivity, as
+        // before: with no evidence, follow the manifest. The alias is only returned when MainActivity is KNOWN disabled and
+        // the alias is not KNOWN disabled; if both are, nothing can be started and MainActivity is returned as before.
+        fun Context.getMainActivity(): ComponentName {
+            val main = ComponentName(this, MainActivity::class.java)
+            val alias = ComponentName(this, MainActivity::class.java.name + "\$Back")
+            val mainUsable = isUsable(main, enabledByManifest = true)
+            val aliasUsable = isUsable(alias, enabledByManifest = false)
+            return if (mainUsable == false && aliasUsable != false) alias else main
         }
     }
 }

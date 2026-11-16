@@ -293,8 +293,6 @@
     <string name="check_for_updates">업데이트 확인</string>
     <string name="check_for_updates_summary">앱을 실행할 때, 앱과 확장 기능의 새 업데이트를 확인합니다.</string>
     <string name="checking_for_updates">업데이트 확인 중</string>
-    <string name="back_animations">뒤로가기 애니메이션</string>
-    <string name="back_animations_summary">안드로이드 문제로 시각적 버그가 발생할 수 있지만, 최근 앱 화면을 열면 해결할 수 있습니다.</string>
     <string name="regex_invalid">%1$s 값이 올바르지 않습니다. 다음 정규식을 따라야 합니다: %2$s</string>
     <string name="n_hours">%1$d시간</string>
     <string name="n_minutes">%1$d분</string>

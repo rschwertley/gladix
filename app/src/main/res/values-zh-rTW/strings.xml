@@ -296,8 +296,6 @@
     <string name="colors">顏色</string>
     <string name="scroll_bar">捲軸</string>
     <string name="scroll_bar_summary">側邊捲軸以便更快存取（可能會有小故障）</string>
-    <string name="back_animations">返回動畫</string>
-    <string name="back_animations_summary">可能會因為 Android 而導致視覺錯誤，但您只要打開最近記錄即可修復。</string>
     <string name="regex_invalid">%1$s 無效，請依照正則表達式：%2$s</string>
     <string name="n_hours">%1$d 小時</string>
     <string name="n_minutes">%1$d 分鐘</string>

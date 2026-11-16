@@ -152,6 +152,9 @@ class MainApplication : Application(), KoinStartup, SingletonImageLoader.Factory
         // would be WRONG, not because backup itself is.
         AppUpdater.recordSelfUpdateOnLaunch(this, settings)
         applyLocale(settings)
+        // [2026-11-15] The fallback for LauncherEntryReset.UpdateReceiver, for an update that landed before unlock. Here, on
+        // the after-unlock path, and on its own thread (see LauncherEntryReset).
+        LauncherEntryReset.runAsync(this)
         // ⚠⚠ LOOKS LIKE THE BUILD-974 CRASH SHAPE AND IS NOT. EXAMINED TWICE; LEAVE IT.
         // A bare CoroutineScope(Dispatchers.IO) has no CoroutineExceptionHandler, so a throw inside it
         // reaches the DEFAULT UNCAUGHT HANDLER and kills the process — which is how a Spotify 500 became a

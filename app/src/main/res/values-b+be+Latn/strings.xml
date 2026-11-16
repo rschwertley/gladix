@@ -156,8 +156,6 @@
     <string name="scroll_bar">Pałasa prakrutki</string>
     <string name="scroll_bar_summary">Pałasa prakrutki ŭzboč dla chutkaha dostupu (moža pracavać z pamyłkami)</string>
     <string name="animation">Animacyja</string>
-    <string name="back_animations">Animacyi zvarotu</string>
-    <string name="back_animations_summary">Moža vyklikać vizualnuju pamyłku na Android, ale vy možacie prosta adkryć Niadaŭnija, kab heta vypravić.</string>
     <string name="animations">Animacyi</string>
     <string name="animations_summary">Adčuvajecie zatrymki dadatku? Adkluczycie heta, moža dapamahčy</string>
     <string name="refresh">Abnavić</string>

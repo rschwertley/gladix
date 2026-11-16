@@ -15,6 +15,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Rating
 import androidx.media3.common.ThumbRating
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaButtonReceiver
 import androidx.media3.session.MediaNotification
@@ -77,6 +78,7 @@ import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverShuffle
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.hasSavedQueue
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverTracks
 import dev.brahmkshatriya.echo.playback.exceptions.PlayerException
+import dev.brahmkshatriya.echo.cast.CastState
 import dev.brahmkshatriya.echo.playback.listener.LateAppendResume
 import dev.brahmkshatriya.echo.playback.listener.PlayerRadio
 import dev.brahmkshatriya.echo.utils.CoroutineUtils.future
@@ -89,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -115,7 +118,17 @@ class PlayerCallback(
      * AudioFocusListener.onTransportIntent.
      */
     private val onTransportIntent: () -> Unit = {},
+    // [2026-11-15] The local ExoPlayer, for the end-of-track sleep timer's pause at the end of the item (startEndOfSong).
+    private val localPlayer: ExoPlayer? = null,
 ) : AndroidAutoCallback(app, scope, extensions.music, downloadFlow) {
+
+    init {
+        // [2026-11-15] A cast session starting or ending cancels an end-of-track timer (the user's decision; see
+        // startEndOfSong). drop(1) skips the current value, so only a change cancels.
+        scope.launch(Dispatchers.Main) {
+            CastState.castingFlow.drop(1).collect { if (state.sleepAtEndOfSong) endEndOfSong() }
+        }
+    }
 
     override val historyRepository: HistoryRepository get() = histRepo
 
@@ -619,17 +632,20 @@ class PlayerCallback(
     private fun onSleepTimer(player: Player, ms: Long): ListenableFuture<SessionResult> {
         LateAppendResume.clear()
         timerJob?.cancel()
+        stopPauseAtEnd()
         val time = when (ms) {
             0L -> {
                 state.sleepTimerEndsAt.value = null
                 state.sleepAtEndOfSong = false
                 return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
             }
-            Long.MAX_VALUE -> player.run { duration - currentPosition }
+            Long.MAX_VALUE -> return startEndOfSong()
             else -> ms
         }
         // [2026-11-13] See PlayerState.sleepAtEndOfSong: no crossfade while an end-of-song timer runs.
-        state.sleepAtEndOfSong = ms == Long.MAX_VALUE
+        // [CORRECTED 2026-11-15] A minute timer only now; end of song is startEndOfSong. Written false BEFORE the new end
+        // time, so a minute timer replacing an end-of-song one never shows "end of song".
+        state.sleepAtEndOfSong = false
 
         // The end time the UI shows (PlayerState.sleepTimerEndsAt). Cleared in `finally` whichever way this job
         // ends - fired, replaced, cancelled, or the service scope dying - but only if it is still THIS timer's
@@ -652,6 +668,70 @@ class PlayerCallback(
             }
         }
         return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+    }
+
+    /**
+     * [2026-11-15] "END OF TRACK" STOPS WHEN THE SONG ACTUALLY ENDS (the user's decision, from the 1181 sleep-timer report).
+     * It used to be a fixed delay of duration - position taken when it was set, so a later skip or seek moved the song's end
+     * but not the stop, and an unknown duration made the delay negative and stopped playback at once. Now it is Media3's
+     * pause at the end of the current item, on the LOCAL ExoPlayer ([localPlayer]; the session player can be
+     * CastSwitchPlayer). Read in media3-exoplayer 1.11.1 ExoPlayerImplInternal: with the flag on, the player does not move to
+     * the next item while a pause is pending (shouldAdvancePlayingPeriod, :3390-3395), and the pause fires when the item's
+     * rendering has ended, an unknown duration included, with reason PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+     * (:1513-1526). The pending pause is recomputed when the playing item changes, so after a skip or Next it is the end of
+     * the song playing then. Turning the flag on while the next item is already being read flushes the renderers
+     * (setPauseAtEndOfWindowInternal, :1249-1253), so a timer set in a song's last seconds may give a short audio gap
+     * (inference about audibility).
+     * ⚠⚠ sleepAtEndOfSong AND BOTH CROSSFADE REFUSALS STAY (CrossfadeController's armRefusal and its armed-tick check):
+     * a crossfade switches to the next song BEFORE this one's end, and the pause would then move to the end of the next one.
+     * Set while a crossfade is already ACTIVE (the switch has happened): main is on the incoming song, the one the player
+     * shows, so playback stops at the end of that song; the outgoing tail fades out on the sidecar as usual. Accepted, not
+     * aborted: "this song" is the one on screen.
+     * ⚠️ WHILE CASTING IT IS NOT SET: the local flag does nothing to the receiver. The sheet hides End of track then, and a
+     * cast session starting or ending cancels a running one (the init block above), both the user's decision.
+     * After the stop the player rests, paused, at the end of the finished song; Play starts the next one.
+     * sleepTimerEndsAt holds [END_OF_SONG] meanwhile, so "a timer runs" reads true everywhere; nothing does arithmetic on it
+     * while sleepAtEndOfSong is set (SleepTimerBottomSheet, MediaMoreBottomSheet.sleepTimerTitle).
+     */
+    private var pauseAtEndListener: Player.Listener? = null
+
+    private fun startEndOfSong(): ListenableFuture<SessionResult> {
+        val exo = localPlayer
+        if (exo == null || CastState.isCasting) {
+            state.sleepTimerEndsAt.value = null
+            state.sleepAtEndOfSong = false
+            return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+        }
+        state.sleepAtEndOfSong = true
+        state.sleepTimerEndsAt.value = END_OF_SONG
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (playWhenReady || reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return
+                // The same reason as the minute timer's: a custom command never reaches onPlayerCommandRequest, so a
+                // sleep-timer stop must revoke the focus-resume authorisation itself (the 1141 shape).
+                onTransportIntent()
+                endEndOfSong()
+            }
+        }
+        pauseAtEndListener = listener
+        exo.addListener(listener)
+        exo.pauseAtEndOfMediaItems = true
+        return Futures.immediateFuture(SessionResult(RESULT_SUCCESS))
+    }
+
+    // Turns the flag off and drops the listener; the state is the caller's. Main thread, as every caller is.
+    private fun stopPauseAtEnd() {
+        val exo = localPlayer ?: return
+        pauseAtEndListener?.let { exo.removeListener(it) }
+        pauseAtEndListener = null
+        if (exo.pauseAtEndOfMediaItems) exo.pauseAtEndOfMediaItems = false
+    }
+
+    // End time first, then the flag, as the minute timer's finally does, so the UI never sees the flag cleared on a live time.
+    private fun endEndOfSong() {
+        stopPauseAtEnd()
+        state.sleepTimerEndsAt.value = null
+        state.sleepAtEndOfSong = false
     }
 
     private fun setRepeat(player: Player, repeat: Int) = run {
@@ -1846,6 +1926,9 @@ class PlayerCallback(
         // See [consumeNotificationDismissal]: slack for a dispatch that is synchronous today, not a
         // tolerance for any real delay.
         private const val DISMISSAL_WINDOW_MS = 500L
+
+        // [2026-11-15] PlayerState.sleepTimerEndsAt while an end-of-track timer runs: there is no fixed time (startEndOfSong).
+        private const val END_OF_SONG = Long.MAX_VALUE
 
         fun PagedData<Shelf>.toTracks() = map {
             it.getOrThrow().mapNotNull { shelf ->

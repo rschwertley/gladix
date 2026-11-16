@@ -14,6 +14,7 @@ import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.extension.DeezerGatewayException
+import dev.brahmkshatriya.echo.extension.DeezerPlaylistUnavailableException
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.scrubbedForCrashlytics
@@ -309,7 +310,11 @@ data class App(
                 // decision; Crashlytics 37e6ec83): the TLS check refused it correctly and nothing in the app can fix the network.
                 // June muted one such issue by hand ("Deezer CONNECT 403 tunnel", a hostile proxy); this filters the class. The
                 // snackbar still shows, with the plain network_redirecting line.
-                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired() && !it.isAuthRejection() && !it.hasRedirectedTls())
+                // [2026-11-14] Nor a Deezer playlist this account cannot open (isPlaylistUnavailable; Crashlytics dc8c93d2).
+                // The snackbar still shows, with the exception's own message.
+                if (BuildConfig.HAS_FIREBASE && !it.isLoginRequired() && !it.isAuthRejection() && !it.hasRedirectedTls() &&
+                    !it.isPlaylistUnavailable()
+                )
                     runCatching {
                     FirebaseCrashlytics.getInstance().apply {
                         // extension_id is the PLAYING extension (crashExtensionId, written by
@@ -485,6 +490,18 @@ data class App(
             t = t.cause
         }
         return null
+    }
+
+    // [2026-11-14] DeezerApi's DeezerPlaylistUnavailableException anywhere in the chain (it arrives wrapped in
+    // AppException.Other, so the top node never matches). A typed check: :app depends on :deezer-extension (see
+    // isAuthRejection's correction). Suppresses reporting only.
+    private fun Throwable.isPlaylistUnavailable(): Boolean {
+        var t: Throwable? = this
+        while (t != null) {
+            if (t is DeezerPlaylistUnavailableException) return true
+            t = t.cause
+        }
+        return false
     }
 
     private fun Throwable.isLoginRequired(): Boolean {

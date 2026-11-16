@@ -296,8 +296,6 @@
     <string name="check_for_updates">Güncellemeleri Denetle</string>
     <string name="check_for_updates_summary">Uygulamayı açtığında hem uygulama hem de uzantılar için yeni güncellemeleri kontrol et.</string>
     <string name="checking_for_updates">Güncellemeler denetleniyor</string>
-    <string name="back_animations">Geri animasyonları</string>
-    <string name="back_animations_summary">Android kaynaklı görsel hatalara neden olabilir, ancak bunu düzeltmek için son uygulamaları açabilirsin.</string>
     <string name="regex_invalid">%1$s geçersiz, lütfen şu düzenli ifadeyi takip et: %2$s</string>
     <string name="n_hours">%1$d saat</string>
     <string name="n_minutes">%1$d dakika</string>

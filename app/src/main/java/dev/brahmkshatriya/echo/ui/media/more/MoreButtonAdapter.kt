@@ -26,6 +26,10 @@ class MoreButtonAdapter
             text = item.title
             isEnabled = item.enabled
             setOnClickListener { item.onClick() }
+            // [2026-11-15] See MoreButton.info. After setOnClickListener, which turns clickable back on; set on every bind
+            // because holders are recycled. Not focusable, so the TV D-pad passes over it.
+            isClickable = !item.info
+            isFocusable = !item.info
             setIconResource(item.icon)
         }
     }

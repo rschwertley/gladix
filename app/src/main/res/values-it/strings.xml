@@ -299,8 +299,6 @@
     <string name="check_for_updates">Controlla aggiornamenti</string>
     <string name="check_for_updates_summary">Cerca nuovi aggiornamenti di app ed estensioni all’apertura dell’app.</string>
     <string name="checking_for_updates">Controllo degli aggiornamenti in corso</string>
-    <string name="back_animations">Animazioni “indietro”</string>
-    <string name="back_animations_summary">Può causare un errore visivo a causa di Android, ma è sufficiente aprire i Recenti per risolverlo.</string>
     <string name="regex_invalid">%1$s non è valido, per favore segui la regex: %2$s</string>
     <string name="n_hours">%1$d ore</string>
     <string name="n_minutes">%1$d minuti</string>

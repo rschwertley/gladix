@@ -7,6 +7,8 @@ import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.UNIFIED_ID
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.extensionIdOrNull
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -213,6 +215,8 @@ object RadioFallback {
         val started = System.currentTimeMillis()
         // [2026-11-12] What is left of TOTAL_BUDGET_MS.
         fun left() = TOTAL_BUDGET_MS - (System.currentTimeMillis() - started)
+        // [2026-11-15] See searchOne's preferTab.
+        val preferTab = if (extension.id == UNIFIED_ID) seed.extras.extensionIdOrNull else null
 
         // ⚠️ `searched` IS THE FIELD THAT DOES THE WORK NOW THAT APPENDS CAN BE PARTIAL. Before the
         // partial change, reason=ok meant one thing: a full bridge. It no longer does — matched=3 and
@@ -280,7 +284,7 @@ object RadioFallback {
                 break
             }
         }
-        if (similar.isEmpty()) return topTracksOrNothing(extension, artist, title, ::left, ::log) { step = it }
+        if (similar.isEmpty()) return topTracksOrNothing(extension, artist, title, preferTab, ::left, ::log) { step = it }
 
         // ⚠⚠ THE PARTIAL APPEND IS THE FIX. THE CAP ALONE WOULD HAVE CHANGED NOTHING.
         // Before this, the whole mapping ran inside one all-or-nothing bound: if the budget expired after
@@ -320,7 +324,7 @@ object RadioFallback {
         //     per exhausted station, until the extension returns. Bounded by stations, not unbounded.
         // Survivable and worth knowing. If a wedge is ever observed instead, the thing that changed is that
         // something on this path started holding a lock — look there first, not at the budget.
-        val run = searchCandidates(extension, similar.shuffled(), MAX_SEARCHES, left())
+        val run = searchCandidates(extension, similar.shuffled(), MAX_SEARCHES, left(), preferTab)
         if (run.noSearchClient) { log("no-search-client", similar.size, run.searched); return emptyList() }
         if (run.matched.isEmpty()) {
             // [2026-11-12] Nothing to queue from the similar tracks: the seed artist's top tracks before giving up.
@@ -328,7 +332,7 @@ object RadioFallback {
             // now as the first of two when the top tracks are tried.
             log(if (run.completed == null) "search-timeout" else "no-match", similar.size, run.searched)
             step = "-"
-            return topTracksOrNothing(extension, seedArtist, title, ::left, ::log) { step = it }
+            return topTracksOrNothing(extension, seedArtist, title, preferTab, ::left, ::log) { step = it }
         }
         val reason = when {
             run.completed == null -> "ok-timeout"          // budget expired, but we kept what we had
@@ -348,7 +352,7 @@ object RadioFallback {
      * loop's own and are unchanged.
      */
     private suspend fun searchCandidates(
-        extension: Extension<*>, candidates: List<Similar>, maxSearches: Int, leftMs: Long,
+        extension: Extension<*>, candidates: List<Similar>, maxSearches: Int, leftMs: Long, preferTab: String?,
     ): SearchRun {
         val matched = mutableListOf<Track>()
         var searched = 0
@@ -384,7 +388,7 @@ object RadioFallback {
                 if (matched.size >= MAX_APPEND) break
                 searched++
                 val found = extension.getIf<SearchFeedClient, List<Track>> {
-                    searchOne(candidate)
+                    searchOne(candidate, preferTab)
                 }.getOrNull()
                 if (found == null && searched == 1) noSearchClient = true
                 val first = found?.firstOrNull() ?: continue
@@ -404,7 +408,7 @@ object RadioFallback {
      * for similar tracks, so a re-bridged station varies.
      */
     private suspend fun topTracksOrNothing(
-        extension: Extension<*>, seedArtist: String, seedTitle: String, left: () -> Long,
+        extension: Extension<*>, seedArtist: String, seedTitle: String, preferTab: String?, left: () -> Long,
         log: (String, Int, Int, Int) -> Any, setStep: (String) -> Unit,
     ): List<Track> {
         val artist = splitArtist(seedArtist).firstOrNull() ?: seedArtist
@@ -419,7 +423,7 @@ object RadioFallback {
         setStep("toptracks")
         if (top.isEmpty()) { log("no-similar", 0, 0, 0); return emptyList() }
         if (left() < MIN_STEP_MS) { log("budget", top.size, 0, 0); return emptyList() }
-        val run = searchCandidates(extension, top.shuffled(), TOP_MAX_SEARCHES, left())
+        val run = searchCandidates(extension, top.shuffled(), TOP_MAX_SEARCHES, left(), preferTab)
         if (run.noSearchClient) { log("no-search-client", top.size, run.searched, 0); return emptyList() }
         if (run.matched.isEmpty()) {
             log(if (run.completed == null) "search-timeout" else "no-match", top.size, run.searched, 0)
@@ -530,10 +534,17 @@ object RadioFallback {
      * (GraphQL edges[].node.id -> song.getListData), never by text. The template is
      * AndroidAutoCallback.performSearch, which this mirrors.
      */
-    private suspend fun SearchFeedClient.searchOne(s: Similar): List<Track> {
+    private suspend fun SearchFeedClient.searchOne(s: Similar, preferTab: String?): List<Track> {
         val feed = loadSearchFeed("${s.artist} ${s.title}", isUserInitiated = false)
+        // [2026-11-15] UNDER UNIFIED, THE SEED'S OWN EXTENSION FIRST (OpenGonic-through-Unified review, the user's decision).
+        // [preferTab] is the seed's extras[EXTENSION_ID] when the station plays through Unified (similarTracks), else null.
+        // With two or more sub-extensions, Unified's search feed has one tab per sub-extension, its id the sub-extension's
+        // (UnifiedExtension.feed), and none is "TRACK", so this used to take the first tab: the first enabled sub-extension,
+        // whichever catalogue the seed came from. With one sub-extension the tabs are that extension's own, no id matches,
+        // and the search runs as before.
         // Case-insensitive TRACK tab, with a firstOrNull fallback for extensions that name it differently.
-        val tab = feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
+        val tab = preferTab?.let { id -> feed.notSortTabs.firstOrNull { it.id == id } }
+            ?: feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
             ?: feed.notSortTabs.firstOrNull()
         val (shelves, _) = feed.getPagedData(tab).pagedData.loadPage(null)
         return shelves.toTracks()

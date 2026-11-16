@@ -186,8 +186,6 @@
     <string name="scroll_bar">Görgetősáv</string>
     <string name="scroll_bar_summary">Görgetősáv oldalt a gyorsabb hozzáférésért (lehet ,hogy bugos lesz)</string>
     <string name="animation">Animáció</string>
-    <string name="back_animations">Visszalépés Animációk</string>
-    <string name="back_animations_summary">Vizuális hibákat okozhat a rendszer miatt ,de csak nyisd meg az alkalmazás előzményeket a javításhoz.</string>
     <string name="animations">Animációk</string>
     <string name="animations_summary">Túl röcögős az app? ennek kikapcsolása talán segít</string>
     <string name="refresh">Frissités</string>

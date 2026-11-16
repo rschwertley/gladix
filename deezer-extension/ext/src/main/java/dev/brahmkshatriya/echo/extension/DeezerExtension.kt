@@ -1470,7 +1470,7 @@ private val GATEWAY_ERROR_KEY = Regex("""(?:^|, )([A-Z_]+)=""")
 
 private fun Throwable.scrubbedForReport(): Throwable = LikedFetchFailed(
     generateSequence(this) { it.cause }.take(5).joinToString(" <- ") { it.reportLabel() },
-    refusedCause() ?: plainNetworkCause()
+    refusedCause() ?: plainNetworkCause() ?: loginRequiredCause()
 ).also { it.stackTrace = stackTrace }
 
 /**
@@ -1494,6 +1494,8 @@ private const val CALL_API_STATUS_403 = "API call failed with status 403"
 /**
  * [2026-11-12] [LikedFetchRefused] when callApi's status gate answered 403, else null. Null as well when a gateway error or
  * LoginRequired comes first in the chain, the same rule as [plainNetworkCause], so those keep grouping as before.
+ * [CORRECTED 2026-11-14] Still null for LoginRequired, but it no longer groups: [loginRequiredCause] marks it and the app does not
+ * report it (e8a9e550).
  */
 private fun Throwable.refusedCause(): Throwable? {
     for (node in generateSequence(this) { it.cause }.take(5)) {
@@ -1508,6 +1510,8 @@ private fun Throwable.refusedCause(): Throwable? {
  * app's type check (CapabilityProbeFailure.isPlainNetworkFailure) can see it and not report it. Never the original: OkHttp's connect
  * timeout message names the host and the device's local address. Null when a gateway error or LoginRequired comes first in the chain,
  * so those keep reporting as before. The summary still names the original type either way.
+ * [CORRECTED 2026-11-14] LoginRequired no longer keeps reporting: [loginRequiredCause] gives it its own message-less copy
+ * (Crashlytics e8a9e550). A gateway error first in the chain still reports as before.
  */
 private fun Throwable.plainNetworkCause(): Throwable? =
     generateSequence(this) { it.cause }.take(5).firstNotNullOfOrNull { node ->
@@ -1525,6 +1529,23 @@ private fun Throwable.plainNetworkCause(): Throwable? =
             else -> null
         }
     }
+
+/**
+ * [2026-11-14] A NEW ClientException.LoginRequired as LikedFetchFailed's cause when the failure was a sign-in, so the app's type
+ * check (CapabilityProbeFailure.isSignInRequired) can see it and not report it (Crashlytics e8a9e550, 1179: "LikedFetchFailed:
+ * LoginRequired"). Before this the chain carried only the label, which no type check can match. Message-less and carries no
+ * user id (never the original, which may be ClientException.Unauthorized). Null when a gateway error comes first, the same rule
+ * as [plainNetworkCause]; it runs after the other two, so a 403 or a network failure found first still wins.
+ * Nothing else reads it: likedFailure reaches only isTrackLoved's throw, and isItemSaved / isItemLiked are called only by
+ * Cached.loadMedia's probes, which degrade it to unknown.
+ */
+private fun Throwable.loginRequiredCause(): Throwable? {
+    for (node in generateSequence(this) { it.cause }.take(5)) {
+        if (node is DeezerGatewayException) return null
+        if (node is ClientException.LoginRequired) return ClientException.LoginRequired()
+    }
+    return null
+}
 
 private fun Throwable.reportLabel(): String = when (this) {
     is DeezerGatewayException ->

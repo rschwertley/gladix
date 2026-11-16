@@ -31,10 +31,23 @@ fun Shelf.hasTracksOnTap() = this is Shelf.Category && extras[GLADIX_TRACKS_ON_T
  * already shuffled (OpenGonic, planned), so a Shuffle of a big folder can start without reading it all. An extension that does
  * not know the key ignores it, and UnifiedExtension.loadTracks passes the Album through whole. Nothing here changes with it:
  * QueueSampler still takes its fair 2,000, so a list of 2,000 or fewer random songs is kept as the extension returned it.
+ * [CORRECTED 2026-11-15] "(OpenGonic, planned)" is out of date: OpenGonic handles it for library:all ("All songs"), returning
+ * 2,000 random songs via getRandomSongs (OpenGonic eapk 20261113.2309, Nov 13; OpenGonic itself not yet committed).
  */
 const val GLADIX_SHUFFLE = "gladix_shuffle"
 
+/**
+ * [2026-11-15] A SONG'S FOLDER (the user's design): OpenGonic sets GLADIX_PARENT_ID ("dir:<id>") and GLADIX_PARENT_TITLE on its
+ * songs (not on Navidrome). Read by MediaMoreBottomSheet.getFolderButtons ("Folder: <title>" and "Go to folder"), and kept
+ * through History and the saved queue by HistoryEntity.toSlimKeepingRoutingKeys. A song without GLADIX_PARENT_ID is unchanged.
+ */
+const val GLADIX_PARENT_ID = "gladix_parent_id"
+const val GLADIX_PARENT_TITLE = "gladix_parent_title"
+
 // The row's extras go along (they carry the marker, and under Unified the routing stamp) so the extension can tell the row apart.
+// [CORRECTED 2026-11-15] Under Unified they did NOT carry the stamp: UnifiedExtension's Shelf.Category.withExtensionId stamped only
+// the row's feed, so UnifiedExtension.loadTracks threw on the missing EXTENSION_ID. It stamps the row now (OpenGonic-through-Unified
+// review), and the stamp and GLADIX_SHUFFLE both reach the sub-extension in the Album's extras.
 // [2026-11-13] PAGE BY PAGE, not as one list (Crashlytics 63ec9068, the user's decision): [onPage] gets each page as it is read
 // and returns false to stop reading (BoundedLoadAll.forEachPageBounded), so a caller that keeps a 2,000-song sample never holds
 // the whole folder. An extension that returns its whole list at once (OpenGonic today) arrives as one page.

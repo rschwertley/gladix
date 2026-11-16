@@ -59,6 +59,20 @@ import dev.brahmkshatriya.echo.ui.playlist.save.SaveToPlaylistBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.combine
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.viewModelScope
+import dev.brahmkshatriya.echo.common.clients.AlbumClient
+import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Feed
+import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
+import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
+import dev.brahmkshatriya.echo.ui.feed.FeedFragment
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_ID
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_TITLE
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_TRACKS_ON_TAP
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -247,6 +261,7 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
             getPlaylistEditButtons(client, state, loaded) +
             getDownloadButtons(client, state, downloads) +
             getItemButtons(state?.item ?: item) +
+            getFolderButtons(state) +
             getRadioButton(client, state) +
             getShareButton(client, state) +
             getPlayerButtons() +
@@ -316,6 +331,8 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     private fun sleepTimerTitle(): String {
         val title = getString(R.string.sleep_timer)
         val endsAt = playerViewModel.playerState.sleepTimerEndsAt.value ?: return title
+        // [2026-11-15] An end-of-track timer gets no minutes (1181 report; see SleepTimerBottomSheet.onDismiss).
+        if (playerViewModel.playerState.sleepAtEndOfSong) return getString(R.string.sleep_timer_with_end_of_song, title)
         val left = requireContext().timeLeft(endsAt) ?: return title
         return getString(R.string.sleep_timer_with_left, title, left)
     }
@@ -557,6 +574,80 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
     }.map {
         button(it.id, it.title, it.icon) {
             openItemFragment(extensionId, it)
+        }
+    }
+
+    /**
+     * [2026-11-15] "FOLDER: <title>" AND "GO TO FOLDER" (the user's design, for OpenGonic's TracksOnTap.GLADIX_PARENT_ID and
+     * GLADIX_PARENT_TITLE). Every song menu is this sheet, the player's ⋮ on phone and TV included, so this covers them all.
+     * The keys are read from the loaded song first, then from the song passed in, so the rows show at once, before any load;
+     * from History and a restored queue they are there because toSlimKeepingRoutingKeys keeps them. No GLADIX_PARENT_ID: no
+     * rows, so every other song is unchanged. No title: "Go to folder" only. The Folder line is an information row
+     * (MoreButton.info), not greyed and not clickable.
+     */
+    private fun getFolderButtons(state: MediaState.Loaded<*>?): List<MoreButton> {
+        val song = item as? Track ?: return listOf()
+        val loadedExtras = (state?.item as? Track)?.extras.orEmpty()
+        fun key(name: String) = (loadedExtras[name] ?: song.extras[name])?.takeIf { it.isNotBlank() }
+        val parentId = key(GLADIX_PARENT_ID) ?: return listOf()
+        val title = key(GLADIX_PARENT_TITLE)
+        val routing = key(EXTENSION_ID)
+        return listOfNotNull(
+            title?.let {
+                MoreButton("folder_info", getString(R.string.folder_x, it), R.drawable.ic_folder, info = true)
+            },
+            button("go_to_folder", R.string.go_to_folder, R.drawable.ic_folder) {
+                goToFolder(parentId, title, routing)
+            }
+        )
+    }
+
+    /**
+     * [2026-11-15] Opens the song's folder as a folder page: the extension's AlbumClient.loadFeed(Album("dir:<id>")), which
+     * OpenGonic answers with the same builder its folder rows use (the user's record, OpenGonic Code, Nov 15), shown in
+     * FeedFragment exactly as FeedClickListener.openFeed shows a folder row.
+     * ⚠️ NOT THROUGH Cached OR MediaFragment: a folder is not an album, and its id must not land in the album memo or store
+     * (the TracksOnTap note).
+     * The Album carries the song's EXTENSION_ID when it has one: under Unified, UnifiedExtension.loadFeed(album) routes on it,
+     * and without it throws ExtensionNotFoundException. It also carries GLADIX_TRACKS_ON_TAP, and the page gets those extras
+     * as its tracks-on-tap row, so its Play and Shuffle load every song under the folder (OpenGonic's loadTracks walks a dir:
+     * folder's whole tree since Nov 11, the user's record), as on a folder page opened from its row.
+     * Loaded on PlayerViewModel's scope, because the sheet closes on the tap; a failure goes to throwFlow, as a feed load error
+     * does. If the activity has stopped by the time the page is loaded, it is not opened (a fragment commit then would throw).
+     */
+    private fun goToFolder(parentId: String, title: String?, routing: String?) {
+        val activity = requireActivity()
+        val cont = contId
+        val extId = extensionId
+        val pageTitle = title ?: getString(R.string.folder)
+        val notFound = getString(R.string.no_x_found, getString(R.string.folder))
+        val folderExtras = buildMap {
+            put(GLADIX_TRACKS_ON_TAP, "1")
+            if (routing != null) put(EXTENSION_ID, routing)
+        }
+        val album = Album(id = parentId, title = title.orEmpty(), extras = folderExtras)
+        val pvm = playerViewModel
+        pvm.viewModelScope.launch {
+            val feed = runCatching {
+                pvm.extensions.music.getExtensionOrThrow(extId)
+                    .getAs<AlbumClient, Feed<Shelf>?> { loadFeed(album) }.getOrThrow()
+            }.getOrElse {
+                if (it is CancellationException) throw it
+                pvm.app.throwFlow.emit(it)
+                return@launch
+            }
+            if (feed == null) {
+                pvm.app.messageFlow.emit(Message(notFound))
+                return@launch
+            }
+            if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
+            val feedVm by activity.viewModels<FeedFragment.VM>()
+            feedVm.extensionId = extId
+            feedVm.feedId = parentId
+            feedVm.feed = feed
+            activity.openFragment<FeedFragment>(
+                null, FeedFragment.getBundle(pageTitle, null, extId, parentId, folderExtras), cont
+            )
         }
     }
 

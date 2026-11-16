@@ -225,8 +225,6 @@
     <string name="invalid_extension_list">Invalid Extensions List</string>
     <string name="show_background">Background Dikhao</string>
     <string name="show_background_summary">Player Mein Track Ka Background Video Ya Blurred Artwork</string>
-    <string name="back_animations">Back Animations</string>
-    <string name="back_animations_summary">Android Ke Karan Visual Bug Ho Sakta Hai, Lekin Recents Khulne Se Fix Ho Jayega.</string>
     <string name="misc">Vividh</string>
     <string name="error_updating_extension">Update Karte Waqt Error</string>
     <string name="select_x_account">%1$s Account Chuno</string>

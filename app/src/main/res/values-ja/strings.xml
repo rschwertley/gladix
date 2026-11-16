@@ -169,8 +169,6 @@
     <string name="show_background">背景の表示</string>
     <string name="show_background_summary">プレイヤーの背景に動画、またはぼかされたアートワークを表示</string>
     <string name="animation">アニメーション</string>
-    <string name="back_animations">戻るアニメーション</string>
-    <string name="back_animations_summary">Androidの仕様により視覚的な不具合が発生する可能性がありますが、再度アプリを開けば修正できます。</string>
     <string name="animations">アニメーション</string>
     <string name="animations_summary">ひどくつっかえますか？これをオフにすると、改善するかもしれません</string>
     <string name="refresh">更新</string>

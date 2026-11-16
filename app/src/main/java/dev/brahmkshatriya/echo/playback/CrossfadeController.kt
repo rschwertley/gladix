@@ -157,6 +157,10 @@ class CrossfadeController(
      * [2026-11-13] PlayerState.sleepAtEndOfSong: an "end of song" sleep timer is running. PlayerCallback.onSleepTimer times it
      * to the end of the FILE, while a crossfade switches S plus the end move earlier, so the stop landed seconds into the next
      * song. No crossfade arms while it runs ([armRefusal]); the song ends plainly and the timer stops playback there.
+     * [CORRECTED 2026-11-15] It is no longer timed to the end of the file: PlayerCallback.startEndOfSong pauses at the end of
+     * the current item. Both refusals stay, because the switch moves to the next item early and the pause would then land at
+     * the end of the NEXT song. Set while a crossfade is already ACTIVE, it stops at the end of the incoming song (see
+     * startEndOfSong).
      */
     private val sleepAtEndOfSong: () -> Boolean = { false },
 ) {
@@ -1292,6 +1296,9 @@ class CrossfadeController(
             maybeStartStartAnalysis()
         // [2026-11-13] A next song with no onset in its first 15 s, found after arm: a plain transition (the user's decision).
         // So does an "end of song" sleep timer set after arm (see [sleepAtEndOfSong]); the pre-roll's 2 s is not covered.
+        // [CORRECTED 2026-11-15] Set in the pre-roll or later, the switch goes ahead (unless a queue edit re-runs armRefusal in
+        // the PREROLL or HANDOFF branch of the timeline handler) and the timer stops at the end of the incoming song instead, as
+        // it does when set while ACTIVE (PlayerCallback.startEndOfSong).
         if (nextHasSilentIntro() || sleepAtEndOfSong()) {
             declinedMediaId = armedMediaId
             return plainTransition(if (sleepAtEndOfSong()) "sleepEndOfSong" else "silentIntro")

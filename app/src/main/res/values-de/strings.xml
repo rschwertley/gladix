@@ -295,8 +295,6 @@
     <string name="check_for_updates">Nach Updates suchen</string>
     <string name="check_for_updates_summary">Prüfe beim Öffnen von Echo die App und Erweiterungen auf Aktualisierungen.</string>
     <string name="checking_for_updates">Suche nach Aktualisierungen</string>
-    <string name="back_animations">\"Zurück\"-Animationen</string>
-    <string name="back_animations_summary">Kann visuellen Android-Bug auslösen, lässt sich aber beheben durch öffnen von \"Letzte Apps\".</string>
     <string name="regex_invalid">%1$s ist ungültig, bitte folge dem Regex: %2$s</string>
     <string name="n_hours">%1$d Stunden</string>
     <string name="n_minutes">%1$d Minuten</string>

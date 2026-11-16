@@ -509,6 +509,8 @@ class PlayerService : MediaLibraryService() {
                 audioFocusListener.onTransportIntent()
                 eventListener.clearNetworkHold(releaseFocus = false)
             },
+            // [2026-11-15] For the end-of-track sleep timer (PlayerCallback.startEndOfSong).
+            localPlayer = exoPlayer,
         )
 
         val session = MediaLibrarySession.Builder(this, player, callback)
@@ -1544,7 +1546,7 @@ class PlayerService : MediaLibraryService() {
         fun getPendingIntent(context: Context): PendingIntent = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, context.getMainActivity()).apply {
+            Intent().setComponent(context.getMainActivity()).apply {
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra("fromNotification", true)
             },

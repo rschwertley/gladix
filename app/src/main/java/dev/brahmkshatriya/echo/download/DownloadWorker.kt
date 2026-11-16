@@ -91,7 +91,7 @@ class DownloadWorker(
         fun getMainIntent(context: Context) = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, context.getMainActivity()).apply {
+            Intent().setComponent(context.getMainActivity()).apply {
                 putExtra("fromDownload", true)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

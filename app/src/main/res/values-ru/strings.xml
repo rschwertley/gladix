@@ -299,8 +299,6 @@
     <string name="check_for_updates">Проверять на наличие обновлений</string>
     <string name="check_for_updates_summary">Проверять наличие обновлений для приложения и расширений при его запуске.</string>
     <string name="checking_for_updates">Проверка обновлений</string>
-    <string name="back_animations">Анимации при возвращении назад</string>
-    <string name="back_animations_summary">Может вызывать визуальные сбои из-за особенностей Android, но вы можете исправить его, открыв список последних приложений.</string>
     <string name="regex_invalid">%1$s недопустим, пожалуйста, следуйте формату: %2$s</string>
     <string name="n_hours">%1$d часов</string>
     <string name="n_minutes">%1$d минут</string>

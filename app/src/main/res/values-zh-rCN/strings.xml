@@ -289,8 +289,6 @@
     <string name="check_for_updates">检查更新</string>
     <string name="check_for_updates_summary">打开应用程序时，查找应用程序和扩展程序的新更新。</string>
     <string name="checking_for_updates">正在检查更新</string>
-    <string name="back_animations">返回动画</string>
-    <string name="back_animations_summary">由于安卓系统可能会导致视觉错误，你可以通过打开最近记录来修复它.</string>
     <string name="regex_invalid">%1$s 是无效的, 请跟随正则表达式: %2$s</string>
     <string name="n_hours">%1$d 小时</string>
     <string name="n_minutes">%1$d 分钟</string>

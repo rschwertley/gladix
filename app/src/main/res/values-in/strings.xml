@@ -293,8 +293,6 @@
     <string name="check_for_updates">Memeriksa update terbaru</string>
     <string name="check_for_updates_summary">Cari pembaruan baru dari kedua aplikasi dan ekstensi, saat Anda membuka aplikasi.</string>
     <string name="checking_for_updates">Mengecek update terbaru</string>
-    <string name="back_animations">Animasi Belakang</string>
-    <string name="back_animations_summary">Dapat menyebabkan bug visual karena Android, tetapi Anda bisa membuka istirahat untuk memperbaikinya.</string>
     <string name="regex_invalid">%1$s tidak valid, silakan ikuti regex: %2$s</string>
     <string name="n_hours">%1$d jam</string>
     <string name="app_desc">Hanya pemutar musik.</string>

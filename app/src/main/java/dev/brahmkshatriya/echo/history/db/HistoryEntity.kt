@@ -6,6 +6,8 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_ID
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_TITLE
 import dev.brahmkshatriya.echo.utils.Serializer.toData
 
 @Entity(primaryKeys = ["trackId", "extensionId"])
@@ -147,14 +149,41 @@ private fun Track.resetPlayable(): Track =
  * between the two: both are read long after the list that produced them, with nothing to
  * regenerate them from. Do not add a second opt-out without that same "rewritten every time"
  * property to point at.
+ *
+ * [2026-11-15] TWO MORE, FOR THE SONG MENU'S FOLDER ROWS (MediaMoreBottomSheet.getFolderButtons, the user's decision), so
+ * they show at once from History and a restored queue:
+ *   GLADIX_PARENT_ID     a key (OpenGonic's "dir:<id>"), within the rule.
+ *   GLADIX_PARENT_TITLE  ⚠️ THE ONE EXCEPTION TO "KEEP A KEY, NEVER A PAYLOAD": a display name, the folder's title, kept so
+ *                        the menu can say "Folder: <title>" without a load. Bounded: cut to PARENT_TITLE_MAX characters
+ *                        (truncateTitle). Do not read it as a precedent for keeping other display fields; it is one short
+ *                        string, and only on OpenGonic songs.
+ * Size, against the recorded figures: both keys add roughly 80-150 B to an OpenGonic entry. A slim queue entry is
+ * ~0.74-1.2 KB (ResumptionUtils' QUEUE_FILE_MAX_BYTES note), so a full 2,000-song all-OpenGonic queue goes from ~2.4 MB to
+ * ~2.7 MB, under the 4 MB discard gate with ~1.5x margin instead of 1.7x. A History row is ~1 KB, against ~40 KB rows when
+ * the CursorWindow crash hit (row 53). In memory, a queued MediaItem is ~20-30 KB, so under 1% (the build-1008/1013 OOMs).
+ * The byte figures for the keys are estimates, not measured.
  */
 fun Track.toSlimKeepingRoutingKeys(keepPlayable: Boolean = false): Track =
     toSlim().let { if (keepPlayable) it else it.resetPlayable() }.let { slim ->
         val keep = extras
-            .filterKeys { it == UnifiedExtension.EXTENSION_ID || it == FALLBACK_ID_EXTRA }
+            .filterKeys {
+                it == UnifiedExtension.EXTENSION_ID || it == FALLBACK_ID_EXTRA ||
+                    it == GLADIX_PARENT_ID || it == GLADIX_PARENT_TITLE
+            }
             .filterValues { it.isNotEmpty() }
+            .mapValues { (key, value) -> if (key == GLADIX_PARENT_TITLE) value.truncateTitle() else value }
         if (keep.isEmpty()) slim else slim.copy(extras = keep)
     }
+
+// [2026-11-15] See toSlimKeepingRoutingKeys. Cut with an ellipsis inside the cap, and never through a surrogate pair.
+private const val PARENT_TITLE_MAX = 100
+
+private fun String.truncateTitle(): String {
+    if (length <= PARENT_TITLE_MAX) return this
+    var end = PARENT_TITLE_MAX - 1
+    if (this[end - 1].isHighSurrogate()) end--
+    return substring(0, end) + "…"
+}
 
 // A stored context only needs id/type/title/cover (for the "Go to <context>" button + re-resolution
 // by id, which happens with loaded=false). Radio is the exception: its re-resolution reads extras

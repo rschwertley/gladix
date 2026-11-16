@@ -302,8 +302,6 @@
     <string name="check_for_updates">Перевірити оновлення</string>
     <string name="check_for_updates_summary">Шукайти нові оновлення як застосунку, так і розширень, коли відкриваєте програму.</string>
     <string name="checking_for_updates">Перевірка оновлень</string>
-    <string name="back_animations">Анімації повернення</string>
-    <string name="back_animations_summary">Це може спричинити візуальну помилку через Android, але ви можете просто відкрити нещодавні програми, аби це виправити.</string>
     <string name="regex_invalid">%1$s є недійсним, дотримуйтесь регулярного виразу: %2$s</string>
     <string name="n_hours">%1$d годин</string>
     <string name="n_minutes">%1$d хвилин</string>

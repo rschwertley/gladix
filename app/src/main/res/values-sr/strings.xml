@@ -190,8 +190,6 @@
     <string name="show_background">Prikaži Pozadinu</string>
     <string name="show_background_summary">Pozadinski video ili zamagljen artwork kao pozadina plejera</string>
     <string name="animation">Animacija</string>
-    <string name="back_animations">Animacija za nazad</string>
-    <string name="back_animations_summary">Može prouzrokovati vizualni bug, ali se lako rešava otvaranjem recents.</string>
     <string name="animations">Animacije</string>
     <string name="animations_summary">Previše zastajkivanja? Isključivanje ovog podešavanja možda pomogne</string>
     <string name="tracker">Traker</string>

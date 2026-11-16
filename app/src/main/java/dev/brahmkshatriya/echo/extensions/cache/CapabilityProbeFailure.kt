@@ -2,6 +2,8 @@ package dev.brahmkshatriya.echo.extensions.cache
 
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dev.brahmkshatriya.echo.BuildConfig
+import dev.brahmkshatriya.echo.common.helpers.ClientException
+import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.ui.common.ErrorCategory
 import dev.brahmkshatriya.echo.ui.common.classify
 import java.io.InterruptedIOException
@@ -48,6 +50,13 @@ object CapabilityProbeFailure {
         // real failure in the same process would make. The media state, probesDegraded and Deezer's 60 s cooldown are untouched:
         // this only decides whether Crashlytics hears about it.
         if (isPlainNetworkFailure(throwable)) return
+        // [CORRECTED 2026-11-14] A SIGN-IN IS NOT REPORTED EITHER (Crashlytics e8a9e550, 1179: isItemSaved <- LikedFetchFailed:
+        // LoginRequired). It used to report: this class's doc lists "a dead token" among what it exists to catch, and the
+        // 2026-11-11 notes kept LoginRequired reporting "as before" without giving a reason. The user's decision now: the same
+        // skip as App.kt's isLoginRequired, since the app already asks the user to sign in and Crashlytics can do nothing with
+        // it. Before the slot, like the network skip, so it does not use up the report a later real failure would make. The
+        // probe still degrades to unknown, and probesDegraded is set by probeOrNull before this runs.
+        if (isSignInRequired(throwable)) return
         if (!reported.add(extensionId)) return
         if (!BuildConfig.HAS_FIREBASE) return
         val message = "Capability probe " + probe + " failed for extension " + extensionId +
@@ -69,6 +78,8 @@ object CapabilityProbeFailure {
      * The two types added HERE ONLY: a TLS handshake that failed, and OkHttp's call-timeout InterruptedIOException. They are kept
      * out of classify on purpose, since changing it would change the AA and snackbar wording, which must move with getTitle.
      * LoginOrAuth found first keeps reporting, as classify returns at the first node it recognises.
+     * [CORRECTED 2026-11-14] Not for LoginRequired, which record now skips before this runs (isSignInRequired, e8a9e550).
+     * Other LoginOrAuth causes still report.
      * Deezer's LikedFetchFailed carries a message-less copy of its network cause so these type checks can see it (scrubbedForReport).
      */
     // [2026-11-13] SocketException added HERE ONLY (Crashlytics 0a70517c: a reset during Deezer's TLS handshake under the liked fetch,
@@ -81,6 +92,17 @@ object CapabilityProbeFailure {
         ErrorCategory.Generic -> generateSequence(throwable) { it.cause }.take(MAX_CHAIN)
             .any { it is SSLHandshakeException || it is InterruptedIOException || it is SocketException }
     }
+
+    /**
+     * [2026-11-14] A LoginRequired anywhere in the chain, by TYPE, as App.kt's isLoginRequired. Not classify's LoginOrAuth: that
+     * arm also covers other auth-shaped failures, and widening to it could swallow CapabilityProbeRefused's 403, which is kept as
+     * its own issue. Deezer's liked fetch carries a message-less copy for this (DeezerExtension's loginRequiredCause). No
+     * isAuthRejection check: DeezerAuthRejectedException is thrown only by the login flow's getArlByEmail, and callApi converts it
+     * to LoginRequired before any probe sees it.
+     */
+    private fun isSignInRequired(throwable: Throwable): Boolean =
+        generateSequence(throwable) { it.cause }.take(MAX_CHAIN)
+            .any { it is ClientException.LoginRequired || it is AppException.LoginRequired }
 
     private const val MAX_CHAIN = 8
 

@@ -39,7 +39,7 @@ class ExtensionOpenerActivity : Activity() {
         ).show()
 
         finish()
-        val startIntent = Intent(this, getMainActivity())
+        val startIntent = Intent().setComponent(getMainActivity())
         startIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startIntent.data = file?.let { Uri.fromFile(it) }
         // ⚠⚠ SECOND-LINE DEFENCE ONLY - THIS DOES NOT MAKE getMainActivity's FIX OPTIONAL, AND

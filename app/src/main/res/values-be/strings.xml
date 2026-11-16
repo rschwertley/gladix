@@ -153,8 +153,6 @@
     <string name="show_background">Паказаць фон</string>
     <string name="show_background_summary">Фонавае відэа альбо размыта вокладка трэку ў плэере</string>
     <string name="animation">Анімацыя</string>
-    <string name="back_animations">Анімацыі звароту</string>
-    <string name="back_animations_summary">Можа выклікаць візуальную памылку на Android, але вы можаце проста адкрыць Нядаўнія, каб гэта выправіць.</string>
     <string name="animations">Анімацыі</string>
     <string name="animations_summary">Адчуваеце затрымкі дадатку? Адключыце гэта, можа дапамагчы</string>
     <string name="refresh">Абнавіць</string>

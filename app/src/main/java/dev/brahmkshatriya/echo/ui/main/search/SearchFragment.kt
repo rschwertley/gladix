@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.content.res.AppCompatResources
@@ -157,7 +158,30 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             if (curr != 1) return@observe
             uiViewModel.currentNavBackground.value = bg
         }
+        // [2026-11-15] PREDICTIVE BACK: the overlay follows the finger, shrinking and moving toward the side being swiped, then
+        // hides on release as before. Our own animation, because Material's needs a SearchBar (SearchViewAnimationHelper
+        // .updateBackProgress reads searchBar.getCornerSize(), material 1.14.0 SearchViewAnimationHelper.java:513) and ours is
+        // a SearchBarAdapter row. The transform is on the SearchView itself, while hide() animates its inner rootView, so the
+        // two do not fight; it is cleared once the overlay is HIDDEN (transition listener below) or the swipe is cancelled.
+        // A TV remote's Back gets no started/progressed calls (inference), so it hides at once, as before.
         val backCallback = object : OnBackPressedCallback(false) {
+            private var direction = 1f
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                direction = if (backEvent.swipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+            }
+
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                val searchView = binding.quickSearchView
+                val scale = 1f - SEARCH_BACK_SCALE * backEvent.progress
+                searchView.scaleX = scale
+                searchView.scaleY = scale
+                searchView.translationX = direction * SEARCH_BACK_SHIFT * searchView.width * backEvent.progress
+            }
+
+            override fun handleOnBackCancelled() {
+                binding.quickSearchView.animate().scaleX(1f).scaleY(1f).translationX(0f)
+            }
+
             override fun handleOnBackPressed() {
                 binding.quickSearchView.hide()
             }
@@ -187,7 +211,14 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             backCallback.isEnabled = v.isShowing
             when (newState) {
                 SearchView.TransitionState.SHOWING, SearchView.TransitionState.SHOWN -> blockResultsFocus(true)
-                SearchView.TransitionState.HIDDEN -> blockResultsFocus(false)
+                SearchView.TransitionState.HIDDEN -> {
+                    blockResultsFocus(false)
+                    // [2026-11-15] Clears what a predictive back swipe left (backCallback), so the next show() is full size.
+                    v.animate().cancel()
+                    v.scaleX = 1f
+                    v.scaleY = 1f
+                    v.translationX = 0f
+                }
                 else -> Unit
             }
             // TV: when the overlay finishes collapsing, if Material's own restore-to-bar didn't land focus
@@ -458,3 +489,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             .show()
     }
 }
+
+// [2026-11-15] The predictive back swipe on the search overlay (SearchFragment's backCallback): at a full swipe it is 10%
+// smaller and has moved 5% of its width, close to Material's own back motion for full-screen containers (inference: chosen
+// by eye, not read from Material).
+private const val SEARCH_BACK_SCALE = 0.1f
+private const val SEARCH_BACK_SHIFT = 0.05f

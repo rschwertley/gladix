@@ -299,8 +299,6 @@
     <string name="check_for_updates">Vérifier les mises à jour</string>
     <string name="check_for_updates_summary">Chercher les mises à jour pour l\'application et les extensions quand vous ouvrez l\'application.</string>
     <string name="checking_for_updates">Recherche de mises a jour</string>
-    <string name="back_animations">Animations de retour</string>
-    <string name="back_animations_summary">Peut causer des bugs visuels dû à android, vous pouvez juste ouvrir les applications récentes pour régler ce bug.</string>
     <string name="regex_invalid">%1$s est invalide, s\'il vous plaît suivez le regex : %2$s</string>
     <string name="n_hours">%1$d heures</string>
     <string name="n_minutes">%1$d minutes</string>

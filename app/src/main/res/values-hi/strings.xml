@@ -296,8 +296,6 @@
     <string name="check_for_updates">अपडेट जाँचें</string>
     <string name="check_for_updates_summary">ऐप खोलने पर ऐप और एक्सटेंशन्स के नए अपडेट की जाँच करें।</string>
     <string name="checking_for_updates">अपडेट जाँच रहे हैं</string>
-    <string name="back_animations">पिछला एनीमेशन्स</string>
-    <string name="back_animations_summary">एंड्रॉइड के कारण विज़ुअल बग हो सकता है, हाल के ऐप्स खोलकर ठीक करें।</string>
     <string name="regex_invalid">%1$s अमान्य है, कृपया regex का पालन करें: %2$s</string>
     <string name="n_hours">%1$d घंटे</string>
     <string name="n_minutes">%1$d मिनट</string>

@@ -24,6 +24,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.ProgressBar
+import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
 import androidx.appcompat.content.res.AppCompatResources
@@ -498,7 +499,33 @@ class PlayerFragment : Fragment() {
             bgBackCallback?.remove()
             bgBackCallback = null
             if (visible) {
+                // [2026-11-15] PREDICTIVE BACK: the controls fade back in with the swipe; release hides the background as
+                // before, and a cancelled swipe fades them out again. On release, the observer above calls animateVisibility
+                // (true) on views this already made visible, so it only sets alpha to 1 (AnimationUtils.animateVisibility's
+                // else branch). A TV remote's Back gets no started/progressed calls (inference), so the usual fade runs.
+                // UiViewModel.backPressCallback's playerBgVisible return keeps the player sheet still meanwhile.
                 bgBackCallback = object : OnBackPressedCallback(true) {
+                    private val controls get() = listOf(binding.fgContainer, binding.playerMoreContainer)
+                    override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                        controls.forEach {
+                            it.animate().cancel()
+                            it.alpha = 0f
+                            it.isVisible = true
+                        }
+                    }
+
+                    override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                        controls.forEach { it.alpha = backEvent.progress }
+                    }
+
+                    override fun handleOnBackCancelled() {
+                        controls.forEach { view ->
+                            view.animate().alpha(0f).withEndAction {
+                                if (uiViewModel.playerBgVisible.value) view.isVisible = false
+                            }
+                        }
+                    }
+
                     override fun handleOnBackPressed() {
                         uiViewModel.changeBgVisible(false)
                     }

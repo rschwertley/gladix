@@ -1,0 +1,14 @@
+<!-- [2026-11-15] Material Symbols Outlined "folder", read from github.com/google/material-design-icons,
+     symbols/web/folder/materialsymbolsoutlined/folder_24px.svg (master, 2026-11-15). That file's viewBox is "0 -960 960 960";
+     here every absolute y is shifted by +960 for the 0 0 960 960 viewport, the same conversion ic_album carries
+     (album_24px.svg from the same set, translated the same way). Relative commands are unchanged. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="?colorControlNormal"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="#FF000000"
+      android:pathData="M160,800q-33,0 -56.5,-23.5T80,720v-480q0,-33 23.5,-56.5T160,160h240l80,80h320q33,0 56.5,23.5T880,320v400q0,33 -23.5,56.5T800,800H160Zm0,-80h640v-400H447l-80,-80H160v480Zm0,0v-480,480Z"/>
+</vector>

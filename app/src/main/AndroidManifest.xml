@@ -160,7 +160,6 @@
         <activity
             android:name=".MainActivity"
             android:banner="@drawable/tv_banner"
-            android:enableOnBackInvokedCallback="false"
             android:enabled="true"
             android:exported="true"
             android:launchMode="singleTop"
@@ -259,35 +258,24 @@
             </intent-filter>
         </activity>
 
-        <activity
+        <!-- [2026-11-15] PREDICTIVE BACK IS ON FOR EVERYONE: .MainActivity inherits the application's
+             enableOnBackInvokedCallback="true", and the "Back Animations" setting is gone. Its opt-out came from upstream
+             2a31b832 (echo #131, a visual glitch on back during a fragment's animation); the user's device test on 1180,
+             with the setting on, did not reproduce it.
+             ⚠⚠ THIS ALIAS IS THE OLD MainActivity$Back ACTIVITY, KEPT BY NAME AND STRIPPED OF EVERY FILTER, ON PURPOSE.
+             The setting swapped the launcher between the two with setComponentEnabledSetting, and that state lives in
+             PackageManager, outside app data, so it survives an update. On a device where the setting was on, this name is
+             explicitly ENABLED and MainActivity explicitly DISABLED. LauncherEntryReset re-enables MainActivity after the
+             update. This alias is left enabled there, so a widget, media session or posted notification still holding a
+             PendingIntent that names $Back opens MainActivity (inference: the stored state is keyed by component name).
+             ⚠️ NEVER GIVE IT A FILTER. MainActivity holds every launcher and link filter. With a filter here too,
+             the two would be enabled together on those devices, so the launcher would show two entries and a link would
+             offer a chooser (inference). And if a later build deletes this alias, those old PendingIntents stop opening the app. -->
+        <activity-alias
             android:name=".MainActivity$Back"
-            android:banner="@drawable/tv_banner"
-            android:enableOnBackInvokedCallback="true"
             android:enabled="false"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:windowSoftInputMode="stateVisible|adjustPan">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.MUSIC_PLAYER" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-                <!-- TV home-screen launcher entry (additive; phone LAUNCHER above is unchanged). -->
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                <category android:name="android.intent.category.APP_MUSIC" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="echo" />
-            </intent-filter>
-        </activity>
+            android:targetActivity=".MainActivity" />
 
         <activity
             android:name=".ui.extensions.ExtensionOpenerActivity"
@@ -332,6 +320,16 @@
                 android:name="android.media.browse.MediaBrowserService.Search"
                 android:value="true" />
         </service>
+
+        <!-- [2026-11-15] Runs LauncherEntryReset after every update. NOT directBootAware, and it uses no Koin: see
+             LauncherEntryReset.UpdateReceiver. -->
+        <receiver
+            android:name=".LauncherEntryReset$UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".playback.PlayerCallback$ButtonReceiver"

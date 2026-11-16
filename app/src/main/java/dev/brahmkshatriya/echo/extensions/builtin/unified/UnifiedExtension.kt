@@ -275,8 +275,14 @@ class UnifiedExtension(
             }.toFeedData(buttons?.withExtensionId(extension), bg)
         }
 
+        // [2026-11-15] THE ROW ITSELF IS STAMPED (OpenGonic-through-Unified review, the user's decision). Only its feed was, so a
+        // tracks-on-tap folder row (TracksOnTap.GLADIX_TRACKS_ON_TAP) reached loadTracksOnTap with no EXTENSION_ID in the extras
+        // it sends as the Album's, and UnifiedExtension.loadTracks threw ExtensionNotFoundException on album.extras.extensionId:
+        // Play, Shuffle, Play next and Add to queue on a folder failed under Unified. Same family as Sep's 9d0f930f ("no extension
+        // stamp"), fixed then too by stamping at the source. Every Category Unified passes on comes through here (the
+        // PagedData.injectExtensionId walk, nested pages included), so Library, folder pages, Search and "All songs" all carry it.
         private fun Shelf.Category.withExtensionId(extension: Extension<*>): Shelf.Category =
-            copy(feed = feed?.injectExtensionId(extension))
+            copy(extras = extras + (EXTENSION_ID to extension.id), feed = feed?.injectExtensionId(extension))
 
         private fun PagedData<Shelf>.injectExtensionId(extension: Extension<*>): PagedData<Shelf> =
             map { result ->

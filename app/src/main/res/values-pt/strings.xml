@@ -296,8 +296,6 @@
     <string name="check_for_updates">Verificar por atualizações</string>
     <string name="check_for_updates_summary">Olhe por novas atualizações para o app e para as extensões, quando você abrir o app.</string>
     <string name="checking_for_updates">Checando por atualizações</string>
-    <string name="back_animations">Animações de trás</string>
-    <string name="back_animations_summary">Pode causar um bug visual por causa do Android, mas você pode abrir os recentes só para resolver.</string>
     <string name="n_hours">%1$d horas</string>
     <string name="n_minutes">%1$d minutos</string>
     <string name="hidden_x">Escondido %1$s</string>

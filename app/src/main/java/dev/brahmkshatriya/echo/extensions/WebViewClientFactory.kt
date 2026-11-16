@@ -33,7 +33,7 @@ class WebViewClientFactory(
         PendingIntent.getActivity(
             context,
             0,
-            Intent(context, context.getMainActivity()).apply {
+            Intent().setComponent(context.getMainActivity()).apply {
                 putExtra("webViewRequest", id)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
