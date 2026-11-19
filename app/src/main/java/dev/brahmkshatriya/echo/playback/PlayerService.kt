@@ -251,6 +251,8 @@ class PlayerService : MediaLibraryService() {
         // sidecar created later (a slider change mid-session), when the id is already known.
         // EffectsListener survived the same hazard only because it LISTENS - see its
         // onAudioSessionIdChanged, which releases and rebuilds its effects on the real id.
+        // [CORRECTED 2026-11-18] EffectsListener has had no effects to rebuild since 2026-10-21: its
+        // onAudioSessionIdChanged only re-announces the session to external equalizers.
         val mainSession = exoPlayer.audioSessionId
         if (mainSession != C.AUDIO_SESSION_ID_UNSET)
             runCatching { sidecar.setAudioSessionId(mainSession) }
@@ -1402,6 +1404,9 @@ class PlayerService : MediaLibraryService() {
         // missed, so the label advertised a range the widgets had stopped allowing. The summary is
         // now formatted from these, so it cannot drift again. The layout XML still hardcodes 1..5 —
         // resource attributes can't reference these, so that one file remains a manual match.
+        // [CORRECTED 2026-11-18] This described Track Fade's range constants, which went with Track Fade
+        // (see the note above). The live fade range is CrossfadeController.FADE_SECONDS_MIN/MAX (0..12 s);
+        // the line below is SKIP_FADE_ON_ALBUMS, which this note never described.
 
         const val SKIP_FADE_ON_ALBUMS = "skip_fade_on_albums"
 
@@ -1410,6 +1415,9 @@ class PlayerService : MediaLibraryService() {
         // would make one stored value mean two different features during the overlap between builds,
         // and would silently inherit Track Fade's on-by-default (d0ad6b93, 2026-09-24) for a feature
         // that must ship OFF. A separate key makes "off" the honest default for every existing user.
+        // [CORRECTED 2026-11-18] "STILL LIVE" was true while both features shipped; Track Fade is gone and
+        // nothing reads crossfade_* now (abandoned in place, see the note above SKIP_FADE_ON_ALBUMS). The
+        // reason for a fresh key stands: an old stored value must not switch this feature on.
         // 0 = off, and 0 is the default; range 0..10s (CrossfadeController.FADE_SECONDS_MIN/MAX).
         // [CORRECTED 2026-11-13] 0..12 s since the slider maximum went to 12 (the user's decision).
         const val TRUE_CROSSFADE_SECONDS = "true_crossfade_seconds"

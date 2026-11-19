@@ -105,6 +105,7 @@ class DeezerArtistClient(private val deezerExtension: DeezerExtension, private v
         )
     }
 
+    // No availability dimming for albums: Deezer's artist lists (REST, gw pageArtist, Pipe) already leave out albums that can't be opened (capture 2026-11-16). Reopen only if a DeezerAlbumUnavailableException report's alb_id is still listed on an artist page.
     private fun buildAlbumsShelf(artist: Artist, jObject: JsonObject): Shelf? {
         val shelf = parser.run {
             jObject["data"]?.jsonArray?.toShelfItemsList("Albums") as? Shelf.Lists.Items

@@ -1136,6 +1136,7 @@ val Player.queueEpochOrZero: Long get() = shufflePlayer?.queueEpoch ?: 0L
  * Moved here from PlayerCallback 2026-10-27 so AndroidAutoCallback and queueEpochOrZero can reach it.
  */
 val Player.shufflePlayer: ShufflePlayer?
+    @OptIn(UnstableApi::class)
     get() {
         var p: Player? = this
         var hops = 0

@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Gladix</string>
-    <string name="app_github_repo" translatable="false">rschwertley/gladix</string>
     <string name="okay">ঠিক আছে</string>
     <string name="cancel">বাতিল</string>
     <string name="back">পেছনে</string>
@@ -235,10 +233,8 @@
     <string name="quality_x">কোয়ালিটি %1$d</string>
     <string name="off">বন্ধ</string>
     <string name="unknown_quality">অজানা কোয়ালিটি</string>
-    <string name="crying_af" translatable="false">;-;</string>
     <string name="so_empty">এত খালি…</string>
     <string name="not_loading">লোড হচ্ছে না</string>
-    <string name="n_dot_x" translatable="false">%1$d. %2$s</string>
     <string name="share">শেয়ার</string>
     <string name="sharing_x">%1$s শেয়ার করা হচ্ছে</string>
     <string name="save_to_library">লাইব্রেরিতে সংরক্ষণ করুন</string>

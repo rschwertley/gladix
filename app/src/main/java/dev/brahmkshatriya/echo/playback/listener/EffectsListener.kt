@@ -119,6 +119,8 @@ class EffectsListener(
     // ⚠️ DO NOT RE-ADD A FADE HOOK ON THE TRANSITION REASON. The crossfade hand-off is
     // a SEEK, so a reason-keyed fade here would fire in the middle of an overlap. The ramps are
     // driven by the controller through the two processors; this class owns the session effects.
+    // [CORRECTED 2026-11-18] It owns none now: it only announces the audio session to external
+    // equalizers (applyCustomEffects and onAudioSessionIdChanged).
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         // [2026-11-11] The per-track GAIN (Deezer's extras["GAIN"]) is no longer read: loudness normalization was removed,
         // see the removal note in AudioEffectsProcessor.

@@ -13,6 +13,7 @@ import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
+import dev.brahmkshatriya.echo.extension.DeezerAlbumUnavailableException
 import dev.brahmkshatriya.echo.extension.DeezerGatewayException
 import dev.brahmkshatriya.echo.extension.DeezerPlaylistUnavailableException
 import dev.brahmkshatriya.echo.extensions.exceptions.AppException
@@ -485,7 +486,14 @@ data class App(
                 return "gw=${it.method} lang=${it.lang} " +
                         "err=${it.errorText.scrubbedForCrashlytics(MAX_GATEWAY_ERROR_LEN)}"
             }
-            if (t.message == DEEZER_GATEWAY_MESSAGE)
+            // [2026-11-16] DeezerAlbumUnavailableException: the same three fields plus the album id the request asked for (a public
+            // catalogue id), so a report can be looked up on deezer.com. Album only, not every page method (the user's decision).
+            // The message arm is the DexLoader fallback, as for DEEZER_GATEWAY_MESSAGE.
+            (t as? DeezerAlbumUnavailableException)?.let {
+                return "gw=deezer.pageAlbum alb_id=${it.albumId} lang=${it.lang} " +
+                        "err=${it.errorText.scrubbedForCrashlytics(MAX_GATEWAY_ERROR_LEN)}"
+            }
+            if (t.message == DEEZER_GATEWAY_MESSAGE || t.message == DEEZER_ALBUM_UNAVAILABLE_MESSAGE)
                 return t.toString().scrubbedForCrashlytics(MAX_GATEWAY_DETAIL_LEN)
             t = t.cause
         }
@@ -584,6 +592,10 @@ data class App(
         // apart, those users' reports read "none" and nothing else breaks - a quieter failure than
         // DEEZER_AUTH_REJECTED_MESSAGE's, which silently re-enables reporting.
         private const val DEEZER_GATEWAY_MESSAGE = "Deezer refused this request."
+
+        // [2026-11-16] Byte-identical to DeezerAlbumUnavailableException's message, for the same fallback arm. If they drift
+        // apart, a DexLoader-loaded Deezer's album reports read "none"; nothing else breaks.
+        private const val DEEZER_ALBUM_UNAVAILABLE_MESSAGE = "This album isn’t available."
 
         // Matches the .take(300) on DeezerApi's GATEWAY-ERROR println, so the logcat line and this key
         // cannot truncate the same sentence differently. Crashlytics caps a key VALUE at 1024 chars;

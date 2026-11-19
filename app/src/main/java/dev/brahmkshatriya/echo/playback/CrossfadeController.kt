@@ -43,6 +43,8 @@ import kotlin.math.min
  * could not fix the case where the duration was already known at the transition. A tick removes the
  * dependency entirely: nothing is scheduled, every decision is re-made from the current position
  * 5 times a second, and the duration is re-read on every one of them.
+ * [CORRECTED 2026-11-18] EffectsListener.scheduleFadeOut no longer exists; it went with Track Fade.
+ * The pattern is described here as history, not as a live sibling.
  *
  * ⚠⚠ INERT AT SLIDER 0 IS A HARD RULE, ENFORCED IN THREE PLACES, NOT ONE:
  *   1. PlayerService only CONSTRUCTS this class (and the sidecar) when the slider is > 0, and
@@ -817,6 +819,8 @@ class CrossfadeController(
      * ⚠️ MAIN'S ID IS NEVER WRITTEN, which is the older rule and still right:
      * setting it would fire EffectsListener.onAudioSessionIdChanged - release, rebuild,
      * re-broadcast - mid-playback, on every crossfade.
+     * [CORRECTED 2026-11-18] Since 2026-10-21 that callback only re-broadcasts: EffectsListener has
+     * no effects to release or rebuild. The rule stands for the broadcast alone.
      * ⚠️ SAFE AT ANY TIME. The sidecar is idle between transitions, and on a
      * running one setAudioSessionId reaches DefaultAudioSink, which flushes its output before
      * the next write - a tail that loses its correction is a worse crossfade, not a wrong
@@ -1258,6 +1262,7 @@ class CrossfadeController(
      *
      * Scaled by speed because a position threshold is MEDIA time while "25 seconds of warning" is
      * wall-clock intent - the same correction EffectsListener.scheduleFadeOut made.
+     * [CORRECTED 2026-11-18] scheduleFadeOut was removed with Track Fade; the name is history only.
      */
     // [2026-11-13] Plus the end move when the end look-ahead has already answered for this song: with the move no longer capped at
     // 10 s (up to the 60 s scan), the switch can sit well before the old arm point. Media ms, so added after the speed scaling.

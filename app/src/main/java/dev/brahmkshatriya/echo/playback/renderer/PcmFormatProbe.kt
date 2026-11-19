@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * crossfade's hand-off mute, both ramps, the discard, the EQ and the LUT are all skipped with
  * nothing on screen and nothing in the log to say so. A user would report "the crossfade stopped
  * working on some tracks", which is the hardest shape to diagnose from a description.
+ * [CORRECTED 2026-11-18] There is no LUT any more (deleted 2026-11-11); what pass-through skips is the
+ * hand-off mute, both ramps, the discard and the bass shelf with its softLimit.
  *
  * ⚠️ ONCE PER PROCESS. onConfigure runs per format change, so an unexpected
  * format would otherwise report on every track and on every seek that reconfigures the sink. The

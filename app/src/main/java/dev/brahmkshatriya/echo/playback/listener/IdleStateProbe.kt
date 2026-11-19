@@ -5,6 +5,10 @@ import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.utils.CrashKeys
 
 /**
+ * ⚠⚠ PERMANENT, NOT A TEMPORARY PROBE (2026-11-18). It reported real triggers on 1144 (an external
+ * STOP), 1146 (a Galaxy Watch STOP, fixed in 1147) and 1148 (a notification swipe, fixed in 1153), and has
+ * been quiet since 1153. Keep it: a new report means a new path into a stuck IDLE.
+ *
  * ⚠⚠ REPORTS THE ONE PLAYER STATE THAT IS A STUCK UI BY CONSTRUCTION: STATE_IDLE with
  * playWhenReady TRUE and no error. Build 1141, 06:15:18: a player that had just been resumed went
  * IDLE within ~90 ms and stayed there. dumpsys media_session showed state=NONE(0), position 56600,
@@ -53,8 +57,9 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
  *       different investigation and would not have been findable from a logcat line either.
  *   items=0  a queue clear, which the 1141 invariants had already excluded - would mean the guard's
  *       own precondition is wrong.
- *   NO REPORT EVER  the state does not occur in the field and both the guard and this probe should
- *       be deleted. That is a real possible outcome and the removal condition.
+ *   [CORRECTED 2026-11-18] A fourth line, "NO REPORT EVER", made silence the removal condition for the
+ *       guard and this probe. Dropped: the state does occur in the field (1144, 1146, 1148), so silence
+ *       now means no new path, not that the probe is unneeded.
  *
  * ⚠️ recordException DIRECTLY - a third site, same reasoning StaleFocusProbe gives (and the
  * cold-start probe gave, before its deletion on 2026-10-29): the alternative, app.throwFlow, shows the user a snackbar, and a

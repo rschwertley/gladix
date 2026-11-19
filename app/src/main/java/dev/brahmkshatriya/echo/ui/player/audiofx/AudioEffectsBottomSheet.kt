@@ -193,6 +193,8 @@ class AudioEffectsBottomSheet : BottomSheetDialogFragment() {
             // MaterialSliderPreference on the settings screen (it persists in addOnChangeListener too,
             // ignoring byUser) - so dragging produces a run of syncCrossfade calls on both screens
             // alike, and crossing 0 is what creates or releases the sidecar.
+            // [CORRECTED 2026-11-18] The Track Fade slider is gone (see fragment_audio_fx.xml); the
+            // settings-screen comparison is the one that still holds.
             trueCrossfadeSummary.text = trueCrossfadeSummary.context.getString(
                 R.string.true_crossfade_seconds_summary, CrossfadeController.FADE_SECONDS_MAX
             )

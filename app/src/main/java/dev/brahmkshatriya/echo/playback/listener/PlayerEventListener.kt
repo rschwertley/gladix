@@ -2409,6 +2409,8 @@ class PlayerEventListener(
         // unchanged: ONE immediate retry (replaceMediaItem/withRetry — no backoff; backoff-retry is parked as
         // its own task), then skip. Bounded by end-of-queue (hasNextMediaItem): a fully-500ing CDN skips
         // monotonically to the end and stops — no loop, no spin.
+        // Deezer raw-stream 5xx (IllegalStateException "Failed to fetch audio: HTTP 5xx") deliberately stays on the generic
+        // path: the breaker stops a Deezer CDN outage after 3 with a report (decided 2026-11-17; e33c22f2 muted).
         if (rootCause is HttpDataSource.InvalidResponseCodeException
             && rootCause.responseCode in 500..599
         ) {

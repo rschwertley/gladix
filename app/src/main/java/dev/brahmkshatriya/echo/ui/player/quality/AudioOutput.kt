@@ -56,9 +56,13 @@ object AudioOutput {
      * ⚠️ IF THIS LABEL IS EVER REPORTED AS WRONG, CHECK THE API LEVEL FIRST. On 31+ a wrong
      * label is a real defect; on 29-30 it is this heuristic and the fix is not more precedence
      * entries, it is accepting a generic label on those versions.
+     * [CORRECTED 2026-11-18] getAudioDevicesForAttributes is API 33, not 31 (lintRelease NewApi). Gated
+     * on 31, it failed inside runCatching on 31-32 and returned null, so those versions always showed the
+     * speaker label. It is now gated on 33: exact on 33+, and 31-32 take the [PRECEDENCE] heuristic
+     * like everything below them. Read every "31" above as "33".
      */
     private fun activeDevice(audioManager: AudioManager): AudioDeviceInfo? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val attributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)

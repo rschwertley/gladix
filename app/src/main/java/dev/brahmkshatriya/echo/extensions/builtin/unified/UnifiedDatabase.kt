@@ -285,6 +285,7 @@ abstract class UnifiedDatabase : RoomDatabase() {
                 cover = cover?.toData<ImageHolder?>()?.getOrThrow(),
                 creationDate = modified.toData<Date>().getOrNull(),
                 description = description.takeIf { it.isNotBlank() },
+                isRadioSupported = false, // no radio for Unified's own items: see UnifiedExtension.radio
                 extras = mapOf(
                     EXTENSION_ID to UNIFIED_ID,
                     "listData" to listData,

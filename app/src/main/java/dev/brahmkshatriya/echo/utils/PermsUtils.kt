@@ -237,6 +237,15 @@ object PermsUtils {
 
     private const val BATTERY_OPTIMIZATION_ASKED = "battery_optimization_asked"
 
+    /**
+     * One-time prompt that puts Gladix in the Unrestricted battery bucket. Why (May 13-14 history, added
+     * by fe54fcb5): Android stopped PlayerService after ~1h41m idle while paused ("Stopping service due
+     * to app idle"), and the cold restart on resume caused mid-track CDN Range stalls.
+     * ⚠️ PLAY POLICY: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is restricted to the acceptable use cases in
+     * Play's Device and Network Abuse policy, and that list does not cover music players. Fine for closed
+     * testing; revisit before any public Play release (options: the settings-list intent, or removal if
+     * resume after idle-kill proves clean).
+     */
     fun ComponentActivity.checkBatteryOptimization() {
         val pm = getSystemService<PowerManager>() ?: return
         if (pm.isIgnoringBatteryOptimizations(packageName)) return

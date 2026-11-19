@@ -192,6 +192,22 @@ class DeezerGatewayException(
     // than a sign-in prompt. loadPlaylist's handleArlExpiration throws LoginRequired only for EMPTY credentials.
     val isPlaylistNotAccessible: Boolean
         get() = method == "deezer.pagePlaylist" && errorText.contains("PERMISSION_ERROR", ignoreCase = true)
+
+    // [2026-11-16] AN ALBUM THIS ACCOUNT CANNOT OPEN (Crashlytics dc8c93d2, 1182: deezer_gateway `gw=deezer.pageAlbum lang=uk
+    // err=DATA_ERROR=album::getData`, twice 6 s apart in one session). callApi turns it into DeezerAlbumUnavailableException.
+    // What the answer means, from the sources the user's review cited (read 2026-11-16):
+    // - Not transient by another client's rule: soulwax/gerdur-core __tests__/errors.ts:15-17, "numeric code 4 is retryable,
+    //   DATA_ERROR is not" (src/lib/errors.ts:5 RETRYABLE_KEYS has no DATA_ERROR). That client's rule, not Deezer documentation.
+    // - Licensing: Deezer Community thread 77050 ("Unable to load page - Album's won't load", Jul 2023, Android). A Deezer
+    //   Community Manager explains albums that would not open as not licensed in the user's country. "Unable to load page" is
+    //   the user's wording there, not staff's. A deleted album is the other likely cause.
+    // - Capture 2026-11-16: a removed album returns exactly this error.
+    // ⚠️ THE EXACT ENTRY, KEY AND VALUE, AND ONLY ON deezer.pageAlbum (the user's decision): errorText is callApi's
+    // `k=v, k=v` join of the error object, so this tests for the entry `DATA_ERROR=album::getData` whole. DATA_ERROR alone is
+    // the gateway's general data-layer code (see isEmptyTracklist). If Deezer renames the value, the refusal goes back to the
+    // generic DeezerGatewayException report, which fails safe.
+    val isAlbumNotAvailable: Boolean
+        get() = method == "deezer.pageAlbum" && errorText.split(", ").any { it == "DATA_ERROR=album::getData" }
 }
 
 /**
@@ -203,6 +219,21 @@ class DeezerGatewayException(
 class DeezerPlaylistUnavailableException(val errorText: String) :
     Exception("This playlist is private or no longer available.") {
     override fun toString() = "DeezerPlaylistUnavailableException(error=$errorText)"
+}
+
+/**
+ * [2026-11-16] Deezer could not open an album for this account: see DeezerGatewayException.isAlbumNotAvailable. Its own type,
+ * so it never reaches the catch sites that test DeezerGatewayException's predicates. Two strings, as for the playlist one:
+ * `message` is for the user, the rest is for the log and rides on toString().
+ * ⚠️ REPORTED, UNLIKE DeezerPlaylistUnavailableException (the user's decision): as ITS OWN Crashlytics issue, so a few album
+ * ids can be looked up on deezer.com before that issue is muted. App.deezerGatewayDetail writes [albumId] into the
+ * deezer_gateway key. Constructed at its own throw site in callApi and not chained to the DeezerGatewayException, so the
+ * report's innermost cause is this type at that line rather than the gateway refusal's constructor line.
+ * ⚠️ The message is byte-identical to App's DEEZER_ALBUM_UNAVAILABLE_MESSAGE (that key's fallback arm). Change both or neither.
+ */
+class DeezerAlbumUnavailableException(val albumId: String, val lang: String, val errorText: String) :
+    Exception("This album isn’t available.") {
+    override fun toString() = "DeezerAlbumUnavailableException(alb_id=$albumId, lang=$lang, error=$errorText)"
 }
 
 /**
@@ -831,6 +862,13 @@ class DeezerApi(private val session: DeezerSession) {
                 // [2026-11-14] After the auth exit, so NEED_USER_AUTH_REQUIRED still goes to re-login and Sign in. See
                 // DeezerGatewayException.isPlaylistNotAccessible.
                 if (gatewayError.isPlaylistNotAccessible) throw DeezerPlaylistUnavailableException(errorText)
+                // [2026-11-16] See DeezerGatewayException.isAlbumNotAvailable. The id is read back from this request's own
+                // params (DeezerAlbum.album's builder puts alb_id; rebuilding it only reads langCode). Not the gateway error as
+                // a cause: see DeezerAlbumUnavailableException for why it must not be.
+                if (gatewayError.isAlbumNotAvailable) {
+                    val albumId = (buildJsonObject(paramsBuilder)["alb_id"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                    throw DeezerAlbumUnavailableException(albumId, langCode, errorText)
+                }
                 throw gatewayError
             }
             result

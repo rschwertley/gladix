@@ -16,7 +16,8 @@ import dev.brahmkshatriya.echo.common.models.Track
  * Baby Beluga skip class (see DeezerTrackClient's FALLBACK_ID note). So this keeps exactly what toTrack()
  * needs to rebuild the grafted Track: id, FALLBACK_ID, the grafted title (SNG_TITLE + VERSION), artist
  * ids/names, album id/title/cover, cover, duration, explicit, and the two small extras the stream path
- * reads (FILESIZE_MP3_MISC, GAIN). There is no ALT_VERSION or other substitution stamp on the record:
+ * reads (FILESIZE_MP3_MISC, GAIN). [CORRECTED 2026-11-18] Nothing reads GAIN since loudness normalization
+ * was removed (2026-11-11); it is still written, harmlessly. There is no ALT_VERSION or other substitution stamp on the record:
  * ALT_VERSION is stamped on the STREAMABLE at play time (DeezerTrackClient), not on the liked record.
  * ⚠️ NO TOKENS (the 1151 rule): TRACK_TOKEN / TRACK_TOKEN_EXPIRE are left empty, exactly as a
  * token-stripped Library row from the disk cache arrives; DeezerTrackClient.loadTrack re-fetches an

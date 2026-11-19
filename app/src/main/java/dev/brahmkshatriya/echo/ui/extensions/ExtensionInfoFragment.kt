@@ -127,6 +127,9 @@ class ExtensionInfoFragment : BaseSettingsFragment() {
      * never expands. It is called for EVERY fragment in the popped record, which includes the page shown again underneath, so
      * popping a page opened from here also reaches this with fragment === this. isRemoving is what tells the two apart (the
      * listener's own doc). When both flags are clear it fires once per pop of this page.
+     * Known, accepted (user, 2026-11-16): the back-swipe preview shows the page underneath (Search), not the player; the result
+     * is correct. Options A/B/C weighed; A covers the moving page; B fakes playerSheetOffset; C moves the page above the
+     * player sheet — each for a cosmetic gain.
      */
     private val expandPlayerOnPop = object : FragmentManager.OnBackStackChangedListener {
         override fun onBackStackChanged() {}

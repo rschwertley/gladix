@@ -449,6 +449,7 @@ class UnifiedExtension(
         cover = cachedTracks.first().cover,
         description = context.getString(R.string.cache_playlist_warning),
         trackCount = cachedTracks.size.toLong(),
+        isRadioSupported = false, // no radio for Unified's own items: see the note at radio()
         extras = mapOf(EXTENSION_ID to UNIFIED_ID)
     ) else null
 
@@ -481,6 +482,7 @@ class UnifiedExtension(
 
     override suspend fun loadRadio(radio: Radio): Radio {
         val id = radio.extras.extensionId
+        if (id == UNIFIED_ID) throw ClientException.NotSupported("Radio")
         val extension = extensions().get(id)
         return extension.client<RadioClient, Radio> {
             loadRadio(radio).withExtensionId(id, this)
@@ -497,6 +499,13 @@ class UnifiedExtension(
 
     override suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?): Radio {
         val id = item.extras.extensionId
+        // ⚠️ UNIFIED'S OWN ITEMS HAVE NO RADIO (2026-11-18, Crashlytics d81feaa1 on 1182). Its own playlists carry
+        // EXTENSION_ID = UNIFIED_ID on purpose (UnifiedDatabase.PlaylistEntity.playlist, cachePlaylist) and now set
+        // isRadioSupported = false, so no Radio button is offered. This guard covers a copy cached before that: without
+        // it, get() threw ExtensionNotFoundException("unified"), because extensions() excludes Unified itself. Same
+        // shape as 1120's ResumptionUtils.restamped: the radio path degrades and get() keeps throwing for every other
+        // caller. loadRadio carries the same guard.
+        if (id == UNIFIED_ID) throw ClientException.NotSupported("Radio")
         return extensions().get(id).client<RadioClient, Radio> {
             radio(item, context).withExtensionId(id, this)
         }

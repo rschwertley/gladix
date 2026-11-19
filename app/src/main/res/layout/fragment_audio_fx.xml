@@ -157,6 +157,8 @@
         <!--
             TRUE CROSSFADE. Same key as Settings -> Player (TRUE_CROSSFADE_SECONDS), same 0..10 range,
             same 0 default; the two screens are two views of one preference, not two settings.
+            [CORRECTED 2026-11-18] The range is 0..12 since the maximum went to 12 (2026-11-13):
+            CrossfadeController.FADE_SECONDS_MAX = 12 and the slider's valueTo below is 12.
 
             The Track Fade row, its value label and its 1-5 s slider stood directly above this block
             until Build 2 (2026-10-15) and are deleted, not migrated. @id/skipFadeOnAlbums below now
@@ -169,7 +171,7 @@
 
             The summary carries a format argument (the 0-10 range), which android:text cannot supply,
             so FragmentAudioFxBinding.bind sets it from the same string resource the settings screen
-            uses. tools:text here is preview only.
+            uses. tools:text here is preview only. [CORRECTED 2026-11-18] The range it carries is 0-12.
         -->
         <LinearLayout
             android:id="@+id/trueCrossfade"

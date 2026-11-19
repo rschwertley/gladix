@@ -480,6 +480,9 @@ object FragmentUtils {
      * POST /pair and answers no OPTIONS preflight, so that page could not have reached it anyway.
      * THE NARROW PATH FILTER STANDS ON ITS OWN MERITS - it is simply no longer protecting that
      * link, so do not widen it on the grounds that the reason above has gone.
+     * [CORRECTED 2026-11-17] "pair.html returns 404" was wrong: per the user's Oct 23 record, the 404 came from the
+     * pairing worker having no route for the page's request, not from the page's URL. The page itself stayed served
+     * (measured 200 on 2026-11-17) until it was deleted from the repo that day. The rest of the note stands.
      *
      * Param names match the echo:// form where they overlap (`name`), so the two stay readable side
      * by side.

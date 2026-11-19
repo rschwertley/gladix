@@ -2,6 +2,7 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
     id("maven-publish")
+    // Upstream (LuftVerbot) residue: shadowJar builds a standalone extension jar the app never uses (the app takes this module’s plain jar). Not bumped (2026-11-18).
     id("com.gradleup.shadow") version "9.4.2"
 }
 

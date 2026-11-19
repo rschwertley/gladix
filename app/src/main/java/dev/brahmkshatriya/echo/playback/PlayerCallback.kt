@@ -1772,7 +1772,7 @@ class PlayerCallback(
                     val mediaItem = getMediaItemAt(i)
                     if (mediaItem.mediaId == mediaId) mediaItem to i else null
                 }
-            } ?: return@future SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE)
+            } ?: return@future SessionResult(SessionError.ERROR_BAD_VALUE)
             applyRating(session, target.first, target.second, rating.isThumbsUp)
         }
     }

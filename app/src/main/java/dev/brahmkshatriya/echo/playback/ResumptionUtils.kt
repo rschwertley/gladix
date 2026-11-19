@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.di.App
@@ -429,6 +430,7 @@ object ResumptionUtils {
      * `original` IS the queue, so the file would be a second copy of what the queue already carries
      * - and the restore treats "absent" exactly as every build before this one did.
      */
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun Player.originalOrderIdsIfShuffled(): List<String> =
         (this as? ShufflePlayer)?.takeIf { it.shuffleModeEnabled }?.originalOrderIds.orEmpty()
 

@@ -544,7 +544,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * ⚠⚠ WHY A 16-BIT-ONLY PROCESSOR IS CORRECT, AND WHAT WOULD MAKE IT
      * WRONG. Everything here assumes PCM 16-bit: the 65,536-entry LUT is indexed by the sample
      * itself, and [framesFor], [frameSizeBytes] and [emittedOutputMs] all refuse any other
-     * encoding. That holds because the SINK CONVERTS BEFORE US. DefaultAudioSink.configure
+     * encoding. [CORRECTED 2026-11-18] The LUT was deleted on 2026-11-11; the samples are read as
+     * Short / 32768f. The three 16-bit-only functions still hold the assumption on their own.
+     * That holds because the SINK CONVERTS BEFORE US. DefaultAudioSink.configure
      * (media3 1.11.0, :754-761) builds the pipeline as
      *     pipelineProcessors.addAll(availableAudioProcessors)
      *     if (shouldUseFloatOutput(encoding)) { add(toFloatPcmAudioProcessor) }
@@ -559,6 +561,7 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
      * here runs up to ~4.35x more often than at 44.1 kHz. That is a CPU fact, not a correctness
      * one: the LUT is indexed by sample value, and every ms<->frame conversion in this file goes
      * through the configured rate.
+     * [CORRECTED 2026-11-18] There is no LUT now (see above); the rest stands.
      * ⚠⚠ TWO SETTINGS WOULD REMOVE THIS PROCESSOR FROM THE PIPELINE
      * ENTIRELY, SILENTLY, AND ONLY ON HIGH-RES TRACKS. Float output is one (the branch above
      * adds the chain's processors ONLY in the else arm, and shouldUseFloatOutput is
@@ -1004,6 +1007,9 @@ class AudioEffectsProcessor : BaseAudioProcessor() {
         // compress less, and each leg would come out relatively HOTTER — the opposite of the
         // intent. The limiter is also per-leg and pre-mix, so it cannot see the sum at all; that is
         // precisely why this constant exists rather than relying on it.
+        // [CORRECTED 2026-11-18] There is no LUT (deleted 2026-11-11). The per-leg limiter is now softLimit, which
+        // runs only when bass boost is on (bands non-empty, in queueInput); the ramp (fadeGain) still comes after
+        // it, and the reason above still holds whenever it runs.
         // ⚠⚠ [CORRECTED 2026-10-28] THE PER-LEG CAP IS 1.0, NOT 0.926, AND THE TAIL WAS NOT 0.926
         // EITHER. Two things were wrong above:
         //   - From 2026-10-15 to 2026-10-28 the crossfade TAIL ran PASS A: the sidecar processor
