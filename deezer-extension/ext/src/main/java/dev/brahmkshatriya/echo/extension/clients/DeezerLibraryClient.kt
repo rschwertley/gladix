@@ -96,7 +96,7 @@ class DeezerLibraryClient(
             val id = tab?.id
             val (data, liked) = when {
                 tab?.extras?.get(DeezerPlaylistClient.AVAILABILITY_AWAIT_EXTRA) == "1" ->
-                    likedMarksPass(tab?.extras?.get(DeezerPlaylistClient.AVAILABILITY_RECHECK_EXTRA) == "1")
+                    likedMarksPass(tab.extras[DeezerPlaylistClient.AVAILABILITY_RECHECK_EXTRA] == "1")
                         .let { marked -> marked.map { it.toShelf() } to marked }
                 id == TabId.ALL.id -> loadAll()
                 else -> loadSingle(id)
