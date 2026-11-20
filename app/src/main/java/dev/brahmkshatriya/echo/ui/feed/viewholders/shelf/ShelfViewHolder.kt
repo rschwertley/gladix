@@ -40,6 +40,10 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
         private var item: ShelfType.Category? = null
 
         init {
+            // [2026-11-20] KNOWN GAP, left on purpose (the user's decision): unlike CategoryViewHolder's click, this passes neither
+            // a tracks-on-tap row's extras nor FOLDER_SORT_SCOPE, so a marked folder or "All songs" opened from a carousel chip
+            // would get no load-on-tap Play/Shuffle and its own sort instead of the shared folder sort. No producer is known to
+            // put folders in a Lists.Categories (OpenGonic's shape is not in this tree); revisit if one does.
             binding.root.setOnClickListener {
                 listener.openFeed(
                     it,

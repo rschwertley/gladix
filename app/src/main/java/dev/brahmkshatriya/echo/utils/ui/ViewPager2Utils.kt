@@ -54,6 +54,22 @@ object ViewPager2Utils {
      * ⚠️ ACTION_CANCEL CLEARS WITHOUT FIRING. A cancel means the gesture was taken over by an
      * ancestor - in practice the BottomSheet claiming a drag that started sideways - and acting on it
      * would change tracks because the user dragged the SHEET.
+     * [CORRECTED 2026-11-20] "A drag that started sideways" was not an edge case, it was most back swipes: 2 of 10
+     * worked on device (1184). At page 0 nothing ever locked the sheet out. RecyclerView asks its parent not to
+     * intercept only once it has consumed scroll (RecyclerView 1.4.0 RecyclerView.java:3952, 3962), and here there
+     * is nothing to scroll. So the player sheet's ViewDragHelper took any drag with more than touch slop of downward
+     * drift (customview 1.2.0 ViewDragHelper.java:1426-1442; Material 1.14.0 BottomSheetBehavior.java:737), at any
+     * point before the lift, and this listener got the cancel. Forward swipes were safe because RecyclerView locks
+     * at its first consumed scroll. The lock below gives page 0 the same.
+     * ⚠⚠ [2026-11-20] THE ONE THING THIS DOES BESIDES OBSERVE: once a drag at page 0 is backwards past
+     * scaledPagingTouchSlop (the slop ViewPager2's RecyclerView starts dragging at, TOUCH_SLOP_PAGING) and more
+     * sideways than vertical, it calls parent.requestDisallowInterceptTouchEvent(true), once per gesture. This is
+     * the same call and the same distance a forward swipe gets from RecyclerView, and the pattern of Google's
+     * ViewPager2 NestedScrollableHost sample. It still never intercepts, fires or writes the page. The framework clears
+     * the flag on the next DOWN. A drag that goes more than touch slop downward first still goes to the sheet. Once
+     * locked, a gesture that turns vertical lifts to nothing, as a forward swipe does. On the mini bar
+     * (item_player_collapsed_controls has no clickable root, so touches reach the pager) the same holds:
+     * a drag up is vertical-first and still expands the player.
      * ⚠️ qualified IS RE-EVALUATED ON EVERY MOVE, not latched. A drag that goes back the other
      * way, or turns vertical, un-qualifies itself and lifts to nothing - which is what a user who
      * changed their mind mid-drag expects.
@@ -62,11 +78,13 @@ object ViewPager2Utils {
      */
     fun ViewPager2.onFirstPageBackSwipe(onSwipe: () -> Unit) {
         val recycler = getChildAt(0) as? RecyclerView ?: return
-        val threshold = ViewConfiguration.get(context).scaledPagingTouchSlop * 2
+        val pagingSlop = ViewConfiguration.get(context).scaledPagingTouchSlop
+        val threshold = pagingSlop * 2
         recycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
             private var downX = 0f
             private var downY = 0f
             private var qualified = false
+            private var locked = false
 
             override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
                 when (e.actionMasked) {
@@ -74,6 +92,7 @@ object ViewPager2Utils {
                         downX = e.x
                         downY = e.y
                         qualified = false
+                        locked = false
                     }
 
                     MotionEvent.ACTION_MOVE -> {
@@ -88,6 +107,11 @@ object ViewPager2Utils {
                         // layout, not the raw sign.
                         val backwards = if (rv.layoutDirection == View.LAYOUT_DIRECTION_RTL) -dx else dx
                         qualified = backwards > threshold && backwards > abs(dy)
+                        // [2026-11-20] The sheet lock; see the CORRECTED note above.
+                        if (!locked && backwards > pagingSlop && backwards > abs(dy)) {
+                            locked = true
+                            rv.parent?.requestDisallowInterceptTouchEvent(true)
+                        }
                     }
 
                     MotionEvent.ACTION_UP -> {

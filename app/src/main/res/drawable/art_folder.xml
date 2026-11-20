@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [2026-11-20] The folder placeholder for marked folder and "All songs" rows (CategoryViewHolder.bind). ic_folder's glyph fills
+     ~83% of its box, so it is inset 20% a side here to sit at ~50%, like the other art_* placeholders. The tint is ic_folder's
+     own ?colorControlNormal. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_folder"
+    android:inset="20%" />

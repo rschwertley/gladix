@@ -88,8 +88,13 @@ class CategoryViewHolder(
             title.text = category.title
             subtitle.text = category.subtitle
             subtitle.isVisible = !category.subtitle.isNullOrEmpty()
-            icon.isVisible = category.image != null
-            category.image.loadInto(icon)
+            // [2026-11-20] Marked folder and tracks-on-tap rows ("All songs") always keep the icon slot, so their titles line up:
+            // the row's image when it has one, otherwise art_folder, which also shows if the image fails to load
+            // (ImageUtils.createRequest falls back to the placeholder for both). Every other row passes no placeholder, as before.
+            // Shared by ShelfViewHolder.Category's carousel chips and both the phone and TV layouts.
+            val reserveIcon = category.isMarkedFolder() || category.hasTracksOnTap()
+            icon.isVisible = category.image != null || reserveIcon
+            category.image.loadInto(icon, if (reserveIcon) R.drawable.art_folder else null)
             root.run {
                 val color = applyBackground(category.backgroundColor)
                     ?: ResourcesCompat.getColor(resources, R.color.amoled_fg_semi, null)
