@@ -772,7 +772,25 @@ class PlayerFragment : Fragment() {
                 // jump from ANIMATING through every intermediate page, and it was computed from `index`
                 // while the call below passed a DIFFERENT index. Keep them on one name: if a future
                 // change needs a different target, it must flow through `index` so this gate follows it.
-                val smooth = displayOn && isResumed && !isInitialLoad && abs(index - current) <= 1
+                // [2026-11-19] SAME ART, NO SLIDE. Device test 2026-11-19, on Deezer, YouTube Music and OpenGonic: every
+                // Next and natural advance slid the old cover off and the identical one in, which reads as a glitch (Spotify and
+                // Apple Music leave identical art in place). So an adjacent move between two tracks with the same cover (equal
+                // ImageHolder) or the same album (same extension and the same non-empty album id, because OpenGonic and YouTube
+                // Music cover URLs can differ per track) takes the existing smooth=false path: the always-correct jump described
+                // above, not a new one. It can only turn `smooth` off, never on, so a wrong verdict costs an animation at most.
+                // Both tracks come from `submitted`, the list the adapter has committed, never from viewModel.queue, and the new
+                // one is read at `index`, the same variable setCurrentItem uses (the 2026-10-16 rule). `current` can be a stale
+                // page after a front insert (defect 1 above); then the outgoing track may be the wrong one, which again only
+                // changes whether this move animates. index == current is left alone, so the many same-track submits (isLoaded,
+                // isPlaying) still reach setCurrentItem exactly as before.
+                val sameArt = index != current && submitted.getOrNull(current)?.let { outgoing ->
+                    val old = outgoing.track
+                    val new = submitted[index].track
+                    (old.cover != null && old.cover == new.cover) ||
+                        (outgoing.extensionId == submitted[index].extensionId &&
+                            !old.album?.id.isNullOrEmpty() && old.album?.id == new.album?.id)
+                } == true
+                val smooth = displayOn && isResumed && !isInitialLoad && abs(index - current) <= 1 && !sameArt
                 isInitialLoad = false
                 if (!viewPager.isLaidOut) viewPager.setCurrentItem(index, smooth)
                 else {

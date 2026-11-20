@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Playlist
@@ -230,6 +231,8 @@ class DeezerPlaylistUnavailableException(val errorText: String) :
  * deezer_gateway key. Constructed at its own throw site in callApi and not chained to the DeezerGatewayException, so the
  * report's innermost cause is this type at that line rather than the gateway refusal's constructor line.
  * ⚠️ The message is byte-identical to App's DEEZER_ALBUM_UNAVAILABLE_MESSAGE (that key's fallback arm). Change both or neither.
+ * [2026-11-18] It now travels as the CAUSE of a MediaUnavailableException built from the same message (see callApi), so it is
+ * still the innermost cause, constructed at the same line. App.deezerGatewayDetail's fallback arm skips the wrapper for that reason.
  */
 class DeezerAlbumUnavailableException(val albumId: String, val lang: String, val errorText: String) :
     Exception("This album isn’t available.") {
@@ -865,9 +868,13 @@ class DeezerApi(private val session: DeezerSession) {
                 // [2026-11-16] See DeezerGatewayException.isAlbumNotAvailable. The id is read back from this request's own
                 // params (DeezerAlbum.album's builder puts alb_id; rebuilding it only reads langCode). Not the gateway error as
                 // a cause: see DeezerAlbumUnavailableException for why it must not be.
+                // [2026-11-18] Thrown as the cause of a MediaUnavailableException, so the media page shows its calm
+                // removed-item state (MediaHeaderAdapter.Error) for any extension. A wrap, not a subclass: :common stays
+                // final, and album errors never reach PlayerEventListener's rootCause check (api.album has no playback caller).
                 if (gatewayError.isAlbumNotAvailable) {
                     val albumId = (buildJsonObject(paramsBuilder)["alb_id"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-                    throw DeezerAlbumUnavailableException(albumId, langCode, errorText)
+                    val unavailable = DeezerAlbumUnavailableException(albumId, langCode, errorText)
+                    throw MediaUnavailableException(unavailable.message.orEmpty(), unavailable)
                 }
                 throw gatewayError
             }

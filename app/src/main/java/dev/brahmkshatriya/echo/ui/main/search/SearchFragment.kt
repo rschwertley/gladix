@@ -99,7 +99,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             cached = {
                 val curr = music.getExtension(argId) ?: current.value!!
                 val query = searchViewModel.queryFlow.value
-                val feed = Cached.getFeedShelf(app, curr.id, "$id-$query")
+                val feed = Cached.getFeedShelf(app, curr.id, "$id-$query", this)
                 FeedData.State(curr.id, null, feed.getOrThrow())
             }
         ) {
@@ -140,6 +140,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentSearchBinding.bind(view)
         val recyclerView = binding.recyclerView as RecyclerView
+        // No add/remove/change fades (2026-11-19): category cards (CategoryViewHolder) jumped on first load as each new list replaced the last. Same as MediaDetailsFragment (Jun 13) and LibraryFragment (Nov 2).
+        recyclerView.itemAnimator = null
         setupTransition(view, false, MaterialSharedAxis.Y)
         applyInsets(recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)

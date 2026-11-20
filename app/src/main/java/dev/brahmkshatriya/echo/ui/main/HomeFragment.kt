@@ -41,7 +41,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val id = "home"
         vm.getFeedData(id, EMPTY, cached = {
             val curr = current.value!!
-            val feed = Cached.getFeedShelf(app, curr.id, id).getOrThrow()
+            val feed = Cached.getFeedShelf(app, curr.id, id, this).getOrThrow()
             FeedData.State(curr.id, null, feed)
         }) {
             val curr = current.value!!
@@ -65,6 +65,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val binding = FragmentHomeBinding.bind(view)
         val recyclerView = binding.recyclerView as RecyclerView
+        // No add/remove/change fades (2026-11-19): category cards (CategoryViewHolder) jumped on first load as each new list replaced the last. Same as MediaDetailsFragment (Jun 13) and LibraryFragment (Nov 2).
+        recyclerView.itemAnimator = null
         setupTransition(view, false, MaterialSharedAxis.Y)
         applyInsets(recyclerView, binding.appBarOutline) {
             binding.swipeRefresh.configure(it)

@@ -11,6 +11,7 @@ import com.mayakapps.kache.FileKache
 import com.mayakapps.kache.KacheStrategy
 import dev.brahmkshatriya.echo.BuildConfig
 import dev.brahmkshatriya.echo.common.helpers.ClientException
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.common.models.NetworkConnection
 import dev.brahmkshatriya.echo.extension.DeezerAlbumUnavailableException
@@ -493,7 +494,11 @@ data class App(
                 return "gw=deezer.pageAlbum alb_id=${it.albumId} lang=${it.lang} " +
                         "err=${it.errorText.scrubbedForCrashlytics(MAX_GATEWAY_ERROR_LEN)}"
             }
-            if (t.message == DEEZER_GATEWAY_MESSAGE || t.message == DEEZER_ALBUM_UNAVAILABLE_MESSAGE)
+            // [2026-11-18] Not the MediaUnavailableException wrapper: DeezerApi.callApi builds it from the album exception's
+            // own message, so without this the walk would stop on the wrapper and lose alb_id instead of reaching the cause.
+            if (t !is MediaUnavailableException &&
+                (t.message == DEEZER_GATEWAY_MESSAGE || t.message == DEEZER_ALBUM_UNAVAILABLE_MESSAGE)
+            )
                 return t.toString().scrubbedForCrashlytics(MAX_GATEWAY_DETAIL_LEN)
             t = t.cause
         }

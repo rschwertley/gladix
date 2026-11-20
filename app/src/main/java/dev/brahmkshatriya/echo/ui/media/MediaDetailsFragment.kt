@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.ui.media
 import androidx.core.view.updatePadding
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import androidx.paging.PagingData
+import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter
 import dev.brahmkshatriya.echo.ui.feed.FeedAdapter.Companion.getUnboundFeedAdapter
@@ -179,6 +180,11 @@ class MediaDetailsFragment : Fragment(R.layout.fragment_media_details) {
             lineAdapter.loadState = if (it) LoadState.Loading else LoadState.NotLoading(false)
         }
         observe(viewModel.uiResultFlow) { result ->
+            // getItem falls back to the page's stub when the load failed; sourceExtensionName names a Unified item's source.
+            viewModel.getItem()?.second?.let {
+                mediaHeaderAdapter.isAlbum = it is Album
+                mediaHeaderAdapter.extensionName = viewModel.sourceExtensionName(it)
+            }
             mediaHeaderAdapter.result = result
         }
         observe(viewModel.trackAlbumDate) { mediaHeaderAdapter.trackAlbumDate = it }

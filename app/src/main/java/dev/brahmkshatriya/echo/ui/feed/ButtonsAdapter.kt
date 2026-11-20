@@ -175,7 +175,7 @@ class ButtonsAdapter(
             val showButtons = buttons.run { showPlayAndShuffle || showSort || showSearch }
             binding.searchToggleButton.isChecked = viewModel.searchToggled
             binding.searchBarText.setText(viewModel.searchQuery)
-            binding.chipGroup.configure(feed?.sortState)
+            binding.chipGroup.configure(feed?.sortState, feed?.appliedSort)
             // A null feed is a reload or tab switch in progress (FeedData's dataFlow emits null first). The row keeps
             // its height then, INVISIBLE rather than GONE (2026-11-02, Library tab-switch flash; Jun 13 precedent:
             // initialButtons). Invisible also means not tappable: with a null feed, Play would queue the PREVIOUS
@@ -200,13 +200,14 @@ class ButtonsAdapter(
             binding.searchLayout.clearFocus()
         }
 
-        private fun ChipGroup.configure(state: FeedSort.State?) {
+        // [2026-11-18] applied: the field actually used on a folder page (FeedData.appliedSortFlow), shown instead of the saved one.
+        private fun ChipGroup.configure(state: FeedSort.State?, applied: FeedSort?) {
             removeAllViews()
             var visible = false
             if (state?.feedSort != null) {
                 visible = true
                 val chip = Chip(context)
-                chip.text = context.getString(state.feedSort.title)
+                chip.text = context.getString((applied ?: state.feedSort).title)
                 chip.isCheckable = true
                 chip.isChecked = true
                 addView(chip)

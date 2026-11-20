@@ -13,6 +13,7 @@ import com.google.android.material.color.MaterialColors
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.ItemShelfCategoryBinding
+import dev.brahmkshatriya.echo.ui.feed.FOLDER_SORT_SCOPE
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
@@ -43,7 +44,9 @@ class CategoryViewHolder(
                 feed?.shelf?.feed,
                 // [2026-11-11] A tracks-on-tap row's extras go to its page, whose Play and Shuffle then load its whole list
                 // (FeedClickListener.onPlayClicked). Null for every other row, which opens exactly as before.
-                feed?.shelf?.takeIf { it.hasTracksOnTap() }?.extras
+                feed?.shelf?.takeIf { it.hasTracksOnTap() }?.extras,
+                // [2026-11-18] A marked folder opens with the shared folder sort (FeedData.sortScope); other categories keep their own.
+                FOLDER_SORT_SCOPE.takeIf { feed?.shelf?.isMarkedFolder() == true },
             )
         }
         // [2026-11-08] Marked folder rows only (FeedSort's isMarkedFolder): the folder menu. Any other row returns

@@ -86,7 +86,8 @@ class FeedSortBottomSheet : BottomSheetDialogFragment() {
             // navigating away used to lose the save if no further render pass happened to run.
             // An UNTICKED checkbox reaches the same call and REMOVES any existing entry; it does not
             // simply skip the write, or unticking would leave the previous sort armed on disk.
-            feedData.persistSortState()
+            // [2026-11-19] Except on a folder page (FeedData.sortScope), where unticked sorts this page only; see persistSortState.
+            feedData.persistSortState(unsavedApply = !binding.saveCheckbox.isChecked)
             dismiss()
         }
         binding.topAppBar.setNavigationOnClickListener {

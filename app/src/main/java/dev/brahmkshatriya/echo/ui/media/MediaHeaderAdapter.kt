@@ -6,6 +6,8 @@ import android.text.Spanned
 import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import androidx.core.text.HtmlCompat
+import androidx.core.text.bold
+import androidx.core.text.buildSpannedString
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -35,7 +37,9 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.databinding.ItemLineBinding
 import dev.brahmkshatriya.echo.databinding.ItemMediaHeaderBinding
 import dev.brahmkshatriya.echo.databinding.ItemShelfErrorBinding
+import dev.brahmkshatriya.echo.common.helpers.MediaUnavailableException
 import dev.brahmkshatriya.echo.extensions.MediaState
+import dev.brahmkshatriya.echo.extensions.exceptions.AppException
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.getFinalTitle
 import dev.brahmkshatriya.echo.ui.common.ExceptionUtils.getMessage
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
@@ -88,7 +92,7 @@ class MediaHeaderAdapter(
 
             is Error -> {
                 val error = result?.exceptionOrNull() ?: return
-                holder.bind(error)
+                holder.bind(error, extensionName, isAlbum)
             }
 
             is Loading -> {}
@@ -107,6 +111,10 @@ class MediaHeaderAdapter(
             field = value
             notifyItemChanged(0)
         }
+
+    // For the removed-item state only (Error.bind). Set by MediaDetailsFragment before [result], whose setter re-binds.
+    var extensionName: String? = null
+    var isAlbum = false
 
     var trackAlbumDate: Date? = null
         set(value) {
@@ -305,12 +313,37 @@ class MediaHeaderAdapter(
             }
         }
 
-        fun bind(throwable: Throwable) {
+        /**
+         * [2026-11-18] A removed item (MediaUnavailableException anywhere in the chain) gets a calm state: "Album not
+         * available" / "Not available" and "It may have been removed from <extension>.", with View and Refresh hidden, since
+         * neither can help. Every other error keeps the text and both buttons; both are set either way because the holder is
+         * recycled. The name is the innermost AppException.Other's (for a Unified page that is the sub-extension, which
+         * UnifiedExtension.client wraps first), falling back to [extensionName]. The snackbar path does not come here.
+         */
+        fun bind(throwable: Throwable, extensionName: String?, isAlbum: Boolean) {
             this.throwable = throwable
+            val chain = generateSequence(throwable) { it.cause }.take(MAX_CAUSE_DEPTH).toList()
+            val removed = chain.any { it is MediaUnavailableException }
+            binding.errorView.isVisible = !removed
+            binding.retry.isVisible = !removed
             binding.error.run {
                 transitionName = throwable.hashCode().toString()
-                text = context.getFinalTitle(throwable)
+                text = if (!removed) context.getFinalTitle(throwable) else {
+                    val name = chain.filterIsInstance<AppException.Other>().lastOrNull()?.extension?.name
+                        ?: extensionName?.takeIf { it.isNotBlank() }
+                    val title = context.getString(
+                        if (isAlbum) R.string.album_not_available else R.string.not_available
+                    )
+                    buildSpannedString {
+                        bold { append(title) }
+                        if (name != null) append("\n").append(context.getString(R.string.may_have_been_removed_from_x, name))
+                    }
+                }
             }
+        }
+
+        private companion object {
+            const val MAX_CAUSE_DEPTH = 16
         }
     }
 

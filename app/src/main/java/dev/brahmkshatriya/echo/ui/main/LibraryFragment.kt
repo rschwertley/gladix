@@ -53,7 +53,7 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         val id = "library"
         vm.getFeedData(id, cached = {
             val curr = current.value!!
-            val feed = Cached.getFeedShelf(app, curr.id, id).getOrThrow()
+            val feed = Cached.getFeedShelf(app, curr.id, id, this).getOrThrow()
             FeedData.State(curr.id, null, feed)
         }) {
             val curr = current.value!!

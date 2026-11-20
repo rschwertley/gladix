@@ -35,6 +35,12 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.extensions.exceptions.WrongItemException
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
+import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.ui.feed.GLADIX_FOLDER
+import dev.brahmkshatriya.echo.ui.feed.folderAlbum
+import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.loadFolderFeed
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.isClient
@@ -1505,8 +1511,10 @@ object Cached {
     private fun EchoMediaItem.itemWithoutStreamToken(): EchoMediaItem =
         (this as? Track)?.withoutStreamToken() ?: this
 
+    // [2026-11-19] [extensions]: passed by FeedFragment, HomeFragment, LibraryFragment and SearchFragment, so a restored row whose
+    // own page is not cached can still be opened (categoryFeed). Null (getFeed, for media pages): such rows keep a null feed as before.
     suspend fun getFeedShelf(
-        app: App, extensionId: String, feedId: String,
+        app: App, extensionId: String, feedId: String, extensions: ExtensionLoader? = null,
     ): Result<Feed<Shelf>> = runCatching {
         getFeed<Shelf>(
             app, extensionId, feedId,
@@ -1517,27 +1525,57 @@ object Cached {
             when (shelf) {
                 is Shelf.Item -> shelf.copy(media = shelf.media.itemWithoutStreamToken())
                 is Shelf.Category -> shelf.copy(
-                    feed = getFeedShelf(app, extensionId, shelf.id).getOrNull()
+                    feed = categoryFeed(app, extensionId, shelf, extensions)
                 )
 
                 is Shelf.Lists.Categories -> shelf.copy(
                     list = shelf.list.map {
-                        it.copy(feed = getFeedShelf(app, extensionId, it.id).getOrNull())
+                        it.copy(feed = categoryFeed(app, extensionId, it, extensions))
                     },
-                    more = getFeedShelf(app, extensionId, shelf.id).getOrNull()
+                    more = getFeedShelf(app, extensionId, shelf.id, extensions).getOrNull()
                 )
 
                 is Shelf.Lists.Items -> shelf.copy(
                     list = shelf.list.map { it.itemWithoutStreamToken() },
-                    more = getFeedShelf(app, extensionId, shelf.id).getOrNull()
+                    more = getFeedShelf(app, extensionId, shelf.id, extensions).getOrNull()
                 )
 
                 is Shelf.Lists.Tracks -> shelf.copy(
                     list = shelf.list.map { it.withoutStreamToken() },
-                    more = getFeedShelf(app, extensionId, shelf.id).getOrNull()
+                    more = getFeedShelf(app, extensionId, shelf.id, extensions).getOrNull()
                 )
             }
         }
+    }
+
+    /**
+     * [2026-11-19] A RESTORED ROW'S FEED. Shelf.Category.feed is @Transient, so the cache never stores it: a row gets one back only
+     * from its own cached page, and without it FeedType.toFeedType drew it as a Header and isMarkedFolder dropped it from the
+     * folders-first group and the shared folder sort (seen on 1183: most subfolders of a cached OpenGonic folder page were large
+     * untappable text). Now, with no cached page:
+     * - a tracks-on-tap row (OpenGonic's folders and "All songs") opens by its id, through TracksOnTap's folderAlbum and
+     *   loadFolderFeed, as "Go to folder" does. Loaded only when the page is opened, and cached then by the page's own loader.
+     *   Its first tab only: OpenGonic's folder pages have none (Feed(listOf()), OpenGonic's record, 2026-11-19).
+     * - an Offline folder row (gladix_folder only) cannot be opened by id: its id is the folder's name (FileNode.toShelf), and
+     *   OfflineExtension.loadFeed(album) builds an album page. It stays a card and opens a page saying it is not loaded yet; the
+     *   parent page's live load gives it a real feed.
+     * Every other row keeps a null feed, as before.
+     */
+    private suspend fun categoryFeed(
+        app: App, extensionId: String, row: Shelf.Category, extensions: ExtensionLoader?,
+    ): Feed<Shelf>? = getFeedShelf(app, extensionId, row.id, extensions).getOrNull() ?: when {
+        extensions == null -> null
+        row.hasTracksOnTap() -> Feed<Shelf>(listOf()) { _ ->
+            val live = loadFolderFeed(extensions, extensionId, folderAlbum(row.id, row.title, row.extras[EXTENSION_ID]))
+                ?: throw NotFound("feed-$extensionId-${row.id}")
+            live.getPagedData(live.tabs.firstOrNull())
+        }
+
+        row.extras[GLADIX_FOLDER] == "1" -> Feed<Shelf>(listOf()) { _ ->
+            throw IllegalStateException(app.context.getString(R.string.folder_not_loaded_yet))
+        }
+
+        else -> null
     }
 
 

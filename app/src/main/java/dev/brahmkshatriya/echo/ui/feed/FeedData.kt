@@ -42,13 +42,17 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.lang.ref.WeakReference
@@ -63,7 +67,10 @@ data class FeedData(
     private val load: suspend ExtensionLoader.() -> State<Feed<Shelf>>?,
     private val defaultButtons: Feed.Buttons,
     private val noVideos: Boolean,
-    private val extraLoadFlow: Flow<*>
+    private val extraLoadFlow: Flow<*>,
+    // [2026-11-18] Non-null for a page opened from a marked folder row (CategoryViewHolder): all such pages of one extension share
+    // ONE saved sort, "$extensionId-$sortScope", instead of one per folder. See sortKey and sharedSortState.
+    private val sortScope: String? = null,
 ) {
     // ══ PREFETCH ══ Warm the track lists of playlists the user is looking at, so a tap that follows is a
     // cache hit rather than a fresh round trip. FeedFragment owns the trigger (scroll-settle + debounce and
@@ -154,6 +161,22 @@ data class FeedData(
     private var sortStateExtensionId: String? = null
     private var sortStateTabId: String? = null
 
+    // [2026-11-18] The saved-sort key. A scoped page (sortScope) drops the page and tab ids, so every folder page of one extension
+    // reads and writes the same entry. Every other page keeps "$extensionId-$feedId-$tabId" exactly as before.
+    private fun sortKey(extensionId: String?, tabId: String?) =
+        if (sortScope != null) "$extensionId-$sortScope" else "$extensionId-$feedId-$tabId"
+
+    // [2026-11-18] The scoped key this page last loaded, for the shared-sort collector in init. Null on unscoped pages.
+    private val sortKeyFlow = MutableStateFlow<String?>(null)
+    private val pageToken = pageTokens.incrementAndGet()
+
+    /**
+     * [2026-11-18] The sort field actually applied on the last render, for the header chip (ButtonsAdapter.configure). Set only on
+     * a scoped page, where it can differ from the saved one: a saved field this page does not offer (FeedSort.shouldBeVisible)
+     * renders as Title, and the saved choice is left as it is. Null everywhere else, so the chip shows the saved field as before.
+     */
+    val appliedSortFlow = MutableStateFlow<FeedSort?>(null)
+
     /**
      * Persist (or remove) the CURRENT [feedSortState] under the key it was loaded for.
      *
@@ -187,14 +210,34 @@ data class FeedData(
      * and this keeps that intact. Deliberately NOT saveToCache(key, null) — that writes the JSON literal
      * `null`, which getFromCache then fails to decode into a non-nullable State and logs as
      * "getFromCache unreadable: folder=sort" on EVERY feed load, forever.
+     *
+     * [2026-11-19] Except on a scoped page (sortScope), where an unsaved Apply (unsavedApply = true, from FeedSortBottomSheet)
+     * writes NOTHING: it sorts this page only, and the shared "$extensionId-folders" entry, on disk and in sharedSortState, is
+     * left as it is for every other folder page. There only a saved Apply, Reset or a chip clear changes the shared entry.
      */
-    fun persistSortState() = scope.launch(Dispatchers.IO) {
+    fun persistSortState(unsavedApply: Boolean = false) = scope.launch(Dispatchers.IO) {
+        if (sortScope != null && unsavedApply) return@launch
         val extensionId = sortStateExtensionId ?: return@launch
-        val key = "$extensionId-$feedId-$sortStateTabId"
+        val key = sortKey(extensionId, sortStateTabId)
         val state = feedSortState.value
         if (state?.save == true) app.context.saveToCache(key, state, "sort")
         else runCatching { File(cacheDir(app.context, "sort"), key.hashCode().toString()).delete() }
+        // [2026-11-18] And to every folder page already open: they collect this flow (init). Published as what disk now holds
+        // (null after a delete), tagged with this page so its own collector skips it.
+        if (sortScope != null) sharedSortState(key).value = SharedSort(state?.takeIf { it.save }, pageToken)
     }
+
+    /**
+     * [2026-11-18] One flow per scoped key, process-wide, seeded from disk the first time the key is seen. Needed because a page
+     * stays in memory on the back stack: each FeedFragment owns its FeedViewModel (Koin's fragment-scoped viewModel()), whose
+     * feedDataMap keeps this FeedData alive, and dataFlow re-reads the saved sort only when the feed reloads. Without it, a sort
+     * changed on folder B was not shown on folder A on the way back.
+     */
+    private suspend fun sharedSortState(key: String): MutableStateFlow<SharedSort> = sharedSorts[key]
+        ?: withContext(Dispatchers.IO) { app.context.getFromCache<FeedSort.State>(key, "sort") }
+            .let { disk -> sharedSorts.getOrPut(key) { MutableStateFlow(SharedSort(disk, 0L)) } }
+
+    private data class SharedSort(val state: FeedSort.State?, val by: Long)
     // ⚠️ NO INITIAL VALUE, AND cached/loadedFeedTypeFlow COMBINE IT - so pagingFlow emits nothing until this has
     // emitted once (2026-11-01). On every feed screen that first emission is ButtonsAdapter's first bind (see
     // FeedAdapter.withLoading's searchPrimed note). A screen that leaves the buttons row out must emit it itself.
@@ -234,7 +277,7 @@ data class FeedData(
         val tabId = selectedTabFlow.value?.id
         searchQuery = null
         searchToggled = false
-        val id = "$extensionId-$feedId-$tabId"
+        val id = sortKey(extensionId, tabId)
         // Captured HERE, with the value, from the same locals — see persistSortState. Any later write uses
         // these rather than re-reading selectedTabFlow, which is what makes a stale pairing impossible
         // rather than merely unlikely.
@@ -246,8 +289,10 @@ data class FeedData(
         // Apply and reset, the two header chip clears) or carries a comment saying why it must not
         // (FeedClickListener's arm-on-open). Keep that invariant: one writer, one explicit answer.
         feedSortState.value = extensionId?.let {
-            withContext(Dispatchers.IO) { app.context.getFromCache(id, "sort") }
+            if (sortScope != null) sharedSortState(id).value.state
+            else withContext(Dispatchers.IO) { app.context.getFromCache(id, "sort") }
         }
+        if (sortScope != null) sortKeyFlow.value = extensionId?.let { id }
         loadedShelves.value = null
         cached to loaded
     }.stateIn(scope, Lazily, null to null)
@@ -289,9 +334,12 @@ data class FeedData(
         val buttons: Feed.Buttons,
         val item: EchoMediaItem? = null,
         val sortState: FeedSort.State? = null,
+        // [2026-11-18] The chip's label when it differs from sortState.feedSort (see appliedSortFlow). Label only: the chips'
+        // clear actions still copy sortState, so clearing Reversed on a Title-fallback page cannot save Title.
+        val appliedSort: FeedSort? = null,
     )
 
-    val buttonsFlow = dataFlow.combine(feedSortState) { data, state ->
+    val buttonsFlow = combine(dataFlow, feedSortState, appliedSortFlow) { data, state, applied ->
         val feed = data.run { second?.getOrNull() ?: first?.getOrNull() } ?: return@combine null
         Buttons(
             feedId,
@@ -299,6 +347,7 @@ data class FeedData(
             feed.feed.buttons ?: defaultButtons,
             feed.item,
             state,
+            applied.takeIf { state?.feedSort != null },
         )
     }
 
@@ -440,7 +489,12 @@ data class FeedData(
                     // With a sort field, "Reversed" is applied INSIDE the sorter (see
                     // FeedSort.sortedMissingLast) so rows with no value stay last in both directions.
                     // With no sort field there is nothing missing, and the whole list is reversed here.
-                    val feedSort = sortState.feedSort
+                    // [2026-11-18] On a scoped page, a saved field these rows do not offer sorts by Title instead; the saved
+                    // state is not touched, so the next folder that has the field uses it again. See appliedSortFlow.
+                    val feedSort = sortState.feedSort?.let { saved ->
+                        if (sortScope == null || saved.shouldBeVisible(shelves) != null) saved else FeedSort.Title
+                    }
+                    if (sortScope != null) appliedSortFlow.value = feedSort
                     fun List<Shelf>.applySort(sort: FeedSort?) = when {
                         sort != null -> sort.sorter.invoke(app.context, this, sortState.reversed)
                         sortState.reversed -> reversed()
@@ -533,6 +587,10 @@ data class FeedData(
     }
 
     private companion object {
+        // [2026-11-18] See FeedData.sharedSortState. Process lifetime; one small entry per scoped key.
+        private val sharedSorts = ConcurrentHashMap<String, MutableStateFlow<SharedSort>>()
+        private val pageTokens = AtomicLong()
+
         // The marks pass's extras (see playableMarks), by literal: app code cannot see the Deezer module. Keep the strings in
         // step with DeezerPlaylistClient's MARKS_TAB_EXTRA, AVAILABILITY_AWAIT_EXTRA and AVAILABILITY_RECHECK_EXTRA.
         const val MARKS_TAB_EXTRA = "gladix_marks_tab"
@@ -715,6 +773,13 @@ data class FeedData(
         // now (getData calls getPagedData), so the extension's background check is already running and the pass joins it.
         scope.launch {
             loadedDataFlow.collect { if (it?.getOrNull() != null) runMarksPass() }
+        }
+        // [2026-11-18] A scoped page follows its shared sort while it stays in memory (see sharedSortState). This is a LOAD, like
+        // dataFlow's read, so it does not call persistSortState; its own publishes are skipped by pageToken.
+        if (sortScope != null) scope.launch {
+            sortKeyFlow.filterNotNull().flatMapLatest { sharedSortState(it) }.collect {
+                if (it.by != pageToken) feedSortState.value = it.state
+            }
         }
         scope.launch {
             stateFlow.collect { result ->

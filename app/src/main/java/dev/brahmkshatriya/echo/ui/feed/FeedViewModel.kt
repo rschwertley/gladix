@@ -19,6 +19,7 @@ class FeedViewModel(
         buttons: Feed.Buttons = Feed.Buttons(),
         noVideos: Boolean = false,
         vararg extraLoadFlow: Flow<*>,
+        sortScope: String? = null,
         cached: suspend ExtensionLoader.() -> FeedData.State<Feed<Shelf>>? = { null },
         loader: suspend ExtensionLoader.() -> FeedData.State<Feed<Shelf>>?
     ): FeedData {
@@ -33,6 +34,7 @@ class FeedViewModel(
                 defaultButtons = buttons,
                 noVideos = noVideos,
                 extraLoadFlow = extraLoadFlow.toList().merge(),
+                sortScope = sortScope,
             )
         }
     }

@@ -245,6 +245,8 @@ open class FeedClickListener(
         feed: Feed<Shelf>?,
         // [2026-11-11] The extras of a tracks-on-tap row (TracksOnTap), from CategoryViewHolder only; null everywhere else.
         tracksOnTap: Map<String, String>? = null,
+        // [2026-11-18] FeedData's sortScope, from CategoryViewHolder for a marked folder row only; null everywhere else.
+        sortScope: String? = null,
     ): Boolean {
         val fragment = fragmentManager.findFragmentById(containerId)
             ?: return notFoundSnack(R.string.view)
@@ -259,7 +261,7 @@ open class FeedClickListener(
         // 27eac710, UPL.
         fragment.openFragment<FeedFragment>(
             view,
-            FeedFragment.getBundle(title.orEmpty(), subtitle, vm.extensionId, vm.feedId, tracksOnTap)
+            FeedFragment.getBundle(title.orEmpty(), subtitle, vm.extensionId, vm.feedId, tracksOnTap, sortScope)
         )
         afterOpen()
         return true

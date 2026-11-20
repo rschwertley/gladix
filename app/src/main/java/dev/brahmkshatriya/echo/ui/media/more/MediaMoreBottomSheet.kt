@@ -61,17 +61,12 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.combine
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewModelScope
-import dev.brahmkshatriya.echo.common.clients.AlbumClient
-import dev.brahmkshatriya.echo.common.models.Album
-import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Message
-import dev.brahmkshatriya.echo.common.models.Shelf
-import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
-import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.ui.feed.FeedFragment
 import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_ID
 import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_TITLE
-import dev.brahmkshatriya.echo.ui.feed.GLADIX_TRACKS_ON_TAP
+import dev.brahmkshatriya.echo.ui.feed.folderAlbum
+import dev.brahmkshatriya.echo.ui.feed.loadFolderFeed
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -621,16 +616,13 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
         val extId = extensionId
         val pageTitle = title ?: getString(R.string.folder)
         val notFound = getString(R.string.no_x_found, getString(R.string.folder))
-        val folderExtras = buildMap {
-            put(GLADIX_TRACKS_ON_TAP, "1")
-            if (routing != null) put(EXTENSION_ID, routing)
-        }
-        val album = Album(id = parentId, title = title.orEmpty(), extras = folderExtras)
+        // [2026-11-19] Built and loaded by TracksOnTap's folderAlbum and loadFolderFeed, shared with Cached.getFeedShelf.
+        val album = folderAlbum(parentId, title, routing)
+        val folderExtras = album.extras
         val pvm = playerViewModel
         pvm.viewModelScope.launch {
             val feed = runCatching {
-                pvm.extensions.music.getExtensionOrThrow(extId)
-                    .getAs<AlbumClient, Feed<Shelf>?> { loadFeed(album) }.getOrThrow()
+                loadFolderFeed(pvm.extensions, extId, album)
             }.getOrElse {
                 if (it is CancellationException) throw it
                 pvm.app.throwFlow.emit(it)

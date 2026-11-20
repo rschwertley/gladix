@@ -8,6 +8,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.forEachPageBounded
 import kotlin.random.Random
@@ -64,6 +65,25 @@ suspend fun loadTracksOnTap(
     }.getOrThrow() ?: return
     feed.forEachPageBounded(onPage)
 }
+
+/**
+ * [2026-11-19] A FOLDER OPENED BY ITS ID: the Album that OpenGonic's AlbumClient.loadFeed answers with a folder page ("dir:<id>").
+ * Shared by MediaMoreBottomSheet.goToFolder and Cached.categoryFeed, for restored rows with no cached page. It carries
+ * GLADIX_TRACKS_ON_TAP, so the page's Play and Shuffle load every song under the folder, and the row's or song's EXTENSION_ID,
+ * which UnifiedExtension.loadFeed(album) routes on.
+ * ⚠️ NOT THROUGH Cached, as above: a folder is not an album.
+ */
+fun folderAlbum(id: String, title: String?, routing: String?) = Album(
+    id = id, title = title.orEmpty(),
+    extras = buildMap {
+        put(GLADIX_TRACKS_ON_TAP, "1")
+        if (routing != null) put(EXTENSION_ID, routing)
+    }
+)
+
+suspend fun loadFolderFeed(extensions: ExtensionLoader, extensionId: String?, album: Album): Feed<Shelf>? =
+    extensions.music.getExtensionOrThrow(extensionId)
+        .getAs<AlbumClient, Feed<Shelf>?> { loadFeed(album) }.getOrThrow()
 
 /**
  * [2026-11-12] A LOAD-ON-TAP QUEUE IS AT MOST FeedClickListener.DECLARED_QUEUE_CAP (2,000) SONGS, BY A FAIR SAMPLE (the user's

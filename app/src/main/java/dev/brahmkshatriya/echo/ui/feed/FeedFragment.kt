@@ -71,12 +71,15 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             feedId: String? = null,
             // [2026-11-11] The row's extras when it is a tracks-on-tap row (TracksOnTap); read back by tracksOnTap().
             tracksOnTap: Map<String, String>? = null,
+            // [2026-11-18] FeedData's sortScope: set for a page opened from a marked folder row. In the bundle, so it survives a kill.
+            sortScope: String? = null,
         ) = Bundle().apply {
             putString("title", title)
             putString("subtitle", subtitle)
             putString("extensionId", extensionId)
             putString("feedId", feedId)
             if (tracksOnTap != null) putSerialized("tracksOnTap", tracksOnTap)
+            if (sortScope != null) putString("sortScope", sortScope)
         }
     }
 
@@ -113,9 +116,10 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         }
         feedViewModel.getFeedData(
             vm.feedId ?: "",
+            sortScope = arguments?.getString("sortScope"),
             cached = {
                 val extId = vm.extensionId!!
-                val feed = Cached.getFeedShelf(app, extId, vm.feedId!!)
+                val feed = Cached.getFeedShelf(app, extId, vm.feedId!!, this)
                 FeedData.State(extId, null, feed.getOrThrow())
             }
         ) {
@@ -215,6 +219,8 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             val binding = FragmentRecyclerWithRefreshBinding.bind(view)
             val recyclerView = binding.recyclerView as RecyclerView
+            // No add/remove/change fades (2026-11-19): category cards (CategoryViewHolder) jumped on first load as each new list replaced the last. Same as MediaDetailsFragment (Jun 13) and LibraryFragment (Nov 2).
+            recyclerView.itemAnimator = null
             // ⚠⚠ [CORRECTED 2026-09-13] THE "matching HomeFragment/LibraryFragment/SearchFragment"
             // CLAIM WAS FALSE - AND IT WAS FALSE FOR ALL THREE, NOT JUST ONE. Verified by reading them:
             //     HomeFragment     applyInsets(recyclerView, ...) :68  ->  getTouchHelper ... :84

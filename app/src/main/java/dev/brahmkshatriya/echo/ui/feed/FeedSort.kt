@@ -22,6 +22,9 @@ fun getSorts(data: List<Shelf>): List<FeedSort> {
 // Unmarked categories (Deezer's artist page, Home and Search browse grids) are unaffected by both.
 const val GLADIX_FOLDER = "gladix_folder"
 
+// [2026-11-18] FeedData.sortScope for pages opened from a marked folder row: one saved sort per extension for all of them.
+const val FOLDER_SORT_SCOPE = "folders"
+
 fun Shelf.isMarkedFolder() = this is Shelf.Category && feed != null && extras[GLADIX_FOLDER] == "1"
 
 private fun Shelf.title() = when (this) {
