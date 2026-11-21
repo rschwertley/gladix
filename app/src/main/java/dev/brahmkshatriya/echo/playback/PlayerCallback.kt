@@ -69,6 +69,9 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
+import dev.brahmkshatriya.echo.ui.feed.loadFolderSongs
+import dev.brahmkshatriya.echo.ui.feed.reloadableFolderOf
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverIndex
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverPlaylist
@@ -1080,6 +1083,35 @@ class PlayerCallback(
     }
 
 
+    /**
+     * [2026-11-21] THE FOLDER ARM OF A HISTORY REPLAY, beside freshContextUpcoming rather than inside it: matching needs the saved
+     * song's GLADIX_PARENT_ID (TracksOnTap.reloadableFolderOf), which only backfillQueue's `fallback` carries, and
+     * freshContextUpcoming is also AndroidAutoCallback's, where History drops every Radio context (the user's decision: leave AA).
+     * Why: a song played from an OpenGonic folder replayed from History as a radio, because the folder's label is a Radio
+     * (MediaItemUtils.feedPageLabel) and HistoryFragment sends a Radio context to the seed path, by the Jul 7-8 rule that a radio is
+     * generated and so has nothing to reload. A folder label is not a generated radio, and since 1184 the folder opens by id.
+     * The page's own songs (TracksOnTap.loadFolderSongs), from the tapped song, unplayable ones dropped as freshContextUpcoming drops
+     * them, capped at FeedClickListener.DECLARED_QUEUE_CAP like a row tap, because an extension can answer a whole folder as one page
+     * and freshContextUpcoming has no cap. Each song keeps the label, so "Playing from <folder>" stays.
+     * Empty on any failure, and on a song no longer in the folder: backfillQueue then plays the saved song alone under the label,
+     * today's queue, with no error. NOT "start at the top" as freshContextUpcoming does on a miss, which would play another song.
+     */
+    private suspend fun freshFolderUpcoming(
+        extId: String, label: EchoMediaItem, folderId: String, song: Track, tappedTrackId: String,
+    ): List<MediaItem> {
+        val songs = runCatching {
+            loadFolderSongs(app.context, extensions, extId, folderId, label.title, song.extras[UnifiedExtension.EXTENSION_ID])
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            return emptyList()
+        } ?: return emptyList()
+        val found = songs.indexOfFirst { it.id == tappedTrackId }
+        if (found < 0) return emptyList()
+        return songs.subList(found, songs.size).droppingUnplayable(keepFirst = true)
+            .take(FeedClickListener.DECLARED_QUEUE_CAP)
+            .map { MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), label) }
+    }
+
     private fun playItem(player: Player, args: Bundle) = scope.future {
         userQueueSet.set(true)
         val error = SessionResult(SessionError.ERROR_UNKNOWN)
@@ -1400,7 +1432,10 @@ class PlayerCallback(
         // listening to and replaces it with the History item they tapped earlier. Every other site here
         // pollutes; this one destroys.
         val epoch = player.queueEpochOrZero
-        val rebuilt = freshContextUpcoming(extId, item, startTrackId, reportErrors = fallback == null)
+        // [2026-11-21] A History row played from its song's own folder page reloads that page (freshFolderUpcoming).
+        val folderId = fallback?.let { item.reloadableFolderOf(it) }
+        val rebuilt = if (folderId != null) freshFolderUpcoming(extId, item, folderId, fallback, startTrackId)
+        else freshContextUpcoming(extId, item, startTrackId, reportErrors = fallback == null)
         if (rebuilt.isEmpty()) {
             // POST-NETWORK, so the snackbar can be lost if the user backgrounded the app while
             // freshContextUpcoming was running - hence the log as well. A History tap that rebuilds to
@@ -1417,10 +1452,14 @@ class PlayerCallback(
         // [2026-11-08] THE FALLBACK: the saved song alone under trackRadioPlaceholder, the queue HistoryFragment's seed path
         // sets, then the existing path below. NEVER `item` as its context: it is the list that just failed to load, and the
         // radio after the song would hand it straight back to the extension. Rows that rebuild are unchanged.
+        // [2026-11-21] EXCEPT A FOLDER LABEL (folderId != null), which keeps the label: that is exactly the queue History's seed path
+        // set for the row before, header and all. The rule above is about a REAL list; a label is LABEL_ONLY_RADIO, stripped by
+        // PlayerRadio.loadPlaylistLocked before any radio is built, so nothing is handed back to the extension. trackRadioPlaceholder
+        // would also change TV: it has no FEED_PAGE_LABEL, so PlayerRadio.tvDriveRadio would treat the song as a station.
         val upcoming = rebuilt.ifEmpty {
             listOf(MediaItemUtils.build(
                 app, downloadFlow.value, MediaState.Unloaded(extId, fallback!!),
-                MediaItemUtils.trackRadioPlaceholder(fallback)
+                if (folderId != null) item else MediaItemUtils.trackRadioPlaceholder(fallback)
             ))
         }
         withContext(Dispatchers.Main) {

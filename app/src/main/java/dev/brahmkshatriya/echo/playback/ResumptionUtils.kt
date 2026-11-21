@@ -15,13 +15,13 @@ import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension
 import dev.brahmkshatriya.echo.history.db.toSlim
 import dev.brahmkshatriya.echo.history.db.toSlimContext
 import dev.brahmkshatriya.echo.history.db.toSlimKeepingRoutingKeys
-import dev.brahmkshatriya.echo.playback.MediaItemUtils.context
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.state
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.HealthMonitor
 import dev.brahmkshatriya.echo.utils.Serializer.json
+import dev.brahmkshatriya.echo.utils.Serializer.toData
 import dev.brahmkshatriya.echo.utils.Serializer.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -331,10 +331,41 @@ object ResumptionUtils {
         // separate, larger change.)
         val entries = list.map { it.state.let { s -> QueueEntry(s.queueSlim(), s.extensionId) } }
         if (saveToQueue(QUEUE_ENTRIES, entries).isSuccess) {
-            if (saveToQueue(CONTEXTS, list.map { it.context?.toSlimContext() }).isFailure)
+            if (saveToQueue(CONTEXTS, slimContexts(list)).isFailure)
                 deleteQueueKey(CONTEXTS)
             deleteQueueKey(TRACKS)
             deleteQueueKey(EXTENSIONS)
+        }
+    }
+
+    /**
+     * The slimmed context of every item, decoding each DISTINCT context string once per save.
+     *
+     * ⚠⚠ [2026-11-21] WHY A MEMO: ANR 54bbb97d (1186, Fire TV Stick 4K, a 4,985-item queue from one playlist). The
+     * worker was in this save, decoding the context JSON of every persisted item separately: up to ~2,000 decodes per
+     * save (capForPersist's window) of ONE string, because toMetaData encodes each item's context separately, so the
+     * copies are equal but distinct. That ran once or twice per track, with the heap at 154/192 MB and a Deezer FLAC
+     * decrypt running too. It is not proven to be the ANR's cause (main was Runnable), only the avoidable half of the load.
+     * ⚠️ THE FILE IS BYTE-IDENTICAL: toSlimContext is a pure function of the decoded value, so equal strings give equal
+     * output (ResumptionUtilsContextMemoTest checks both a one-playlist and a mixed queue). A string that fails to
+     * decode gives null, exactly as each item would on its own. The map lives for ONE call, so nothing outlives the save,
+     * unlike the process-level hoisting rejected at MediaItemUtils.toMetaData's CONTEXT HOISTING note.
+     * Keyed on the raw extras string, read exactly as Bundle.context reads it ("context"). Not touched: the per-item
+     * state decode in writeQueueEntries, which is unique per item and the bigger cost.
+     */
+    internal fun slimContexts(list: List<MediaItem>): List<EchoMediaItem?> =
+        slimContextsOf(list.map { it.mediaMetadata.extras?.getString("context") })
+
+    internal fun slimContextsOf(raw: List<String?>): List<EchoMediaItem?> {
+        val memo = HashMap<String, EchoMediaItem?>()
+        // containsKey, not getOrPut: getOrPut re-runs on a stored null, and a context-less item carries the string
+        // "null" (putSerialized of a null context), so a queue without contexts would still decode once per item.
+        return raw.map { s ->
+            when {
+                s == null -> null
+                memo.containsKey(s) -> memo[s]
+                else -> s.toData<EchoMediaItem?>().getOrNull()?.toSlimContext().also { memo[s] = it }
+            }
         }
     }
 

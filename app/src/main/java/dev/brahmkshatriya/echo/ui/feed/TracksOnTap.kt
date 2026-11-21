@@ -1,16 +1,24 @@
 package dev.brahmkshatriya.echo.ui.feed
 
+import android.content.Context
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
 import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
+import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.forEachPageBounded
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
+import dev.brahmkshatriya.echo.utils.CacheUtils.getFromCache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
@@ -84,6 +92,65 @@ fun folderAlbum(id: String, title: String?, routing: String?) = Album(
 suspend fun loadFolderFeed(extensions: ExtensionLoader, extensionId: String?, album: Album): Feed<Shelf>? =
     extensions.music.getExtensionOrThrow(extensionId)
         .getAs<AlbumClient, Feed<Shelf>?> { loadFeed(album) }.getOrThrow()
+
+/**
+ * [2026-11-21] A HISTORY ROW THAT CAN RELOAD ITS FOLDER: the folder id, when [this] (the row's context) is the "Playing from <folder>"
+ * label of the song's OWN folder page; null for everything else. Three tests, all needed:
+ * - a feed page label (MediaItemUtils.FEED_PAGE_LABEL) and not Library's (LIBRARY_TAB), which carries the same marker;
+ * - the song names its folder (GLADIX_PARENT_ID, OpenGonic only; History keeps it, HistoryEntity.toSlimKeepingRoutingKeys);
+ * - the label's id is "feed_page:" + that folder id. A page opened from a folder row or by Go to folder takes the folder id as its
+ *   feedId (CategoryViewHolder's openFeed, MediaMoreBottomSheet.goToFolder), and MediaItemUtils.feedPageLabel prefixes it.
+ * So the folder is the one Go to folder opens, by the same loader, and no extension's id format is read here.
+ * NOT MATCHED, AND LEFT ON TODAY'S SEED PATH (HistoryFragment): Offline folders (their songs carry no GLADIX_PARENT_ID, and their
+ * ids cannot be opened, Cached.categoryFeed), see-all pages, Library labels, and a song played from an ANCESTOR folder's Play or
+ * menu, whose label names that ancestor instead.
+ */
+fun EchoMediaItem?.reloadableFolderOf(song: Track): String? {
+    val label = this as? Radio ?: return null
+    if (label.extras[MediaItemUtils.FEED_PAGE_LABEL] != "true" || label.extras.containsKey(MediaItemUtils.LIBRARY_TAB)) return null
+    val parentId = song.extras[GLADIX_PARENT_ID]?.takeIf { it.isNotBlank() } ?: return null
+    return parentId.takeIf { label.id == MediaItemUtils.FEED_PAGE_ID_PREFIX + it }
+}
+
+/**
+ * [2026-11-21] THE FOLDER PAGE'S OWN SONGS, FOR A HISTORY REPLAY (PlayerCallback.backfillQueue): the songs a tap on that page
+ * queues, not the tracks-on-tap walk Play uses (the user's decision; OpenGonic declared the same list as customTrackList on
+ * Nov 7-8). Loaded as Go to folder loads the page (folderAlbum, loadFolderFeed), first tab only as Cached.categoryFeed does, every
+ * page read under BoundedLoadAll's ceiling. Subfolder rows are skipped. Null when the extension has no page for it.
+ * IN THE SAVED FOLDER SORT when one is saved: the shared "$extensionId-$FOLDER_SORT_SCOPE" entry, applied as
+ * FeedData.getFeedSourceData applies it on a scoped page (lists flattened, a field these rows do not offer falls back to Title,
+ * folders and "All songs" set apart, so the songs are sorted among themselves). No saved sort: page order.
+ * ⚠️ TWO KNOWN GAPS, both cosmetic: a page opened by Go to folder has no sortScope (MediaMoreBottomSheet.goToFolder), so it was
+ * sorted by its own per-page key, and an unsaved Apply sorts one page only (FeedData.persistSortState); either way the original
+ * queue's order may differ from the shared sort's. And the disk entry is read, not FeedData's in-process sharedSorts, which
+ * matches it after every saved write.
+ */
+suspend fun loadFolderSongs(
+    context: Context, extensions: ExtensionLoader, extensionId: String, folderId: String, title: String?, routing: String?,
+): List<Track>? {
+    val feed = loadFolderFeed(extensions, extensionId, folderAlbum(folderId, title, routing)) ?: return null
+    val shelves = feed.getPagedData(feed.tabs.firstOrNull()).pagedData.loadAllBounded().flatMap { shelf ->
+        when (shelf) {
+            is Shelf.Category, is Shelf.Item -> listOf(shelf)
+            is Shelf.Lists.Categories -> shelf.list
+            is Shelf.Lists.Items -> shelf.list.map { it.toShelf() }
+            is Shelf.Lists.Tracks -> shelf.list.map { it.toShelf() }
+        }
+    }
+    val saved = withContext(Dispatchers.IO) {
+        context.getFromCache<FeedSort.State>("$extensionId-$FOLDER_SORT_SCOPE", "sort")
+    }
+    val songs = shelves.filterNot { it.isTracksOnTapOnly() || it.isMarkedFolder() }
+    val ordered = if (saved == null) songs else {
+        val sort = saved.feedSort?.let { if (it.shouldBeVisible(shelves) != null) it else FeedSort.Title }
+        when {
+            sort != null -> sort.sorter.invoke(context, songs, saved.reversed)
+            saved.reversed -> songs.reversed()
+            else -> songs
+        }
+    }
+    return ordered.mapNotNull { (it as? Shelf.Item)?.media as? Track }
+}
 
 /**
  * [2026-11-12] A LOAD-ON-TAP QUEUE IS AT MOST FeedClickListener.DECLARED_QUEUE_CAP (2,000) SONGS, BY A FAIR SAMPLE (the user's

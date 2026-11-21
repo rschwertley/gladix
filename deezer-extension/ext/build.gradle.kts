@@ -19,6 +19,11 @@ dependencies {
     implementation(project(":common"))
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}")
     compileOnly(libs.okhttp)
+    // Test-only, for BlowfishStripeDecryptorTest. compileOnly deps above are not on the test runtime classpath, hence repeated.
+    testImplementation(libs.junit)
+    testImplementation(libs.bouncycastle.bcprov)
+    testImplementation("org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}")
+    testImplementation(libs.okhttp)
 }
 
 val extType = "music"

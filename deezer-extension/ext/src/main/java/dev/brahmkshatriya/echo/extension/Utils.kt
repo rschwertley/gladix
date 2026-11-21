@@ -45,6 +45,8 @@ object Utils {
         return digest.digest(toByteArray(charset)).joinToString("") { "%02x".format(it) }
     }
 
+    // The per-call form: a new Cipher and a full key setup for ONE stripe. No longer on the playback path (that is
+    // BlowfishStripeDecryptor, below); kept as the reference BlowfishStripeDecryptorTest compares it against.
     fun decryptBlowfish(chunk: ByteArray, blowfishKey: String): ByteArray {
         val secretKeySpec = getSecretKeySpec(blowfishKey)
         val cipher = Cipher.getInstance("BLOWFISH/CBC/NoPadding").apply {
@@ -52,6 +54,34 @@ object Utils {
         }
         return cipher.doFinal(chunk)
     }
+
+    /**
+     * One stream's Blowfish decryptor: one Cipher, initialised once, decrypting each encrypted stripe into [out].
+     *
+     * ⚠⚠ [2026-11-21] WHY: ANR 54bbb97d (1186, Fire TV Stick 4K) had the loader in decryptBlowfish while the main thread
+     * stalled. That form ran Cipher.getInstance plus init for EVERY encrypted stripe (every third 2 KB stripe, so
+     * ~5,000 per 30 MB FLAC, at download speed while buffering), and each init re-runs Blowfish's key schedule
+     * (BlowfishEngine.setKey: 521 block encryptions, more than the 256 block decryptions of the stripe itself), plus a
+     * new 2 KB output array per stripe. Here the key is set up once per stream and nothing is allocated per stripe.
+     * ⚠⚠ CORRECT ONLY BECAUSE doFinal RESETS TO THE init STATE, KEY AND IV, and that was read, not assumed (BouncyCastle
+     * 1.80.2 sources): BaseBlockCipher.engineDoFinal calls BufferedGenericBlockCipher.doFinal, then
+     * DefaultBufferedBlockCipher.doFinal, whose `finally { reset() }` reaches CBCBlockCipher.reset, which copies IV back
+     * into cbcV. BlowfishEngine.reset is empty, so the key schedule survives. javax.crypto.Cipher.doFinal documents the
+     * same reset for every provider. Android's platform BouncyCastle is a repackaged copy, not this exact version.
+     * BlowfishStripeDecryptorTest checks byte equality against decryptBlowfish under both the JDK provider and BouncyCastle.
+     * ⚠️ NOT THREAD-SAFE (a Cipher is not): one per stream, and a stream is read on one loader thread.
+     * [out] must not be [chunk]; the caller reads [out] fully before the next call overwrites it.
+     */
+    class BlowfishStripeDecryptor(blowfishKey: String, provider: java.security.Provider? = null) {
+        private val cipher = (if (provider == null) Cipher.getInstance(TRANSFORMATION)
+        else Cipher.getInstance(TRANSFORMATION, provider)).apply {
+            init(Cipher.DECRYPT_MODE, getSecretKeySpec(blowfishKey), secretIvSpec)
+        }
+
+        fun decrypt(chunk: ByteArray, out: ByteArray): Int = cipher.doFinal(chunk, 0, chunk.size, out, 0)
+    }
+
+    private const val TRANSFORMATION = "BLOWFISH/CBC/NoPadding"
 
     /**
      * [CORRECTED 2026-11-06] Now only the fallback, when the GET does not state the total: AudioStreamProvider.openStreamWithTotal. On a

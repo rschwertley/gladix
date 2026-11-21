@@ -89,6 +89,8 @@ coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
 junit = { module = "junit:junit", version = "4.13.2" }
+# Test-only (deezer-extension BlowfishStripeDecryptorTest): runs the cipher-reuse check under BouncyCastle, Android's Blowfish provider.
+bouncycastle-bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version = "1.80.2" }
 
 zxing-core = { module = "com.google.zxing:core", version = "3.5.4" }
 

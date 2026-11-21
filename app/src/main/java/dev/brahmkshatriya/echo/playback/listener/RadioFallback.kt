@@ -159,7 +159,15 @@ object RadioFallback {
     // so this DOES bite: at most 15 of the 25 shuffled candidates are ever searched, which is precisely
     // what keeps the bigger pool free — more to draw from, no more work done. It is also what bounds the
     // timeout worst case: 15 x ~300ms lands under SEARCH_BUDGET_MS with room for one slow outlier.
+    // [CORRECTED 2026-11-21] "Until the non-gesture search signal lands - a write into the user's server-side search history" is
+    // out of date: the signal landed in 1c15f7f3 (2026-09-10). searchOne passes isUserInitiated = false, and DeezerSearchClient's
+    // loadSearchFeed writes history only when isUserInitiated is true. For Deezer (and Unified over Deezer) this now bounds network
+    // round trips and the time budget only; an extension that does not override the two-argument form still writes (SearchFeedClient's
+    // "BEST-EFFORT ACROSS EXTENSIONS" note).
     private const val MAX_SEARCHES = 15
+
+    // [2026-11-21] Search tab ids searchOne treats as the tracks tab, compared ignoring case. See the note there.
+    private val TRACKS_TAB_IDS = listOf("track", "tracks", "songs")
 
     // [2026-11-12] At most this many lookups by the parts of a multi-artist name after the full name found nothing, and the
     // search cap for the top-tracks step (see topTracksOrNothing).
@@ -406,6 +414,9 @@ object RadioFallback {
      * MAX_SEARCHES: a top-tracks search runs only after a similar-tracks one, and every search writes the user's search
      * history (see searchOne), so the two together stay at most MAX_SEARCHES + TOP_MAX_SEARCHES. The shuffle is the same as
      * for similar tracks, so a re-bridged station varies.
+     * [CORRECTED 2026-11-21] "Every search writes the user's search history" is wrong for Deezer: these searches have not written
+     * it since 1c15f7f3 (2026-09-10), see searchOne. Only an extension without the two-argument loadSearchFeed still writes. The two
+     * caps still bound the searches made.
      */
     private suspend fun topTracksOrNothing(
         extension: Extension<*>, seedArtist: String, seedTitle: String, preferTab: String?, left: () -> Long,
@@ -529,6 +540,12 @@ object RadioFallback {
      * safe because the app supplies `common` at runtime). Two other callers share the defect:
      * AndroidAutoCallback's voice search and its browse SEARCH node. MAX_SEARCHES is what bounds the damage
      * until then.
+     * [CORRECTED 2026-11-21] NOT AN OPEN DEFECT for Deezer: fixed in 1c15f7f3 (2026-09-10), the signal described above. SearchFeedClient
+     * has loadSearchFeed(query, isUserInitiated); this call passes false, and DeezerSearchClient's loadSearchFeed writes history only
+     * when it is true (`history && isUserInitiated`). AndroidAutoCallback's browse SEARCH node passes false too. Its voice search
+     * (performSearch) still uses the one-argument form, which Deezer treats as user-initiated: the driver asked for that search.
+     * What remains is extension-side: one that does not override the two-argument form falls back to the one-argument call and
+     * still writes (SearchFeedClient's "BEST-EFFORT ACROSS EXTENSIONS" note). Nothing in this app can stop that.
      *
      * NOTE ON PRECEDENT: the smarttracklist work is NOT a precedent for this — it resolved by ID
      * (GraphQL edges[].node.id -> song.getListData), never by text. The template is
@@ -543,8 +560,13 @@ object RadioFallback {
         // whichever catalogue the seed came from. With one sub-extension the tabs are that extension's own, no id matches,
         // and the search runs as before.
         // Case-insensitive TRACK tab, with a firstOrNull fallback for extensions that name it differently.
+        // [2026-11-21] "track", "tracks" or "songs", any case, not only "TRACK": OpenGonic's tab ids equal their titles
+        // ("All", "Tracks", "Folders", per OpenGonic's SearchFeedClientImpl), so "TRACK" missed and the fallback read its All
+        // tab, a top-5 preview, instead of the full track list. Deezer's id is "TRACK" and is unchanged. Under Unified with two
+        // or more sub-extensions this does not help: Unified fills each sub-extension's tab from that extension's FIRST tab
+        // (UnifiedExtension.getFeedData), which is All for both Deezer and OpenGonic. Left as is, the user's decision.
         val tab = preferTab?.let { id -> feed.notSortTabs.firstOrNull { it.id == id } }
-            ?: feed.notSortTabs.firstOrNull { it.id.equals("TRACK", ignoreCase = true) }
+            ?: feed.notSortTabs.firstOrNull { t -> TRACKS_TAB_IDS.any { t.id.equals(it, ignoreCase = true) } }
             ?: feed.notSortTabs.firstOrNull()
         val (shelves, _) = feed.getPagedData(tab).pagedData.loadPage(null)
         return shelves.toTracks()

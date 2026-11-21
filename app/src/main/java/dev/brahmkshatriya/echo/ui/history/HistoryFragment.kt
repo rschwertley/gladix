@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentHistoryBinding
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.isReplayableContext
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.trackRadioPlaceholder
+import dev.brahmkshatriya.echo.ui.feed.reloadableFolderOf
 import dev.brahmkshatriya.echo.ui.main.HeaderAdapter
 import dev.brahmkshatriya.echo.ui.main.MainFragment.Companion.applyInsets
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
@@ -32,7 +33,14 @@ class HistoryFragment : Fragment(R.layout.fragment_history) {
     private val adapter = HistoryAdapter(this) { item ->
         val track = item.track ?: return@HistoryAdapter
         val context = item.context
-        if (context.isReplayableContext()) {
+        // [2026-11-21] A song played from its own folder page (TracksOnTap.reloadableFolderOf) reloads that page and queues from
+        // the song, as an album row does below. Its context is a Radio label, so without this it took the seed path and played as
+        // a radio. PlayerCallback.freshFolderUpcoming loads it; if it cannot, the queue is the seed path's, label kept, no error.
+        if (context != null && context.reloadableFolderOf(track) != null) {
+            playerViewModel.backfillQueue(
+                item.extensionId, context, false, track.id, respectShuffle = true, fallback = track,
+            )
+        } else if (context.isReplayableContext()) {
             // Load the context fresh and play current+upcoming from the tapped track's fresh version
             // (backfillQueue now sets+plays the whole queue). The stored track is NOT replayed — only
             // its id locates the fresh one — so a frozen/stale streamable token can't skip the tap.

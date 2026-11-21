@@ -181,8 +181,13 @@ sealed interface FeedType {
                         MediaGrid(feedId, extId, context, tabId, it)
                     }
 
+                    // [2026-11-21] `index`, 0-based, NOT `index + 1`: MediaGridViewHolder.bind adds 1 for display, as the Media
+                    // branch above and ItemShelfMediaBinding.bind do (0-based number, +1 at the holder). Passing index + 1 here
+                    // added it twice, so a Grid track shelf started at "2." (seen on OpenGonic's top songs, 2026-11-21). Both + 1s
+                    // were upstream's (f6f35c18). Only Grid track shelves reach this branch; Linear ones are HorizontalList, which
+                    // numbers its own way, and no shelf in this tree is one (Deezer's artist Top and Offline's are Linear).
                     is Shelf.Lists.Tracks -> shelf.list.mapIndexed { index, item ->
-                        MediaGrid(feedId, extId, context, tabId, item, index + 1)
+                        MediaGrid(feedId, extId, context, tabId, item, index)
                     }
                 }
             }

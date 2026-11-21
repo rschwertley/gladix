@@ -168,7 +168,8 @@ object AudioStreamProvider {
 
     // Reads one whole stripe from the network at a time and hands it out in any read size. Every third full
     // stripe, counted from the start of the FILE, is Blowfish-encrypted; a short final stripe never is.
-    private class StripeDecryptingInputStream(
+    // internal, not private, only so BlowfishStripeDecryptorTest can drive the real stripe loop.
+    internal class StripeDecryptingInputStream(
         private val source: InputStream,
         private val key: String,
         initialChunkIndex: Long,
@@ -181,6 +182,12 @@ object AudioStreamProvider {
         private var outputLimit = 0
         private var eof = false
         private var closed = false
+
+        // [2026-11-21] One key setup per stream instead of per encrypted stripe (Utils.BlowfishStripeDecryptor says why).
+        // Created on the FIRST encrypted stripe, not at open: a missing key is "" and SecretKeySpec throws on it, which must
+        // keep failing at the first encrypted read, as it did when decryptBlowfish ran there.
+        private var decryptor: Utils.BlowfishStripeDecryptor? = null
+        private var decryptBuffer: ByteArray? = null
 
         private fun loadNextStripe(): Boolean {
             var total = 0
@@ -200,7 +207,12 @@ object AudioStreamProvider {
             outputPosition = 0
             outputLimit = total
             if (total == BLOCK_SIZE) {
-                outputBuffer = if (chunkIndex % 3L == 0L) Utils.decryptBlowfish(inputBuffer, key) else inputBuffer
+                outputBuffer = if (chunkIndex % 3L == 0L) {
+                    val d = decryptor ?: Utils.BlowfishStripeDecryptor(key).also { decryptor = it }
+                    val out = decryptBuffer ?: ByteArray(BLOCK_SIZE).also { decryptBuffer = it }
+                    d.decrypt(inputBuffer, out)
+                    out
+                } else inputBuffer
                 chunkIndex++
             } else {
                 outputBuffer = inputBuffer
