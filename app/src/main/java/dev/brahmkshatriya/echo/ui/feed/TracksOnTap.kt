@@ -60,6 +60,12 @@ const val GLADIX_PARENT_TITLE = "gladix_parent_title"
 // [2026-11-13] PAGE BY PAGE, not as one list (Crashlytics 63ec9068, the user's decision): [onPage] gets each page as it is read
 // and returns false to stop reading (BoundedLoadAll.forEachPageBounded), so a caller that keeps a 2,000-song sample never holds
 // the whole folder. An extension that returns its whole list at once (OpenGonic today) arrives as one page.
+// [CORRECTED 2026-11-22] "OpenGonic today" no longer holds for All songs: OpenGonic confirms its Play pages are 2,000 songs, each
+// four search3 requests of 500 sent at once (OpenGonic's FolderTracks, per the user). A Play of All songs reads one such page
+// (QueueSampler stops on the 2,000th song kept). What other folder lists return was not part of that confirmation.
+// [CORRECTED 2026-11-22] Those 2,000-song pages are the PLAY list only, the one this function reads. The All songs SCREEN pages
+// through a different list, 50 songs a page and now 500 (the user, 2026-11-22); a song tap walks that one
+// (FeedClickListener.queueFromPage), so it reads up to about 4 more pages, one after another, not one.
 suspend fun loadTracksOnTap(
     extensions: ExtensionLoader, extensionId: String, id: String, title: String, extras: Map<String, String>,
     shuffle: Boolean = false,
@@ -165,6 +171,8 @@ suspend fun loadFolderSongs(
  * At or under the cap the list is returned as it is: exactly today's queue.
  */
 // [2026-11-13] [stoppedEarly]: Play stopped reading at the cap, so [total] is not the list's size (see QueueSampler).
+// [CORRECTED 2026-11-22] "is not" is now "may not be": Play stops on the cap-th song, so a list of exactly cap songs also reports
+// stoppedEarly, with total equal to its size. Nothing reads it today (isSample has no caller).
 class QueueSample(val tracks: List<Track>, val total: Int, val stoppedEarly: Boolean = false) {
     val isSample get() = stoppedEarly || tracks.size < total
 }
@@ -205,6 +213,14 @@ class QueueSampler(
                 if (slot < cap) kept[slot] = position to track
             }
             total++
+            // [2026-11-22] PLAY STOPS ON THE CAP-TH SONG KEPT, not on the next one. The branch above stopped only when song
+            // cap + 1 arrived, so a page ending exactly at the cap returned true and the walk read one more whole page to throw
+            // away: with OpenGonic's 2,000-song All songs pages (the user, 2026-11-22), every Play read 4,000 songs to keep 2,000.
+            // That branch stays for an offer made after this one returned false. Shuffle still reads every page.
+            if (!shuffle && kept.size >= cap) {
+                stoppedEarly = true
+                return false
+            }
         }
         return true
     }

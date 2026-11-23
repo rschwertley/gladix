@@ -504,6 +504,14 @@ abstract class MediaDetailsViewModel(
 }
 
 /**
+ * [2026-11-23] ITEM-EXTRAS FLAG, SET BY AN EXTENSION: "1" means the extension cannot make a share link for this item, while a
+ * Gladix link still opens it. [shareWithChoice] then shares the Gladix link directly, with no dialog. Read on the LOADED item
+ * at tap time, as the gladixLinkFor check is. When no Gladix link can be built (a null gladixLinkFor), the flag is ignored and
+ * the extension's own share runs as before. An item without the flag is unchanged.
+ */
+const val GLADIX_SHARE_LINK_ONLY = "gladix_share_link_only"
+
+/**
  * The single share entry point for every surface.
  *
  * ⚠⚠ ONE ACTION, NOT TWO BUTTONS. The header icon and the More sheet both land here, so
@@ -533,6 +541,11 @@ fun MediaDetailsViewModel.shareWithChoice(context: Context) {
     val gladix = extensionId?.let { gladixLinkFor(it, item) }
     if (gladix == null) {
         onShare()
+        return
+    }
+    // [2026-11-23] See GLADIX_SHARE_LINK_ONLY: the extension cannot make a share link of its own, so there is no choice to offer.
+    if (item.extras[GLADIX_SHARE_LINK_ONLY] == "1") {
+        onShareGladixLink()
         return
     }
     val sourceName = sourceExtensionName(item)

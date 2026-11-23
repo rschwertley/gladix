@@ -16,7 +16,10 @@ import dev.brahmkshatriya.echo.databinding.ItemShelfListsMediaBinding
 import dev.brahmkshatriya.echo.databinding.ItemShelfListsThreeTracksBinding
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.playback.PlayerState.Current.Companion.isPlaying
+import dev.brahmkshatriya.echo.ui.feed.FOLDER_SORT_SCOPE
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
+import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
 import dev.brahmkshatriya.echo.ui.feed.viewholders.CategoryViewHolder.Companion.bind
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.applyCover
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.bind
@@ -44,15 +47,30 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
             // a tracks-on-tap row's extras nor FOLDER_SORT_SCOPE, so a marked folder or "All songs" opened from a carousel chip
             // would get no load-on-tap Play/Shuffle and its own sort instead of the shared folder sort. No producer is known to
             // put folders in a Lists.Categories (OpenGonic's shape is not in this tree); revisit if one does.
+            // [CORRECTED 2026-11-21] Closed: OpenGonic's search All tab now sends folders in a row, so the gap was live. The chip
+            // passes the same two arguments as CategoryViewHolder's click, from the same Shelf.Category: the tracks-on-tap extras
+            // (the page's Play and Shuffle load the whole list) and FOLDER_SORT_SCOPE for a marked folder (the shared folder sort).
+            // The folder icon was already shared through CategoryViewHolder.bind. The long-press folder menu is still list-row only.
+            // [CORRECTED 2026-11-21] No longer list-row only: the chip's long-press below gives the same menu.
             binding.root.setOnClickListener {
+                val category = item?.category
                 listener.openFeed(
                     it,
                     item?.extensionId,
                     item?.id,
-                    item?.category?.title,
-                    item?.category?.subtitle,
-                    item?.category?.feed
+                    category?.title,
+                    category?.subtitle,
+                    category?.feed,
+                    category?.takeIf { c -> c.hasTracksOnTap() }?.extras,
+                    FOLDER_SORT_SCOPE.takeIf { category?.isMarkedFolder() == true },
                 )
+            }
+            // [2026-11-21] The folder menu, as CategoryViewHolder's long-press: marked folders and tracks-on-tap rows only. Any
+            // other chip returns false, so the press is not consumed and nothing changes for it.
+            binding.root.setOnLongClickListener {
+                val category = item?.category?.takeIf { it.isMarkedFolder() || it.hasTracksOnTap() }
+                    ?: return@setOnLongClickListener false
+                listener.onCategoryLongClicked(it, item?.extensionId, category)
             }
             binding.root.updateLayoutParams { width = WRAP_CONTENT }
             binding.icon.clipToOutline = true
@@ -128,6 +146,18 @@ sealed class ShelfViewHolder<T : ShelfType>(view: View) : ScrollAnimViewHolder(v
         init {
             bindings.forEachIndexed { index, binding ->
                 binding.coverContainer.cover.clipToOutline = true
+                // [2026-11-21] One line each, ellipsized, in this carousel only. The page is a fixed height
+                // (R.dimen.shelf_three_tracks_row_height, 216dp phone / 280dp TV, set by HorizontalListViewHolder.fixedRowHeightPx
+                // so the row does not collapse and re-expand while it fills), and item_shelf_media allows two lines of each, so a
+                // wrapped title or subtitle pushed the third row's text under the next shelf's header (OpenGonic search, All tab,
+                // 2026-11-21). Deezer's search and artist Top use this same holder and get the same cap. The layout keeps maxLines 2
+                // because MediaViewHolder's vertical list rows share it and size to their content.
+                // [CORRECTED 2026-11-21] "Deezer's search and artist Top use this same holder" is wrong: no Deezer shelf reaches it.
+                // Deezer sends Shelf.Lists.Items (DeezerParser.toShelfItemsList, DeezerArtistClient), which HorizontalListViewHolder
+                // shows as one card per item; only Shelf.Lists.Tracks is split into pages of three. Used by Offline's track shelves
+                // and older OpenGonic builds.
+                binding.title.maxLines = 1
+                binding.subtitle.maxLines = 1
                 // ⚠⚠ [CORRECTED 2026-10-25] THIS WAS A `val` COMPUTED RIGHT
                 // HERE, IN init, WHERE `shelf` IS STILL NULL - so `shelf?.number` was always null,
                 // the whole expression collapsed to the elvis branch `index` (0..2 within this row

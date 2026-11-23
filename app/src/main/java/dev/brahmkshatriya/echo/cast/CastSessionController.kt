@@ -429,6 +429,9 @@ class CastSessionController(
      * ⚠️ A NO-OP WHEN THE DEVICE CANNOT CAST, AND IT COSTS NO CastContext BEYOND THE CHECK.
      * CastAvailability returns null when Play Services is missing or stale, in which case no Cast code
      * runs again - requirement 7's "no crash, no button" in one branch.
+     * [CORRECTED 2026-11-23] "Costs no CastContext beyond the check" is wrong: CastAvailability.castContext calls
+     * CastContext.getSharedInstance once the check passes, so this starts the Cast framework, and PlayerService calls it on
+     * every service creation. See the correction at CastAvailability.
      */
     fun register() {
         val context = CastAvailability.castContext(app.context) ?: return

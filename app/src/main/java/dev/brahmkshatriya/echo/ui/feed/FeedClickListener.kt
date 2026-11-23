@@ -5,6 +5,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.activityViewModels
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
@@ -24,7 +25,9 @@ import dev.brahmkshatriya.echo.ui.media.more.FolderMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.main.LibraryFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
+import dev.brahmkshatriya.echo.utils.BoundedLoadAll.forEachPageBounded
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
+import kotlinx.coroutines.CancellationException
 import dev.brahmkshatriya.echo.ui.playlist.edit.search.EditPlaylistSearchClickListener
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
@@ -478,6 +481,13 @@ open class FeedClickListener(
                 it.type != Track.Type.Podcast
         }
         if (single != null) {
+            // [2026-11-22] A TRACKS-ON-TAP PAGE WITH NO DECLARED LIST (OpenGonic's Library > All songs, which stopped declaring its
+            // ~86,800 songs after the 1178 OOMs, Nov 12): the tap queues from this song in page order. See queueFromPage.
+            val pageList = (fragment as? FeedFragment)?.takeIf { it.tracksOnTap() != null }?.pageList
+            if (pageList != null) {
+                queueFromPage(vm, extensionId, pageList, tracks, pos, single)
+                return true
+            }
             vm.playTrackRadio(extensionId, single)
             return true
         }
@@ -493,6 +503,79 @@ open class FeedClickListener(
         vm.setQueue(extensionId, playableRun, runPos, context ?: feedPageLabel(rowId, rowTitle), respectShuffle = true)
         vm.setPlaying(true)
         return true
+    }
+
+    /**
+     * [2026-11-22] A SONG TAP ON A TRACKS-ON-TAP PAGE THAT DECLARES NO LIST: from the tapped song, up to [DECLARED_QUEUE_CAP], in
+     * the order the page shows (the user's decision). Today only OpenGonic's All songs reaches it: Deezer and Offline set no
+     * tracks-on-tap marker, and OpenGonic's folder pages declare their own songs, so the declared branch above takes them first.
+     * - THE PAGE'S OWN LIST, NOT loadTracksOnTap: that is a new loadTracks call read from song 1, in the extension's order rather
+     *   than a sort's. [list] is the PagedData the screen pages through (FeedFragment.pageList), so pages already shown come from
+     *   its page cache with no request (PagedData.Continuous.map caches each mapped page; that is also why FeedData's row-number
+     *   counter still runs once per page, in order), and a sorted page is its sorted list in memory.
+     * - MEMORY: pages are read one at a time (BoundedLoadAll.forEachPageBounded) and only the 2,000 queued are kept, plus the
+     *   pages read past what the screen had, which the list's own cache holds as it would after scrolling there.
+     * - THE TAPPED ROW IS FOUND BY ID AND OCCURRENCE, as the declared branch finds it, and goes first as the row's own Track (known
+     *   playable). Marked songs after it are dropped before the cap (MediaItemUtils.droppingUnplayable's rule).
+     * - SHUFFLE: setQueue's respectShuffle, as every tap. prebuilt only replaces setQueue's own MediaItem build (start 0, same
+     *   size); the shuffle latch and setMediaItems go out exactly as for the declared branch.
+     * - FALLBACKS (the user's decision): a walk that fails partway queues what it collected; nothing collected, or the tapped song
+     *   not found, starts Radio as before. The failure itself is not shown.
+     * - A WAIT: nothing changes until the walk ends. loadThenQueue shows "Loading songs" with Cancel after a second, and a second
+     *   tap cancels the first.
+     *   [2026-11-22] Usually short on All songs: OpenGonic's pages are 2,000 songs (four requests of 500 sent at once, per the
+     *   user), so the page already on screen usually holds the tapped song and most of what follows. The walk stops on the
+     *   2,000th song kept, so at most one more page is read (the next one, for a tap well into a page), unless many songs after the tap are
+     *   unplayable and dropped. Unmeasured on device.
+     *   [CORRECTED 2026-11-22] That mixed up two lists. The 2,000-song pages are OpenGonic's Play list (loadTracksOnTap); the
+     *   screen's own list, which this walks, was 50-song pages and is now 500 (the user, 2026-11-22). So a tap reads up to about
+     *   4 more pages to reach 2,000 songs, ONE AFTER ANOTHER (forEachPageBounded asks for the next page only after the last one
+     *   returns), each its own request; more if many songs after the tap are unplayable and dropped. Still unmeasured on device.
+     */
+    private fun queueFromPage(
+        vm: PlayerViewModel, extensionId: String, list: PagedData<FeedType>, tracks: List<Track>, pos: Int, tapped: Track,
+    ) {
+        val nth = tracks.subList(0, pos).count { it.id == tapped.id }
+        // Built now, while the page is alive, as onPlayClicked builds it.
+        val label = feedPageLabel()
+        val title = fragment.arguments?.getString("title").orEmpty()
+        vm.loadThenQueue(title, {
+            val upcoming = mutableListOf<Track>()
+            var seen = 0
+            try {
+                list.forEachPageBounded { page ->
+                    for (track in page.flatMap { it.pageTracks() }) {
+                        if (upcoming.isEmpty()) {
+                            if (track.id != tapped.id || seen++ < nth) continue
+                            upcoming += tapped
+                        } else if (track.isPlayable == Track.Playable.Yes) upcoming += track
+                        if (upcoming.size >= DECLARED_QUEUE_CAP) return@forEachPageBounded false
+                    }
+                    true
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Partway: what was collected is queued below; nothing collected starts Radio.
+            }
+            upcoming to vm.buildQueueItems(extensionId, upcoming, label)
+        }) { (upcoming, items) ->
+            if (upcoming.isEmpty()) {
+                vm.playTrackRadio(extensionId, tapped)
+                return@loadThenQueue
+            }
+            vm.setQueue(extensionId, upcoming, 0, label, respectShuffle = true, prebuilt = items)
+            vm.setPlaying(true)
+        }
+    }
+
+    // The songs a page row shows. Header is skipped: its tracks are the HorizontalList's that follows it.
+    private fun FeedType.pageTracks(): List<Track> = when (this) {
+        is FeedType.Media -> listOfNotNull(item as? Track)
+        is FeedType.MediaGrid -> listOfNotNull(item as? Track)
+        is FeedType.Video -> listOf(item)
+        is FeedType.HorizontalList -> shelf.list.filterIsInstance<Track>()
+        else -> emptyList()
     }
 
     open fun onTrackSwiped(

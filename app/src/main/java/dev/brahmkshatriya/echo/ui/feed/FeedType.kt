@@ -186,6 +186,8 @@ sealed interface FeedType {
                     // added it twice, so a Grid track shelf started at "2." (seen on OpenGonic's top songs, 2026-11-21). Both + 1s
                     // were upstream's (f6f35c18). Only Grid track shelves reach this branch; Linear ones are HorizontalList, which
                     // numbers its own way, and no shelf in this tree is one (Deezer's artist Top and Offline's are Linear).
+                    // [CORRECTED 2026-11-21] Deezer's artist Top is not a track shelf at all: it is a Linear Shelf.Lists.Items
+                    // (DeezerArtistClient), so it never reaches this `when`. Offline's track shelves are Linear Shelf.Lists.Tracks.
                     is Shelf.Lists.Tracks -> shelf.list.mapIndexed { index, item ->
                         MediaGrid(feedId, extId, context, tabId, item, index)
                     }

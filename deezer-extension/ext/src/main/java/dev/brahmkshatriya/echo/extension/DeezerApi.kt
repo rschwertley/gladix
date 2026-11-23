@@ -209,6 +209,19 @@ class DeezerGatewayException(
     // generic DeezerGatewayException report, which fails safe.
     val isAlbumNotAvailable: Boolean
         get() = method == "deezer.pageAlbum" && errorText.split(", ").any { it == "DATA_ERROR=album::getData" }
+
+    // [2026-11-22] A TRACK DEEZER HAS REMOVED, NOT A FAULT (Crashlytics dc8c93d2, 1187, Fire TV: deezer_gateway
+    // `gw=deezer.pageTrack err=DATA_ERROR=track not available`, under loadStreamableMedia's "Track not available after retries").
+    // Removed tracks are routine: greyed out and skipped since 1148. callApi turns it into a bare MediaUnavailableException.
+    // WHY THE SILENT SKIP MISSED IT: PlayerEventListener.onPlayerError tests `cause.rootCause`, the DEEPEST node. loadStreamableMedia
+    // chains its last attempt's error, so that node was this DeezerGatewayException, whose message is the fixed "Deezer refused
+    // this request." Neither the MediaUnavailableException type test nor the "not available" text test matched it (Deezer's
+    // "track not available" is in errorText, not message), so it fell through to the generic emit and was reported.
+    // ⚠️ NO CAUSE IS CHAINED, ON PURPOSE: chaining this exception would make it the rootCause again and undo the fix.
+    // ⚠️ THE EXACT ENTRY, AND ONLY ON deezer.pageTrack, as for isAlbumNotAvailable and for the same reason. A rewording goes back
+    // to the generic report, which fails safe.
+    val isTrackNotAvailable: Boolean
+        get() = method == "deezer.pageTrack" && errorText.split(", ").any { it == "DATA_ERROR=track not available" }
 }
 
 /**
@@ -876,6 +889,10 @@ class DeezerApi(private val session: DeezerSession) {
                     val unavailable = DeezerAlbumUnavailableException(albumId, langCode, errorText)
                     throw MediaUnavailableException(unavailable.message.orEmpty(), unavailable)
                 }
+                // [2026-11-22] See DeezerGatewayException.isTrackNotAvailable. Bare, so it is the player's rootCause: the Unavailable
+                // skip, with nothing reported. Every pageTrack caller (the ladder's token refresh, loadTrack's re-fetch, track info,
+                // radio) now sees the same type the ladder already throws for an unplayable song.
+                if (gatewayError.isTrackNotAvailable) throw MediaUnavailableException(NOT_AVAILABLE_REASON)
                 throw gatewayError
             }
             result

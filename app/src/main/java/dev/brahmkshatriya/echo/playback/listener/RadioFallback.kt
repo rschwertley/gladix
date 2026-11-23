@@ -124,6 +124,8 @@ object RadioFallback {
     // We issue at most one request per exhausted station, so the rate limit is not reachable by design.
     // [CORRECTED 2026-11-12] Now up to 1 + MAX_SPLIT_LOOKUPS + 1 (full name, name parts, top tracks), one after another, each
     // only when the one before found nothing to queue. Still well under 5 per second.
+    // [CORRECTED 2026-11-23] Plus 1 + SIMILAR_ARTISTS (artist.getSimilar, then each similar artist's top tracks) when the top
+    // tracks left the append short. Still one after another, so still under 5 per second.
     private const val ENDPOINT = "https://ws.audioscrobbler.com/2.0/"
 
     // How many similar tracks to ask for, and how many catalogue matches to append. Kept small: the point
@@ -173,6 +175,12 @@ object RadioFallback {
     // search cap for the top-tracks step (see topTracksOrNothing).
     private const val MAX_SPLIT_LOOKUPS = 2
     private const val TOP_MAX_SEARCHES = 10
+
+    // [2026-11-23] The similar-artists step (similarArtistTracks): how many of Last.fm's similar artists have their top tracks
+    // pooled, and the search cap for that pool. Worst case per exhausted station is now MAX_SEARCHES + TOP_MAX_SEARCHES +
+    // SIMILAR_ARTIST_MAX_SEARCHES, all inside TOTAL_BUDGET_MS.
+    private const val SIMILAR_ARTISTS = 3
+    private const val SIMILAR_ARTIST_MAX_SEARCHES = 10
 
     // Wall clock for the SEARCH LOOP ONLY — deliberately not wrapping the Last.fm fetch, which carries its
     // own OUTER_TIMEOUT_MS. Two bounded phases rather than one bound over both: a slow fetch can no longer
@@ -359,8 +367,11 @@ object RadioFallback {
      * at most [maxSearches] searches inside SEARCH_BUDGET_MS, stopping at MAX_APPEND matches. The notes below are the
      * loop's own and are unchanged.
      */
+    // [2026-11-23] [want]: stop at this many matches. MAX_APPEND for every step but the similar-artists one, which asks only for
+    // what the top tracks left short.
     private suspend fun searchCandidates(
         extension: Extension<*>, candidates: List<Similar>, maxSearches: Int, leftMs: Long, preferTab: String?,
+        want: Int = MAX_APPEND,
     ): SearchRun {
         val matched = mutableListOf<Track>()
         var searched = 0
@@ -393,7 +404,7 @@ object RadioFallback {
             // random for this purpose, and variety between plays is worth more than a ranking the user
             // cannot see. If a "best match first" property is ever wanted, this is the line that traded it.
             for (candidate in candidates.take(maxSearches)) {
-                if (matched.size >= MAX_APPEND) break
+                if (matched.size >= want) break
                 searched++
                 val found = extension.getIf<SearchFeedClient, List<Track>> {
                     searchOne(candidate, preferTab)
@@ -417,8 +428,55 @@ object RadioFallback {
      * [CORRECTED 2026-11-21] "Every search writes the user's search history" is wrong for Deezer: these searches have not written
      * it since 1c15f7f3 (2026-09-10), see searchOne. Only an extension without the two-argument loadSearchFeed still writes. The two
      * caps still bound the searches made.
+     * [CORRECTED 2026-11-23] No longer the last step, and no longer two caps: when the top tracks give fewer than MAX_APPEND, the
+     * similar artists' top tracks follow (similarArtistTracks), with SIMILAR_ARTIST_MAX_SEARCHES as a third cap. The top-tracks
+     * body above is now topTracksOnly, unchanged.
      */
     private suspend fun topTracksOrNothing(
+        extension: Extension<*>, seedArtist: String, seedTitle: String, preferTab: String?, left: () -> Long,
+        log: (String, Int, Int, Int) -> Any, setStep: (String) -> Unit,
+    ): List<Track> {
+        // [2026-11-23] THEN, ONLY WHEN THE TOP TRACKS LEFT THE APPEND SHORT, THE SIMILAR ARTISTS (the user's decision, after
+        // "One bottle of pop" by Playsongs People added 0 songs one night and 1 the next: no Deezer radio, no Last.fm similar
+        // tracks, and only some of the artist's own top tracks on Deezer). A top-tracks run that reached MAX_APPEND returns
+        // exactly as before. Unlogged: the toptracks line still reports the top tracks' own counts, and the GladixQueue append
+        // line's offered= is the total, so the difference is this step's.
+        val top = topTracksOnly(extension, seedArtist, seedTitle, preferTab, left, log, setStep)
+        if (top.size >= MAX_APPEND || left() < MIN_STEP_MS) return top
+        val artist = splitArtist(seedArtist).firstOrNull() ?: seedArtist
+        val more = similarArtistTracks(extension, artist, preferTab, left, MAX_APPEND - top.size)
+        return (top + more).distinctBy { it.id }
+    }
+
+    /**
+     * [2026-11-23] THE SIMILAR-ARTISTS STEP: Last.fm's artist.getSimilar for [artist], the top tracks of the first SIMILAR_ARTISTS
+     * of them pooled and shuffled, then the same search loop and exact match, stopping at [want] matches or
+     * SIMILAR_ARTIST_MAX_SEARCHES searches. Every fetch is skipped with under MIN_STEP_MS of TOTAL_BUDGET_MS left, and each is
+     * capped to what is left, so the whole fallback keeps its one deadline. A failed fetch is just no answer, as for the name
+     * parts. A similar artist the catalogue lacks costs searches and never matches: the artist must be equal (matches).
+     * Not logged (no approval for a new line); see topTracksOrNothing.
+     */
+    private suspend fun similarArtistTracks(
+        extension: Extension<*>, artist: String, preferTab: String?, left: () -> Long, want: Int,
+    ): List<Track> {
+        val names = runCatching { fetchSimilarArtists(artist, left()) }.getOrElse { e ->
+            if (e is CancellationException) throw e
+            emptyList()
+        }
+        val pool = mutableListOf<Similar>()
+        for (name in names.take(SIMILAR_ARTISTS)) {
+            if (left() < MIN_STEP_MS) break
+            pool += runCatching { fetchTopTracks(name, left()) }.getOrElse { e ->
+                if (e is CancellationException) throw e
+                emptyList()
+            }
+        }
+        if (pool.isEmpty() || left() < MIN_STEP_MS) return emptyList()
+        return searchCandidates(extension, pool.shuffled(), SIMILAR_ARTIST_MAX_SEARCHES, left(), preferTab, want).matched
+    }
+
+    // [2026-11-23] The top-tracks step as it was before the similar-artists step; topTracksOrNothing calls it first.
+    private suspend fun topTracksOnly(
         extension: Extension<*>, seedArtist: String, seedTitle: String, preferTab: String?, left: () -> Long,
         log: (String, Int, Int, Int) -> Any, setStep: (String) -> Unit,
     ): List<Track> {
@@ -493,6 +551,24 @@ object RadioFallback {
                     val a = o["artist"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNullSafe()
                         ?: return@mapNotNull null
                     Similar(a, t)
+                }
+            }
+        }
+
+    /** [2026-11-23] Last.fm's artist.getSimilar for [artist]: the similar artists' names, in Last.fm's order, with fetchSimilar's checks. */
+    private suspend fun fetchSimilarArtists(artist: String, budgetMs: Long): List<String> =
+        withTimeout(minOf(OUTER_TIMEOUT_MS, budgetMs).coerceAtLeast(1L)) {
+            withContext(Dispatchers.IO) {
+                val url = "$ENDPOINT?method=artist.getsimilar&artist=${artist.enc()}" +
+                    "&api_key=${BuildConfig.LASTFM_API_KEY}&format=json&autocorrect=1&limit=$SIMILAR_ARTISTS"
+                val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                    r.body.string()
+                }
+                // Same HTML check as fetchSimilar, for the same reasons.
+                check(!body.trimStart().startsWith("<")) { "Last.fm returned HTML, not JSON" }
+                val root = json.parseToJsonElement(body).jsonObject
+                root["similarartists"]?.jsonObject?.get("artist")?.jsonArray.orEmpty().mapNotNull { el ->
+                    (el as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNullSafe()
                 }
             }
         }
@@ -574,7 +650,14 @@ object RadioFallback {
 
     private fun matches(track: Track, s: Similar): Boolean {
         val a = track.artists.firstOrNull()?.name?.strip() ?: return false
-        return a == s.artist.strip() && track.title.strip() == s.title.strip()
+        if (a != s.artist.strip()) return false
+        // [2026-11-23] OR THE CANDIDATE'S TITLE UP TO " - " (the user's decision): Last.fm writes "Looby Loo - Adaptation for Babies
+        // and Toddlers" where Deezer has "Looby Loo (Adaptation for Babies and Toddlers)", which strip() reduces to "looby loo".
+        // Three of Playsongs People's 25 Last.fm top tracks missed on that alone (Deezer's public search, 2026-11-23). Here only, not
+        // in strip(), which the append dedup shares (PlayerRadio.stripVersionSuffix). The exact compare still comes first, so a
+        // title equal on both sides, " - " and all, matches as before.
+        val title = track.title.strip()
+        return title == s.title.strip() || title == s.title.substringBefore(" - ").strip()
     }
 
     // ⚠️ USES PlayerRadio's DEFINITION — THERE IS EXACTLY ONE APP-SIDE COPY, AND IT MUST STAY THAT WAY.

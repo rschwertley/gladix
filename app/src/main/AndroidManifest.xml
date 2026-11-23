@@ -64,6 +64,9 @@
     <queries>
         <package android:name="com.android.chrome" />
         <package android:name="com.android.settings" />
+        <!-- [2026-11-23] So CastAvailability.castContext can see the Google Services Framework's provider under API 30+
+             package visibility. Without it the lookup fails on every device and Cast is off everywhere. -->
+        <provider android:authorities="com.google.android.gsf.gservices" />
         <!-- So resolveActivity() can reliably detect the system equalizer under API 30+ package
              visibility; without this the audio-fx sheet would hide the EQ button on devices that
              actually have one. Absence of a handler (e.g. some Huawei/Honor tablets) hides it. -->

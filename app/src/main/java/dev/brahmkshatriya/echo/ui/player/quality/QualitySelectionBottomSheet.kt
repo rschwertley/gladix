@@ -177,6 +177,9 @@ class QualitySelectionBottomSheet : BottomSheetDialogFragment() {
      * discovery and can throw (Play Services missing or stale, OptionsProvider unloadable after
      * R8); behind a sheet-open it costs one tap and a hidden button, where on an every-launch path
      * it would cost the app. See the note at CastAvailability.
+     * [CORRECTED 2026-11-23] Not the only place since 85577220 (2026-10-17): PlayerService's creation calls
+     * CastSessionController.register(), which initialises the framework through the same CastAvailability.castContext. See
+     * the correction there.
      *
      * ⚠️ WHAT THE CAPTURE SHOULD SAY, stated before the build so the log is readable:
      * opening the sheet with no Chromecast on the network prints castState=noDevices and the

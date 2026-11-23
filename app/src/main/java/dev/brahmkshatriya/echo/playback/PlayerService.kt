@@ -635,6 +635,10 @@ class PlayerService : MediaLibraryService() {
         // Services is missing or stale (CastAvailability returns null), so this costs nothing on a
         // device that cannot cast - and it does NOT touch CastContext beyond that check, so the
         // framework's discovery is still only started by the quality sheet.
+        // [CORRECTED 2026-11-23] It does touch CastContext: once the Play Services check passes, register() ->
+        // CastAvailability.castContext -> CastContext.getSharedInstance, so the Cast framework starts here, on every service
+        // creation, not only from the quality sheet. Moved here by 85577220 (2026-10-17), against the Oct 16-17 design (1133):
+        // "Cast starts only when the quality sheet opens, never at launch" (the user). See the correction at CastAvailability.
         val controller = CastSessionController(
             app = app,
             scope = scope,

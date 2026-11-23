@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.AppBarLayout
 import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.databinding.FragmentGenericCollapsableBinding
@@ -164,6 +165,12 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
     // the resolved extension id, and the live page, which is null on a page restored from the cache.
     val pageExtensionId: String? get() = feedData.let { vm.extensionId }
     val pageFeed: Feed<Shelf>? get() = feedData.let { vm.feed }
+
+    // [2026-11-22] The list this page shows, as FeedData.pagingFlow picks it: the loaded one, else the cached one. The SAME PagedData
+    // the screen pages through, so pages already shown come from its own page cache, and with a sort or search on it is the sorted
+    // list in memory. Read by FeedClickListener.queueFromPage, a song tap on a tracks-on-tap page.
+    val pageList: PagedData<FeedType>?
+        get() = (feedData.loadedFeedTypeFlow.value?.getOrNull() ?: feedData.cachedFeedTypeFlow.value?.getOrNull())?.second
 
     // [2026-11-11] The extras of the tracks-on-tap row this page was opened from, or null for any other page
     // (FeedClickListener.onPlayClicked). From the arguments, so a page restored after a process kill still has them.

@@ -21,7 +21,11 @@ class DeezerArtist(private val deezerApi: DeezerApi) {
         return deezerApi.callApi(
             method = "deezer.pageProfile",
             paramsBuilder = {
-                put("nb", 40)
+                // [2026-11-22] 10000, as liked songs and albums ask (DeezerTrack.getTracks, DeezerAlbum.getAlbums). It was 40
+                // from upstream (arrived with 8f4c2f29, no reason recorded), so Library > Artists showed only the first 40
+                // followed artists, and DeezerArtistClient.isFollowing, which reads this same list, said "not following" for
+                // any artist past them.
+                put("nb", 10000)
                 put ("tab", "artists")
                 put("user_id", userId)
             }
