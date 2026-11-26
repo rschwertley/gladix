@@ -279,7 +279,6 @@
     <string name="sort_date">日付</string>
     <string name="sort_date_added">追加日</string>
     <string name="sort_duration">時間</string>
-    <string name="sort_subtitle">サブタイトル</string>
     <string name="scroll_animations">スクロールアニメーション</string>
     <string name="scroll_animations_summary">スクロール時のアニメーション</string>
     <string name="delete">削除</string>

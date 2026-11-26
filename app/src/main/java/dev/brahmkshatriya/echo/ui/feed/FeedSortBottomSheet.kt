@@ -38,7 +38,8 @@ class FeedSortBottomSheet : BottomSheetDialogFragment() {
         val state = sortState.value
         selectedFeedSort = state?.feedSort
         val available = getSorts(list)
-        val checked = available.indexOf(state?.feedSort)
+        // [2026-11-26] resolveFor: a Subtitle saved before 2026-11-26 checks the chip it now sorts as (Artists or Creator).
+        val checked = available.indexOf(state?.feedSort?.resolveFor(list))
         binding.sortChipGroup.run {
             removeAllViews()
             available.forEachIndexed { index, t ->

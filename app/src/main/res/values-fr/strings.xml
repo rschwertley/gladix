@@ -186,7 +186,6 @@
     <string name="sort_title">Titre</string>
     <string name="sort_date">Date</string>
     <string name="sort_duration">Durée</string>
-    <string name="sort_subtitle">Sous-titre</string>
     <string name="delete">Supprimer</string>
     <string name="playlist_name">Nom de la Playlist</string>
     <string name="playlist_description">Description de la Playlist</string>

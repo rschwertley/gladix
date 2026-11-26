@@ -12,6 +12,7 @@ import coil3.asDrawable
 import coil3.imageLoader
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.error
 import coil3.request.lifecycle
@@ -187,8 +188,12 @@ object ImageUtils {
         view.enqueue(request)
     }
 
+    // [2026-11-26] skipMemoryCacheForResources: PlayerBitmapLoader only. A resource image's memory-cache key is the resource
+    // plus night mode, not the theme (coil 3.6.3 AndroidResourceUriKeyer), so the service's art_music, drawn with
+    // PlayerService's Default theme, shared one entry with every no-cover art_music in the UI and turned History rows dark.
     suspend fun ImageHolder?.loadDrawable(
-        context: Context
+        context: Context,
+        skipMemoryCacheForResources: Boolean = false,
     ) = tryWithSuspend {
         // Headless (no view target): run Coil's interceptor chain off Main. execute() otherwise
         // coordinates on Dispatchers.Main.immediate by default (RealImageLoader wraps in async(main) +
@@ -196,6 +201,8 @@ object ImageUtils {
         // (loadInto/enqueue) are untouched and keep their Main callbacks.
         val request = createRequest(context, null, null)
             .interceptorCoroutineContext(Dispatchers.IO)
+        if (skipMemoryCacheForResources && this is ImageHolder.ResourceIdImageHolder)
+            request.memoryCachePolicy(CachePolicy.DISABLED)
         context.imageLoader.execute(request.build()).image?.asDrawable(context.resources)
     }
 

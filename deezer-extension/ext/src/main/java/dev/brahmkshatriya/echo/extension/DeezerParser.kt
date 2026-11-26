@@ -551,15 +551,27 @@ class DeezerParser(private val session: DeezerSession) {
                     name = obj.str("ART_NAME").orEmpty(),
                     cover = getCover(obj.str("ART_PICTURE"), "artist")
                 )
+            }.ifEmpty {
+                // [2026-11-26] Library → Albums (deezer.pageProfile, tab=albums) carries the artist as flat ART_ID / ART_NAME, not
+                // an ARTISTS array, per deezer-py's map_user_album (deezer/utils.py). Without this the album had no artists and
+                // the row fell back to the date. Field names are from deezer-py, not verified against a capture.
+                listOfNotNull(data.str("ART_NAME")?.takeIf { it.isNotBlank() }?.let { name ->
+                    Artist(id = data.str("ART_ID").orEmpty(), name = name, cover = getCover(data.str("ART_PICTURE"), "artist"))
+                })
             },
             releaseDate = rd,
             description = str("description").orEmpty(),
-            subtitle = str("subtitle")
-                ?: when {
-                    trackCount != null && rd != null -> "$trackCount Songs • $rd"
-                    trackCount != null -> "$trackCount Songs"
-                    else -> rd?.toString()
-                }
+            // [2026-11-26] Year, never the full date (the 1189 decision: no full dates on rows unless sorted by Date, where the
+            // app's FeedSort relabel shows it). This line is what MediaViewHolder.secondLine falls back to with no artists.
+            // No song count either (same decision). str("subtitle") only from a page-item wrapper (`this` holds a `data`
+            // object): a bare record, as Library's pageProfile rows are, never supplies it, so no Deezer-written text can
+            // put a date on those rows.
+            subtitle = str("subtitle")?.takeIf { data !== this } ?: rd?.year?.toString(),
+            // [2026-11-26] A heart, not Save (the user's decision; Deezer's own app and Tidal heart albums). Same favourite either
+            // way: DeezerExtension.likeItem / isItemLiked's Album branches use favorite_album like the save ones. Not saveable,
+            // so the page shows the heart alone (MediaHeaderAdapter.bind draws each flag's button). Shows (toShow) keep Save.
+            isLikeable = true,
+            isSaveable = false
         )
     }
 
@@ -581,7 +593,10 @@ class DeezerParser(private val session: DeezerSession) {
             cover = (str("cover_medium") ?: str("cover"))?.takeIf { it.isNotEmpty() }?.toImageHolder(),
             artists = listOf(artist),
             releaseDate = releaseDate,
-            subtitle = releaseDate?.toString()
+            subtitle = releaseDate?.toString(),
+            // [2026-11-26] As toAlbum, so the long-press sheet's pre-load row on an artist page's albums is Like, not Save.
+            isLikeable = true,
+            isSaveable = false
         )
     }
 
@@ -848,11 +863,18 @@ class DeezerParser(private val session: DeezerSession) {
         val type = data.str("PICTURE_TYPE").orEmpty()
         val md5 = data.str("PLAYLIST_PICTURE").orEmpty()
         val parentUser = data.str("PARENT_USER_ID")
+        // [2026-11-26] The `?: data.int("NB_SONG")`: Library → Playlists (deezer.pageProfile, tab=playlists) has no SONGS; its
+        // records carry a flat NB_SONG, per deezer-py's map_user_playlist (deezer/utils.py). Not verified against a capture.
         val tracks = when(this["SONGS"]) {
             is JsonArray -> {
                 int("NB_SONG")
             }
             else -> this["SONGS"]?.jsonObject?.int("total")
+        } ?: data.int("NB_SONG")
+        // [2026-11-26] The owner, from PARENT_USER_ID / PARENT_USERNAME (same map_user_playlist source, same caveat), so
+        // MediaViewHolder.secondLine can show it on playlists that are not yours. isEditable below is unchanged.
+        val owner = data.str("PARENT_USERNAME")?.takeIf { it.isNotBlank() }?.let { name ->
+            Artist(id = parentUser.orEmpty(), name = name)
         }
         val created = data.str("DATE_ADD")?.toDate()
         // Show/sort by the last-modified date (DATE_MOD, Deezer's "Updated"), falling back to the
@@ -861,19 +883,31 @@ class DeezerParser(private val session: DeezerSession) {
         // have DATE_ADD/DATE_FAVORITE), so without it a followed playlist would show a blank date. DATE_MOD
         // is present in both the library-list (pageProfile) and detail (pagePlaylist) payloads, so this one
         // spot fixes both screens.
+        // [CORRECTED 2026-11-26] Sort only, no longer shown: the subtitle below dropped the date (the 1189 decision). The
+        // fallback still matters, for creationDate and so the Date sort.
         val modified = data.str("DATE_MOD")?.toDate()
         val date = modified ?: created
+        // [2026-11-26] Exact match, and no user id means not yours. Was parentUser?.contains(userId): a substring test on two Strings,
+        // so user 1234 owned 51234's playlists, and an empty id ("" is in every string) owned them all.
+        val userId = session.credentials.userId
+        val own = userId.isNotEmpty() && parentUser == userId
         Playlist(
             id = data.str("PLAYLIST_ID").orEmpty(),
             title = data.str("TITLE").orEmpty(),
             cover = getCover(md5, type),
             description = data.str("DESCRIPTION").orEmpty(),
-            subtitle = str("subtitle") ?: when {
-                tracks != null && date != null -> "$tracks Songs • $date"
-                tracks != null -> "$tracks Songs"
-                else -> date?.toString()
-            },
-            isEditable = parentUser?.contains(session.credentials.userId) == true,
+            // [2026-11-26] Song count only, never a date (the 1189 decision: no full dates on rows unless sorted by Date, where the
+            // app's FeedSort relabel shows it). Null when the count is unknown. creationDate below still carries the date for sorting.
+            // str("subtitle") only from a page-item wrapper, as in toAlbum, so Library's bare pageProfile rows never take it.
+            subtitle = str("subtitle")?.takeIf { data !== this } ?: tracks?.let { "$it Songs" },
+            authors = listOfNotNull(owner),
+            isEditable = own,
+            // [2026-11-26] A heart on other people's playlists, not Save (the user's decision; Deezer's own app hearts them). Same
+            // favourite: DeezerExtension.likeItem / isItemLiked's Playlist branches use favorite_playlist like the save ones. Your
+            // own get neither (the header already hid Save for an editable playlist). Favorite tracks / Loved Tracks clear
+            // isLikeable at DeezerLibraryClient.withFavoriteTracks and DeezerPlaylistClient.loadPlaylist.
+            isLikeable = !own,
+            isSaveable = own,
             trackCount = tracks?.toLong(),
             duration = data.long("DURATION")?.times(1000),
             creationDate = date

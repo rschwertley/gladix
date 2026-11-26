@@ -431,7 +431,8 @@ open class MainActivity : AppCompatActivity() {
             miniArtist.text = track.artists.joinToString(", ") { it.name }
             if (current.mediaItem.mediaId != lastMiniArtId) {
                 lastMiniArtId = current.mediaItem.mediaId
-                track.cover.loadInto(miniArt, R.drawable.ic_music)
+                // [2026-11-26] Themed art_music, not the untinted black ic_music: the 1175 rule for placeholders, as on the phone.
+                track.cover.loadInto(miniArt, R.drawable.art_music)
             }
         }
 

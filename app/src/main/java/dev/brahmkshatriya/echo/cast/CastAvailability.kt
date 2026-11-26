@@ -29,6 +29,14 @@ import com.google.android.gms.common.GoogleApiAvailability
  * THE TV". Crashlytics 8d782ca9 (1187, FiiO JM21, Android 13, fatal) is the kind of failure this note predicted for an
  * every-launch path: "Failed to find provider com.google.android.gsf.gservices" thrown inside play-services-basement on the main
  * thread, which no runCatching here can reach. Whether Cast or Firebase Analytics made that call is not known.
+ * [CORRECTED 2026-11-26] Cast is ruled out: 8d782ca9 recurred on 1188 (same FiiO JM21, process 0 s old) with Cast off on that
+ * device, since castContext's GSF check returns null there. The crash path, BaseGmsClient$LegacyClientCallbackAdapter
+ * .onReportServiceBinding → getRemoteService, which rethrows a SecurityException from IGmsServiceBroker.getService (decoded from
+ * play-services-basement 18.12.0), is reached through BaseGmsClient.checkAvailabilityAndConnect. Among the bundled Play services
+ * jars only play-services-measurement-impl 24.0.0 (Firebase Analytics, measurement.internal.zzmt) calls it; no Cast jar does.
+ * Its Play services bind can't be stopped per device without unproven changes (zzmz.zzR picks the Play services route by Play
+ * services availability alone, and no collection flag is shown to stop it). The user's decision: muted in Crashlytics, not
+ * fixed; Analytics unchanged. The GSF check above stays.
  *
  * ⚠️ THE LOG LINE IS THE VERIFICATION FOR THE R8 KEEP RULE. A missing or renamed
  * [CastOptionsProvider] surfaces here as a ClassNotFoundException wrapped by the framework - caught,
@@ -58,6 +66,8 @@ object CastAvailability {
         // arrives where no runCatching can reach it. Null here is the same no-Cast path as a failed check: every caller
         // tolerates it. Needs the provider in the manifest's <queries>, or Android 11+ hides it and Cast is off on every device.
         // Not logged, by decision. Unverified that Cast made the failing call: Firebase Analytics (kept on) could also have.
+        // [CORRECTED 2026-11-26] Not Cast: the crash recurred with this check returning null. The path points to Analytics; see the
+        // class note's correction. This check stays.
         val gsf = runCatching { context.packageManager.resolveContentProvider(GSF_PROVIDER, 0) }.getOrNull()
         if (gsf == null) return null
         return runCatching { CastContext.getSharedInstance(context) }

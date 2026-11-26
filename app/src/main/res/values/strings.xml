@@ -493,7 +493,8 @@
     <string name="sort_date">Date</string>
     <string name="sort_date_added">Date Added</string>
     <string name="sort_duration">Duration</string>
-    <string name="sort_subtitle">Subtitle</string>
+    <string name="sort_details">Details</string>
+    <string name="sort_creator">Creator</string>
 
     <string name="scroll_animations">Scroll Animations</string>
     <string name="scroll_animations_summary">Animations when you scroll stuff</string>

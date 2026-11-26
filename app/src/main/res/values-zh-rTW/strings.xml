@@ -173,7 +173,6 @@
     <string name="sort_title">標題</string>
     <string name="sort_date">日期</string>
     <string name="sort_duration">持續時間</string>
-    <string name="sort_subtitle">副標題</string>
     <string name="playlist_name">播放清單名稱</string>
     <string name="playlist_description">播放清單簡介</string>
     <string name="create_playlist">建立播放清單</string>

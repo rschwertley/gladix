@@ -256,7 +256,6 @@
     <string name="sort_duration">Duración</string>
     <string name="scroll_animations">Animaciones al desplazar</string>
     <string name="scroll_animations_summary">Animaciones durante el desplazamiento</string>
-    <string name="sort_subtitle">Subtítulo</string>
     <string name="delete">Eliminar</string>
     <string name="playlist_name">Nombre de la lista</string>
     <string name="playlist_description">Descripción de la lista</string>

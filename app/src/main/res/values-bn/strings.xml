@@ -306,7 +306,6 @@
     <string name="sort_date">তারিখ</string>
     <string name="sort_date_added">যোগ করার তারিখ</string>
     <string name="sort_duration">সময়কাল</string>
-    <string name="sort_subtitle">সাবটাইটেল</string>
     <string name="scroll_animations">স্ক্রোল অ্যানিমেশন</string>
     <string name="scroll_animations_summary">যখন আপনি স্ক্রোল করেন তখন অ্যানিমেশন</string>
     <string name="delete">মুছুন</string>

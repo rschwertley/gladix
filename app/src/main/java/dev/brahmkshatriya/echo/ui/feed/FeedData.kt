@@ -179,8 +179,15 @@ data class FeedData(
      * [2026-11-18] The sort field actually applied on the last render, for the header chip (ButtonsAdapter.configure). Set only on
      * a scoped page, where it can differ from the saved one: a saved field this page does not offer (FeedSort.shouldBeVisible)
      * renders as Title, and the saved choice is left as it is. Null everywhere else, so the chip shows the saved field as before.
+     * [CORRECTED 2026-11-26] Also set on an unscoped page when FeedSort.resolveFor changed the field (a saved Subtitle sorting as
+     * Artists or Creator); still null there otherwise.
+     * [2026-11-26] Stored with the saved field and tab it was worked out for (AppliedSort); buttonsFlow shows it only while both
+     * still match, otherwise the saved name. Before, the previous value showed after picking a new sort or switching tab, until
+     * the next render replaced it. Render-time only: nothing here is written to disk and it starts no render pass.
      */
-    val appliedSortFlow = MutableStateFlow<FeedSort?>(null)
+    private val appliedSortFlow = MutableStateFlow<AppliedSort?>(null)
+
+    private data class AppliedSort(val tabId: String?, val saved: FeedSort?, val applied: FeedSort?)
 
     /**
      * Persist (or remove) the CURRENT [feedSortState] under the key it was loaded for.
@@ -363,7 +370,7 @@ data class FeedData(
             feed.feed.buttons ?: defaultButtons,
             feed.item,
             state,
-            applied.takeIf { state?.feedSort != null },
+            applied?.takeIf { state?.feedSort != null && it.saved == state.feedSort && it.tabId == sortStateTabId }?.applied,
         )
     }
 
@@ -444,6 +451,8 @@ data class FeedData(
                 val data = state.feed.pagedData
 
                 val sortState = feedSortState.value
+                // [2026-11-26] The tab this sortState was loaded for (dataFlow sets both), stored with appliedSortFlow.
+                val sortTabId = sortStateTabId
                 var shelves = data.loadTill(
                     shelfLimit = 2000, itemLimit = MAX_SORT_SEARCH_ITEMS,
                 ) { shelf -> if (shelf is Shelf.Lists<*>) shelf.list.size.coerceAtLeast(1) else 1 }
@@ -520,10 +529,19 @@ data class FeedData(
                     // With no sort field there is nothing missing, and the whole list is reversed here.
                     // [2026-11-18] On a scoped page, a saved field these rows do not offer sorts by Title instead; the saved
                     // state is not touched, so the next folder that has the field uses it again. See appliedSortFlow.
-                    val feedSort = sortState.feedSort?.let { saved ->
+                    // [2026-11-26] resolveFor: a saved Subtitle sorts as Artists or Creator where the list's second line is the
+                    // artist or the owner (FeedSort.resolveFor). On an unscoped page appliedSortFlow is set only when that changed
+                    // the field, so the chip names what actually sorted; otherwise it stays null as before (no stale label
+                    // between picking a new sort and this re-running).
+                    // [CORRECTED 2026-11-26] "No stale label" was wrong once a remap had set it: the old value showed until this
+                    // re-ran. buttonsFlow now uses it only for the saved field and tab it was worked out for (appliedSortFlow).
+                    val feedSort = sortState.feedSort?.resolveFor(shelves)?.let { saved ->
                         if (sortScope == null || saved.shouldBeVisible(shelves) != null) saved else FeedSort.Title
                     }
-                    if (sortScope != null) appliedSortFlow.value = feedSort
+                    appliedSortFlow.value =
+                        if (sortScope != null || feedSort != sortState.feedSort)
+                            AppliedSort(sortTabId, sortState.feedSort, feedSort)
+                        else null
                     fun List<Shelf>.applySort(sort: FeedSort?) = when {
                         sort != null -> sort.sorter.invoke(app.context, this, sortState.reversed)
                         sortState.reversed -> reversed()

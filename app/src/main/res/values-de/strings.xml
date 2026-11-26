@@ -248,7 +248,6 @@
     <string name="sort_duration">Dauer</string>
     <string name="scroll_animations">Scroll-Animationen</string>
     <string name="scroll_animations_summary">Animationen beim Scrollen</string>
-    <string name="sort_subtitle">Untertitel</string>
     <string name="playlist_name">Name der Wiedergabeliste</string>
     <string name="playlist_description">Beschreibung der Wiedergabeliste</string>
     <string name="create_playlist">Playlist erstellen</string>

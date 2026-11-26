@@ -179,7 +179,6 @@
     <string name="sort_title">शीर्षक</string>
     <string name="sort_date">तारीख</string>
     <string name="sort_duration">अवधि</string>
-    <string name="sort_subtitle">उपशीर्षक</string>
     <string name="playlist_name">प्लेलिस्ट का नाम</string>
     <string name="playlist_description">प्लेलिस्ट विवरण</string>
     <string name="create_playlist">प्लेलिस्ट बनाएँ</string>

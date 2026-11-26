@@ -1644,8 +1644,10 @@ class PlayerFragment : Fragment() {
             collapsedTrackCover.setTag(R.id.collapsedTrackCover, item.mediaId)
             track.cover.loadWithThumb(collapsedTrackCover, thumb) {
                 if (getTag(R.id.collapsedTrackCover) != item.mediaId) return@loadWithThumb
+                // [2026-11-26] art_music, the themed note the full player shows, not ic_music (untinted black, dark on the pink
+                // theme): the 1175 rule for placeholders. Drawn directly, not through Coil's shared cache.
                 val image = it
-                    ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
+                    ?: ResourcesCompat.getDrawable(resources, R.drawable.art_music, context.theme)
                 setImageDrawable(image)
             }
         }

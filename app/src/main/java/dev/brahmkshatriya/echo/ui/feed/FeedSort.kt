@@ -56,6 +56,39 @@ private fun Shelf.hasShownLine() = !subtitle().isNullOrEmpty() || when (val m = 
     else -> false
 }
 
+// [2026-11-26] What a list's second line is, by the majority of its rows: album or song lists (the line is the artist, and
+// FeedSort.Artists already sorts by it), playlist lists (the line is the owner), anything else (extension text). Decides
+// which of Subtitle ("Details") and Creator is offered, and what a saved Subtitle sorts as (FeedSort.resolveFor). The sheet
+// and the chip both go through these, on the same list (FeedData.loadedShelves), so they always agree.
+enum class LineKind { ARTISTS, CREATOR, DETAILS }
+
+fun List<Shelf>.lineKind(): LineKind {
+    var albums = 0
+    var tracks = 0
+    var playlists = 0
+    forEach {
+        when ((it as? Shelf.Item)?.media) {
+            is Album -> albums++
+            is Track -> tracks++
+            is Playlist -> playlists++
+            else -> {}
+        }
+    }
+    return when {
+        albums * 2 > size || tracks * 2 > size -> LineKind.ARTISTS
+        playlists * 2 > size -> LineKind.CREATOR
+        else -> LineKind.DETAILS
+    }
+}
+
+// [2026-11-26] The owner a playlist row shows (MediaViewHolder.secondLine): null for your own (isEditable) and for one with no
+// named author.
+private fun Shelf.playlistOwner(): String? {
+    val p = (this as? Shelf.Item)?.media as? Playlist ?: return null
+    if (p.isEditable) return null
+    return p.authors.map { it.name.trim() }.filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { null }
+}
+
 private fun Shelf.duration() = when (this) {
     is Shelf.Category -> null
     is Shelf.Item -> when (val item = this.media) {
@@ -188,7 +221,10 @@ enum class FeedSort(
     // dropped), so the order matches the screen; everything else still sorts by its subtitle field. Every OTHER sort
     // reads model fields, not text: title, duration, date (Track/Album releaseDate, Playlist creationDate), dateAdded,
     // artists, album, trackCount.
-    Subtitle(R.string.sort_subtitle, { list, reversed ->
+    // [2026-11-26] Labelled "Details", not "Subtitle" (read as movie subtitles), and offered only on lists whose second line is
+    // extension text (LineKind.DETAILS). Album and song lists get FeedSort.Artists instead, playlist lists get Creator. The
+    // entry keeps its name because FeedSort.State is saved by name.
+    Subtitle(R.string.sort_details, { list, reversed ->
         list.sortedMissingLast(reversed, textOrder(), { it.shownLine(this) })
     }),
     Duration(R.string.sort_duration, { list, reversed ->
@@ -225,13 +261,37 @@ enum class FeedSort(
         list.sortedMissingLast(reversed, naturalOrder(), { it.trackCount() }) { shelf, _ ->
             shelf.copy(subtitle = shelf.ifListItem()?.toTrackString(this) ?: "???")
         }
+    }),
+    // [2026-11-26] Playlist lists (LineKind.CREATOR), Spotify's word. By owner name, not the shown text ("owner • N songs").
+    // Playlists with no owner shown (yours, or no named author) come first as one group; then one group per owner, owners
+    // A-Z. A-Z by title within every group. Reversed flips the order inside the own group and among the owners, but the own
+    // group stays at the top. Rows that are not playlists stay last, as in sortedMissingLast.
+    Creator(R.string.sort_creator, { list, reversed ->
+        val order = textOrder()
+        val (playlists, missing) = list.partition { (it as? Shelf.Item)?.media is Playlist }
+        val (others, own) = playlists.partition { it.playlistOwner() != null }
+        val byTitle = compareBy<Shelf, String>(order) { (it as Shelf.Item).media.title }
+        val ownSorted = own.sortedWith(byTitle)
+        val othersSorted = others.sortedWith(compareBy<Shelf, String>(order) { it.playlistOwner()!! }.then(byTitle))
+        fun List<Shelf>.directed() = if (reversed) reversed() else this
+        ownSorted.directed() + othersSorted.directed() + missing
     })
     ;
+
+    // [2026-11-26] What a SAVED sort sorts as on this list. A Subtitle saved before 2026-11-26 follows the list's LineKind:
+    // Artists on album and song lists, Creator on playlist lists, itself elsewhere. Used by FeedData.getFeedSourceData (and so
+    // the chip, via appliedSortFlow) and by FeedSortBottomSheet's checked chip.
+    fun resolveFor(data: List<Shelf>): FeedSort = if (this != Subtitle) this else when (data.lineKind()) {
+        LineKind.ARTISTS -> Artists
+        LineKind.CREATOR -> Creator
+        LineKind.DETAILS -> Subtitle
+    }
 
     fun shouldBeVisible(data: List<Shelf>): FeedSort? {
         val take = when (this) {
             Title -> data.any { it.title()?.isNotEmpty() ?: false }
-            Subtitle -> data.any { it.hasShownLine() }
+            Subtitle -> data.lineKind() == LineKind.DETAILS && data.any { it.hasShownLine() }
+            Creator -> data.lineKind() == LineKind.CREATOR
             Date -> data.any { it.date() != null }
             DateAdded -> data.any { it.dateAdded() != null }
             Duration -> data.any { it.duration() != null }

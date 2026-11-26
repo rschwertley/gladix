@@ -540,6 +540,9 @@ class MediaHeaderAdapter(
             }
 
             override fun onSavedClicked(view: View, saved: Boolean) {
+                // [2026-11-26] Deezer playlists and albums no longer come here: they have the heart (onLikeClicked), with no
+                // confirm, by decision (Deezer's app unfavourites with one tap; the Oct 30 rule: the filled heart is the
+                // confirmation). This confirm still applies to extensions whose playlists use Save.
                 if (!saved) {
                     val item = viewModel.itemResultFlow.value?.getOrNull()?.item
                     if (item is Playlist && !item.isEditable) {

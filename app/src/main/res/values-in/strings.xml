@@ -264,7 +264,6 @@
     <string name="add_to_next">Putar selanjutnya</string>
     <string name="duration_filter_summary">Saring file audio berdasarkan durasi (detik) kurang dari nilai yang ditentukan</string>
     <string name="sort_and_filter">Sortir dan saring</string>
-    <string name="sort_subtitle">Teks terjemahan</string>
     <string name="loading_x">Memuat %1s</string>
     <string name="download_started">Unduhan dimulai</string>
     <string name="cache_playlist_warning">Fitur percobaan. Semua kecuali mendengarkan ini tidak terdukung.</string>

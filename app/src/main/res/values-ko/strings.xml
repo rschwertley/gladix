@@ -150,7 +150,6 @@
     <string name="disabled">비활성화</string>
     <string name="repeat">반복</string>
     <string name="play">재생</string>
-    <string name="sort_subtitle">자막</string>
     <string name="tracker">트래커</string>
     <string name="adding_x_to_queue">대기열에 %1$s를 추가하는 중</string>
     <string name="misc">고급</string>

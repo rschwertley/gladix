@@ -451,12 +451,26 @@ class DeezerExtension : HomeFeedClient, TrackClient, LikeClient, RadioClient,
                     api.removeFavoriteTrack(item.id)
                 }
             }
+            // [2026-11-26] An album's heart is its Deezer favourite, the same call saveToLibrary's Album branch makes
+            // (DeezerParser.toAlbum sets isLikeable). Shows are not hearted; they keep Save.
+            is Album -> if (item.type != Album.Type.Show) {
+                if (shouldLike) api.addFavoriteAlbum(item.id) else api.removeFavoriteAlbum(item.id)
+            }
+            // [2026-11-26] Likewise a playlist's heart is its favourite, saveToLibrary's Playlist call (DeezerParser.toPlaylist
+            // sets isLikeable on playlists that are not yours).
+            is Playlist -> if (shouldLike) api.addFavoritePlaylist(item.id) else api.removeFavoritePlaylist(item.id)
             else -> {}
         }
     }
 
-    override suspend fun isItemLiked(item: EchoMediaItem): Boolean =
-        item is Track && item.type != Track.Type.Podcast && isTrackLoved(item)
+    override suspend fun isItemLiked(item: EchoMediaItem): Boolean = when (item) {
+        is Track -> item.type != Track.Type.Podcast && isTrackLoved(item)
+        // [2026-11-26] Same check as isItemSaved's Album branch.
+        is Album -> item.type != Album.Type.Show && getIsItemSaved(api::getAlbums, "ALB_ID", item.id)
+        // [2026-11-26] Same check as isItemSaved's Playlist branch.
+        is Playlist -> getIsItemSaved(api::getPlaylists, "PLAYLIST_ID", item.id)
+        else -> false
+    }
 
     /**
      * Loved-list membership, session-cached. ONE definition, because for a Deezer TRACK the heart

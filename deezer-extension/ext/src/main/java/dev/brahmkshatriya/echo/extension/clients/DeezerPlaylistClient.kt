@@ -68,7 +68,9 @@ class DeezerPlaylistClient(private val deezerExtension: DeezerExtension, private
         // false makes Cached.loadMedia skip the isItemSaved probe, so isSaved is null and the app shows
         // neither Save nor Remove.
         return if (loaded.isEditable && loaded.id == deezerExtension.lovedTracksIdOrNull())
-            loaded.copy(isEditable = false, isSaveable = false)
+            // [2026-11-26] And no heart: isLikeable = false, or editable false would hand it toPlaylist's heart, whose unlike is the
+            // same playlist.deleteFavorite call described above.
+            loaded.copy(isEditable = false, isSaveable = false, isLikeable = false)
         else loaded
     }
 

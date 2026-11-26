@@ -28,7 +28,10 @@ class PlayerBitmapLoader(
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = scope.futureCatching {
         val cover = uri.getQueryParameter("actual_data")!!.toData<ImageHolder>().getOrThrow()
-        cover.loadDrawable(context)?.toBitmapOrNull()
+        // [2026-11-26] A resource image (the art_music placeholder, MediaItemUtils.toMetaData) skips Coil's memory cache: its key
+        // ignores the theme, so this service-themed note was served to the UI's no-cover rows (dark on History). Drawn the
+        // same way as before, so the car, notification and lock screen look unchanged. Network covers are cached as before.
+        cover.loadDrawable(context, skipMemoryCacheForResources = true)?.toBitmapOrNull()
             ?: error("Failed to load bitmap of $cover")
     }
 }

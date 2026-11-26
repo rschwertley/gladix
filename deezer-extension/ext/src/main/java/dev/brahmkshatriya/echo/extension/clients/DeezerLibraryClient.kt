@@ -256,7 +256,8 @@ class DeezerLibraryClient(
         val id = deezerExtension.lovedTracksIdOrNull() ?: return items
         if (items.any { it is Playlist && it.id == id }) return items
         // isSaveable = false as in loadPlaylist, so the long-press sheet's pre-load placeholder offers no Save.
-        return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false, isSaveable = false)) + items
+        // [2026-11-26] isLikeable = false spelled out (the Playlist default is false), matching loadPlaylist: no heart on this tile.
+        return listOf(Playlist(id = id, title = FAVORITE_TRACKS, isEditable = false, isSaveable = false, isLikeable = false)) + items
     }
 
     private companion object {

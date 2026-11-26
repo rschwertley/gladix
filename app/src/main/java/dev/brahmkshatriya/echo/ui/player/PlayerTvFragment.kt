@@ -428,7 +428,8 @@ class PlayerTvFragment : Fragment() {
             if (current == null) return@observe
             val cover = current.track.cover
             val albumArt = binding?.tvAlbumArt ?: return@observe
-            cover.toMaxRes().loadRoundedInto(albumArt, 24f, R.drawable.ic_music)
+            // [2026-11-26] Themed art_music, not the untinted black ic_music: the 1175 rule for placeholders, as on the phone.
+            cover.toMaxRes().loadRoundedInto(albumArt, 24f, R.drawable.art_music)
             // Context captured HERE, synchronously in the observe body while the fragment is provably
             // attached — not re-fetched after the suspend below. The old code called requireContext() again
             // on resumption, which threw "not attached to a context" whenever an activity recreation (the

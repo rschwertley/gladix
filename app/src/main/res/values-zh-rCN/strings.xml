@@ -235,7 +235,6 @@
     <string name="sort_duration">时长</string>
     <string name="scroll_animations">滚动动画</string>
     <string name="scroll_animations_summary">滚动时的动画效果</string>
-    <string name="sort_subtitle">字幕</string>
     <string name="delete">删除</string>
     <string name="playlist_name">播放列表名称</string>
     <string name="create_playlist">创建播放列表</string>

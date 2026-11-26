@@ -240,7 +240,6 @@
     <string name="reversed">В обратном порядке</string>
     <string name="apply">Применить</string>
     <string name="scroll_animations">Анимации прокрутки</string>
-    <string name="sort_subtitle">Субтитры</string>
     <string name="delete">Удалить</string>
     <string name="no_download_extension">Расширение для скачивания не найдено. Используйте код \\\"echodown\\\", чтобы скачать его.</string>
     <string name="tagging_x">Тегирование %1$s</string>

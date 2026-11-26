@@ -523,6 +523,8 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
                 if (state.isSaved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark_outline,
                 dismissOnClick = !(state.isSaved && state.item is Playlist)
             ) {
+                // [2026-11-26] Not reached by Deezer playlists any more: their Like row below has no confirm, by decision (see
+                // MediaHeaderAdapter's onSavedClicked note).
                 if (state.isSaved && state.item is Playlist) {
                     MaterialAlertDialogBuilder(requireContext())
                         .setMessage(getString(R.string.remove_from_library_confirm, state.item.title))
