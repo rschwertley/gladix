@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceIma
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.SHOW_BACKGROUND
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.BACKGROUND_GRADIENT
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.NAVBAR_GRADIENT
+import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.TINT_BG_FROM_SONG
 import dev.brahmkshatriya.echo.ui.player.PlayerFragment.Companion.DYNAMIC_PLAYER
 import dev.brahmkshatriya.echo.utils.ContextUtils.SETTINGS_NAME
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.ANIMATIONS_KEY
@@ -131,6 +132,22 @@ class SettingsLookFragment : BaseSettingsFragment() {
                     addPreference(this)
                 }
 
+                // [2026-11-24] Off by default for everyone, existing users included (no migration). Why: the reference apps
+                // tint the player, not the whole app; the whole-app tint stays as this option. The only read is
+                // UiViewModel.mainBgDrawable(context). Hidden on TV, which keeps the tint regardless (same shape as SCROLL_BAR
+                // below). Greyed out while Background Gradient is off, since applyGradient then paints no tint at all; that
+                // switch recreates the activity, so reading it here once is enough.
+                if (!context.isTv()) SwitchPreferenceCompat(context).apply {
+                    key = TINT_BG_FROM_SONG
+                    title = getString(R.string.tint_bg_from_song)
+                    summary = getString(R.string.tint_bg_from_song_summary)
+                    layoutResource = R.layout.preference_switch
+                    isIconSpaceReserved = false
+                    setDefaultValue(false)
+                    isEnabled = preferences.getBoolean(BACKGROUND_GRADIENT, true)
+                    addPreference(this)
+                }
+
                 SwitchPreferenceCompat(context).apply {
                     key = DYNAMIC_PLAYER
                     title = getString(R.string.dynamic_player)
@@ -225,7 +242,7 @@ class SettingsLookFragment : BaseSettingsFragment() {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
                 THEME_KEY, CUSTOM_THEME_KEY, COLOR_KEY, AMOLED_KEY,
-                BIG_COVER, NAVBAR_GRADIENT, BACKGROUND_GRADIENT,
+                BIG_COVER, NAVBAR_GRADIENT, BACKGROUND_GRADIENT, TINT_BG_FROM_SONG,
                     -> {
                     requireActivity().recreate()
                 }

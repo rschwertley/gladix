@@ -939,6 +939,10 @@ class PlayerFragment : Fragment() {
                 // into a non-recycled view; both use loadWithThumb's lambda target, so NEITHER gets
                 // requestManager coalescing - which rules coalescing out as the discriminator. The property
                 // they share with each other and not with the ViewHolder is issuance from `current`.
+                // [CORRECTED 2026-11-23] "has never had this bug" is wrong for a song with no cover: 1187 (OpenGonic) kept the previous
+                // song's art in the mini bar after a natural advance, because a null cover's load skips the lifecycle gate and the previous
+                // song's waiting loads painted last. It is guarded now (FragmentPlayerBinding.applyCurrent, a tag keyed on mediaId), so it
+                // is no longer an unguarded existence proof either.
                 //
                 // CLEAR OF THE RESUME-TIME TRAP. A prior resume-time re-commit made things worse, a
                 // permanent one-behind rather than an intermittent one: the onResume doOnPreDraw block
@@ -1613,7 +1617,17 @@ class PlayerFragment : Fragment() {
             extension?.metadata?.icon.loadAsCircle(extensionIcon, R.drawable.ic_extension_32dp) {
                 // Only overwrite on a real image: a null delivery must leave the XML fallback in place
                 // rather than blanking the slot.
-                if (it != null) extensionIcon.setImageDrawable(it)
+                // [CORRECTED 2026-11-24] A null delivery now paints the fallback rather than leaving the slot as it is, which could be
+                // a previous extension's icon (it never blanks the slot either). And a late load for a different extension does not
+                // paint: loadAsCircle's lambda target is never cancelled by a newer load, the same last-one-paints shape as the mini
+                // bar cover below, and this view changes with the extension while the app can be in the background. Keyed on the
+                // shownKey tag above, so a load for the extension still shown paints as before.
+                if (extensionIcon.getTag(R.id.extensionIcon) != shownKey) return@loadAsCircle
+                extensionIcon.setImageDrawable(
+                    it ?: ResourcesCompat.getDrawable(
+                        extensionIcon.resources, R.drawable.ic_extension_32dp, extensionIcon.context.theme
+                    )
+                )
             }
         }
         playerCollapsedContainer.run {
@@ -1621,7 +1635,15 @@ class PlayerFragment : Fragment() {
             collapsedTrackArtist.text = track.artists.joinToString(", ") { it.name }
             val thumb = collapsedTrackCover.drawable
                 ?: item.unloadedCover?.getCachedDrawable(requireContext())
+            // [2026-11-23] A superseded load must not paint: the same guard as PlayerTrackAdapter's pendingMediaId, keyed on a view
+            // tag as extensionIcon is above. Loads for this view are never cancelled (see ImageUtils.loadWithThumb), and while the
+            // Activity is stopped every one waits at the lifecycle gate, except a song with no cover, whose null-data answer comes
+            // back at once (coil 3.6.3 RealImageLoader.execute throws NullRequestDataException before awaitStarted). So the new song
+            // painted ic_music first and the previous song's waiting loads painted over it at ON_START (1187, OpenGonic, Rag Mop
+            // kept on If I Didn't Care while the full player was blank). A late load for the same song still paints its own art.
+            collapsedTrackCover.setTag(R.id.collapsedTrackCover, item.mediaId)
             track.cover.loadWithThumb(collapsedTrackCover, thumb) {
+                if (getTag(R.id.collapsedTrackCover) != item.mediaId) return@loadWithThumb
                 val image = it
                     ?: ResourcesCompat.getDrawable(resources, R.drawable.ic_music, context.theme)
                 setImageDrawable(image)

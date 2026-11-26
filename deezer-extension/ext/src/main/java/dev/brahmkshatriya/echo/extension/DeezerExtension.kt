@@ -1526,9 +1526,23 @@ private fun Throwable.plainNetworkCause(): Throwable? =
             // After ConnectException and NoRouteToHostException, which are SocketExceptions too and keep their own type.
             is java.net.SocketException -> java.net.SocketException()
             is javax.net.ssl.SSLHandshakeException -> javax.net.ssl.SSLHandshakeException("")
-            else -> null
+            // [2026-11-24] A proxy that would not open the tunnel (Crashlytics 8a4f23ba, 1186: a bare IOException thrown by OkHttp
+            // ConnectPlan.createTunnel, under a Deezer region proxy). Classed as the connection at the user's decision. Matched on
+            // createTunnel's own two messages (okhttp-jvm 5.5.1 ConnectPlan.kt:469 and :477), exact class only, so no other plain
+            // IOException is swallowed. The copy carries a constant message the app matches, since a bare IOException type
+            // cannot be told apart by type.
+            else -> if (node.isProxyTunnelFailure()) java.io.IOException(PROXY_TUNNEL_FAILED_MESSAGE) else null
         }
     }
+
+private fun Throwable.isProxyTunnelFailure(): Boolean =
+    javaClass == java.io.IOException::class.java && message.orEmpty().let {
+        it == "Failed to authenticate with proxy" || it.startsWith("Unexpected response code for CONNECT:")
+    }
+
+// [2026-11-24] Byte-identical to CapabilityProbeFailure's PROXY_TUNNEL_FAILED_MESSAGE in :app; the text is the contract, as with
+// LIKED_FETCH_REFUSED_MESSAGE. Change both or neither. A constant with no account data.
+private const val PROXY_TUNNEL_FAILED_MESSAGE = "The proxy did not open the tunnel"
 
 /**
  * [2026-11-14] A NEW ClientException.LoginRequired as LikedFetchFailed's cause when the failure was a sign-in, so the app's type

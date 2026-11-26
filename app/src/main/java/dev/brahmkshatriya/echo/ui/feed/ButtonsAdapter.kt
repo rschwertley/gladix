@@ -5,6 +5,7 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import androidx.core.view.isVisible
 import androidx.core.widget.addTextChangedListener
 import com.google.android.material.chip.Chip
@@ -19,6 +20,9 @@ import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimRecyclerAdapter
 import dev.brahmkshatriya.echo.utils.ui.scrolling.ScrollAnimViewHolder
+
+// [2026-11-25] The pause after the last keystroke before the page search filters (ButtonsAdapter.ViewHolder's text listener).
+private const val SEARCH_DELAY_MS = 300L
 
 class ButtonsAdapter(
     private val viewModel: FeedData,
@@ -76,6 +80,12 @@ class ButtonsAdapter(
         private var feed: FeedData.Buttons? = null
         private var wasShowingButtons = false
 
+        // [2026-11-25] The as-you-type search (see the text listener in init): applySearch runs after SEARCH_DELAY_MS of no
+        // typing; settingText marks bind's own setText, which must not schedule one.
+        private var searchPending = false
+        private val applySearch = Runnable { searchPending = false; viewModel.onSearchClicked() }
+        private var settingText = false
+
         init {
             binding.micButton.setOnClickListener { onMicClick() }
             binding.createPlaylistButton.setOnClickListener { onCreatePlaylistClick?.invoke() }
@@ -89,17 +99,34 @@ class ButtonsAdapter(
                 }
                 binding.searchBarContainer.animateVisibility(isChecked)
             }
+            // [2026-11-25] FILTER AS YOU TYPE, after a 300 ms pause, on every page with this bar (History's search filters
+            // on each keystroke too). Until now typing only stored searchQuery and the feed re-filtered on Enter, voice,
+            // the clear button or closing the toggle - checked on the phone (OpenGonic, Library -> Albums): typing alone
+            // changed nothing. Cheap after the first search: getFeedSourceData's loadTill re-reads the same PagedData
+            // instance (loadedDataFlow holds one per tab load), and Single, Continuous and Suspend all keep what they
+            // loaded (PagedData's own caches), so a pause re-filters in memory instead of re-fetching up to
+            // MAX_SORT_SEARCH_ITEMS. Text set by bind (a rebind, voice) does not schedule: that path applies it itself.
             binding.searchBarText.addTextChangedListener { text ->
                 viewModel.searchQuery = text?.toString()?.takeIf { it.isNotBlank() }
                 binding.searchClose.isEnabled = !text.isNullOrBlank()
+                binding.searchBarText.removeCallbacks(applySearch)
+                searchPending = !settingText
+                if (searchPending) binding.searchBarText.postDelayed(applySearch, SEARCH_DELAY_MS)
             }
             binding.searchClose.setOnClickListener {
                 binding.searchBarText.setText("")
+                binding.searchBarText.removeCallbacks(applySearch)
+                searchPending = false
                 viewModel.searchQuery = null
                 viewModel.onSearchClicked()
             }
+            // [2026-11-25] Enter applies at once (the pending pause is dropped) and closes the keyboard.
             binding.searchBarText.setOnEditorActionListener { v, _, _ ->
+                v.removeCallbacks(applySearch)
+                searchPending = false
                 viewModel.onSearchClicked()
+                v.context.getSystemService(InputMethodManager::class.java)
+                    ?.hideSoftInputFromWindow(v.windowToken, 0)
                 true
             }
             binding.sortToggleButton.setOnClickListener {
@@ -174,7 +201,14 @@ class ButtonsAdapter(
             this.feed = feed
             val showButtons = buttons.run { showPlayAndShuffle || showSort || showSearch }
             binding.searchToggleButton.isChecked = viewModel.searchToggled
-            binding.searchBarText.setText(viewModel.searchQuery)
+            // [2026-11-25] Set only when it differs, cursor at the end. The search now survives tab switches (FeedData's
+            // dataFlow), so this rebinds mid-typing; an unconditional setText put the cursor back at the start.
+            if (binding.searchBarText.text?.toString().orEmpty() != viewModel.searchQuery.orEmpty()) {
+                settingText = true
+                binding.searchBarText.setText(viewModel.searchQuery)
+                settingText = false
+                binding.searchBarText.setSelection(binding.searchBarText.length())
+            }
             binding.chipGroup.configure(feed?.sortState, feed?.appliedSort)
             // A null feed is a reload or tab switch in progress (FeedData's dataFlow emits null first). The row keeps
             // its height then, INVISIBLE rather than GONE (2026-11-02, Library tab-switch flash; Jun 13 precedent:
@@ -187,6 +221,11 @@ class ButtonsAdapter(
                 else -> View.GONE
             }
             if (feed != null) wasShowingButtons = showButtons
+            // [2026-11-25] The open search bar follows the tab's search button. It sits OUTSIDE buttonGroup, and its visibility
+            // was only ever changed by the toggle's listener; now that the search survives a tab switch, a tab without
+            // search (whose query FeedData.getFeedSourceData ignores) would otherwise keep showing the bar with no toggle.
+            // Only once the feed is known: during a switch (feed == null) it stays as it was, like buttonGroup above.
+            if (feed != null) binding.searchBarContainer.isVisible = buttons.showSearch && viewModel.searchToggled
             if (!showButtons) return
             binding.playButton.isVisible = buttons.showPlayAndShuffle
             binding.shuffleButton.isVisible = buttons.showPlayAndShuffle
@@ -198,6 +237,9 @@ class ButtonsAdapter(
 
         fun onViewDetached() {
             binding.searchLayout.clearFocus()
+            // [2026-11-25] A pause still pending when the row leaves the screen is applied now, not dropped.
+            binding.searchBarText.removeCallbacks(applySearch)
+            if (searchPending) applySearch.run()
         }
 
         // [2026-11-18] applied: the field actually used on a folder page (FeedData.appliedSortFlow), shown instead of the saved one.

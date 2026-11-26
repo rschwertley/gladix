@@ -199,7 +199,7 @@ class FeedFragment : Fragment(R.layout.fragment_generic_collapsable) {
             binding.appBarLayout.updatePaddingRelative(start = it.start)
         }
         applyPlayerBg(view) {
-            mainBgDrawable.combine(feedData.backgroundImageFlow) { a, b -> b ?: a }
+            mainBgDrawable(requireContext()).combine(feedData.backgroundImageFlow) { a, b -> b ?: a }
         }
         if (savedInstanceState == null) childFragmentManager.commit {
             replace<Actual>(R.id.genericFragmentContainer, null, arguments)

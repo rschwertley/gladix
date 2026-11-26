@@ -77,7 +77,9 @@ abstract class BaseSettingsFragment : Fragment() {
                 val scroller = FastScrollerHelper.applyTo(this)
                 applyInsets {
                     applyContentInsets(it)
-                    scroller.applyInsets(context, it)
+                    // [2026-11-25] top = 0: the list sits below fragment_generic_collapsable's AppBarLayout, which
+                    // carries the status bar; applyContentInsets gives it none (FastScrollerHelper.applyInsets' test).
+                    scroller.applyInsets(context, it, top = 0)
                 }
                 isVerticalScrollBarEnabled = false
             }

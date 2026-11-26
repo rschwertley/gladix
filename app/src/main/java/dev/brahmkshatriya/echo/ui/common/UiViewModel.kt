@@ -36,7 +36,6 @@ import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigationrail.NavigationRailView
 import dev.brahmkshatriya.echo.MainActivity
 import dev.brahmkshatriya.echo.R
-import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.playback.PlayerState
 import dev.brahmkshatriya.echo.ui.main.MainFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerColors
@@ -45,20 +44,20 @@ import dev.brahmkshatriya.echo.utils.CacheUtils.saveToCache
 import dev.brahmkshatriya.echo.utils.ContextUtils.emit
 import dev.brahmkshatriya.echo.utils.ContextUtils.getSettings
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
-import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadDrawable
 import dev.brahmkshatriya.echo.utils.ui.AnimationUtils.animateTranslation
 import dev.brahmkshatriya.echo.utils.ui.GradientDrawable
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dpToPx
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.isRTL
+import dev.brahmkshatriya.echo.utils.ui.UiUtils.isTv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted.Companion.Lazily
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -69,7 +68,6 @@ import kotlin.math.min
 
 class UiViewModel(
     context: Context,
-    extensionLoader: ExtensionLoader,
     private val playerState: PlayerState
 ) : ViewModel() {
 
@@ -103,11 +101,6 @@ class UiViewModel(
     )
 
     val currentNavBackground = MutableStateFlow<Drawable?>(null)
-    private val extensionColor = extensionLoader.current.transform { extension ->
-        emit(null)
-        val drawable = extension?.metadata?.icon?.loadDrawable(context) ?: return@transform
-        emit(PlayerColors.getDominantColor(drawable.toBitmap()).toDrawable())
-    }
 
     private val navViewInsets = MutableStateFlow(Insets())
     private val playerNavViewInsets = MutableStateFlow(Insets())
@@ -487,7 +480,23 @@ class UiViewModel(
     val playerDrawable = MutableStateFlow<Drawable?>(null)
     val playerColors = MutableStateFlow<PlayerColors?>(null)
 
-    val mainBgDrawable = playerDrawable.combine(extensionColor) { a, b -> a ?: b }
+    // [2026-11-24] The current song's cover only. With no cover, or no song, this is null and applyGradient paints its
+    // colorPrimary default (Gladix's pink-seeded primary unless the user picked another colour). It used to fall back to the
+    // dominant colour of the selected extension's icon (upstream: extensionColor from d7184731, the fallback from f6f35c18), so a
+    // song with no cover turned Home and Search purple, red and so on. Removed at the user's decision. The May 30 rebrand
+    // plan listed extension brand colours as an audit item, and that audit was never done.
+    private val mainBgDrawable: Flow<Drawable?> = playerDrawable
+
+    // [2026-11-24] The song's colour behind Home, Search, Library, History and feed pages is now an option, off by default
+    // (TINT_BG_FROM_SONG, "Tint background from current song" in Look and Feel). Why: the reference apps tint the player, not
+    // the whole app; the whole-app tint stays for those who want it. Off, these pages get applyGradient's colorPrimary default,
+    // and a page's own background image still wins as before. Only the two readers of mainBgDrawable (MainFragment, FeedFragment)
+    // go through this; playerDrawable is still written by PlayerFragment.configureColors, and the full player, mini player and
+    // Ken Burns never read it. TV keeps the tint whatever the setting (its row is hidden there). A function, not a val, because
+    // this activity-scoped view model survives the recreate that SettingsLookFragment triggers when the switch changes.
+    fun mainBgDrawable(context: Context): Flow<Drawable?> =
+        if (context.isTv() || context.getSettings().getBoolean(TINT_BG_FROM_SONG, false)) mainBgDrawable
+        else flowOf(null)
 
     fun changeBgVisible(show: Boolean) {
         playerBgVisible.value = show
@@ -497,6 +506,7 @@ class UiViewModel(
 
     companion object {
         const val BACKGROUND_GRADIENT = "bg_gradient"
+        const val TINT_BG_FROM_SONG = "tint_bg_from_song"
         suspend fun Fragment.applyGradient(view: View, drawable: Drawable?) {
             val settings = requireContext().getSettings()
             val isGradient = settings.getBoolean(BACKGROUND_GRADIENT, true)

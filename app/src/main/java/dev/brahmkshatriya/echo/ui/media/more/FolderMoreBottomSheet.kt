@@ -31,6 +31,7 @@ import dev.brahmkshatriya.echo.ui.media.more.MoreButton.Companion.button
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.isTracksUncapped
 import dev.brahmkshatriya.echo.ui.feed.isMarkedFolder
 import dev.brahmkshatriya.echo.ui.feed.loadTracksOnTap
 import dev.brahmkshatriya.echo.ui.feed.QueueSampler
@@ -209,7 +210,8 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         val extensions = playerViewModel.extensions
         val extensionId = extensionId
         val category = category
-        val capped = category.hasTracksOnTap()
+        // [2026-11-24] Not capped when the row carries GLADIX_TRACKS_UNCAPPED (a liked list or playlist): queued whole.
+        val capped = category.hasTracksOnTap() && !category.extras.isTracksUncapped()
         if (!capped) playerViewModel.viewModelScope.launch { app.messageFlow.emit(Message(message)) }
         playerViewModel.playTracksOnTap(
             title, extensionId, queueLabel(), shuffle, capped = capped, unsampledMessage = message.takeIf { capped },
@@ -230,7 +232,8 @@ class FolderMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mo
         val extensionId = extensionId
         val category = category
         playerViewModel.loadThenQueue(category.title, {
-            if (category.hasTracksOnTap()) {
+            // [2026-11-24] No QueueSampler when the row carries GLADIX_TRACKS_UNCAPPED: added whole, like a folder's own songs.
+            if (category.hasTracksOnTap() && !category.extras.isTracksUncapped()) {
                 val sampler = QueueSampler(shuffle = false, dropUnplayable = false)
                 category.folderTracks(extensions, extensionId) { sampler.offer(it) }
                 sampler.result().tracks

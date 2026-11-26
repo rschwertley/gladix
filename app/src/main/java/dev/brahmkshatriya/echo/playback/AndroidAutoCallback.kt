@@ -43,6 +43,7 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.secondLine
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.history.HistoryRepository
@@ -1636,7 +1637,8 @@ abstract class AndroidAutoCallback(
                 browsableItem(
                     "$ROOT/$extId/$page/$id",
                     title,
-                    subtitleWithE,
+                    // [2026-11-25] Same second line as the phone and TV rows: MediaViewHolder.secondLine.
+                    secondLine(context),
                     true,
                     cover?.toUri(context),
                     type = type

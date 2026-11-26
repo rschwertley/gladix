@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
+import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toResourceImageHolder
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Track
@@ -431,7 +432,17 @@ object MediaItemUtils {
             .setAlbumTitle(album?.title)
             .setAlbumArtist(album?.artists?.joinToString(", ") { it.name })
             .setArtist(artists.joinToString(", ") { it.name })
-            .setArtworkUri(cover?.toUriWithJson())
+            // [2026-11-25] A song with no cover sends the music-note placeholder (art_music, as song rows elsewhere), so
+            // Android Auto shows it instead of an empty grey square. Accepted (the user's decision): the notification and
+            // lock screen show it too - they read the same session metadata. Clearing is unaffected: every item still
+            // carries its own artwork, never the previous song's.
+            // BY RESOURCE ID, AND THAT IS SAFE: this metadata is rebuilt by toMetaData from the Track on every launch and
+            // is never saved (the queue persists Tracks and contexts - ResumptionUtils.writeQueueEntries, saveRecentRoot -
+            // and the placeholder is never written onto the Track), so an id from an older build can never be read back.
+            // A by-name android.resource URI would not load: Coil 3.6.3's ResourceUriFetcher.fetch reads the id from the last
+            // path segment (toIntOrNull) and throws otherwise, and Coil maps no names to ids. Loaded through
+            // PlayerBitmapLoader -> loadDrawable -> builder.data(resId), the same path as any ResourceIdImageHolder.
+            .setArtworkUri((cover ?: R.drawable.art_music.toResourceImageHolder()).toUriWithJson())
             .setUserRating(
                 if (isLiked) ThumbRating(true) else ThumbRating()
             )

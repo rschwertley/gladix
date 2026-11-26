@@ -24,6 +24,7 @@ import dev.brahmkshatriya.echo.playback.PlayerState.Current.Companion.isPlaying
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
 import dev.brahmkshatriya.echo.ui.feed.FeedType
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
+import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.unfuckedString
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadFittedInto
 import dev.brahmkshatriya.echo.utils.image.ImageUtils.loadInto
 import dev.brahmkshatriya.echo.utils.ui.UiUtils.dimIfUnplayable
@@ -181,7 +182,60 @@ class MediaViewHolder(
         fun EchoMediaItem.subtitle(context: Context, showNotPlayable: Boolean = true) = when (this) {
             is Track -> (if (!showNotPlayable && isPlayable is Track.Playable.No) null
             else playableString(context)) ?: subtitleWithE
-            else -> subtitleWithE
+            else -> secondLine(context)
         }
+
+        // [2026-11-25] ALBUM AND PLAYLIST SECOND LINE, BUILT HERE FOR EVERY EXTENSION (the user's decision, matching
+        // Spotify / Apple Music / Symfonium: the artist, and at most the release year).
+        // - Album: its artists, then " • <year>" when it has a releaseDate. The extension's own line (song counts, full
+        //   dates - Deezer's DeezerParser.toAlbum puts "N Songs • <date>" there) is DROPPED, because any subtitle replaces
+        //   the SDK's artist default (Album.subtitleWithOutE) and that is how album rows ended up without an artist. An
+        //   album with no named artists keeps the extension's line, as before.
+        // - Playlist: its owner (Playlist.authors) when present, else the extension's line. Deezer's toPlaylist parses no
+        //   authors, so Deezer playlists are unchanged.
+        // - Everything else: subtitleWithE, unchanged.
+        // A FeedSort relabel (GLADIX_SORT_LABEL) wins over the album rule: there the line IS the sort key on show (date,
+        // track count, artist, album), and hiding it would hide what the list is sorted by.
+        // Also used for Android Auto's browse tiles (AndroidAutoCallback's toMediaItem), so both surfaces agree.
+        // Deezer's year is the RELEASE date: toAlbum's ORIGINAL_RELEASE_DATE ?: PHYSICAL_RELEASE_DATE, and
+        // toAlbumFromRestApi's release_date - not a date-added field.
+        // [CORRECTED 2026-11-25, same day] The playlist rule above was "the owner, else the extension's line". It is now:
+        // the owner (Playlist.authors) only when the playlist is NOT editable, then " • N songs" when trackCount is known,
+        // no dates; with neither, the extension's line as before. isEditable stands for "it's yours" (the user's
+        // decision): a signed-in-user lookup was built and removed the same day, because it needed a collector on
+        // currentUsersFlow in ExtensionLoader's init - startup code, where the 1108 lockout happened - and matched author
+        // ids to user ids on an unverified premise. Deezer's toPlaylist parses no authors, so for Deezer this is
+        // "N Songs" alone. The date the line no longer shows is still the playlist's Date sort key:
+        // Playlist.creationDate (FeedSort.date), which Deezer's toPlaylist fills from DATE_MOD ?: DATE_ADD.
+        const val GLADIX_SORT_LABEL = "gladix_sort_label"
+        const val EXPLICIT_MARK = "🅴 "
+
+        fun EchoMediaItem.secondLine(context: Context): String? {
+            fun names(list: List<Artist>) =
+                list.map { it.name.trim() }.filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { null }
+            fun withE(text: String) = if (isExplicit) "$EXPLICIT_MARK$text" else text
+            return when (this) {
+                is Album -> {
+                    val artistLine = names(artists)
+                    if (artistLine == null || extras[GLADIX_SORT_LABEL] == "1") subtitleWithE
+                    else withE(releaseDate?.let { "$artistLine • ${it.year}" } ?: artistLine)
+                }
+                is Playlist -> {
+                    // A FeedSort relabel (Date, Tracks) wins here too, as for albums.
+                    if (extras[GLADIX_SORT_LABEL] == "1") return subtitleWithE
+                    val owner = if (isEditable) null else names(authors)
+                    val songs = trackCount?.toInt()?.let {
+                        context.unfuckedString(R.plurals.number_songs, R.string.n_songs, it)
+                    }
+                    listOfNotNull(owner, songs).joinToString(" • ").ifEmpty { null }?.let { withE(it) }
+                        ?: subtitleWithE
+                }
+                else -> subtitleWithE
+            }
+        }
+
+        // [2026-11-25] The display-only sort marker removed, for anything that leaves the feed (FeedClickListener).
+        fun EchoMediaItem.withoutSortLabel(): EchoMediaItem =
+            if (GLADIX_SORT_LABEL in extras) copyMediaItem(extras = extras - GLADIX_SORT_LABEL) else this
     }
 }

@@ -82,7 +82,9 @@ class DownloadFragment : Fragment(R.layout.fragment_download) {
         applyInsets {
             binding.recyclerView.applyContentInsets(it, 20, 8, 72)
             binding.fabContainer.applyFabInsets(it, systemInsets.value)
-            scroller.applyInsets(binding.recyclerView.context, it)
+            // [2026-11-25] top = 0: the list sits below the AppBarLayout, which carries the status bar, and
+            // applyContentInsets gives it no status-bar top either (FastScrollerHelper.applyInsets' test).
+            scroller.applyInsets(binding.recyclerView.context, it, top = 0)
         }
         val lineAdapter = LineAdapter()
         binding.fabCancel.setOnClickListener {

@@ -50,6 +50,7 @@ import dev.brahmkshatriya.echo.playback.MediaItemUtils.isLoaded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.retries
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.context as playingFrom
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getLikeButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getRepeatButton
 import dev.brahmkshatriya.echo.playback.PlayerCommands.getShuffleButton
@@ -567,12 +568,30 @@ class PlayerEventListener(
             retriedMediaId = null
             retriedWatchdogCount = 0
         }
-        if (!timeline.isEmpty() && reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED
-            && player.playlistMetadata.title.isNullOrEmpty()
-        ) {
-            player.setPlaylistMetadata(
-                MediaMetadata.Builder().setTitle(context.getString(R.string.queue)).build()
-            )
+        if (!timeline.isEmpty() && reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) updateQueueTitle()
+    }
+
+    // [2026-11-25] THE QUEUE TITLE NAMES THE EXTENSION: "<extension name> • <Playing from name>", or
+    // "<extension name> • Queue" when the current song has no context. It is the session's playlist title, which Android
+    // Auto shows as the Queue screen's header - so the car says which extension is playing without adding anything to Now
+    // Playing. The "Playing from" name is the same one the player shows (item.context's title, PlayerFragment.applyCurrent).
+    // Until now it was set ONCE to "Queue" when empty (b0867fd5, 2026-04-21, the Android Auto integration; the commit gives
+    // no reason), so it never changed after the first queue. Nothing in the app reads playlistMetadata, so setting it on
+    // every queue change only changes what controllers show. Set only when it differs, to spare controllers a no-op update.
+    // Main for the player (Media3 app-thread rule), IO for the extension lookup, as updateCustomLayout does.
+    private var queueTitleJob: Job? = null
+    private fun updateQueueTitle() {
+        queueTitleJob?.cancel()
+        queueTitleJob = scope.launch(Dispatchers.Main) {
+            val item = player.currentMediaItem ?: return@launch
+            val name = withContext(Dispatchers.IO) {
+                extensions.music.getExtension(item.extensionId)?.name
+            }
+            // MediaItemUtils.context, imported as playingFrom: this class's own `context` is the Android Context.
+            val from = item.playingFrom?.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.queue)
+            val title = listOfNotNull(name?.takeIf { it.isNotBlank() }, from).joinToString(" • ")
+            if (player.playlistMetadata.title?.toString() != title)
+                player.setPlaylistMetadata(MediaMetadata.Builder().setTitle(title).build())
         }
     }
 

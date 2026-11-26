@@ -451,6 +451,8 @@
     <string name="undo">Undo</string>
     <string name="background_gradient">Background Gradient</string>
     <string name="background_gradient_summary">A gradient color tint in  background depending on the context</string>
+    <string name="tint_bg_from_song">Tint background from current song</string>
+    <string name="tint_bg_from_song_summary">Use the playing song\'s cover colour behind Home, Search, Library and other pages, not just the player</string>
     <string name="all">All</string>
     <string name="edit_playlist">Edit Playlist</string>
 

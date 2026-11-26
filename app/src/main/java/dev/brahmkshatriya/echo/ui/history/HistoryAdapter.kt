@@ -62,7 +62,9 @@ class HistoryAdapter(
                     )
                     true
                 }
-                track.cover.loadInto(cover)
+                // [2026-11-23] The song placeholder, as song rows elsewhere (MediaViewHolder.placeHolder, QueueAdapter, DownloadsAdapter).
+                // Without it a song with no cover left the view empty, an empty square on the card's background.
+                track.cover.loadInto(cover, R.drawable.art_music)
                 title.text = track.title
                 artist.text = track.artists.joinToString(", ") { it.name }
                 playedAt.text = root.context.getString(R.string.history_item_subtitle, listItem.entity.playedAt.toRelativeTime(), listItem.extensionName)

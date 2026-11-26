@@ -58,7 +58,13 @@
                  The selector resolves because a MaterialButton with checkable="true" merges
                  state_checked into its drawable state, which is what iconTint is evaluated against -
                  the same mechanism anim_heart_40dp already relies on for outline/filled.
-                 This overrides the tint inherited from @style/IconButtonTonal, deliberately. -->
+                 This overrides the tint inherited from @style/IconButtonTonal, deliberately.
+                 [CORRECTED 2026-11-25] The iconTint is gone (added by 2ba47d74, build 1112, to match the player's heart): its
+                 checked colour was ?attr/colorTertiary, which reads yellow on this pink pill with the pink seed and was hard to
+                 see on album, playlist, artist and song pages alike (one button for all of them). The icon now takes the tonal
+                 style's own colour in both states, as 1111 intended, and liked vs not liked shows as the filled vs outline glyph
+                 (anim_heart_40dp). The tonal container still stays, for the reason above. The phone player, TV player and
+                 widget hearts are unchanged (the user's decision). -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/likeButton"
                 style="@style/ToggleIconButtonTonal"
@@ -66,8 +72,7 @@
                 android:checked="false"
                 android:contentDescription="@string/like"
                 android:visibility="gone"
-                app:icon="@drawable/anim_heart_40dp"
-                app:iconTint="@color/button_player_heart" />
+                app:icon="@drawable/anim_heart_40dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/hideButton"

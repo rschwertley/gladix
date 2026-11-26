@@ -79,6 +79,10 @@ object FastScrollerHelper {
      * status bar that is not there: the track started too low and was too short, so the thumb sat below
      * the top of its own track at scroll zero (looking "parked mid-track") and the thumb-to-content
      * mapping was compressed by that amount. Those sites pass `top = 0`.
+     * [2026-11-25] So do the five app-bar screens that had kept the default: Downloads, Manage extensions, Edit
+     * playlist, Settings (BaseSettingsFragment.configure) and Audio effects. And MainFragment.applyInsets now passes MORE
+     * than the default: the status bar plus the list's top padding plus its header row, so the thumb no longer covers
+     * the account icon at the top of Home, Library, Search and History.
      *
      * THE TEST TO APPLY at any new call site: does the RecyclerView itself extend under the status bar?
      * The same question `View.applyContentInsets` answers with its `vertical` argument — and the two must

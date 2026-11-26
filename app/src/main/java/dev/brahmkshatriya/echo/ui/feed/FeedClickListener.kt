@@ -23,6 +23,7 @@ import dev.brahmkshatriya.echo.ui.media.MediaFragment.Companion.getBundle
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.playableString
 import dev.brahmkshatriya.echo.ui.media.more.FolderMoreBottomSheet
 import dev.brahmkshatriya.echo.ui.media.more.MediaMoreBottomSheet
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.withoutSortLabel
 import dev.brahmkshatriya.echo.ui.main.LibraryFragment
 import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.forEachPageBounded
@@ -187,7 +188,8 @@ open class FeedClickListener(
             val label = feedPageLabel()
             val extensions = vm.extensions
             // [2026-11-12] Capped at DECLARED_QUEUE_CAP by a fair sample; see PlayerViewModel.playTracksOnTap.
-            vm.playTracksOnTap(title, extensionId, label, shuffle, capped = true) { onPage ->
+            // [2026-11-24] Except a row carrying GLADIX_TRACKS_UNCAPPED (a liked list or playlist), which is queued whole.
+            vm.playTracksOnTap(title, extensionId, label, shuffle, capped = !row.isTracksUncapped()) { onPage ->
                 loadTracksOnTap(extensions, extensionId, id, title, row, shuffle, onPage)
             }
             return true
@@ -215,8 +217,8 @@ open class FeedClickListener(
             return true
         }
         if (context == null) return notFoundSnack(R.string.item)
-        if (shuffle) vm.shuffle(extensionId, context, true)
-        else vm.play(extensionId, context, true)
+        if (shuffle) vm.shuffle(extensionId, context.withoutSortLabel(), true)
+        else vm.play(extensionId, context.withoutSortLabel(), true)
         return true
     }
 
@@ -315,18 +317,20 @@ open class FeedClickListener(
         view: View?, extensionId: String?, item: EchoMediaItem?, context: EchoMediaItem?
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
-        if (item == null) return notFoundSnack(R.string.item)
-        return when (item) {
+        // [2026-11-25] A sorted album carries GLADIX_SORT_LABEL (FeedSort's Shelf.copy); it is display-only, so it is
+        // stripped here, in onMediaLongClicked and in onPlayClicked, before the item is opened or reaches an extension.
+        val media = item?.withoutSortLabel() ?: return notFoundSnack(R.string.item)
+        return when (media) {
             is Radio -> {
                 val vm by fragment.activityViewModels<PlayerViewModel>()
-                vm.play(extensionId, item, false)
+                vm.play(extensionId, media, false)
                 true
             }
 
             else -> {
                 val fragment = fragmentManager.findFragmentById(containerId)
                     ?: return notFoundSnack(R.string.view)
-                fragment.openFragment<MediaFragment>(view, getBundle(extensionId, item, false))
+                fragment.openFragment<MediaFragment>(view, getBundle(extensionId, media, false))
                 afterOpen()
                 true
             }
@@ -341,7 +345,7 @@ open class FeedClickListener(
         if (item == null) return notFoundSnack(R.string.item)
         MediaMoreBottomSheet.show(
             fragment, fragmentManager,
-            containerId, extensionId, item, false,
+            containerId, extensionId, item.withoutSortLabel(), false,
             context = context, tabId = tabId, pos = index
         )
         return true

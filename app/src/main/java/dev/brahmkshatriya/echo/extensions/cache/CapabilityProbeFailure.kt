@@ -89,9 +89,19 @@ object CapabilityProbeFailure {
     internal fun isPlainNetworkFailure(throwable: Throwable): Boolean = when (classify(throwable)) {
         ErrorCategory.Network -> true
         ErrorCategory.LoginOrAuth -> false
+        // [2026-11-24] Plus a proxy that would not open the tunnel (Crashlytics 8a4f23ba, 1186: OkHttp ConnectPlan.createTunnel's bare
+        // IOException under a Deezer region proxy), the user's decision. Matched by MESSAGE, not by IOException, which would
+        // swallow every plain I/O failure: Deezer's plainNetworkCause sends a constant-message copy for that case only. This
+        // filter only; playback's handling of the same failure is unchanged.
         ErrorCategory.Generic -> generateSequence(throwable) { it.cause }.take(MAX_CHAIN)
-            .any { it is SSLHandshakeException || it is InterruptedIOException || it is SocketException }
+            .any {
+                it is SSLHandshakeException || it is InterruptedIOException || it is SocketException ||
+                    it.message == PROXY_TUNNEL_FAILED_MESSAGE
+            }
     }
+
+    // [2026-11-24] Byte-identical to DeezerExtension's PROXY_TUNNEL_FAILED_MESSAGE, the same coupling as DEEZER_REFUSED_MESSAGE.
+    private const val PROXY_TUNNEL_FAILED_MESSAGE = "The proxy did not open the tunnel"
 
     /**
      * [2026-11-14] A LoginRequired anywhere in the chain, by TYPE, as App.kt's isLoginRequired. Not classify's LoginOrAuth: that

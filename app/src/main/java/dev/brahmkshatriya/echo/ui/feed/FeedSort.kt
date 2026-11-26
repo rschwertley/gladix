@@ -8,6 +8,9 @@ import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.ui.feed.FeedSort.entries
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.GLADIX_SORT_LABEL
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.EXPLICIT_MARK
+import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.secondLine
 import dev.brahmkshatriya.echo.ui.media.MediaHeaderAdapter.Companion.toTrackString
 import kotlinx.serialization.Serializable
 import java.text.Collator
@@ -37,6 +40,20 @@ private fun Shelf.subtitle() = when (this) {
     is Shelf.Category -> this.subtitle
     is Shelf.Item -> this.media.subtitle
     is Shelf.Lists<*> -> null
+}
+
+private fun Shelf.builtLine() = this is Shelf.Item && (media is Album || media is Playlist)
+
+private fun Shelf.shownLine(context: Context) =
+    (if (builtLine()) (this as Shelf.Item).media.secondLine(context)?.removePrefix(EXPLICIT_MARK) else subtitle())
+        ?.takeIf { it.isNotEmpty() }
+
+// Whether the Subtitle sort is offered, without a Context: an album or playlist has a shown line when it has named
+// artists / authors or a track count, or its own subtitle.
+private fun Shelf.hasShownLine() = !subtitle().isNullOrEmpty() || when (val m = (this as? Shelf.Item)?.media) {
+    is Album -> m.artists.any { it.name.isNotBlank() }
+    is Playlist -> (!m.isEditable && m.authors.any { it.name.isNotBlank() }) || m.trackCount != null
+    else -> false
 }
 
 private fun Shelf.duration() = when (this) {
@@ -116,7 +133,17 @@ private fun Shelf.ifListItem(): EchoMediaItem.Lists? = when (this) {
 
 private fun Shelf.copy(subtitle: String) = when (this) {
     is Shelf.Category -> this.copy(subtitle = subtitle)
-    is Shelf.Item -> this.copy(media = this.media.copyMediaItem(subtitle = subtitle))
+    // [2026-11-25] An album's relabel is marked GLADIX_SORT_LABEL so MediaViewHolder.secondLine shows it instead of
+    // "artist • year". Albums only: track extras carry routing keys that are persisted, so they are left alone.
+    // [CORRECTED 2026-11-25, same day] Albums AND playlists: a playlist's line is built too now ("owner • N songs"), so
+    // its Date and Tracks relabels need the same marker. Tracks are still left alone, for the reason above.
+    is Shelf.Item -> this.copy(
+        media = media.copyMediaItem(
+            subtitle = subtitle,
+            extras = if (media is Album || media is Playlist) media.extras + (GLADIX_SORT_LABEL to "1")
+            else media.extras
+        )
+    )
     is Shelf.Lists<*> -> throw IllegalStateException()
 }
 
@@ -157,8 +184,12 @@ enum class FeedSort(
     Title(R.string.sort_title, { list, reversed ->
         list.sortedMissingLast(reversed, textOrder(), { it.title()?.takeIf { t -> t.isNotEmpty() } })
     }),
+    // [2026-11-25] Albums and playlists sort by the line actually shown (MediaViewHolder.secondLine, explicit marker
+    // dropped), so the order matches the screen; everything else still sorts by its subtitle field. Every OTHER sort
+    // reads model fields, not text: title, duration, date (Track/Album releaseDate, Playlist creationDate), dateAdded,
+    // artists, album, trackCount.
     Subtitle(R.string.sort_subtitle, { list, reversed ->
-        list.sortedMissingLast(reversed, textOrder(), { it.subtitle()?.takeIf { t -> t.isNotEmpty() } })
+        list.sortedMissingLast(reversed, textOrder(), { it.shownLine(this) })
     }),
     Duration(R.string.sort_duration, { list, reversed ->
         list.sortedMissingLast(reversed, naturalOrder(), { it.duration() })
@@ -200,7 +231,7 @@ enum class FeedSort(
     fun shouldBeVisible(data: List<Shelf>): FeedSort? {
         val take = when (this) {
             Title -> data.any { it.title()?.isNotEmpty() ?: false }
-            Subtitle -> data.any { it.subtitle()?.isNotEmpty() ?: false }
+            Subtitle -> data.any { it.hasShownLine() }
             Date -> data.any { it.date() != null }
             DateAdded -> data.any { it.dateAdded() != null }
             Duration -> data.any { it.duration() != null }

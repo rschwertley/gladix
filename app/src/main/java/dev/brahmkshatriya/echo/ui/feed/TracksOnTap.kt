@@ -35,6 +35,17 @@ const val GLADIX_TRACKS_ON_TAP = "gladix_tracks_on_tap"
 fun Shelf.hasTracksOnTap() = this is Shelf.Category && extras[GLADIX_TRACKS_ON_TAP] == "1"
 
 /**
+ * [2026-11-24] UNCAPPED TRACKS-ON-TAP ROW (the user's standing decision): liked lists and playlists are never capped; the 2,000
+ * cap (QueueSampler, DECLARED_QUEUE_CAP) is only for folder trees and All songs. A tracks-on-tap row whose extras also carry
+ * GLADIX_TRACKS_UNCAPPED = "1" takes the existing uncapped paths instead: FolderMoreBottomSheet.play and .withTracks, and
+ * FeedClickListener.onPlayClicked on the row's page, so Play queues and Shuffle shuffles the whole list. A row without it is
+ * unchanged. The row-tap cap (a song tapped on the page) is not affected. Generic: no extension is named here.
+ */
+const val GLADIX_TRACKS_UNCAPPED = "gladix_tracks_uncapped"
+
+fun Map<String, String>.isTracksUncapped() = this[GLADIX_TRACKS_UNCAPPED] == "1"
+
+/**
  * [2026-11-13] THE SHUFFLE INTENT (the user's decision): loadTracksOnTap adds GLADIX_SHUFFLE = "1" to the Album's extras when the
  * list is loaded for Shuffle; Play, Play next and Add to queue send none. For an extension that can answer a load-on-tap list
  * already shuffled (OpenGonic, planned), so a Shuffle of a big folder can start without reading it all. An extension that does

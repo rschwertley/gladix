@@ -11,6 +11,7 @@ import androidx.fragment.app.commit
 import androidx.recyclerview.widget.RecyclerView
 import dev.brahmkshatriya.echo.R
 import dev.brahmkshatriya.echo.databinding.FragmentMainBinding
+import dev.brahmkshatriya.echo.databinding.ItemMainHeaderBinding
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.addIfNull
 import dev.brahmkshatriya.echo.ui.common.UiViewModel
 import dev.brahmkshatriya.echo.ui.common.UiViewModel.Companion.BACKGROUND_GRADIENT
@@ -51,7 +52,7 @@ class MainFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         setupTransition(view)
         applyPlayerBg(view) {
-            mainBgDrawable.combine(currentNavBackground) { a, b -> b ?: a }
+            mainBgDrawable(requireContext()).combine(currentNavBackground) { a, b -> b ?: a }
         }
         observe(viewModel.navigation) {
             val toShow = when (it) {
@@ -102,18 +103,41 @@ class MainFragment : Fragment() {
             // Full-bleed: no appBar, so the header terms of the scroll metrics are zero. [2026-11-13] traceTag is retired
             // with the GladixScroll trace (FastScrollerHelper.applyTo).
             val scroller = FastScrollerHelper.applyTo(recyclerView)
+            // [2026-11-25] The track starts BELOW the header row (HeaderAdapter, item_main_header: extensions button,
+            // title, account icon at top right), which is row 0 of the list on all four callers - Home, Library, Search,
+            // History. It started 8dp under the status bar, so at the top of the list the thumb sat on that row and covered
+            // the account icon until it auto-hid. The header is MEASURED, not hard-coded (48dp today: 32dp icon + 2 x 4dp
+            // card padding + 2 x 4dp margin, and the 48dp title); measured once, as its height is fixed dp and does not
+            // follow its content. Only the track's drawing rect moves: the scroll range reads the LIST's own padding
+            // (PixelFastScrollViewHelper's "+ paddingTop + paddingBottom" note), which is unchanged. Null on TV and with
+            // the setting off, where there is no scroller to inset.
+            val headerHeight = if (scroller != null) recyclerView.measureMainHeader() else 0
             applyInsets {
                 // The TV mini-player reserve is in combined itself now (UiViewModel.combined, 2026-10-31); do not add it here.
                 // TV overscan safe-area (phone: isTv() == false → 20/20, unchanged). `it.start` already carries
                 // the nav-rail width inset, so 48 is added on top of it (left = rail + 48, right = 48).
                 val tv = recyclerView.context.isTv()
-                recyclerView.applyInsets(it, if (tv) 27 else 20, if (tv) 48 else 20, bottom + 4)
+                val vertical = if (tv) 27 else 20
+                recyclerView.applyInsets(it, vertical, if (tv) 48 else 20, bottom + 4)
                 outline.updatePadding(top = it.top)
                 // Was an inline Rect here; extracted to FastScrollerHelper so the seven direct-call sites
                 // get the same treatment instead of keeping applyTo's flat 8dp forever.
-                scroller.applyInsets(recyclerView.context, it, bottom)
+                // [2026-11-25] top = where the header row ends: status bar + the list's top padding + the header. The
+                // helper's own 8dp then sits between the header and the track.
+                scroller.applyInsets(
+                    recyclerView.context, it, bottom,
+                    top = it.top + vertical.dpToPx(recyclerView.context) + headerHeight
+                )
                 block(it)
             }
+        }
+
+        // [2026-11-25] Height of the header row the four main tabs put first in the list, from the same layout
+        // HeaderAdapter.ViewHolder inflates. Detached and measured unconstrained: its height is fixed dp.
+        private fun RecyclerView.measureMainHeader(): Int {
+            val header = ItemMainHeaderBinding.inflate(LayoutInflater.from(context), this, false).root
+            header.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            return header.measuredHeight
         }
     }
 }

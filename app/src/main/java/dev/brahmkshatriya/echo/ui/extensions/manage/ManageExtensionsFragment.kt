@@ -49,7 +49,9 @@ class ManageExtensionsFragment : Fragment() {
         val scroller = FastScrollerHelper.applyTo(binding.recyclerView)
         applyInsetsWithChild(binding.appBarLayout, binding.recyclerView, 104) {
             binding.fabContainer.applyInsets(it)
-            scroller.applyInsets(binding.recyclerView.context, it)
+            // [2026-11-25] top = 0: the list sits below the AppBarLayout, and applyInsetsWithChild puts the status
+            // bar on the app bar, not the list (FastScrollerHelper.applyInsets' test).
+            scroller.applyInsets(binding.recyclerView.context, it, top = 0)
         }
         applyBackPressCallback()
         // TV: focus the first row on open, restore the row left on return - see FragmentUtils.focusFirstRowOnTv.

@@ -150,6 +150,12 @@ object ImageUtils {
         // same lambda target and lifecycle, so every song change with the screen off parked a load and at wake the last to
         // finish painted, a previous song's art (1179, natural timeout). It is guarded now too: loadBlurred's shouldPaint,
         // passed `lastBlurredItemId == itemId`. The guarded call sites are PlayerTrackAdapter and that background.
+        // [CORRECTED 2026-11-24] Two more are guarded: the mini bar cover (FragmentPlayerBinding.applyCurrent, a mediaId tag on
+        // collapsedTrackCover; 1187, a song with no cover kept the previous song's art) and the full player's toolbar extension
+        // icon (same function, the shownKey tag). loadAsCircle has the same lambda target and the same exposure. Four of its sites
+        // paint into a reused view and are DELIBERATELY left unguarded (the user's decision, 2026-11-24): DownloadsAdapter's
+        // extensionIcon, ExtensionsAddListAdapter, ExtensionAdapter and LyricsFragment's menu icon. They change only while on
+        // screen, where a load finishes almost at once, and extension icons are cached. Add a guard if one shows a wrong icon.
         //
         // This load is ENQUEUED and its target is a lambda, NOT a ViewTarget, so
         // RequestService.requestDelegate takes the `request.lifecycle ?: findLifecycle()` branch and

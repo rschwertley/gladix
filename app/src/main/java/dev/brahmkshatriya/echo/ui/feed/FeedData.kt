@@ -131,6 +131,8 @@ data class FeedData(
     val loadedShelves = MutableStateFlow<List<Shelf>?>(null)
     var searchToggled: Boolean = false
     var searchQuery: String? = null
+    // [2026-11-25] The extension the open search belongs to; dataFlow clears the search when it changes.
+    private var searchExtensionId: String? = null
     val feedSortState = MutableStateFlow<FeedSort.State?>(null)
 
     /**
@@ -142,6 +144,9 @@ data class FeedData(
      * (ButtonsAdapter's text listener) but the feed re-renders only on submit, so "a query is set" is
      * true while the rows are still unfiltered - and, with no sort, still PAGED, which would queue a
      * ~100-item window. Written by [getFeedSourceData] alongside the data it describes.
+     * [CORRECTED 2026-11-25] "the feed re-renders only on submit" is no longer true: typing now re-filters after a
+     * 300 ms pause (ButtonsAdapter's text listener). The record is still needed: within that pause, and while the
+     * re-render runs, searchQuery is ahead of what is on screen.
      *   [DisplayOrder.Rebuilt]  - a sort field or a search: the shelves were flattened, and the rendered
      *                             PagedData.Single IS the whole processed list (up to MAX_SORT_SEARCH_ITEMS).
      *   [DisplayOrder.Reversed] - "Reversed" alone: shelves NOT flattened, so a carousel (Library -> All)
@@ -275,8 +280,19 @@ data class FeedData(
     val dataFlow = cachedDataFlow.combine(loadedDataFlow) { cached, loaded ->
         val extensionId = (loaded?.getOrNull() ?: cached?.getOrNull())?.extensionId
         val tabId = selectedTabFlow.value?.id
-        searchQuery = null
-        searchToggled = false
+        // [2026-11-25] THE PAGE SEARCH RESETS ONLY WHEN THE EXTENSION CHANGES. Inherited from upstream Echo (f6f35c18,
+        // 2025-07-25, no reason recorded), it reset on EVERY emission here - and a tab switch emits (loadedDataFlow
+        // re-runs on selectedTabFlow), as do the cached -> loaded handover and a refresh - so switching Library tabs
+        // closed the search and cleared its text. Now it stays open and applies to the new tab (Spotify's Library does
+        // the same), and getFeedSourceData applies it only on tabs that show search.
+        // A null extensionId is a tab switch or reload in progress (both data flows emit null first): not a change.
+        // Untouched: ButtonsAdapter still binds isChecked = searchToggled, so a fresh screen (searchToggled false) still
+        // flips the toggle and starts the feed (FeedAdapter's 1160 note).
+        if (extensionId != null && extensionId != searchExtensionId) {
+            searchQuery = null
+            searchToggled = false
+            searchExtensionId = extensionId
+        }
         val id = sortKey(extensionId, tabId)
         // Captured HERE, with the value, from the same locals — see persistSortState. Any later write uses
         // these rather than re-reading selectedTabFlow, which is what makes a stale pairing impossible
@@ -416,17 +432,28 @@ data class FeedData(
         result: Result<State<Feed.Data<Shelf>>?>
     ): Result<Pair<Metadata?, PagedData<FeedType>>> = withContext(Dispatchers.IO) {
         val tabId = selectedTabFlow.value?.id
-        val data = if (feedSortState.value != null || searchQuery != null) {
+        // [2026-11-25] The query applies only on a tab that shows search (its Feed.Buttons, read as buttonsFlow does). The
+        // search now stays open across tab switches (see the reset in dataFlow), so a tab without a search button would
+        // otherwise be filtered - and flattened - with nothing on screen to say why. The query is kept, not cleared, so it
+        // applies again on a tab that shows search.
+        val query = searchQuery?.takeIf { (result.getOrNull()?.feed?.buttons ?: defaultButtons).showSearch }
+        val data = if (feedSortState.value != null || query != null) {
             result.mapCatching { state ->
                 state ?: return@mapCatching PagedData.empty()
                 val extensionId = state.extensionId
                 val data = state.feed.pagedData
 
                 val sortState = feedSortState.value
-                val query = searchQuery
                 var shelves = data.loadTill(
                     shelfLimit = 2000, itemLimit = MAX_SORT_SEARCH_ITEMS,
                 ) { shelf -> if (shelf is Shelf.Lists<*>) shelf.list.size.coerceAtLeast(1) else 1 }
+                // [2026-11-24] STAND-ALONE HEADINGS ARE DROPPED once the list is re-ordered (a sort field, Reversed or a search): a
+                // Shelf.Category with no feed, which toFeedType draws as a heading (DeezerArtistClient's "Top", an extension's genre
+                // page). They mean nothing in a re-ordered list: Title sorted them among the songs, other sorts put them last, a
+                // search matched their text, and Reversed put them below their own section. Matches the 2026-09-06 drop of section
+                // titles in the flatMap below. A row marked tracks-on-tap is kept. The truncated notice is added after this, so stays.
+                if (sortState?.feedSort != null || sortState?.reversed == true || query != null)
+                    shelves = shelves.filterNot { it is Shelf.Category && it.feed == null && !it.hasTracksOnTap() }
                 // ⚠️ THIS flatMap DESTROYS SECTION STRUCTURE, AND THAT IS THE INTENDED BEHAVIOUR — but it
                 // is invisible from the outside and cost several rounds of investigation on 2026-09-06.
                 // Read this before chasing "my carousels turned into a flat list" again.
@@ -446,6 +473,8 @@ data class FeedData(
                 // flow is shared — survives process death and re-arms itself on the next feed load, with
                 // nothing on screen at rest to say why the sections vanished except the sort chip in the
                 // header.
+                // [CORRECTED 2026-11-25] The gate is now `feedSortState.value != null || query != null`, where query is
+                // searchQuery only on a tab that shows search (see the note above the gate).
                 // [CORRECTED 2026-10-29] "written back below when sortState.save is set" is stale: that
                 // write was removed by the 2026-09-06 fix (see the NO PERSISTENCE HERE note below). Saved
                 // state is now written only by FeedData.persistSortState, from user actions — the sheet's
