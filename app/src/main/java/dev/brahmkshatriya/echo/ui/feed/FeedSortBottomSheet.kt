@@ -37,15 +37,19 @@ class FeedSortBottomSheet : BottomSheetDialogFragment() {
         val list = loadedShelves.value ?: listOf()
         val state = sortState.value
         selectedFeedSort = state?.feedSort
-        val available = getSorts(list)
+        // [2026-11-27] A tab that sorts itself (ExtSortedTab.kt) offers what it declares, in its order, and nothing is worked out
+        // from rows (it has none loaded for this: FeedData.extSourceData leaves loadedShelves null).
+        val ext = feedData.shownExtListing
+        val available = ext?.sorts ?: getSorts(list)
         // [2026-11-26] resolveFor: a Subtitle saved before 2026-11-26 checks the chip it now sorts as (Artists or Creator).
-        val checked = available.indexOf(state?.feedSort?.resolveFor(list))
+        val checked = available.indexOf(if (ext != null) state?.feedSort else state?.feedSort?.resolveFor(list))
         binding.sortChipGroup.run {
             removeAllViews()
             available.forEachIndexed { index, t ->
                 val chip = Chip(context)
                 chip.id = index
-                chip.text = getString(t.title)
+                // [2026-11-26] titleFor: Date reads "Release date" on an album list.
+                chip.text = getString(if (ext != null) t.title else t.titleFor(list))
                 chip.ellipsize = TextUtils.TruncateAt.MIDDLE
                 chip.isCheckable = true
                 addView(chip)
@@ -57,11 +61,13 @@ class FeedSortBottomSheet : BottomSheetDialogFragment() {
         }
         binding.filter.isVisible = false
         binding.filterGroup.isVisible = false
+        // [2026-11-27] Reversed only where such a tab says it can reverse; every other sheet unchanged.
+        binding.reversedContainer.isVisible = ext == null || ext.reversible
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         observe(loadedShelves) {
-            binding.progressIndicator.isVisible = it == null
+            binding.progressIndicator.isVisible = it == null && feedData.shownExtListing == null
             applySorts()
         }
         observe(sortState) {

@@ -62,11 +62,13 @@ private fun Shelf.hasShownLine() = !subtitle().isNullOrEmpty() || when (val m = 
 // and the chip both go through these, on the same list (FeedData.loadedShelves), so they always agree.
 enum class LineKind { ARTISTS, CREATOR, DETAILS }
 
+// [2026-11-26] Marked folders are left out (sortRows), as in shouldBeVisible: they always sort by title.
 fun List<Shelf>.lineKind(): LineKind {
+    val rows = sortRows()
     var albums = 0
     var tracks = 0
     var playlists = 0
-    forEach {
+    rows.forEach {
         when ((it as? Shelf.Item)?.media) {
             is Album -> albums++
             is Track -> tracks++
@@ -75,10 +77,20 @@ fun List<Shelf>.lineKind(): LineKind {
         }
     }
     return when {
-        albums * 2 > size || tracks * 2 > size -> LineKind.ARTISTS
-        playlists * 2 > size -> LineKind.CREATOR
+        albums * 2 > rows.size || tracks * 2 > rows.size -> LineKind.ARTISTS
+        playlists * 2 > rows.size -> LineKind.CREATOR
         else -> LineKind.DETAILS
     }
+}
+
+// [2026-11-26] The rows a chosen sort actually orders: marked folders always sort by title (FeedData.getFeedSourceData's
+// folder split), so they decide nothing about which other sorts to offer or what a list is.
+private fun List<Shelf>.sortRows() = filterNot { it.isMarkedFolder() }
+
+// [2026-11-26] An album list, by majority of sortRows: its Date sort is labelled "Release date" (FeedSort.titleFor).
+private fun List<Shelf>.isAlbumList(): Boolean {
+    val rows = sortRows()
+    return rows.count { (it as? Shelf.Item)?.media is Album } * 2 > rows.size
 }
 
 // [2026-11-26] The owner a playlist row shows (MediaViewHolder.secondLine): null for your own (isEditable) and for one with no
@@ -287,20 +299,29 @@ enum class FeedSort(
         LineKind.DETAILS -> Subtitle
     }
 
+    // [2026-11-26] Every sort but Title is decided on sortRows (marked folders left out): folders always sort by title, so on an
+    // all-folder page only Title is offered, and on a mixed page what the other rows support. Title still counts folders,
+    // since Title (and Reversed) does reorder them.
     fun shouldBeVisible(data: List<Shelf>): FeedSort? {
+        val rows = data.sortRows()
         val take = when (this) {
             Title -> data.any { it.title()?.isNotEmpty() ?: false }
-            Subtitle -> data.lineKind() == LineKind.DETAILS && data.any { it.hasShownLine() }
-            Creator -> data.lineKind() == LineKind.CREATOR
-            Date -> data.any { it.date() != null }
-            DateAdded -> data.any { it.dateAdded() != null }
-            Duration -> data.any { it.duration() != null }
-            Artists -> data.any { it.artists()?.isNotEmpty() ?: false }
-            Album -> data.mapNotNull { it.album() }.toSet().size > 1
-            Tracks -> data.any { it.trackCount() != null }
+            Subtitle -> rows.lineKind() == LineKind.DETAILS && rows.any { it.hasShownLine() }
+            Creator -> rows.lineKind() == LineKind.CREATOR
+            Date -> rows.any { it.date() != null }
+            DateAdded -> rows.any { it.dateAdded() != null }
+            Duration -> rows.any { it.duration() != null }
+            Artists -> rows.any { it.artists()?.isNotEmpty() ?: false }
+            Album -> rows.mapNotNull { it.album() }.toSet().size > 1
+            Tracks -> rows.any { it.trackCount() != null }
         }
         return if (take) this else null
     }
+
+    // [2026-11-26] The label for this list: Date reads "Release date" on an album list (Album.releaseDate is the release date in
+    // every extension in this repo). Other lists keep "Date": song dates are a pressing date on Deezer
+    // (DeezerParser.toTrack's PHYSICAL_RELEASE_DATE note) and a year on Offline, playlists use a modified date, mixed lists mix.
+    fun titleFor(data: List<Shelf>): Int = if (this == Date && data.isAlbumList()) R.string.sort_release_date else title
 
     @Serializable
     data class State(

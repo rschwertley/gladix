@@ -41,6 +41,8 @@ import dev.brahmkshatriya.echo.ui.feed.QueueSample
 import dev.brahmkshatriya.echo.ui.feed.QueueSampler
 import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverWithDownloads
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.extensionId
+import dev.brahmkshatriya.echo.playback.MediaItemUtils.serverIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.sourceIndex
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.playback.PlayerCommands.addToNextCommand
@@ -1252,7 +1254,36 @@ class PlayerViewModel(
             Triple(if (stampedId != null && stampedId == currentId) usable else null, server, index)
         }.stateIn(viewModelScope, SharingStarted.Lazily, Triple(null, null, null))
 
+    /**
+     * [2026-11-27] The extension the playing stream really comes from, for the quality pill (FormatUtils.getPillDetails), or null.
+     * Only for a song played through Unified; every other extension IS its own source, so the pill stays as it was.
+     * Unified stamps every stream with its sub-extension's id (UnifiedExtension's Track.withExtensionId), and
+     * UnifiedExtension.loadStreamableMedia plays through exactly that extension: extensions().get(stamp), no fallback (read
+     * 2026-11-27). So the stamp is the service playing.
+     * A stamp naming Combine is not a source (Unified over Combine), and nor is one naming Unified: songs in playlists made inside
+     * Unified (Cached songs among them) are stamped "unified" on purpose (the user's note: since Nov 14-19). Both keep today's pill.
+     * [CORRECTED 2026-11-27] COMBINE HAS NO NAME, by the user's decision, and this first read Combine's `stream_ext_id`. That tag
+     * names the provider Combine FIRST picked, not the one playing: upstream CombineExtension.loadStreamableMedia (dutixlf main,
+     * d8de78e) retries later providers inside its own call when that one fails, and returns their media unmodified. Gladix cannot
+     * tell either way: Streamable.Media.Server and its Sources carry no extras, Combine logs and records nothing, and the first
+     * failure never leaves Combine's call. Only standard Combine counts (the user's Nov 14 decision), so no fork-specific check.
+     * Revisit only if Combine marks the media it returns with the provider that served it.
+     * No stamp, a download (serverIndex past the list, as in StreamableLoader.loadServer), or an extension not installed: null.
+     * Read from `current` when serverAndTracks emits, and serverAndTracks re-emits on every `current` change, so a stale read is
+     * corrected by the next emission.
+     */
+    fun pillSourceName(): String? {
+        val item = playerState.current.value?.mediaItem ?: return null
+        if (item.extensionId != UnifiedExtension.UNIFIED_ID) return null
+        val stream = item.track.servers.getOrNull(item.serverIndex) ?: return null
+        val id = stream.extras[UnifiedExtension.EXTENSION_ID]
+            ?.takeIf { it != COMBINE_ID && it != UnifiedExtension.UNIFIED_ID } ?: return null
+        return extensions.music.value.find { it.id == id }?.let { it.metadata.name }
+    }
+
     companion object {
+        // Third-party Combine's extension id (CombineExtension.COMBINE_ID, upstream dutixlf). Not ours to rename; see pillSourceName.
+        private const val COMBINE_ID = "echo_combine"
         const val KEEP_QUEUE = "keep_queue"
 
         // How long a queue load runs before its "Loading…" message shows (loadThenQueue).

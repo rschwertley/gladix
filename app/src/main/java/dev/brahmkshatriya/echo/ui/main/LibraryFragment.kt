@@ -87,6 +87,11 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         return MediaItemUtils.libraryTabLabel(extensionId, tab?.id, title)
     }
 
+    // [2026-11-27] For a tab that sorts itself (ui/feed/ExtSortedTab.kt): Play and Shuffle (FeedClickListener.onPlayClicked's
+    // Library arm) and a song tap (FeedClickListener.onTracksClicked, queueFromPage). Both null on every other tab.
+    fun tabTracksOnTap() = feedData.tabTracksOnTap()
+    val extTabList get() = feedData.extTabList
+
     private val listener by lazy { getFeedListener(requireParentFragment()) }
     private val feedAdapter by lazy { getFeedAdapter(feedData, listener) }
     private var swipeRefresh: SwipeRefreshLayout? = null

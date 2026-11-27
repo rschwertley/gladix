@@ -59,15 +59,9 @@ import dev.brahmkshatriya.echo.ui.playlist.save.SaveToPlaylistBottomSheet
 import dev.brahmkshatriya.echo.utils.ContextUtils.observe
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.combine
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.viewModelScope
-import dev.brahmkshatriya.echo.common.models.Message
-import dev.brahmkshatriya.echo.ui.feed.FeedFragment
 import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_ID
 import dev.brahmkshatriya.echo.ui.feed.GLADIX_PARENT_TITLE
-import dev.brahmkshatriya.echo.ui.feed.folderAlbum
-import dev.brahmkshatriya.echo.ui.feed.loadFolderFeed
-import kotlin.coroutines.cancellation.CancellationException
+import dev.brahmkshatriya.echo.ui.feed.openFolderPage
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
@@ -612,38 +606,9 @@ class MediaMoreBottomSheet : BottomSheetDialogFragment(R.layout.dialog_media_mor
      * Loaded on PlayerViewModel's scope, because the sheet closes on the tap; a failure goes to throwFlow, as a feed load error
      * does. If the activity has stopped by the time the page is loaded, it is not opened (a fragment commit then would throw).
      */
-    private fun goToFolder(parentId: String, title: String?, routing: String?) {
-        val activity = requireActivity()
-        val cont = contId
-        val extId = extensionId
-        val pageTitle = title ?: getString(R.string.folder)
-        val notFound = getString(R.string.no_x_found, getString(R.string.folder))
-        // [2026-11-19] Built and loaded by TracksOnTap's folderAlbum and loadFolderFeed, shared with Cached.getFeedShelf.
-        val album = folderAlbum(parentId, title, routing)
-        val folderExtras = album.extras
-        val pvm = playerViewModel
-        pvm.viewModelScope.launch {
-            val feed = runCatching {
-                loadFolderFeed(pvm.extensions, extId, album)
-            }.getOrElse {
-                if (it is CancellationException) throw it
-                pvm.app.throwFlow.emit(it)
-                return@launch
-            }
-            if (feed == null) {
-                pvm.app.messageFlow.emit(Message(notFound))
-                return@launch
-            }
-            if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
-            val feedVm by activity.viewModels<FeedFragment.VM>()
-            feedVm.extensionId = extId
-            feedVm.feedId = parentId
-            feedVm.feed = feed
-            activity.openFragment<FeedFragment>(
-                null, FeedFragment.getBundle(pageTitle, null, extId, parentId, folderExtras), cont
-            )
-        }
-    }
+    // [2026-11-27] The body moved, unchanged, to TracksOnTap.openFolderPage, shared with a folder card's tap.
+    private fun goToFolder(parentId: String, title: String?, routing: String?) =
+        openFolderPage(requireActivity(), playerViewModel, extensionId, parentId, title, routing, contId)
 
     private inline fun <reified T : Fragment> openFragment(bundle: Bundle) {
         requireActivity().openFragment<T>(null, bundle, contId)

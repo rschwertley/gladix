@@ -16,6 +16,7 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.playback.MediaItemUtils
 import dev.brahmkshatriya.echo.common.models.Message
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.droppingUnplayable
+import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
 import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
 import dev.brahmkshatriya.echo.ui.common.SnackBarHandler.Companion.createSnack
 import dev.brahmkshatriya.echo.ui.media.MediaFragment
@@ -176,6 +177,20 @@ open class FeedClickListener(
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
         val vm by fragment.activityViewModels<PlayerViewModel>()
+        // [2026-11-27] PLAY ON A FOLDER CARD (TracksOnTap.isFolderCard, MediaViewHolder's play button): the folder's songs, loaded by
+        // its id as a folder row's are (loadTracksOnTap), 2,000 cap unless the card is marked uncapped, under the card's "Playing
+        // from" label. FIRST, ahead of the page branch below: on a folder page a card's Play would otherwise play the page's folder.
+        // A page's own Play passes the page's item (null on feed pages), never a folder card, so nothing else reaches it.
+        val card = context?.withoutSortLabel()?.takeIf { tracks == null && it.isFolderCard() } as? Album
+        if (card != null) {
+            // As FolderMoreBottomSheet.queueLabel builds it for a row with no feed.
+            val label = FeedPageSlot.label(extensionId, card.id, card.title, null)
+            val extensions = vm.extensions
+            vm.playTracksOnTap(card.title, extensionId, label, shuffle, capped = !card.extras.isTracksUncapped()) { onPage ->
+                loadTracksOnTap(extensions, extensionId, card.id, card.title, card.extras, shuffle, onPage)
+            }
+            return true
+        }
         // [2026-11-11] THE PAGE OF A TRACKS-ON-TAP ROW (TracksOnTap): Play and Shuffle load the row's whole list (OpenGonic: every
         // song under the folder) instead of the rows on screen, which are only this folder's own songs and subfolders. The page
         // knows its row from FeedFragment's "tracksOnTap" argument, set by CategoryViewHolder when it was opened, and the row's
@@ -191,6 +206,18 @@ open class FeedClickListener(
             // [2026-11-24] Except a row carrying GLADIX_TRACKS_UNCAPPED (a liked list or playlist), which is queued whole.
             vm.playTracksOnTap(title, extensionId, label, shuffle, capped = !row.isTracksUncapped()) { onPage ->
                 loadTracksOnTap(extensions, extensionId, id, title, row, shuffle, onPage)
+            }
+            return true
+        }
+        // [2026-11-27] A LIBRARY TAB THAT SORTS ITSELF AND DECLARES ITS LIST (ExtSortedTab.kt, FeedData.tabTracksOnTap): Play and
+        // Shuffle load the list by the tab's id with the sort and search on screen, capped as the row's page above (QueueSampler:
+        // Play the first 2,000 in that order, Shuffle a fair 2,000; GLADIX_SHUFFLE is added by loadTracksOnTap). Every other
+        // Library tab returns null here and takes the paths below, as before.
+        (fragment as? LibraryFragment)?.tabTracksOnTap()?.let { tap ->
+            val label = feedPageLabel()
+            val extensions = vm.extensions
+            vm.playTracksOnTap(tap.title, extensionId, label, shuffle, capped = !tap.extras.isTracksUncapped()) { onPage ->
+                loadTracksOnTap(extensions, extensionId, tap.id, tap.title, tap.extras, shuffle, onPage)
             }
             return true
         }
@@ -320,6 +347,17 @@ open class FeedClickListener(
         // [2026-11-25] A sorted album carries GLADIX_SORT_LABEL (FeedSort's Shelf.copy); it is display-only, so it is
         // stripped here, in onMediaLongClicked and in onPlayClicked, before the item is opened or reaches an extension.
         val media = item?.withoutSortLabel() ?: return notFoundSnack(R.string.item)
+        // [2026-11-27] An album card that is a folder (TracksOnTap.isFolderCard) opens its folder page exactly as Go to folder does
+        // (openFolderPage, shared with MediaMoreBottomSheet.goToFolder): a fresh folderAlbum from the card's id and title, routed by
+        // its EXTENSION_ID stamp under Unified. Never MediaFragment, which would load it as an album through Cached.
+        if (media.isFolderCard()) {
+            val vm by fragment.activityViewModels<PlayerViewModel>()
+            openFolderPage(
+                fragment.requireActivity(), vm, extensionId, media.id, media.title, media.extras[EXTENSION_ID], containerId
+            )
+            afterOpen()
+            return true
+        }
         return when (media) {
             is Radio -> {
                 val vm by fragment.activityViewModels<PlayerViewModel>()
@@ -343,6 +381,13 @@ open class FeedClickListener(
     ): Boolean {
         if (extensionId == null) return notFoundSnack(R.string.extension)
         if (item == null) return notFoundSnack(R.string.item)
+        // [2026-11-27] A folder card's menu is the folder rows' (FolderMoreBottomSheet), for the reason at onCategoryLongClicked.
+        val folder = item.withoutSortLabel()
+        if (folder.isFolderCard()) {
+            val vm by fragment.activityViewModels<PlayerViewModel>()
+            FolderMoreBottomSheet.show(fragment, fragmentManager, extensionId, (folder as Album).asFolderRow(vm.extensions, extensionId))
+            return true
+        }
         MediaMoreBottomSheet.show(
             fragment, fragmentManager,
             containerId, extensionId, item.withoutSortLabel(), false,
@@ -487,9 +532,15 @@ open class FeedClickListener(
         if (single != null) {
             // [2026-11-22] A TRACKS-ON-TAP PAGE WITH NO DECLARED LIST (OpenGonic's Library > All songs, which stopped declaring its
             // ~86,800 songs after the 1178 OOMs, Nov 12): the tap queues from this song in page order. See queueFromPage.
-            val pageList = (fragment as? FeedFragment)?.takeIf { it.tracksOnTap() != null }?.pageList
+            val page = (fragment as? FeedFragment)?.takeIf { it.tracksOnTap() != null }
+            // [2026-11-27] And a Library tab that sorts itself (ExtSortedTab.kt, LibraryFragment.extTabList): before this its taps
+            // came here with no list and started Radio. Its list is the one on screen, in the extension's sort and search.
+            val library = (fragment as? LibraryFragment)?.takeIf { page == null }
+            val pageList = page?.pageList ?: library?.extTabList
             if (pageList != null) {
-                queueFromPage(vm, extensionId, pageList, tracks, pos, single)
+                val title = if (page != null) page.arguments?.getString("title").orEmpty()
+                else library?.tabTracksOnTap()?.title ?: library?.libraryLabel()?.title.orEmpty()
+                queueFromPage(vm, extensionId, pageList, tracks, pos, single, title)
                 return true
             }
             vm.playTrackRadio(extensionId, single)
@@ -513,6 +564,9 @@ open class FeedClickListener(
      * [2026-11-22] A SONG TAP ON A TRACKS-ON-TAP PAGE THAT DECLARES NO LIST: from the tapped song, up to [DECLARED_QUEUE_CAP], in
      * the order the page shows (the user's decision). Today only OpenGonic's All songs reaches it: Deezer and Offline set no
      * tracks-on-tap marker, and OpenGonic's folder pages declare their own songs, so the declared branch above takes them first.
+     * [CORRECTED 2026-11-27] Not only All songs now: a Library tab that sorts itself (ExtSortedTab.kt) comes here too, with the
+     * list it shows (LibraryFragment.extTabList), so a tap there pages on from the tapped song in the extension's sort and search.
+     * The walk starts at page one of that list; pages already on screen come from its own page cache, as below.
      * - THE PAGE'S OWN LIST, NOT loadTracksOnTap: that is a new loadTracks call read from song 1, in the extension's order rather
      *   than a sort's. [list] is the PagedData the screen pages through (FeedFragment.pageList), so pages already shown come from
      *   its page cache with no request (PagedData.Continuous.map caches each mapped page; that is also why FeedData's row-number
@@ -538,11 +592,12 @@ open class FeedClickListener(
      */
     private fun queueFromPage(
         vm: PlayerViewModel, extensionId: String, list: PagedData<FeedType>, tracks: List<Track>, pos: Int, tapped: Track,
+        // [2026-11-27] For "Loading songs from <title>": the page's title argument, or the Library tab's title (no arguments there).
+        title: String,
     ) {
         val nth = tracks.subList(0, pos).count { it.id == tapped.id }
         // Built now, while the page is alive, as onPlayClicked builds it.
         val label = feedPageLabel()
-        val title = fragment.arguments?.getString("title").orEmpty()
         vm.loadThenQueue(title, {
             val upcoming = mutableListOf<Track>()
             var seen = 0

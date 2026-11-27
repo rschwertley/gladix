@@ -1214,7 +1214,7 @@ class PlayerFragment : Fragment() {
                 // [CORRECTED 2026-11-04] Not hidden until then, as this said: `tracks` was null only until the new item's
                 // Tracks.EMPTY arrived, stamped with the new id, and that printed "Unknown Quality" for the rest of the
                 // resolve. PlayerViewModel.serverAndTracks now returns null for it, so this description holds.
-                val details = tracks?.getPillDetails(requireContext(), server, index)
+                val details = tracks?.getPillDetails(requireContext(), server, index, viewModel.pillSourceName())
                     ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
                 if (details != null) trackSubtitle.text = details
                 trackSubtitle.isVisible = details != null

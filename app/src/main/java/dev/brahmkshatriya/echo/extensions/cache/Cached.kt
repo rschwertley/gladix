@@ -40,6 +40,7 @@ import dev.brahmkshatriya.echo.extensions.ExtensionLoader
 import dev.brahmkshatriya.echo.ui.feed.GLADIX_FOLDER
 import dev.brahmkshatriya.echo.ui.feed.folderAlbum
 import dev.brahmkshatriya.echo.ui.feed.hasTracksOnTap
+import dev.brahmkshatriya.echo.ui.feed.isExtParamLoad
 import dev.brahmkshatriya.echo.ui.feed.loadFolderFeed
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getIf
@@ -1615,6 +1616,11 @@ object Cached {
             }.getOrElse {
                 throw it.toAppException(extension)
             }
+            // [2026-11-27] A sorted or searched load of a tab that sorts itself (ExtSortedTab.kt) is NOT saved: the key below has no
+            // sort or query in it, so it would replace the tab's saved first page (on every search pause), and the next cold open
+            // would draw the last search before the real list. Only the default load is saved. Errors in its pages reach the
+            // screen through PagedSource.transform, as on any page.
+            if (tab?.extras?.isExtParamLoad() == true) return@Feed data
             val (pagedData, buttons, bg) = data
             val id = "$tabId-${tab?.id}"
             fileCache.putData(id, Pair(buttons, bg))

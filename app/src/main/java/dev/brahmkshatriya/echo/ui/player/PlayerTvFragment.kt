@@ -355,7 +355,7 @@ class PlayerTvFragment : Fragment() {
             // StateFlow, so every ON_START replays the latest value. Under the old always-write shape a
             // stale value re-appeared on each return to the player; under this one an ungated (null)
             // value replays as hidden.
-            val details = tracks?.getPillDetails(requireContext(), server, index)
+            val details = tracks?.getPillDetails(requireContext(), server, index, viewModel.pillSourceName())
                 ?.joinToString(" ⦿ ")?.takeIf { it.isNotBlank() }
             if (details != null) binding.tvTrackSubtitle.text = details
             binding.tvTrackSubtitle.isVisible = details != null

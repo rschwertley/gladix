@@ -209,7 +209,7 @@ class ButtonsAdapter(
                 settingText = false
                 binding.searchBarText.setSelection(binding.searchBarText.length())
             }
-            binding.chipGroup.configure(feed?.sortState, feed?.appliedSort)
+            binding.chipGroup.configure(feed?.sortState, feed?.appliedLabel, feed?.showReversed ?: true)
             // A null feed is a reload or tab switch in progress (FeedData's dataFlow emits null first). The row keeps
             // its height then, INVISIBLE rather than GONE (2026-11-02, Library tab-switch flash; Jun 13 precedent:
             // initialButtons). Invisible also means not tappable: with a null feed, Play would queue the PREVIOUS
@@ -243,13 +243,15 @@ class ButtonsAdapter(
         }
 
         // [2026-11-18] applied: the field actually used on a folder page (FeedData.appliedSortFlow), shown instead of the saved one.
-        private fun ChipGroup.configure(state: FeedSort.State?, applied: FeedSort?) {
+        // [2026-11-26] Now the label (FeedData.Buttons.appliedLabel), which also carries Date's "Release date" on an album list.
+        // [2026-11-27] showReversed: FeedData.Buttons.showReversed (false only on a self-sorting tab that cannot reverse).
+        private fun ChipGroup.configure(state: FeedSort.State?, appliedLabel: Int?, showReversed: Boolean) {
             removeAllViews()
             var visible = false
             if (state?.feedSort != null) {
                 visible = true
                 val chip = Chip(context)
-                chip.text = context.getString((applied ?: state.feedSort).title)
+                chip.text = context.getString(appliedLabel ?: state.feedSort.title)
                 chip.isCheckable = true
                 chip.isChecked = true
                 addView(chip)
@@ -264,7 +266,7 @@ class ButtonsAdapter(
                     viewModel.persistSortState()
                 }
             }
-            if (state?.reversed == true) {
+            if (state?.reversed == true && showReversed) {
                 visible = true
                 val chip = Chip(context)
                 chip.text = context.getString(R.string.reversed)

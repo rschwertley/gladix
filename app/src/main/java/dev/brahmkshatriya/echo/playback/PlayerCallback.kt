@@ -70,6 +70,7 @@ import dev.brahmkshatriya.echo.utils.CrashKeys
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.playback.MediaItemUtils.track
 import dev.brahmkshatriya.echo.ui.feed.FeedClickListener
+import dev.brahmkshatriya.echo.ui.feed.isFolderCard
 import dev.brahmkshatriya.echo.ui.feed.loadFolderSongs
 import dev.brahmkshatriya.echo.ui.feed.reloadableFolderOf
 import dev.brahmkshatriya.echo.playback.ResumptionUtils.recoverCurrentId
@@ -1077,7 +1078,10 @@ class PlayerCallback(
         val correctIndex = foundIndex.coerceAtLeast(0)
         // Serves the AA context and History taps - head kept, rest filtered, see
         // MediaItemUtils.droppingUnplayable.
-        return list.subList(correctIndex, list.size).droppingUnplayable(keepFirst = true).map {
+        // [2026-11-27] A folder card's context (TracksOnTap.isFolderCard) is capped like a folder row's tap: an extension can answer a
+        // whole folder as this one page, and nothing here capped it. Real albums and playlists: unchanged.
+        val upcoming = list.subList(correctIndex, list.size).droppingUnplayable(keepFirst = true)
+        return (if (context.isFolderCard()) upcoming.take(FeedClickListener.DECLARED_QUEUE_CAP) else upcoming).map {
             MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), context)
         }
     }

@@ -166,6 +166,20 @@ data class FeedData(
     private var sortStateExtensionId: String? = null
     private var sortStateTabId: String? = null
 
+    // [2026-11-27] The sort key whose state feedSortState now holds (dataFlow), for extSortFor.
+    @Volatile
+    private var sortLoadedKey: String? = null
+
+    /**
+     * [2026-11-27] What the last live render of a tab that sorts itself sent (ExtSortedTab.kt), with that tab's id: Play and
+     * Shuffle on it (tabTracksOnTap) load in the order on screen, as displayOrder is the record for every other tab. A record and
+     * not a read of feedSortState / searchQuery, for displayOrder's reason: within a search pause the query is ahead of the screen.
+     */
+    private class ExtShown(val tabId: String, val params: Map<String, String>)
+
+    @Volatile
+    private var extShown: ExtShown? = null
+
     // [2026-11-18] The saved-sort key. A scoped page (sortScope) drops the page and tab ids, so every folder page of one extension
     // reads and writes the same entry. Every other page keeps "$extensionId-$feedId-$tabId" exactly as before.
     private fun sortKey(extensionId: String?, tabId: String?) =
@@ -187,7 +201,8 @@ data class FeedData(
      */
     private val appliedSortFlow = MutableStateFlow<AppliedSort?>(null)
 
-    private data class AppliedSort(val tabId: String?, val saved: FeedSort?, val applied: FeedSort?)
+    // [2026-11-26] label: the applied sort's title for these rows (FeedSort.titleFor), so Date reads "Release date" on an album list.
+    private data class AppliedSort(val tabId: String?, val saved: FeedSort?, val label: Int?)
 
     /**
      * Persist (or remove) the CURRENT [feedSortState] under the key it was loaded for.
@@ -275,7 +290,10 @@ data class FeedData(
     ) = withContext(Dispatchers.IO) {
         runCatching {
             val (extensionId, item, feed) = state.getOrThrow() ?: return@runCatching null
-            State(extensionId, item, feed.getPagedData(tab))
+            // [2026-11-27] A tab that sorts itself gets its default load here, marked GLADIX_EXT_V (no sort or query, so it is saved
+            // as usual); a sort or search reloads it in extSourceData. Every other tab: exactly as before.
+            val sent = tab?.extListing()?.let { tab.copy(extras = tab.extras + it.extParams(null, null)) } ?: tab
+            State(extensionId, item, feed.getPagedData(sent), tab, feed)
         }
     }
 
@@ -315,6 +333,9 @@ data class FeedData(
             if (sortScope != null) sharedSortState(id).value.state
             else withContext(Dispatchers.IO) { app.context.getFromCache(id, "sort") }
         }
+        // [2026-11-27] Written AFTER the assignment above, so a reader that sees this key knows feedSortState holds that key's
+        // state (or a later user change to it). sortStateTabId cannot say that: it is set before the disk read. See extSortFor.
+        sortLoadedKey = extensionId?.let { id }
         if (sortScope != null) sortKeyFlow.value = extensionId?.let { id }
         loadedShelves.value = null
         cached to loaded
@@ -359,7 +380,11 @@ data class FeedData(
         val sortState: FeedSort.State? = null,
         // [2026-11-18] The chip's label when it differs from sortState.feedSort (see appliedSortFlow). Label only: the chips'
         // clear actions still copy sortState, so clearing Reversed on a Title-fallback page cannot save Title.
-        val appliedSort: FeedSort? = null,
+        // [2026-11-26] Now the label itself (string resource), not the field: also carries Date's "Release date" (AppliedSort).
+        val appliedLabel: Int? = null,
+        // [2026-11-27] False on a tab that sorts itself without gladix_ext_sort_reversible (ExtSortedTab.kt): Reversed is not sent
+        // there, so a saved Reversed gets no chip (the 1190 stale-label rule). Chip only: the saved entry is left as it is.
+        val showReversed: Boolean = true,
     )
 
     val buttonsFlow = combine(dataFlow, feedSortState, appliedSortFlow) { data, state, applied ->
@@ -370,7 +395,9 @@ data class FeedData(
             feed.feed.buttons ?: defaultButtons,
             feed.item,
             state,
-            applied?.takeIf { state?.feedSort != null && it.saved == state.feedSort && it.tabId == sortStateTabId }?.applied,
+            applied?.takeIf { state?.feedSort != null && it.saved == state.feedSort && it.tabId == sortStateTabId }?.label,
+            // From the tab this emission was loaded for (State.tab), not selectedTabFlow.
+            feed.tab.extListing()?.reversible ?: true,
         )
     }
 
@@ -386,14 +413,14 @@ data class FeedData(
         combineTransformLatest(cachedDataFlow, feedSortState, searchClickedFlow) { _ ->
             emit(null)
             val cached = cachedDataFlow.value ?: return@combineTransformLatest
-            emit(getFeedSourceData(cached))
+            emit(getFeedSourceData(cached, live = false))
         }.stateIn(scope, Lazily, null)
 
     val loadedFeedTypeFlow =
         combineTransformLatest(loadedDataFlow, feedSortState, searchClickedFlow) { _ ->
             emit(null)
             val loaded = loadedDataFlow.value ?: return@combineTransformLatest
-            emit(getFeedSourceData(loaded))
+            emit(getFeedSourceData(loaded, live = true))
         }.stateIn(scope, Lazily, null)
 
     // ⚠️ KNOWN, SEPARATE DEFECT — the Library double-render flash. This rebuilds a PagedSource on every
@@ -436,15 +463,20 @@ data class FeedData(
      * separate field.)
      */
     private suspend fun getFeedSourceData(
-        result: Result<State<Feed.Data<Shelf>>?>
+        result: Result<State<Feed.Data<Shelf>>?>,
+        // [2026-11-27] true from loadedFeedTypeFlow, false from cachedFeedTypeFlow. Read only by extSourceData.
+        live: Boolean,
     ): Result<Pair<Metadata?, PagedData<FeedType>>> = withContext(Dispatchers.IO) {
         val tabId = selectedTabFlow.value?.id
+        // [2026-11-27] A tab that sorts itself (ExtSortedTab.kt), from the tab this data was loaded for: none of the branches below.
+        val ext = result.getOrNull()?.tab.extListing()
         // [2026-11-25] The query applies only on a tab that shows search (its Feed.Buttons, read as buttonsFlow does). The
         // search now stays open across tab switches (see the reset in dataFlow), so a tab without a search button would
         // otherwise be filtered - and flattened - with nothing on screen to say why. The query is kept, not cleared, so it
         // applies again on a tab that shows search.
         val query = searchQuery?.takeIf { (result.getOrNull()?.feed?.buttons ?: defaultButtons).showSearch }
-        val data = if (feedSortState.value != null || query != null) {
+        val data = if (ext != null) extSourceData(result, ext, live)
+        else if (feedSortState.value != null || query != null) {
             result.mapCatching { state ->
                 state ?: return@mapCatching PagedData.empty()
                 val extensionId = state.extensionId
@@ -538,9 +570,11 @@ data class FeedData(
                     val feedSort = sortState.feedSort?.resolveFor(shelves)?.let { saved ->
                         if (sortScope == null || saved.shouldBeVisible(shelves) != null) saved else FeedSort.Title
                     }
+                    // [2026-11-26] Also set when the label differs from the field's own title (Date as "Release date").
+                    val label = feedSort?.titleFor(shelves)
                     appliedSortFlow.value =
-                        if (sortScope != null || feedSort != sortState.feedSort)
-                            AppliedSort(sortTabId, sortState.feedSort, feedSort)
+                        if (sortScope != null || feedSort != sortState.feedSort || label != feedSort?.title)
+                            AppliedSort(sortTabId, sortState.feedSort, label)
                         else null
                     fun List<Shelf>.applySort(sort: FeedSort?) = when {
                         sort != null -> sort.sorter.invoke(app.context, this, sortState.reversed)
@@ -631,6 +665,91 @@ data class FeedData(
         val metadata = result.getOrNull()?.extensionId
             ?.let { id -> runCatching { getExtension(id).metadata }.getOrNull() }
         data.map { metadata to it }
+    }
+
+    /**
+     * [2026-11-27] THE ROWS OF A TAB THAT SORTS AND SEARCHES ITSELF (ExtSortedTab.kt): the extension's own pages, in its order.
+     * - No sort, Reversed or query to send: the tab's default load from getData, saved and read back as usual, on both sides.
+     * - Otherwise the LIVE side reloads from page one through State.source (the loader's feed, so Cached.savingFeed sees the
+     *   params and does not save it). The CACHED side has nothing in that order (the saved pages are the default list) and fails
+     *   with PagedSource.LoadingException, i.e. "not loaded yet": showing the default list first would put taps and Play on rows
+     *   in the wrong order. So a sort or search change shows the loading row until the extension answers (on a tab switch, only
+     *   after FeedAdapter's TAB_SWITCH_GRACE_MS).
+     * - Each 300 ms search pause and each sort change re-runs this (loaded/cachedFeedTypeFlow); combineTransformLatest cancels a
+     *   reload still running, so the extension must tolerate a load cancelled mid-page.
+     * - Shown as it comes (DisplayOrder.Source), so FeedAdapter.inDisplayOrder and a song tap (FeedClickListener.queueFromPage)
+     *   read the screen's own list. loadedShelves is left null: the sort sheet takes this tab's sorts from its extras.
+     */
+    private suspend fun extSourceData(
+        result: Result<State<Feed.Data<Shelf>>?>, ext: ExtListing, live: Boolean,
+    ): Result<PagedData<FeedType>> = result.mapCatching { state ->
+        state ?: return@mapCatching PagedData.empty()
+        val tab = state.tab ?: throw IllegalStateException("No tab")
+        displayOrder = DisplayOrder.Source
+        val sort = extSortFor(state.extensionId, tab.id)
+        // [2026-11-27] A saved field the tab does not declare (e.g. saved here before it opted in) is not sent, so the list is in
+        // the extension's default order, which is its first declared sort (ExtSortedTab.kt). The chip says so: the default's name,
+        // not the saved one (the 1190 stale-label rule), through appliedSortFlow as on a scoped page, so buttonsFlow shows it only
+        // while that saved field and this tab still match. The saved entry is left as it is. Null otherwise: the saved name shows.
+        appliedSortFlow.value = sort?.feedSort?.takeIf { it !in ext.sorts }?.let { saved ->
+            ext.sorts.firstOrNull()?.let { AppliedSort(tab.id, saved, it.title) }
+        }
+        val query = searchQuery?.takeIf { (state.feed.buttons ?: defaultButtons).showSearch }
+        val params = ext.extParams(sort, query)
+        val data = when {
+            !params.isExtParamLoad() -> state.feed.pagedData
+            !live -> throw PagedSource.LoadingException()
+            else -> (state.source ?: throw PagedSource.LoadingException())
+                .getPagedData(tab.copy(extras = tab.extras + params)).pagedData
+        }
+        data.loadPage(null)
+        if (live) extShown = ExtShown(tab.id, params)
+        var start = 0L
+        data.map { page ->
+            page.map {
+                val list = it.toFeedType(feedId, state.extensionId, state.item, tab.id, noVideos, start, isTv)
+                start += list.size
+                list
+            }.getOrThrow()
+        }
+    }
+
+    /**
+     * [2026-11-27] THE SORT TO SEND FOR [tabId], paired with it. feedSortState is only trusted once dataFlow has loaded it for this
+     * tab (sortLoadedKey, written after the assignment); before that - a tab switch, where this can run first - it may still be
+     * the previous tab's, the mismatched-tab shape the 2026-09-06 fix removed. Then the tab's own saved entry is read, which is what
+     * dataFlow is about to load. A read, never a write (persistSortState's user-actions-only rule).
+     */
+    private suspend fun extSortFor(extensionId: String, tabId: String): FeedSort.State? {
+        val key = sortKey(extensionId, tabId)
+        if (sortLoadedKey == key) return feedSortState.value
+        return if (sortScope != null) sharedSortState(key).value.state
+        else withContext(Dispatchers.IO) { app.context.getFromCache(key, "sort") }
+    }
+
+    // [2026-11-27] The selected tab's sorting contract, for FeedSortBottomSheet (its chips and the Reversed switch). Display only.
+    val shownExtListing: ExtListing? get() = selectedTabFlow.value.extListing()
+
+    // [2026-11-27] The list a tab that sorts itself shows, as FeedFragment.pageList picks it (loaded, else cached), for a song tap
+    // there (FeedClickListener.queueFromPage). Null on every other tab, which keeps today's tap paths.
+    val extTabList: PagedData<FeedType>?
+        get() = if (selectedTabFlow.value.extListing() == null) null
+        else (loadedFeedTypeFlow.value?.getOrNull() ?: cachedFeedTypeFlow.value?.getOrNull())?.second
+
+    class TabTracksOnTap(val id: String, val title: String, val extras: Map<String, String>)
+
+    /**
+     * [2026-11-27] PLAY AND SHUFFLE ON A TAB THAT SORTS ITSELF AND DECLARES ITS LIST (GLADIX_TRACKS_ON_TAP with GLADIX_TAB_TRACKS_ID):
+     * the list's id, the tab's title and the extras loadTracksOnTap sends - the tab's own plus what the screen was last loaded with
+     * (extShown), so Play is in the order shown. Before the first live render of this tab, the default. Null otherwise.
+     */
+    fun tabTracksOnTap(): TabTracksOnTap? {
+        val tab = selectedTabFlow.value ?: return null
+        val ext = tab.extListing() ?: return null
+        if (tab.extras[GLADIX_TRACKS_ON_TAP] != "1") return null
+        val id = tab.extras[GLADIX_TAB_TRACKS_ID]?.takeIf { it.isNotBlank() } ?: return null
+        val params = extShown?.takeIf { it.tabId == tab.id }?.params ?: ext.extParams(null, null)
+        return TabTracksOnTap(id, tab.title, tab.extras + params)
     }
 
     private companion object {
@@ -849,6 +968,11 @@ data class FeedData(
         val extensionId: String,
         val item: EchoMediaItem?,
         val feed: T,
+        // [2026-11-27] Set by getData only: the tab this data was loaded for and the feed it came from, so a tab that sorts itself
+        // (ExtSortedTab.kt) can be reloaded with its sort and search from the SAME emission (extSourceData), never from a sibling
+        // flow (the pairing rule at getFeedSourceData). Null everywhere else.
+        val tab: Tab? = null,
+        val source: Feed<Shelf>? = null,
     )
 
     fun onSearchClicked() = scope.launch { searchClickedFlow.emit(Unit) }

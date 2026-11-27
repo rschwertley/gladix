@@ -170,9 +170,17 @@ object FormatUtils {
     // on YouTube Music they are internal names like "Audio - audio-audio/webm-WebM Opus - 70kbps". Video and subtitle details stay,
     // since with Prefer Videos on they are what shows it is a video. The sheet still lists the titles. Deezer's only title, "Alt
     // version" on a substitute, loses nothing: it never reached a screen (DeezerTrackClient.loadStreamableMedia's note).
+    // [2026-11-27] The source service goes LAST, "OPUS 70 kbps • YouTube Music", by the user's decision, which closes the Nov 14
+    // source-service idea (from TheWinner02's Combine). After the quality, not before, by the same rule as above (1171): the end-cut
+    // lands on the part worth least. At the phone pill's 12sp and 210dp, "YouTube Music • FLAC 24-bit 96 kHz" is ~217dp (estimated
+    // from the 185dp measurement in item_player_controls.xml), so name-first would cut the quality. [sourceName] is non-null only for
+    // Unified (PlayerViewModel.pillSourceName; Combine was dropped, see there); every other extension keeps the codec-and-bitrate pill. Appended to the
+    // last segment with " • ", so with a video segment it follows that.
     fun Tracks.getPillDetails(
-        context: Context, server: Streamable.Media.Server?, index: Int?,
-    ): List<String> = formatDetails(context) { it.toPillDetails(server, index) }
+        context: Context, server: Streamable.Media.Server?, index: Int?, sourceName: String? = null,
+    ): List<String> = formatDetails(context) { it.toPillDetails(server, index) }.let { parts ->
+        if (sourceName.isNullOrBlank()) parts else parts.dropLast(1) + joinParts(parts.last(), sourceName)
+    }
 
     // Lossy: what the bitrate says. Lossless: bitrate says little, so bit depth and rate (2026-11-06). The Format's own bitrate wins,
     // because the listed one is what was asked for and a Deezer step-down or substitute can deliver something else (see the note at

@@ -1,6 +1,16 @@
 package dev.brahmkshatriya.echo.ui.feed
 
 import android.content.Context
+import androidx.activity.viewModels
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.viewModelScope
+import dev.brahmkshatriya.echo.R
+import dev.brahmkshatriya.echo.common.models.Message
+import dev.brahmkshatriya.echo.ui.common.FragmentUtils.openFragment
+import dev.brahmkshatriya.echo.ui.player.PlayerViewModel
+import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -8,7 +18,10 @@ import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
+import dev.brahmkshatriya.echo.common.Extension
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.extensions.ExtensionLoader
+import dev.brahmkshatriya.echo.extensions.cache.Cached
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getAs
 import dev.brahmkshatriya.echo.extensions.ExtensionUtils.getExtensionOrThrow
 import dev.brahmkshatriya.echo.extensions.builtin.unified.UnifiedExtension.Companion.EXTENSION_ID
@@ -81,8 +94,15 @@ suspend fun loadTracksOnTap(
     extensions: ExtensionLoader, extensionId: String, id: String, title: String, extras: Map<String, String>,
     shuffle: Boolean = false,
     onPage: suspend (List<Track>) -> Boolean,
+) = loadTracksOnTap(extensions.music.getExtensionOrThrow(extensionId), id, title, extras, shuffle, onPage)
+
+// [2026-11-27] The same, given the extension itself: Android Auto holds a MusicExtension list, not an ExtensionLoader
+// (AndroidAutoCallback's folder-card Shuffle tile). The body moved here unchanged.
+suspend fun loadTracksOnTap(
+    extension: Extension<*>, id: String, title: String, extras: Map<String, String>,
+    shuffle: Boolean = false,
+    onPage: suspend (List<Track>) -> Boolean,
 ) {
-    val extension = extensions.music.getExtensionOrThrow(extensionId)
     // [2026-11-13] See GLADIX_SHUFFLE.
     val sent = if (shuffle) extras + (GLADIX_SHUFFLE to "1") else extras
     val feed = extension.getAs<AlbumClient, Feed<Track>?> {
@@ -109,6 +129,97 @@ fun folderAlbum(id: String, title: String?, routing: String?) = Album(
 suspend fun loadFolderFeed(extensions: ExtensionLoader, extensionId: String?, album: Album): Feed<Shelf>? =
     extensions.music.getExtensionOrThrow(extensionId)
         .getAs<AlbumClient, Feed<Shelf>?> { loadFeed(album) }.getOrThrow()
+
+/**
+ * [2026-11-27] OPENS A FOLDER PAGE BY ITS ID: Go to folder's whole path, moved here unchanged from MediaMoreBottomSheet.goToFolder
+ * (whose note says why it is built this way) so a folder card's tap (FeedClickListener.onMediaClicked, isFolderCard) opens the
+ * page exactly as Go to folder does: a fresh folderAlbum, loaded by loadFolderFeed on PlayerViewModel's scope, shown in
+ * FeedFragment with the album's extras as its tracks-on-tap row and no sortScope (as Go to folder has none).
+ */
+fun openFolderPage(
+    activity: FragmentActivity, pvm: PlayerViewModel, extensionId: String, folderId: String, title: String?, routing: String?,
+    cont: Int,
+) {
+    val pageTitle = title ?: activity.getString(R.string.folder)
+    val notFound = activity.getString(R.string.no_x_found, activity.getString(R.string.folder))
+    // [2026-11-19] Built and loaded by TracksOnTap's folderAlbum and loadFolderFeed, shared with Cached.getFeedShelf.
+    val album = folderAlbum(folderId, title, routing)
+    val folderExtras = album.extras
+    pvm.viewModelScope.launch {
+        val feed = runCatching {
+            loadFolderFeed(pvm.extensions, extensionId, album)
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            pvm.app.throwFlow.emit(it)
+            return@launch
+        }
+        if (feed == null) {
+            pvm.app.messageFlow.emit(Message(notFound))
+            return@launch
+        }
+        if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
+        val feedVm by activity.viewModels<FeedFragment.VM>()
+        feedVm.extensionId = extensionId
+        feedVm.feedId = folderId
+        feedVm.feed = feed
+        activity.openFragment<FeedFragment>(
+            null, FeedFragment.getBundle(pageTitle, null, extensionId, folderId, folderExtras), cont
+        )
+    }
+}
+
+/**
+ * [2026-11-27] AN ALBUM CARD THAT IS A FOLDER: an Album carrying GLADIX_TRACKS_ON_TAP = "1", the marks folderAlbum puts on Go to
+ * folder's album (its id is the folder's, e.g. OpenGonic's "dir:<id>"). Generic: no extension or id format is read. Its tap opens
+ * the folder page (openFolderPage), its long-press and Play go through FolderMoreBottomSheet's folder paths (asFolderRow), never
+ * MediaFragment or MediaMoreBottomSheet, which would load it as an album through Cached (the note on GLADIX_TRACKS_ON_TAP).
+ */
+fun EchoMediaItem.isFolderCard() = this is Album && extras[GLADIX_TRACKS_ON_TAP] == "1"
+
+/**
+ * [2026-11-27] A SONG TAPPED INSIDE A FOLDER CARD IN ANDROID AUTO (AndroidAutoCallback.onSetMediaItems' context branch): from the
+ * tapped song, at most [cap], read page by page (forEachPageBounded) so a folder of tens of thousands is never held whole, which
+ * the album path's loadAllBounded (up to BoundedLoadAll.ITEM_CEILING) would do. The tapped song first whatever its verdict, then
+ * playable ones only, as droppingUnplayable(keepFirst = true). Not found: from the top, capped the same way, as the album path
+ * starts at 0 on a miss. The phone's equivalent is FeedClickListener.queueFromPage.
+ */
+suspend fun PagedData<Track>.folderUpcoming(tappedId: String, cap: Int): List<Track> {
+    val upcoming = ArrayList<Track>()
+    val fromTop = ArrayList<Track>()
+    forEachPageBounded { page ->
+        for (track in page) {
+            val playable = track.isPlayable == Track.Playable.Yes
+            if (upcoming.isEmpty()) {
+                if (track.id == tappedId) upcoming += track
+                else if (fromTop.size < cap && (fromTop.isEmpty() || playable)) fromTop += track
+            } else if (playable) upcoming += track
+            if (upcoming.size >= cap) return@forEachPageBounded false
+        }
+        true
+    }
+    return upcoming.ifEmpty { fromTop }
+}
+
+// The card as the row FolderMoreBottomSheet takes.
+// [CORRECTED 2026-11-27, same day] It had no feed and no GLADIX_FOLDER, so it was not isMarkedFolder and the sheet offered no Like
+// (liked folders, Nov 6-8), no "Folder" word, and a "Playing from" label with no page to reopen. Now it is a marked folder row:
+// - GLADIX_FOLDER = "1" is added to the row's extras (the card carries only folderAlbum's marks). LikeClient then gets the folder
+//   with the same marker a folder row sends (FolderMoreBottomSheet.folderAlbum is built from these extras).
+// - Its feed is the folder page, loaded only when something reads it (Play's "Playing from" tap reopening it through
+//   FeedPageSlot), as Cached.categoryFeed gives a restored tracks-on-tap row: openFolderPage's folderAlbum and loadFolderFeed,
+//   first tab only. Opening the sheet loads nothing. The same lambda as categoryFeed's, kept apart so Cached is not touched.
+// Play, Shuffle and the queue actions still load by the folder's id (FolderMoreBottomSheet.folderTracks checks hasTracksOnTap
+// first), so the feed never changes what is queued.
+fun Album.asFolderRow(extensions: ExtensionLoader, extensionId: String): Shelf.Category {
+    val album = folderAlbum(id, title, extras[EXTENSION_ID])
+    return Shelf.Category(
+        id = id, title = title, subtitle = subtitle, image = cover, extras = extras + (GLADIX_FOLDER to "1"),
+        feed = Feed(listOf()) { _ ->
+            val live = loadFolderFeed(extensions, extensionId, album) ?: throw Cached.NotFound("feed-$extensionId-$id")
+            live.getPagedData(live.tabs.firstOrNull())
+        },
+    )
+}
 
 /**
  * [2026-11-21] A HISTORY ROW THAT CAN RELOAD ITS FOLDER: the folder id, when [this] (the row's context) is the "Playing from <folder>"

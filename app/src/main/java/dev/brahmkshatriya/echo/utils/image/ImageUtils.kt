@@ -305,7 +305,12 @@ object ImageUtils {
         if (error == null) error = placeholder
 
         if (this == null) {
-            if (error != null) builder.data(error)
+            // [2026-11-26] No memory cache for the no-cover placeholder: its key is the resource plus night mode, not the theme
+            // (coil 3.6.3 AndroidResourceUriKeyer), so a bitmap drawn under one context's theme was served to every no-cover
+            // row; a failing cover's error drawable is always drawn fresh from its own view, which is why ATC's History note was
+            // lighter (1190). Still data(error), not fallback with no data: a null-data request fails in RealImageLoader.execute
+            // before ViewTargetRequestDelegate.start, so it never cancels the view's previous load (a recycled row's late cover).
+            if (error != null) builder.data(error).memoryCachePolicy(CachePolicy.DISABLED)
             return builder
         }
         createRequest(this, builder)

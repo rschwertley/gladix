@@ -639,6 +639,9 @@ class DeezerParser(private val session: DeezerSession) {
             // No DIGITAL_RELEASE_DATE (2026-11-04). Not an album date either: "What's the Dillio" read PHYSICAL 2025-07-11
             // from deezer.pageTrack (guest session) under an album dated 7/18/00, with no ORIGINAL_RELEASE_DATE on the
             // song. So this only feeds the Date sort, and MediaHeaderAdapter.trackHeaderDate shows the album's date.
+            // [2026-11-27] Decided: song lists keep the label "Date", not "Release date". deezer-py's map_track (deezer/utils.py)
+            // reads only PHYSICAL_RELEASE_DATE and DIGITAL_RELEASE_DATE, no ORIGINAL_RELEASE_DATE, so a song record has no true
+            // release date; the album's needs the album record. Revisit only if a song record is seen carrying ORIGINAL_RELEASE_DATE.
             releaseDate = data.str("PHYSICAL_RELEASE_DATE")?.toDate(),
             artists = parseArtists(artistsArr, data),
             album = Album(
@@ -885,6 +888,9 @@ class DeezerParser(private val session: DeezerSession) {
         // spot fixes both screens.
         // [CORRECTED 2026-11-26] Sort only, no longer shown: the subtitle below dropped the date (the 1189 decision). The
         // fallback still matters, for creationDate and so the Date sort.
+        // [2026-11-27] Decided: playlist lists keep the label "Date", not "Recently added". deezer-py's map_user_playlist /
+        // map_playlist (deezer/utils.py) map DATE_ADD only as 'creation_date', with nothing saying whether it is when the playlist
+        // was made or when you followed it, and owned playlists sort by DATE_MOD anyway. Revisit only if a source settles DATE_ADD.
         val modified = data.str("DATE_MOD")?.toDate()
         val date = modified ?: created
         // [2026-11-26] Exact match, and no user id means not yours. Was parentUser?.contains(userId): a substring test on two Strings,
@@ -936,6 +942,19 @@ class DeezerParser(private val session: DeezerSession) {
         val size = session.settings?.getInt("image_quality") ?: 480
         val url = "https://cdn-images.dzcdn.net/images/$type/$md5/${size}x${size}-000000-80-0-0.jpg"
         return url.toImageHolder()
+    }
+
+    /**
+     * [2026-11-26] When a liked song was liked, for the app's "Recently added" sort (Track.playlistAddedDate). Field per deezer-py's
+     * map_user_track (deezer/utils.py): `DATE_ADD or DATE_FAVORITE`; DATE_ADD is also in the measured key set of a gateway song
+     * record (toTrack's availability note). Its format on favorite_song.getList is not verified: digits are read as epoch
+     * seconds, anything else as "yyyy-MM-dd[ HH:mm:ss]", and an unreadable value is null rather than a throw.
+     */
+    fun JsonObject.likedDate(): EchoDate? {
+        val raw = (str("DATE_ADD") ?: str("DATE_FAVORITE"))?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            if (raw.all { it.isDigit() }) EchoDate(raw.toLong() * 1000) else raw.toDate()
+        }.getOrNull()
     }
 
     private fun String.toDate(): EchoDate {

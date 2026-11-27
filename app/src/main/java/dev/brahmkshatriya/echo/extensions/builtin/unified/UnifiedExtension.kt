@@ -39,6 +39,7 @@ import dev.brahmkshatriya.echo.common.models.Feed
 import dev.brahmkshatriya.echo.utils.BoundedLoadAll.loadAllBounded
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
+import dev.brahmkshatriya.echo.ui.feed.extListing
 import dev.brahmkshatriya.echo.common.models.ImportType
 import dev.brahmkshatriya.echo.common.models.Lyrics
 import dev.brahmkshatriya.echo.common.models.Metadata
@@ -345,15 +346,22 @@ class UnifiedExtension(
         crossinline loadFeed: suspend T.() -> Feed<Shelf>,
     ): Feed.Data<Shelf> {
         val feed = client<T, Feed<Shelf>> { loadFeed() }.injectExtensionId(this)
-        val data = feed.run { getPagedData(tabs.firstOrNull()) }
-        val otherTabs = feed.tabs.drop(1).map { tab ->
+        // [2026-11-27] SELF-SORTING TABS ARE LEFT OUT (ui/feed/ExtSortedTab.kt, the user's option b). Unified shows a sub-extension
+        // through its own tabs, so such a tab would arrive with no tab of its own: Gladix's 15,000-row sort and search, Play over
+        // loaded rows, and Radio on a song tap. So it is neither the first tab loaded here nor in the Tabs row. An extension whose
+        // tabs are ALL self-sorting shows nothing here (the user's decision), rather than one of them. Tabs without the keys, and
+        // the row stamping (Shelf.Category.withExtensionId, 1182) that Play and Shuffle route on, are unchanged.
+        val shown = feed.tabs.filter { it.extListing() == null }
+        if (feed.tabs.isNotEmpty() && shown.isEmpty()) return PagedData.empty<Shelf>().toFeedData()
+        val data = feed.getPagedData(shown.firstOrNull())
+        val otherTabs = shown.drop(1).map { tab ->
             Shelf.Category(
                 tab.id,
                 tab.title,
                 Feed(listOf()) { feed.run { getPagedData(tab) } }
             )
         }
-        return if (feed.tabs.size > 1 && showTabs) {
+        return if (shown.size > 1 && showTabs) {
             Feed.Data(
                 PagedData.Concat(
                     PagedData.Single {

@@ -491,7 +491,9 @@
     <string name="unsave">Unsave</string>
     <string name="sort_title">Title</string>
     <string name="sort_date">Date</string>
-    <string name="sort_date_added">Date Added</string>
+    <string name="sort_date_added">Recently added</string>
+    <string name="sort_release_date">Release date</string>
+    <string name="sort_recently_played">Recently played</string>
     <string name="sort_duration">Duration</string>
     <string name="sort_details">Details</string>
     <string name="sort_creator">Creator</string>

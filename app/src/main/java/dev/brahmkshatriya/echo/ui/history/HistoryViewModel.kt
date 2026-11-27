@@ -29,7 +29,8 @@ class HistoryViewModel(
 ) : ViewModel() {
 
     enum class SortOption(@param:StringRes val title: Int) {
-        ByDate(R.string.sort_date),
+        // [2026-11-27] "Recently played", not the feed's "Date": this sorts by when each song was played (the user's decision).
+        ByDate(R.string.sort_recently_played),
         ByTitle(R.string.sort_title),
         ByArtist(R.string.artists),
     }

@@ -44,6 +44,10 @@ import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.ui.feed.viewholders.MediaViewHolder.Companion.secondLine
+import dev.brahmkshatriya.echo.ui.feed.QueueSampler
+import dev.brahmkshatriya.echo.ui.feed.folderUpcoming
+import dev.brahmkshatriya.echo.ui.feed.isFolderCard
+import dev.brahmkshatriya.echo.ui.feed.loadTracksOnTap
 import dev.brahmkshatriya.echo.di.App
 import dev.brahmkshatriya.echo.download.Downloader
 import dev.brahmkshatriya.echo.history.HistoryRepository
@@ -1032,7 +1036,20 @@ abstract class AndroidAutoCallback(
             // `original` is what a later toggle-OFF restores, and a dropped track must not reappear
             // in album order. No keepFirst - a shuffle tile has no tapped head.
             // [2026-11-13] Bounded: see BoundedLoadAll.
-            val unshuffled = tracks.loadAllBounded().droppingUnplayable().map {
+            // [2026-11-27] A FOLDER CARD (TracksOnTap.isFolderCard) takes a folder row's Shuffle instead: loadTracksOnTap with
+            // GLADIX_SHUFFLE, sampled to AA_DECLARED_QUEUE_CAP while reading (QueueSampler, unplayable dropped), so a folder of tens
+            // of thousands of songs is never loaded whole or built into one MediaItem each - the album path below reads up to
+            // BoundedLoadAll.ITEM_CEILING (50,000) and builds them all. A missing extension gives an empty queue, as an empty
+            // album does here; a load that fails throws out of this future, as the album path's loadAllBounded does. Real albums:
+            // unchanged.
+            val listTracks = if (item.isFolderCard()) {
+                val sampler = QueueSampler(shuffle = true, cap = AA_DECLARED_QUEUE_CAP)
+                extensionList.value.find { it.id == extId }?.let { extension ->
+                    loadTracksOnTap(extension, item.id, item.title, item.extras, shuffle = true) { sampler.offer(it) }
+                }
+                sampler.result().tracks
+            } else tracks.loadAllBounded().droppingUnplayable()
+            val unshuffled = listTracks.map {
                 MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
             }
             val shuffled = unshuffled.shuffled()
@@ -1128,6 +1145,17 @@ abstract class AndroidAutoCallback(
                     }
                     if (tracksEntry != null) {
                         val (item, pagedData) = tracksEntry
+                        // [2026-11-27] A folder card: from the tapped song, AA_DECLARED_QUEUE_CAP at most, read page by page
+                        // (TracksOnTap.folderUpcoming), never the whole folder. Real albums and playlists take the path below.
+                        if (item.isFolderCard()) {
+                            val upcomingItems = pagedData.folderUpcoming(track.id, AA_DECLARED_QUEUE_CAP).map {
+                                MediaItemUtils.build(app, downloadFlow.value, MediaState.Unloaded(extId, it), item)
+                            }
+                            mediaSession.primeTapShuffle(tapShuffled)
+                            return@future super.onSetMediaItems(
+                                mediaSession, controller, upcomingItems.toMutableList(), 0, startPositionMs
+                            ).await(context)
+                        }
                         // [2026-11-13] Bounded: see BoundedLoadAll.
                         val allTracks = pagedData.loadAllBounded()
                         // A miss here means the context no longer contains the tapped track — it was
@@ -1513,6 +1541,13 @@ abstract class AndroidAutoCallback(
             // #1 durable = true → filesDir, so an OS cacheDir wipe can't evict it. #3/#4 encodeAutoId →
             // self-describing mediaId carrying extId + context for cache-miss re-resolution. listKey →
             // the declared-list key, when the feed this item came from declared one (see AutoId.l).
+            // [2026-11-27] DECIDED: THIS SAVE STAYS A FULL SONG, NOT queueSlim. Considered while capping folder cards (TracksOnTap
+            // .folderUpcoming) and declined by the user, not parked. Why: the "auto" folder is size-bounded like every cache folder
+            // (CacheUtils.saveToCache drops the oldest files past CACHE_FOLDER_SIZE, 50 MB), and the tap paths in onSetMediaItems read
+            // these entries back as the song to play (the cached Triple), so slimming them trades AA reliability for disk the cap
+            // already bounds. The auto cache was kept out of scope for that reason on Nov 20 (the user's record, citing the Jul 7-8
+            // and Oct 24-26 AA work). Declared lists, which are lists, are saved slim instead (saveDeclaredList). Reopen only on a
+            // measured problem with this folder, not on the size of one entry.
             context.saveToCache(id, Triple(this, extensionId, con), "auto", durable = true)
             return MediaItem.Builder()
                 .setMediaId(encodeAutoId(id, extensionId, con, listKey))

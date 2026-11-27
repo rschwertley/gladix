@@ -288,7 +288,8 @@ class DeezerLibraryClient(
     // which search and album use and where the FALLBACK direction is the opposite (Aug 6).
     internal fun graftFavTrack(entry: JsonObject): Track = parser.run {
         val d = entry.unwrap()
-        val top = d.toTrack()
+        // [2026-11-26] The like date, for "Recently added" (DeezerParser.likedDate). From the top-level entry, which is the list's own record.
+        val top = d.toTrack().copy(playlistAddedDate = d.likedDate())
         val fb = d["FALLBACK"] as? JsonObject
         if (fb == null) top
         else {
